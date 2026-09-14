@@ -17,13 +17,14 @@ jobs:
       sha1: ${{ steps.candidate.outputs.sha1 }}
       sha256: ${{ steps.candidate.outputs.sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
+          package-manager-cache: false
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm audit --omit=dev --audit-level=high
@@ -60,7 +61,7 @@ jobs:
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
           echo "sha1=$SHA1" >> "$GITHUB_OUTPUT"
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: npm-release-candidate
           path: |
@@ -84,13 +85,14 @@ jobs:
       EXPECTED_SHA1: ${{ needs.prepare.outputs.sha1 }}
       EXPECTED_SHA256: ${{ needs.prepare.outputs.sha256 }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: npm-release-candidate
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
       - name: Verify the approved artifact
         run: |
           echo "$EXPECTED_SHA1  $TARBALL" | sha1sum --check --strict

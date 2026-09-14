@@ -30,6 +30,7 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - Standalone repository language that removes source-project history, activates the
   security and compatibility policies, and matches the repository's available support
   channels.
+- GitHub Actions upgraded to their Node.js 24 runtime generations before publication.
 
 ### Security
 
