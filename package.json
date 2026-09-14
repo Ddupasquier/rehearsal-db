@@ -1,0 +1,72 @@
+{
+  "name": "@rehearsal/db",
+  "version": "0.1.0-beta.0",
+  "private": true,
+  "description": "Safely rehearse PostgreSQL and Supabase migrations against sanitized production-shaped data.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ddupasquier/rehearsal-db.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ddupasquier/rehearsal-db/issues"
+  },
+  "homepage": "https://github.com/Ddupasquier/rehearsal-db#readme",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "bin": {
+    "rehearsal": "scripts/operations/rehearsal/rehearsal_cli.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./scripts/lib/rehearsal/configuration.d.mts",
+      "import": "./scripts/lib/rehearsal/configuration.mjs"
+    },
+    "./baseline": "./scripts/lib/rehearsal/baseline_artifact.mjs",
+    "./baseline-builder": "./scripts/lib/rehearsal/baseline_builder.mjs",
+    "./diagnostics": "./scripts/lib/rehearsal/diagnostics.mjs",
+    "./migrations": "./scripts/lib/rehearsal/migration_history.mjs",
+    "./process-environment": "./scripts/lib/rehearsal/process_environment.mjs",
+    "./schema": "./scripts/lib/rehearsal/schema_snapshot.mjs",
+    "./service-environment": "./scripts/lib/rehearsal/service_environment.mjs"
+  },
+  "files": [
+    "scripts/lib/environment/local_supabase.mjs",
+    "scripts/lib/rehearsal",
+    "scripts/operations/database/manage_rehearsal_database.mjs",
+    "scripts/operations/rehearsal/rehearsal_cli.mjs",
+    "docs/*.md",
+    "README.md",
+    "BENCHMARKS.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "COMPATIBILITY.md",
+    "SUPPORT.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:unit": "vitest run tests/scripts",
+    "test:docs": "vitest run tests/contracts/documentationCommands.test.mjs",
+    "test:fixture": "node scripts/operations/rehearsal/prove_independent_fixture.mjs",
+    "check": "npm run check:syntax && npm run test && npm run format:check && npm run package:audit",
+    "check:syntax": "find scripts tests -type f -name '*.mjs' -exec node --check {} +",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "package:audit": "node scripts/operations/rehearsal/audit_package.mjs"
+  },
+  "keywords": [
+    "postgresql",
+    "supabase",
+    "migration",
+    "testing",
+    "database"
+  ],
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "prettier": "^3.9.6",
+    "vitest": "^4.1.10"
+  }
+}
