@@ -133,8 +133,8 @@ describe("documented CLI contract", () => {
     );
 
     expect(workflow).toContain("environment: npm");
-    expect(workflow).toContain("actions/upload-artifact@v4");
-    expect(workflow).toContain("actions/download-artifact@v4");
+    expect(workflow).toContain("actions/upload-artifact@v7");
+    expect(workflow).toContain("actions/download-artifact@v8");
     expect(workflow).toContain("sha256sum --check --strict");
     expect(workflow).toContain("git merge-base --is-ancestor HEAD origin/main");
     expect(workflow).toContain('test "$RELEASE_TAG" = "v$PACKAGE_VERSION"');
