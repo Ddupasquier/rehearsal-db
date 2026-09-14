@@ -1,8 +1,10 @@
 # Support
 
-Use GitHub Discussions for setup questions and GitHub Issues for reproducible defects or
-feature proposals. Include operating system, architecture, Node version, Supabase CLI
-version, Docker engine, the failing command, safe diagnostics, and a synthetic reproduction.
+Use GitHub Issues for reproducible defects and setup problems that include a synthetic
+reproduction. Include operating system, architecture, Node version, Supabase CLI version,
+Docker engine, the failing command, safe diagnostics, and the smallest reproduction.
+The first beta does not yet maintain a separate public discussion or feature-request
+channel.
 
 Do not include credentials, connection strings, source rows, baseline artifacts, private
 URLs, or proprietary migrations. Report security problems through private vulnerability

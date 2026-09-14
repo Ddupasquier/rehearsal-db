@@ -1,10 +1,10 @@
-# Rehearsal compatibility policy draft
+# Rehearsal compatibility policy
 
-Rehearsal will begin at `0.x`. Minor releases may contain breaking changes, but every
+Rehearsal begins at `0.x`. Minor releases may contain breaking changes, but every
 intentional break must be called out in the changelog with a migration path. Patch
 releases must remain backward compatible within their minor line.
 
-The following are public compatibility contracts once published:
+The following are compatibility contracts for published 0.x releases:
 
 - configuration property names, types, defaults, validation, and schema version;
 - baseline format and checksum meaning;

@@ -7,9 +7,9 @@ historical edge cases that synthetic seed data rarely represents.
 Version 0.1 targets Supabase CLI projects running PostgreSQL locally. It does not yet
 claim support for arbitrary unmanaged PostgreSQL installations.
 
-This repository contains the pre-release public contract for Rehearsal 0.x. The package
-is intentionally marked private until its clean-install, documentation, and supported
-platform checks pass. Nothing in this repository enables production access.
+This repository contains the first Rehearsal 0.x beta candidate. The package remains
+intentionally private until the exact release artifact and publication are approved.
+Nothing in this repository enables production access.
 
 ## Documentation
 
@@ -39,6 +39,33 @@ a new schema. Rehearsal also proves that:
 - the resulting local application can pass a project-owned proof;
 - unsafe or ambiguous state stops execution.
 
+## What Rehearsal is—and is not
+
+Rehearsal complements existing database workflows instead of replacing them:
+
+| Tool or environment                             | Primary job                                 | What Rehearsal adds                                                                                                        |
+| ----------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Backups and point-in-time recovery              | Recover lost production data                | A disposable, writable migration test; Rehearsal is not disaster recovery.                                                 |
+| Staging                                         | Exercise an integrated deployed application | A local resettable database shaped by reviewed production history, without giving the runtime a hosted target.             |
+| Synthetic seed data                             | Create small, known test scenarios          | Sanitized production-shaped relationships and historical edge cases, when the project explicitly authorizes them.          |
+| Database branches or preview databases          | Isolate hosted database changes             | A loopback-only runtime with immutable baseline checks, exact candidate confirmation, and project-owned acceptance proofs. |
+| Migration linters and migration-only test tools | Inspect SQL or prove a migration applies    | Restore, migrate, run the real application proof, preserve sandbox edits, and reset to the verified baseline.              |
+
+The package does not extract production data. A project may use Rehearsal entirely with
+synthetic data, or build its own least-privilege extraction and sanitization boundary.
+The current beta runs local Supabase services and therefore does not support an arbitrary
+unmanaged PostgreSQL server.
+
+## Local cost and storage
+
+Rehearsal itself has no hosted-service fee and never creates a cloud database. Normal
+local costs are Docker CPU, memory, and disk space for Supabase images, the immutable
+baseline, optional retained Storage assets, and the disposable runtime. Production-shaped
+artifacts can be large: review their manifest size before activation, keep bounded
+retention, and use `rehearsal discard` when the runtime is no longer needed. Deleting the
+runtime does not delete the immutable baseline; baseline retention remains a project-owned
+privacy and disk-management decision.
+
 The restored runtime is intentionally writable. Exact baseline row counts and foreign
 keys are proved during reset before the runtime is accepted; later verification allows
 row-level divergence from sandbox interaction or candidate data migrations while still
@@ -47,15 +74,14 @@ invariants. Reset restores and reproves the exact starting data.
 
 ## Quick start
 
-The package is not published yet. Once a beta is explicitly approved and published,
-installation will be:
+Install the beta from npm once the first approved release is available:
 
 ```bash
 npm install --save-dev @rehearsal/db
 ```
 
-From a local checkout of this repository, use `npm link` or install the tarball produced
-by `npm pack`. In a consuming project, the commands are:
+Before that release, contributors can use `npm link` or install the tarball produced by
+`npm pack` from a local checkout. In a consuming project, the commands are:
 
 ```bash
 npx rehearsal init
@@ -88,12 +114,13 @@ pending, execution requires the exact candidate digest printed by the plan:
 npx rehearsal run --confirm-candidates=<sha256>
 ```
 
-The `rehearsal` executable is the public command contract. This pre-release repository
-is not an npm release and does not authorize publication.
+The `rehearsal` executable is the public command contract. Repository availability does
+not itself authorize an npm publication.
 
 To try the entire workflow without configuring a project or touching hosted data, clone
-this repository and run `npm ci && npm run test:fixture`. It installs the exact packed
-artifact into a clean synthetic Supabase project and proves both success and failure.
+this repository and run `npm ci --ignore-scripts && npm run test:fixture`. It installs
+the exact packed artifact into a clean synthetic Supabase project and proves both
+success and failure.
 
 ## Configuration
 
@@ -323,7 +350,7 @@ It neither needs nor inherits application-specific or hosted credentials.
 | Node.js 24       | Supported    | Exact maintained major                                |
 | npm              | Supported    | Lockfile-backed install and CLI                       |
 | macOS            | Supported    | Directly exercised with Docker/Colima                 |
-| Linux            | Supported    | Ubuntu arm64 installed-tarball fixture proof passed   |
+| Linux            | Supported    | Ubuntu x64 CI and Bookworm arm64 Colima proofs        |
 | WSL              | Experimental | Must be exercised and documented before support claim |
 | Native Windows   | Unsupported  | Path, Docker, signal, and shell behavior unproven     |
 | pnpm             | Unsupported  | Detection is informational until direct proof exists  |

@@ -31,7 +31,7 @@ const makeTreeWritable = async (path) => {
   }
 };
 const createArtifactRoot = async () => {
-  const parent = await mkdtemp(join(tmpdir(), "blendcalc-rehearsal-test-"));
+  const parent = await mkdtemp(join(tmpdir(), "rehearsal-baseline-test-"));
   roots.push(parent);
   return join(parent, ".rehearsal");
 };

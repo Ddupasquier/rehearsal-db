@@ -6,23 +6,123 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  npm:
+  prepare:
     runs-on: ubuntu-latest
-    environment: npm
+    outputs:
+      package_name: ${{ steps.candidate.outputs.package_name }}
+      package_version: ${{ steps.candidate.outputs.package_version }}
+      tarball: ${{ steps.candidate.outputs.tarball }}
+      sha1: ${{ steps.candidate.outputs.sha1 }}
+      sha256: ${{ steps.candidate.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Validate and pack the exact release candidate
+        id: candidate
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor HEAD origin/main
+
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          PACKAGE_PRIVATE="$(node -p "require('./package.json').private")"
+
+          test "$RELEASE_TAG" = "v$PACKAGE_VERSION"
+          test "$RELEASE_PRERELEASE" = "true"
+          test "$PACKAGE_PRIVATE" = "false"
+          case "$PACKAGE_VERSION" in
+            *-*) ;;
+            *) echo "The beta workflow refuses a stable version." >&2; exit 1 ;;
+          esac
+
+          npm pack --json --ignore-scripts > pack-result.json
+          TARBALL="$(node -p "JSON.parse(require('fs').readFileSync('pack-result.json', 'utf8'))[0].filename")"
+          SHA1="$(sha1sum "$TARBALL" | cut -d' ' -f1)"
+          SHA256="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
+
+          node -e "const fs=require('fs'); fs.writeFileSync('release-metadata.json', JSON.stringify({name:process.argv[1],version:process.argv[2],tag:process.argv[3],tarball:process.argv[4],sha1:process.argv[5],sha256:process.argv[6]}, null, 2)+'\n')" "$PACKAGE_NAME" "$PACKAGE_VERSION" "$RELEASE_TAG" "$TARBALL" "$SHA1" "$SHA256"
+
+          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "sha1=$SHA1" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-release-candidate
+          path: |
+            ${{ steps.candidate.outputs.tarball }}
+            release-metadata.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BOOTSTRAP_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
+      PACKAGE_VERSION: ${{ needs.prepare.outputs.package_version }}
+      TARBALL: ${{ needs.prepare.outputs.tarball }}
+      EXPECTED_SHA1: ${{ needs.prepare.outputs.sha1 }}
+      EXPECTED_SHA256: ${{ needs.prepare.outputs.sha256 }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-release-candidate
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-          cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run check
-      - name: Require an explicitly publishable manifest
-        run: node -e "const p=require('./package.json'); if(p.private!==false) throw new Error('package.json private must be explicitly set to false in the approved release')"
-      - run: npm publish --access public --provenance
+      - name: Verify the approved artifact
+        run: |
+          echo "$EXPECTED_SHA1  $TARBALL" | sha1sum --check --strict
+          echo "$EXPECTED_SHA256  $TARBALL" | sha256sum --check --strict
+      - name: Refuse a bootstrap token after the first beta
+        if: ${{ env.BOOTSTRAP_NPM_TOKEN != '' }}
+        run: test "$PACKAGE_VERSION" = "0.1.0-beta.0"
+      - name: Publish with trusted OIDC
+        if: ${{ env.BOOTSTRAP_NPM_TOKEN == '' }}
+        run: npm publish "$TARBALL" --access public --tag beta --provenance
+      - name: Bootstrap the first package with a temporary token
+        if: ${{ env.BOOTSTRAP_NPM_TOKEN != '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ env.BOOTSTRAP_NPM_TOKEN }}
+        run: npm publish "$TARBALL" --access public --tag beta --provenance
+      - name: Verify the registry artifact and executable
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            REGISTRY_SHA1="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.shasum 2>/dev/null || true)"
+            if test "$REGISTRY_SHA1" = "$EXPECTED_SHA1"; then
+              break
+            fi
+            if test "$attempt" = "6"; then
+              echo "Registry artifact did not match the approved candidate." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+          VERIFY_DIR="$(mktemp -d)"
+          cd "$VERIFY_DIR"
+          npm init --yes >/dev/null
+          npm install --ignore-scripts "$PACKAGE_NAME@$PACKAGE_VERSION"
+          npx --no-install rehearsal --help >/dev/null
+          npm audit signatures

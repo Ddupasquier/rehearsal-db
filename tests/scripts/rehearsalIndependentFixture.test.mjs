@@ -111,7 +111,7 @@ afterEach(async () => {
 });
 
 describe("independent Rehearsal fixture", () => {
-  it("uses the public config and CLI plan without BlendCalc schema knowledge or mutations", async () => {
+  it("uses the public config and CLI plan without consuming-project schema knowledge or mutations", async () => {
     const root = await createProject();
     const before = await hashTree(root);
     const explain = JSON.parse(
