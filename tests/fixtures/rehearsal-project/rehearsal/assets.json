@@ -1,0 +1,8 @@
+[
+  {
+    "bucket": "fixture-assets",
+    "objectPath": "proof/exact-byte.txt",
+    "contentType": "text/plain",
+    "file": "rehearsal/exact-byte.txt"
+  }
+]
