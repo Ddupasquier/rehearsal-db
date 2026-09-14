@@ -90,5 +90,9 @@ may use these explicit subpaths:
 - `@rehearsal/db/process-environment`
 - `@rehearsal/db/service-environment`
 
+These advanced entry points are ESM JavaScript APIs in the first beta. The root
+configuration and sanitization API has TypeScript declarations; the advanced subpaths do
+not yet promise a typed surface.
+
 Undocumented files under `scripts/` are package internals and are not compatibility
 contracts.

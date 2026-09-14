@@ -26,18 +26,21 @@ row/FK verification, candidate reconciliation, and final migration-ledger verifi
 
 ## Independent fixture
 
+Measured again on 2026-09-14 with the same local macOS arm64 toolchain after the final
+documentation and package-contract sweep.
+
 Corpus: one synthetic row, one table, one represented migration, one valid candidate,
 and one deliberately invalid candidate.
 
 | Phase                                         | Time    |
 | --------------------------------------------- | ------- |
-| Baseline creation and plan                    | 74 ms   |
-| Installed-package valid CLI run and app proof | 42.04 s |
-| Reset, stop, restart, and discard lifecycle   | 62.08 s |
-| Installed-package invalid refusal and cleanup | 34.13 s |
+| Baseline creation and plan                    | 81 ms   |
+| Installed-package valid CLI run and app proof | 42.70 s |
+| Reset, stop, restart, and discard lifecycle   | 63.95 s |
+| Installed-package invalid refusal and cleanup | 35.09 s |
 
 Most fixture time is local Supabase container lifecycle overhead. The fixture installs
-the exact prospective npm tarball before both executions. The failure timing includes
+the exact packed release candidate before both executions. The failure timing includes
 rebuilding the baseline runtime, applying the valid prefix candidate, refusing the
 invalid SQL candidate, and removing the untrusted runtime.
 
