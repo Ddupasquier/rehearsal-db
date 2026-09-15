@@ -98,7 +98,7 @@ describe("Rehearsal diagnostics", () => {
       data: { state: "READY", credentials: canaries },
     });
     expect(result.schemaVersion).toBe(1);
-    expect(result.rehearsalVersion).toBe("0.1.0-beta.1");
+    expect(result.rehearsalVersion).toBe("0.1.0-beta.2");
     expect(result.data.state).toBe("READY");
     expect(JSON.stringify(result)).not.toContain("never-print-this-password");
   });

@@ -77,7 +77,7 @@ invariants. Reset restores and reproves the exact starting data.
 Install the current beta from npm:
 
 ```bash
-npm install --save-dev @rehearsal-db/core
+npm install --save-dev @rehearsal-db/core@beta
 ```
 
 Contributors testing an unreleased change can use `npm link` or install the tarball

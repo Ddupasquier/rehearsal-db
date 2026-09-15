@@ -86,6 +86,17 @@ describe("documented CLI contract", () => {
     }
   });
 
+  it("installs the current prerelease through the beta distribution tag", async () => {
+    const [readme, gettingStarted] = await Promise.all([
+      readFile(join(root, "README.md"), "utf8"),
+      readFile(join(root, "docs/getting-started.md"), "utf8"),
+    ]);
+    const installCommand = "npm install --save-dev @rehearsal-db/core@beta";
+
+    expect(readme).toContain(installCommand);
+    expect(gettingStarted).toContain(installCommand);
+  });
+
   it("keeps the copyable baseline inputs aligned with the proved fixture", async () => {
     const [gettingStarted, policy, ledger, records, historicalMigration] =
       await Promise.all([

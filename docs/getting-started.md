@@ -35,7 +35,7 @@ its labeled local runtime. It does not need a hosted Supabase project or credent
 ## 1. Install and initialize
 
 ```bash
-npm install --save-dev @rehearsal-db/core
+npm install --save-dev @rehearsal-db/core@beta
 npx rehearsal init
 ```
 

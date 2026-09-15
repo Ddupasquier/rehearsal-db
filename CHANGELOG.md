@@ -5,6 +5,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.2] - 2026-09-15
+
 ### Fixed
 
 - Generate `rehearsal.config.mjs` so first-time initialization works in both CommonJS
@@ -13,6 +15,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   baseline instead of rendering missing result fields as `undefined`.
 - Keep the copyable getting-started migration bytes identical to its migration-ledger
   example so the documented runtime replay passes exact-history verification.
+- Install the current prerelease through npm's `beta` tag so new projects do not resolve
+  the superseded bootstrap release from npm's historical `latest` tag.
 
 ### Security
 
@@ -68,6 +72,7 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.1...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.2...HEAD
+[0.1.0-beta.2]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.1...v0.1.0-beta.2
 [0.1.0-beta.1]: https://github.com/Ddupasquier/rehearsal-db/releases/tag/v0.1.0-beta.1
 [0.1.0-beta.0]: https://github.com/Ddupasquier/rehearsal-db/releases/tag/v0.1.0-beta.0
