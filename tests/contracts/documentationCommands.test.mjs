@@ -87,30 +87,38 @@ describe("documented CLI contract", () => {
   });
 
   it("keeps the copyable baseline inputs aligned with the proved fixture", async () => {
-    const [gettingStarted, policy, ledger, records] = await Promise.all([
-      readFile(join(root, "docs/getting-started.md"), "utf8"),
-      readFile(
-        join(
-          root,
-          "tests/fixtures/rehearsal-project/rehearsal/sanitization-policy.json",
+    const [gettingStarted, policy, ledger, records, historicalMigration] =
+      await Promise.all([
+        readFile(join(root, "docs/getting-started.md"), "utf8"),
+        readFile(
+          join(
+            root,
+            "tests/fixtures/rehearsal-project/rehearsal/sanitization-policy.json",
+          ),
+          "utf8",
         ),
-        "utf8",
-      ),
-      readFile(
-        join(
-          root,
-          "tests/fixtures/rehearsal-project/rehearsal/migration-ledger.json",
+        readFile(
+          join(
+            root,
+            "tests/fixtures/rehearsal-project/rehearsal/migration-ledger.json",
+          ),
+          "utf8",
         ),
-        "utf8",
-      ),
-      readFile(
-        join(
-          root,
-          "tests/fixtures/rehearsal-project/rehearsal/sanitized-data.ndjson",
+        readFile(
+          join(
+            root,
+            "tests/fixtures/rehearsal-project/rehearsal/sanitized-data.ndjson",
+          ),
+          "utf8",
         ),
-        "utf8",
-      ),
-    ]);
+        readFile(
+          join(
+            root,
+            "tests/fixtures/rehearsal-project/supabase/migrations/20260101000000_create_widgets.sql",
+          ),
+          "utf8",
+        ),
+      ]);
     const documentedJson = [
       ...gettingStarted.matchAll(/```json\n([\s\S]*?)\n```/gu),
     ].map(([, source]) => JSON.parse(source));
@@ -118,6 +126,10 @@ describe("documented CLI contract", () => {
     expect(documentedJson).toContainEqual(JSON.parse(policy));
     expect(documentedJson).toContainEqual(JSON.parse(ledger));
     expect(documentedJson).toContainEqual(JSON.parse(records));
+    const documentedSql = [
+      ...gettingStarted.matchAll(/```sql\n([\s\S]*?)\n```/gu),
+    ].map(([, source]) => source);
+    expect(documentedSql).toContain(historicalMigration.trimEnd());
   });
 
   it("keeps npm publication behind an exact-artifact human gate", async () => {

@@ -515,9 +515,8 @@ export const inspectDetectedProject = async ({
   };
 };
 
-export const renderDetectedConfig = (
-  detected,
-) => `import { defineRehearsalConfig } from "@rehearsal-db/core";
+export const renderDetectedConfig = (detected) => `// @ts-check
+import { defineRehearsalConfig } from "@rehearsal-db/core";
 
 export default defineRehearsalConfig({
 	schemaVersion: 1,

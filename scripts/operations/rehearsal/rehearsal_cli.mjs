@@ -362,7 +362,7 @@ const runApplicationProof = async (planOptions) => {
 const runInit = async ({ flags }) => {
   const detected = await inspectDetectedProject({ projectRoot });
   const source = renderDetectedConfig(detected);
-  const destination = join(projectRoot, "rehearsal.config.ts");
+  const destination = join(projectRoot, "rehearsal.config.mjs");
   let existingPath = null;
   try {
     existingPath = await findRehearsalConfigPath({ projectRoot });

@@ -5,6 +5,15 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Fixed
+
+- Generate `rehearsal.config.mjs` so first-time initialization works in both CommonJS
+  and ESM projects instead of failing when a fresh npm project declares CommonJS.
+- Report the exact table and represented-migration counts after creating a synthetic
+  baseline instead of rendering missing result fields as `undefined`.
+- Keep the copyable getting-started migration bytes identical to its migration-ledger
+  example so the documented runtime replay passes exact-history verification.
+
 ### Security
 
 - Removed the completed first-package bootstrap credential path. All future publication

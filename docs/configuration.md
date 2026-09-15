@@ -1,6 +1,8 @@
 # Configuration reference
 
-`rehearsal.config.ts` is executable configuration with a strict versioned schema.
+`rehearsal.config.mjs` is executable configuration with a strict versioned schema. The
+initializer uses an explicit ESM extension so the same generated file works in CommonJS
+and ESM projects.
 Unknown fields and unknown schema versions are errors, not warnings.
 
 ```ts

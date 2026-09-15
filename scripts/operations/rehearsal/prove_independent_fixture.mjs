@@ -166,7 +166,7 @@ const main = async () => {
     executeCliOrThrow({ cwd, args: ["init", "--json"], label: "init" });
     commandsProven.push("init");
     let startedAt = performance.now();
-    executeCliOrThrow({
+    const baselineCreate = executeCliOrThrow({
       cwd,
       args: [
         "baseline",
@@ -178,6 +178,16 @@ const main = async () => {
       ],
       label: "baseline create",
     });
+    const baselineResult = JSON.parse(baselineCreate.stdout);
+    if (
+      baselineResult.data?.rowCount !== 1 ||
+      baselineResult.data?.tableCount !== 1 ||
+      baselineResult.data?.migrationCount !== 1
+    ) {
+      throw new Error(
+        `The baseline-create result did not report its exact counts: ${baselineCreate.stdout}`,
+      );
+    }
     commandsProven.push("baseline create");
     const validPlan = await buildRehearsalPlan({ projectRoot: cwd });
     timings.baselineAndPlanMs = Math.round(performance.now() - startedAt);
