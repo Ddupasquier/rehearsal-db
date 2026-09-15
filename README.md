@@ -7,9 +7,9 @@ historical edge cases that synthetic seed data rarely represents.
 Version 0.1 targets Supabase CLI projects running PostgreSQL locally. It does not yet
 claim support for arbitrary unmanaged PostgreSQL installations.
 
-This repository contains the first Rehearsal 0.x beta candidate. The package remains
-intentionally private until the exact release artifact and publication are approved.
-Nothing in this repository enables production access.
+Public beta releases are distributed through npm as `@rehearsal/db`. Publication is
+restricted to reviewed artifacts from protected `main`; source availability alone does
+not enable production access.
 
 ## Documentation
 
@@ -74,14 +74,14 @@ invariants. Reset restores and reproves the exact starting data.
 
 ## Quick start
 
-Install the beta from npm once the first approved release is available:
+Install the current beta from npm:
 
 ```bash
 npm install --save-dev @rehearsal/db
 ```
 
-Before that release, contributors can use `npm link` or install the tarball produced by
-`npm pack` from a local checkout. In a consuming project, the commands are:
+Contributors testing an unreleased change can use `npm link` or install the tarball
+produced by `npm pack` from a local checkout. In a consuming project, the commands are:
 
 ```bash
 npx rehearsal init

@@ -5,6 +5,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.0] - 2026-09-14
+
 ### Added
 
 - Versioned strict configuration and safe initializer contract.
@@ -43,4 +45,5 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   uses short-lived trusted OIDC, and every release tag must already exist on protected
   `main`.
 
-This section remains unreleased until the exact beta artifact is approved and published.
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.0...HEAD
+[0.1.0-beta.0]: https://github.com/Ddupasquier/rehearsal-db/releases/tag/v0.1.0-beta.0
