@@ -78,7 +78,6 @@ jobs:
       contents: read
       id-token: write
     env:
-      BOOTSTRAP_NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
       PACKAGE_VERSION: ${{ needs.prepare.outputs.package_version }}
       TARBALL: ${{ needs.prepare.outputs.tarball }}
@@ -97,16 +96,7 @@ jobs:
         run: |
           echo "$EXPECTED_SHA1  $TARBALL" | sha1sum --check --strict
           echo "$EXPECTED_SHA256  $TARBALL" | sha256sum --check --strict
-      - name: Refuse a bootstrap token after the first beta
-        if: ${{ env.BOOTSTRAP_NPM_TOKEN != '' }}
-        run: test "$PACKAGE_VERSION" = "0.1.0-beta.1"
       - name: Publish with trusted OIDC
-        if: ${{ env.BOOTSTRAP_NPM_TOKEN == '' }}
-        run: npm publish "$TARBALL" --access public --tag beta --provenance
-      - name: Bootstrap the first package with a temporary token
-        if: ${{ env.BOOTSTRAP_NPM_TOKEN != '' }}
-        env:
-          NODE_AUTH_TOKEN: ${{ env.BOOTSTRAP_NPM_TOKEN }}
         run: npm publish "$TARBALL" --access public --tag beta --provenance
       - name: Verify the registry artifact and executable
         run: |
