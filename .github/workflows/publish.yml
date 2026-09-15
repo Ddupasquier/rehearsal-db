@@ -110,13 +110,13 @@ jobs:
         run: npm publish "$TARBALL" --access public --tag beta --provenance
       - name: Verify the registry artifact and executable
         run: |
-          for attempt in 1 2 3 4 5 6; do
+          for attempt in {1..36}; do
             REGISTRY_SHA1="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.shasum 2>/dev/null || true)"
             if test "$REGISTRY_SHA1" = "$EXPECTED_SHA1"; then
               break
             fi
-            if test "$attempt" = "6"; then
-              echo "Registry artifact did not match the approved candidate." >&2
+            if test "$attempt" = "36"; then
+              echo "Registry artifact did not match the approved candidate after six minutes." >&2
               exit 1
             fi
             sleep 10

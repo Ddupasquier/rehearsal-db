@@ -143,6 +143,8 @@ describe("documented CLI contract", () => {
     expect(workflow).toContain('test "$PACKAGE_VERSION" = "0.1.0-beta.1"');
     expect(workflow).toContain("--access public --tag beta --provenance");
     expect(workflow).toContain('REGISTRY_SHA1="$(npm view');
+    expect(workflow).toContain("for attempt in {1..36}");
+    expect(workflow).toContain("after six minutes");
     expect(prepareJob).not.toContain("npm publish");
     expect(manifest.publishConfig).toEqual({
       access: "public",

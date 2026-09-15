@@ -66,7 +66,9 @@ versions.
    the approved version and checksum.
 10. Verify public visibility, ownership, provenance, registry SHA-1, README rendering,
     exact-version clean installation, CLI execution, signatures, and the unrelated
-    installed Docker fixture.
+    installed Docker fixture. Allow up to six minutes for a first package to propagate
+    through the public registry before classifying a missing packument as a release
+    failure.
 11. Replace consuming projects' temporary Git/archive references only on their own
     protected integration branches and rerun their complete verification.
 
