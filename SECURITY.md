@@ -10,7 +10,7 @@ target, or source record.
 
 Supported security updates cover the latest released 0.x minor during beta. A security
 fix may deliberately tighten configuration or refuse a workflow that an earlier beta
-accepted. Until the first release exists, reports apply to the current beta candidate.
+accepted. During beta, reports apply to the latest published release and current `main`.
 
 The threat boundary and explicit non-guarantees live in [README.md](README.md). Every
 release candidate must pass secret-pattern checks, dependency and package-content

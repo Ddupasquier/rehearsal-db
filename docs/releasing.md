@@ -5,8 +5,9 @@ environment. The workflow builds and hashes the candidate before the environment
 approval gate, then publishes those exact bytes with npm provenance. A local working
 tree is never the release source.
 
-`package.json` currently contains `"private": true`, so an accidental tag or GitHub
-release cannot publish the package while the first beta is being prepared.
+The initial `0.1.0-beta.0` release branch is the first change allowed to set
+`"private": false`. Publication still requires the exact protected-main tag, prerelease
+flag, artifact checks, and protected `npm` environment gate described below.
 
 ## One-time first-package bootstrap
 

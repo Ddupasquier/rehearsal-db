@@ -149,6 +149,7 @@ describe("documented CLI contract", () => {
       tag: "beta",
       provenance: true,
     });
+    expect(manifest.private).toBe(false);
     expect(releaseGuide).toContain("One-time first-package bootstrap");
     expect(releaseGuide).toContain("explicit publication authorization");
     expect(releaseGuide).toContain("**Bypass 2FA** enabled");
