@@ -199,7 +199,7 @@ describe("Rehearsal configuration", () => {
 
   it("keeps init non-mutating until --write and never overwrites config", async () => {
     const root = await makeProject();
-    const destination = join(root, "rehearsal.config.ts");
+    const destination = join(root, "rehearsal.config.mjs");
     const preview = JSON.parse(
       (
         await execute(process.execPath, [cliPath, "init", "--json"], {
@@ -220,9 +220,20 @@ describe("Rehearsal configuration", () => {
       ).stdout,
     );
     expect(written.data.mode).toBe("written");
-    expect(await readFile(destination, "utf8")).toContain(
-      'from "@rehearsal-db/core"',
+    const writtenSource = await readFile(destination, "utf8");
+    expect(writtenSource).toContain('from "@rehearsal-db/core"');
+    await writeFile(
+      destination,
+      writtenSource.replace(
+        '"@rehearsal-db/core"',
+        JSON.stringify(configurationModuleUrl),
+      ),
     );
+    await expect(
+      loadRehearsalConfig({ projectRoot: root }),
+    ).resolves.toMatchObject({
+      config: { project: { name: "fixture-project" } },
+    });
     await expect(
       execute(process.execPath, [cliPath, "init", "--write", "--json"], {
         cwd: root,

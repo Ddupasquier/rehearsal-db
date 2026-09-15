@@ -148,8 +148,8 @@ export const createSyntheticBaselineFromFiles = async ({
   return {
     generationId,
     migrationCutoff: baseline.migrationCutoff,
-    migrationCount: baseline.migrationCount,
+    migrationCount: Object.keys(baseline.migrations).length,
     rowCount: baseline.rowCount,
-    tableCount: baseline.tableCount,
+    tableCount: Object.keys(baseline.tableCounts).length,
   };
 };

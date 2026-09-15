@@ -22,7 +22,7 @@ never row bodies.
 
 ## What not to do
 
-- Do not point `rehearsal.config.ts` at a hosted URL.
+- Do not point `rehearsal.config.mjs` at a hosted URL.
 - Do not put a production connection string in `.rehearsal/runtime.env`.
 - Do not grant table-wide access merely because a view is inconvenient.
 - Do not commit sanitized baselines; sanitized data is still data.

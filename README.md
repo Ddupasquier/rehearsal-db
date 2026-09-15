@@ -102,9 +102,10 @@ npx rehearsal stop
 npx rehearsal discard
 ```
 
-`init` previews a typed `rehearsal.config.ts`; it writes only with `--write` and never
-overwrites an existing file. Review all detected values. Rehearsal intentionally does
-not detect, copy, or enable a hosted project.
+`init` previews a type-aware ESM `rehearsal.config.mjs`; it writes only with `--write`
+and never overwrites an existing file. The explicit `.mjs` extension makes the generated
+configuration executable in both CommonJS and ESM projects. Review all detected values.
+Rehearsal intentionally does not detect, copy, or enable a hosted project.
 
 `doctor` must end with `READY` before execution. `explain` and `run --dry-run` use the
 same immutable planner and perform no state-changing operations. If migrations are
