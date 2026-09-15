@@ -5,6 +5,11 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Security
+
+- Removed the completed first-package bootstrap credential path. All future publication
+  uses the package's trusted GitHub Actions OIDC publisher and cannot read an npm token.
+
 ## [0.1.0-beta.1] - 2026-09-14
 
 ### Changed

@@ -140,7 +140,6 @@ describe("documented CLI contract", () => {
     expect(workflow).toContain('test "$RELEASE_TAG" = "v$PACKAGE_VERSION"');
     expect(workflow).toContain('test "$RELEASE_PRERELEASE" = "true"');
     expect(workflow).toContain('test "$PACKAGE_PRIVATE" = "false"');
-    expect(workflow).toContain('test "$PACKAGE_VERSION" = "0.1.0-beta.1"');
     expect(workflow).toContain("--access public --tag beta --provenance");
     expect(workflow).toContain('REGISTRY_SHA1="$(npm view');
     expect(workflow).toContain("for attempt in {1..36}");
@@ -152,12 +151,14 @@ describe("documented CLI contract", () => {
       provenance: true,
     });
     expect(manifest.private).toBe(false);
-    expect(releaseGuide).toContain("One-time first-package bootstrap");
+    expect(workflow).not.toContain("NPM_TOKEN");
+    expect(workflow).not.toContain("NODE_AUTH_TOKEN");
+    expect(releaseGuide).toContain("Trusted publication boundary");
     expect(releaseGuide).toContain("explicit publication authorization");
-    expect(releaseGuide).toContain("**Bypass 2FA** enabled");
     expect(normalizedReleaseGuide).toContain(
-      "deletes the GitHub environment secret and revokes the temporary npm token",
+      "short-lived GitHub OIDC identity",
     );
+    expect(normalizedReleaseGuide).toContain("does not read an npm token");
   });
 
   it("states the initial support and product boundaries without overclaiming", async () => {
