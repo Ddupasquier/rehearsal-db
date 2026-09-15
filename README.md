@@ -7,7 +7,7 @@ historical edge cases that synthetic seed data rarely represents.
 Version 0.1 targets Supabase CLI projects running PostgreSQL locally. It does not yet
 claim support for arbitrary unmanaged PostgreSQL installations.
 
-Public beta releases are distributed through npm as `@rehearsal/db`. Publication is
+Public beta releases are distributed through npm as `@rehearsal-db/core`. Publication is
 restricted to reviewed artifacts from protected `main`; source availability alone does
 not enable production access.
 
@@ -77,7 +77,7 @@ invariants. Reset restores and reproves the exact starting data.
 Install the current beta from npm:
 
 ```bash
-npm install --save-dev @rehearsal/db
+npm install --save-dev @rehearsal-db/core
 ```
 
 Contributors testing an unreleased change can use `npm link` or install the tarball
@@ -129,7 +129,7 @@ unknown properties, paths outside the project root, non-loopback targets, duplic
 privileged ports, enabled hosted access, and permissive outbound networking.
 
 ```ts
-import { defineRehearsalConfig } from "@rehearsal/db";
+import { defineRehearsalConfig } from "@rehearsal-db/core";
 
 export default defineRehearsalConfig({
   schemaVersion: 1,

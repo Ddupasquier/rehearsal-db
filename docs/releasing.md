@@ -5,32 +5,36 @@ environment. The workflow builds and hashes the candidate before the environment
 approval gate, then publishes those exact bytes with npm provenance. A local working
 tree is never the release source.
 
-The initial `0.1.0-beta.0` release branch is the first change allowed to set
+The initial publishable `0.1.0-beta.1` release branch is the first change allowed to set
 `"private": false`. Publication still requires the exact protected-main tag, prerelease
 flag, artifact checks, and protected `npm` environment gate described below.
+
+`0.1.0-beta.0` was prepared under the unavailable `@rehearsal` npm scope and was never
+published. `0.1.0-beta.1` supersedes that candidate under `@rehearsal-db/core` without
+rewriting the earlier Git tag or GitHub prerelease.
 
 ## One-time first-package bootstrap
 
 npm trusted publishing and staged publishing are package-level settings, so they cannot
-be configured until `@rehearsal/db` exists in the registry. The first public version has
+be configured until `@rehearsal-db/core` exists in the registry. The first public version has
 a deliberately narrower bootstrap path:
 
-1. The npm owner enables 2FA and creates or confirms the public `@rehearsal` organization
+1. The npm owner enables 2FA and creates or confirms the public `@rehearsal-db` organization
    scope. Do not send a password, OTP, recovery code, or access token to another person.
 2. After the reviewed release change reaches protected `main`, the owner creates the
-   exact `v0.1.0-beta.0` GitHub release and marks it as a prerelease. The prepare job runs without npm credentials,
+   exact `v0.1.0-beta.1` GitHub release and marks it as a prerelease. The prepare job runs without npm credentials,
    packs the tag, and uploads its versioned tarball plus SHA-1 and SHA-256 metadata. The
    publish job waits at the protected environment and cannot run yet.
 3. The owner downloads or inspects that prepared artifact, confirms its version and
    checksum, and explicitly authorizes those exact bytes.
 4. Only then, the owner creates a short-lived granular npm token with read/write access
-   limited to the `@rehearsal` scope and **Bypass 2FA** enabled. npm requires that bypass
+   limited to the `@rehearsal-db` scope and **Bypass 2FA** enabled. npm requires that bypass
    for a non-interactive first publish; the environment approval remains the human
    release gate. Store the token only as the `NPM_TOKEN` secret in the protected GitHub
    `npm` environment.
 5. The owner approves the waiting `npm` deployment. GitHub Actions publishes the exact
    uploaded tarball with provenance. The workflow
-   refuses to use the bootstrap secret for any version other than `0.1.0-beta.0`.
+   refuses to use the bootstrap secret for any version other than `0.1.0-beta.1`.
 6. Immediately after the registry verification passes, the owner deletes the GitHub
    environment secret and revokes the temporary npm token.
 7. From the new package's npm settings, configure the trusted GitHub Actions publisher

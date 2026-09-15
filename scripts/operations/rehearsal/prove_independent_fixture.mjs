@@ -145,9 +145,9 @@ const main = async () => {
         "--input-type=module",
         "--eval",
         [
-          'import { validateSanitizationCoverage } from "@rehearsal/db";',
-          'import { createAndActivateBaseline } from "@rehearsal/db/baseline";',
-          'import { createMigrationReplayReceipt } from "@rehearsal/db/migrations";',
+          'import { validateSanitizationCoverage } from "@rehearsal-db/core";',
+          'import { createAndActivateBaseline } from "@rehearsal-db/core/baseline";',
+          'import { createMigrationReplayReceipt } from "@rehearsal-db/core/migrations";',
           "if (![validateSanitizationCoverage, createAndActivateBaseline, createMigrationReplayReceipt].every((value) => typeof value === 'function')) process.exit(1);",
         ].join("\n"),
       ],

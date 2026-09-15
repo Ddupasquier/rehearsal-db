@@ -99,7 +99,7 @@ jobs:
           echo "$EXPECTED_SHA256  $TARBALL" | sha256sum --check --strict
       - name: Refuse a bootstrap token after the first beta
         if: ${{ env.BOOTSTRAP_NPM_TOKEN != '' }}
-        run: test "$PACKAGE_VERSION" = "0.1.0-beta.0"
+        run: test "$PACKAGE_VERSION" = "0.1.0-beta.1"
       - name: Publish with trusted OIDC
         if: ${{ env.BOOTSTRAP_NPM_TOKEN == '' }}
         run: npm publish "$TARBALL" --access public --tag beta --provenance

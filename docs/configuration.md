@@ -4,7 +4,7 @@
 Unknown fields and unknown schema versions are errors, not warnings.
 
 ```ts
-import { defineRehearsalConfig } from "@rehearsal/db";
+import { defineRehearsalConfig } from "@rehearsal-db/core";
 
 export default defineRehearsalConfig({
   schemaVersion: 1,
@@ -83,12 +83,12 @@ invariants. See [adapters](adapters.md).
 The CLI is the primary interface. Baseline builders and project-owned refresh tooling
 may use these explicit subpaths:
 
-- `@rehearsal/db/baseline`
-- `@rehearsal/db/migrations`
-- `@rehearsal/db/schema`
-- `@rehearsal/db/diagnostics`
-- `@rehearsal/db/process-environment`
-- `@rehearsal/db/service-environment`
+- `@rehearsal-db/core/baseline`
+- `@rehearsal-db/core/migrations`
+- `@rehearsal-db/core/schema`
+- `@rehearsal-db/core/diagnostics`
+- `@rehearsal-db/core/process-environment`
+- `@rehearsal-db/core/service-environment`
 
 These advanced entry points are ESM JavaScript APIs in the first beta. The root
 configuration and sanitization API has TypeScript declarations; the advanced subpaths do

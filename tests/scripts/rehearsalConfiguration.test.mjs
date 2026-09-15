@@ -221,7 +221,7 @@ describe("Rehearsal configuration", () => {
     );
     expect(written.data.mode).toBe("written");
     expect(await readFile(destination, "utf8")).toContain(
-      'from "@rehearsal/db"',
+      'from "@rehearsal-db/core"',
     );
     await expect(
       execute(process.execPath, [cliPath, "init", "--write", "--json"], {

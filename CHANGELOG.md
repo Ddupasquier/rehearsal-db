@@ -5,6 +5,15 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.1] - 2026-09-14
+
+### Changed
+
+- Moved the unpublished beta package from the unavailable `@rehearsal` organization to
+  the project-owned `@rehearsal-db/core` package name.
+- Limited the one-time first-package credential to `0.1.0-beta.1`; `0.1.0-beta.0`
+  remains an unpublished, superseded GitHub release record.
+
 ## [0.1.0-beta.0] - 2026-09-14
 
 ### Added
@@ -41,9 +50,10 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - Child processes use allowlisted environments rather than ambient hosted credentials.
 - Package contents are scanned for runtime artifacts, source data, private application
   identifiers, credential formats, and hosted connection strings.
-- The one-time first-package credential is limited to `0.1.0-beta.0`; future publication
-  uses short-lived trusted OIDC, and every release tag must already exist on protected
-  `main`.
+- The one-time first-package credential is limited to the first publishable beta; future
+  publication uses short-lived trusted OIDC, and every release tag must already exist on
+  protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.0...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.1...HEAD
+[0.1.0-beta.1]: https://github.com/Ddupasquier/rehearsal-db/releases/tag/v0.1.0-beta.1
 [0.1.0-beta.0]: https://github.com/Ddupasquier/rehearsal-db/releases/tag/v0.1.0-beta.0

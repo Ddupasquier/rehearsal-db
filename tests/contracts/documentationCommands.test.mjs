@@ -140,7 +140,7 @@ describe("documented CLI contract", () => {
     expect(workflow).toContain('test "$RELEASE_TAG" = "v$PACKAGE_VERSION"');
     expect(workflow).toContain('test "$RELEASE_PRERELEASE" = "true"');
     expect(workflow).toContain('test "$PACKAGE_PRIVATE" = "false"');
-    expect(workflow).toContain('test "$PACKAGE_VERSION" = "0.1.0-beta.0"');
+    expect(workflow).toContain('test "$PACKAGE_VERSION" = "0.1.0-beta.1"');
     expect(workflow).toContain("--access public --tag beta --provenance");
     expect(workflow).toContain('REGISTRY_SHA1="$(npm view');
     expect(prepareJob).not.toContain("npm publish");

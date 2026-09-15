@@ -20,7 +20,7 @@ The package exports `validateSanitizationCoverage` and
 import {
   applySanitizationAction,
   validateSanitizationCoverage,
-} from "@rehearsal/db";
+} from "@rehearsal-db/core";
 
 validateSanitizationCoverage({ policy, schemaTables });
 
