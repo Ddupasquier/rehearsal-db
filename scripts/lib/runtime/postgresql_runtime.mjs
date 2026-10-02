@@ -28,10 +28,13 @@ import {
 } from "../rehearsal/runtime_restore.mjs";
 import { readBoundRuntimeSanitizationPolicy } from "../rehearsal/sanitization_policy.mjs";
 import { ensureLocalContainerRuntime } from "../environment/local_supabase.mjs";
+import { parseRuntimeInvocation } from "./runtime_target.mjs";
 
 const repositoryRoot = process.cwd();
+const invocation = parseRuntimeInvocation();
 const loadedConfiguration = await loadRehearsalConfig({
   projectRoot: repositoryRoot,
+  configPath: invocation.configPath,
 });
 const { config, paths: configuredPaths } = loadedConfiguration;
 const artifactRoot = configuredPaths.artifactDirectory;
@@ -51,7 +54,7 @@ const image = config.postgresql.image;
 const database = config.postgresql.database;
 const databaseUser = config.postgresql.user;
 const databasePort = config.runtime.ports.database;
-const action = process.argv[2] ?? "status";
+const action = invocation.action;
 const applicationMigrations = new URL(
   "./",
   pathToFileURL(`${configuredPaths.migrationDirectory}/`),
@@ -650,9 +653,7 @@ const migrateRuntime = async () => {
   const { baseline } = await readActive();
   await startRuntime();
   const receipt = await readCandidateReceipt(baseline);
-  const confirmation = process.argv
-    .find((argument) => argument.startsWith("--confirm-candidates="))
-    ?.slice("--confirm-candidates=".length);
+  const confirmation = invocation.confirmation;
   if (confirmation !== receipt.candidateSha256) {
     throw new Error(
       "Candidate migration confirmation is missing or does not match the exact SHA-256.",

@@ -309,6 +309,39 @@ const main = async () => {
       );
     }
     commandsProven.push("baseline create");
+
+    const alternateConfigPath = join(cwd, "rehearsal.alternate.config.mjs");
+    const alternateArtifactDirectory = "alternate/.rehearsal";
+    const alternateConfig = fixtureConfig
+      .toString("utf8")
+      .replaceAll(projectId, `${projectId}-alternate`)
+      .replace(
+        'runtimeWorkdir: ".rehearsal/runtime"',
+        `runtimeWorkdir: "${alternateArtifactDirectory}/runtime"`,
+      )
+      .replace(
+        'artifactDirectory: ".rehearsal"',
+        `artifactDirectory: "${alternateArtifactDirectory}"`,
+      )
+      .replace(
+        'proofCommand: "npm run proof",',
+        `proofCommand: "npm run proof",\n    environmentFile: "${alternateArtifactDirectory}/runtime.env",`,
+      );
+    await writeFile(alternateConfigPath, alternateConfig);
+    const alternateStatus = executeCli({
+      cwd,
+      args: ["status", "--config=rehearsal.alternate.config.mjs", "--json"],
+    });
+    if (
+      alternateStatus.status === 0 ||
+      !alternateStatus.stdout.includes(alternateArtifactDirectory)
+    ) {
+      throw new Error(
+        `A lifecycle command did not stay isolated to its explicitly selected config: ${alternateStatus.stdout || alternateStatus.stderr}`,
+      );
+    }
+    commandsProven.push("alternate config isolation");
+
     const validPlan = await buildRehearsalPlan({ projectRoot: cwd });
     timings.baselineAndPlanMs = Math.round(performance.now() - startedAt);
 
