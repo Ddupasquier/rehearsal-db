@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       package_name: ${{ steps.candidate.outputs.package_name }}
       package_version: ${{ steps.candidate.outputs.package_version }}
@@ -72,7 +72,7 @@ jobs:
 
   publish:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: npm
     permissions:
       contents: read
