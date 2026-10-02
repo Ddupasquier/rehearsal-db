@@ -98,6 +98,7 @@ Start here:
 - [Getting started](docs/getting-started.md) — set up your own project
 - [Safe hands-on tutorial](docs/tutorial.md) — try the full flow in a disposable project
 - [Troubleshooting](docs/troubleshooting.md) — fix common setup problems
+- [Next steps](docs/roadmap.md) — see the current product sequence
 
 Reference:
 
