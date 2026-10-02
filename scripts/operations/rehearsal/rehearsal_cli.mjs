@@ -475,7 +475,7 @@ const reviewPolicyInteractively = async ({ state, flags }) => {
         "No row values are displayed or changed by this step.",
         "The safest replacement-oriented choices appear first.",
       ].join("\n"),
-      "Prepare the script",
+      "Review the script",
     );
   }
   const policy = await completePolicyDraft({
@@ -489,12 +489,12 @@ const reviewPolicyInteractively = async ({ state, flags }) => {
         options: [
           {
             label: "Replace with synthetic data",
-            hint: "Safest default for user-provided values",
+            hint: "Safest default",
             value: "REPLACE WITH SYNTHETIC",
           },
           {
             label: "Pseudonymize consistently",
-            hint: "Preserve stable relationships without original values",
+            hint: "Stable links without original values",
             value: "PSEUDONYMIZE",
           },
           {
@@ -504,7 +504,7 @@ const reviewPolicyInteractively = async ({ state, flags }) => {
           { label: "Exclude this field", value: "EXCLUDE" },
           {
             label: "Keep exactly",
-            hint: "Use only when retaining the value is explicitly safe",
+            hint: "Only for values explicitly safe to retain",
             value: "KEEP EXACTLY",
           },
         ],
@@ -649,7 +649,7 @@ const runGuidedHome = async ({ flags, planOptions }) => {
   if (state.node.supported && state.runtime) {
     options.push({
       label: "Manage the local runtime",
-      hint: "Status, verify, reset, stop, or discard",
+      hint: "Status, verification, and cleanup",
       command: "manage-runtime",
     });
   }
@@ -721,7 +721,6 @@ const runGuidedHome = async ({ flags, planOptions }) => {
     flags,
   });
   if (selected.command === "exit") {
-    console.log("No changes made.");
     return null;
   }
   if (selected.command === "node-help") {
@@ -1576,8 +1575,11 @@ const main = async () => {
       guided: true,
     });
   }
-  if (useStyledPrompts(flags))
-    prompts.outro("Stage saved. See you next rehearsal.");
+  if (useStyledPrompts(flags)) {
+    prompts.outro("See you at the next rehearsal.");
+  } else {
+    console.log("See you at the next rehearsal.");
+  }
 };
 
 try {

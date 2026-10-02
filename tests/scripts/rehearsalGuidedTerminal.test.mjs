@@ -91,7 +91,8 @@ describe("guided terminal journey", () => {
 
     expect(output.match(/Safe local migration testing/gu)).toHaveLength(2);
     expect(output).toContain("Usage: rehearsal <command> [options]");
-    expect(output).toContain("No changes made.");
+    expect(output).not.toContain("No changes made.");
+    expect(output).toContain("See you at the next rehearsal.");
     expect({
       projectVisible: output.includes("guided-terminal-fixture"),
       setupVisible: output.includes("Set the stage"),
@@ -122,6 +123,6 @@ describe("guided terminal journey", () => {
     expect(output).toContain("REHEARSAL · Safe local migration testing");
     expect(output).toContain("guided-terminal-fixture");
     expect(output).toContain("Set the stage");
-    expect(output).toContain("Stage saved. See you next rehearsal.");
+    expect(output).toContain("See you at the next rehearsal.");
   }, 15_000);
 });
