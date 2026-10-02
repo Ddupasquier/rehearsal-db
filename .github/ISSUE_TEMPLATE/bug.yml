@@ -10,7 +10,7 @@ body:
     id: versions
     attributes:
       label: Environment
-      description: OS, architecture, Node, Supabase CLI, and Docker versions.
+      description: Paste the environment lines from `npx rehearsal support`, or list OS, architecture, Node, Supabase CLI, and Docker versions.
     validations:
       required: true
   - type: textarea

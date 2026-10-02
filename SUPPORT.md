@@ -6,6 +6,11 @@ Docker engine, the failing command, safe diagnostics, and the smallest reproduct
 The first beta does not yet maintain a separate public discussion or feature-request
 channel.
 
+Run `npx rehearsal support` or choose **Get help** in the guide to collect the environment
+and readiness portion without assembling it by hand. The report intentionally excludes
+project paths, row values, credentials, migration SQL, and baseline identifiers. Review
+the report before pasting it into an issue.
+
 Do not include credentials, connection strings, source rows, baseline artifacts, private
 URLs, or proprietary migrations. Report security problems through private vulnerability
 reporting as described in [SECURITY.md](SECURITY.md).

@@ -203,6 +203,23 @@ const main = async () => {
     }
     executeCliOrThrow({ cwd, args: ["init", "--json"], label: "init" });
     commandsProven.push("init");
+    const support = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        args: ["support", "--json"],
+        label: "support",
+      }).stdout,
+    );
+    if (
+      support.data?.privacy?.reviewBeforeSharing !== true ||
+      !support.data?.privacy?.omits?.includes("credentials") ||
+      JSON.stringify(support).includes(cwd)
+    ) {
+      throw new Error(
+        "The installed support report did not preserve its privacy contract.",
+      );
+    }
+    commandsProven.push("support");
     let startedAt = performance.now();
     const policyPath = join(cwd, "rehearsal/sanitization-policy.json");
     const reviewedPolicy = await readFile(policyPath);

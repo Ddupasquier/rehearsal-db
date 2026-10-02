@@ -11,6 +11,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   exceptions, per-table summaries, and real-PTY coverage of the bulk-review journey.
 - Bounded project-local discovery for baseline records, migration ledgers, and optional
   Storage manifests, plus a value-free structural preflight before activation.
+- A guided `Get help` action and scriptable `rehearsal support` report with tool
+  versions, readiness statuses, privacy guarantees, and a direct bug-report link.
 
 ### Changed
 
@@ -20,6 +22,9 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - The baseline guide offers detected inputs instead of requiring memorized paths,
   validates referenced Storage files up front, previews counts without row values, and
   returns to the guide with an actionable message when validation fails.
+- Beta support no longer requires users to assemble environment details by hand; the
+  generated report omits project paths, row values, credentials, migration SQL, and
+  baseline identifiers and remains available before setup is complete.
 
 ## [0.1.0-beta.4] - 2026-10-01
 
