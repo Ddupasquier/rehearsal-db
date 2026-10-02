@@ -11,6 +11,7 @@ import { join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
+import * as prompts from "@clack/prompts";
 import {
   RehearsalError,
   createRehearsalResult,
@@ -45,6 +46,11 @@ import {
   summarizeRehearsalSetup,
 } from "../../lib/rehearsal/setup.mjs";
 import { formatCount } from "../../lib/rehearsal/human_output.mjs";
+import {
+  applyReviewedPolicy,
+  completePolicyDraft,
+  readReviewablePolicyDraft,
+} from "../../lib/rehearsal/policy_review.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = process.cwd();
@@ -54,6 +60,7 @@ const managerPath = join(
   packageRoot,
   "scripts/operations/database/manage_rehearsal_database.mjs",
 );
+let lastGuidedDetails;
 
 const parseArguments = (arguments_) => {
   const flags = {
@@ -255,12 +262,27 @@ const terminalStyle = (flags, code, value) =>
 const isHumanTerminal = (flags) =>
   !flags.json && process.stdin.isTTY && process.stdout.isTTY;
 
+const useStyledPrompts = (flags) => isHumanTerminal(flags) && useColor(flags);
+
 const formatDuration = (durationMs) =>
   durationMs < 1_000
     ? `${Math.round(durationMs)}ms`
     : `${(durationMs / 1_000).toFixed(1)}s`;
 
-const promptForChoice = async ({ message, options }) => {
+const promptForChoice = async ({ message, options, flags = {} }) => {
+  if (useStyledPrompts(flags)) {
+    const selected = await prompts.select({
+      message,
+      options: options.map((option) => ({
+        value: option,
+        label: option.label,
+        hint: option.hint,
+      })),
+    });
+    return prompts.isCancel(selected)
+      ? options.find((option) => option.command === "exit")
+      : selected;
+  }
   const prompt = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -283,7 +305,15 @@ const promptForChoice = async ({ message, options }) => {
   }
 };
 
-const promptForConfirmation = async (message) => {
+const promptForConfirmation = async (
+  message,
+  flags = {},
+  { cancelValue = false } = {},
+) => {
+  if (useStyledPrompts(flags)) {
+    const accepted = await prompts.confirm({ message, initialValue: false });
+    return prompts.isCancel(accepted) ? cancelValue : accepted;
+  }
   const prompt = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -298,7 +328,27 @@ const promptForConfirmation = async (message) => {
   }
 };
 
-const promptForPath = async ({ message, defaultValue, optional = false }) => {
+const promptForPath = async ({
+  message,
+  defaultValue,
+  optional = false,
+  flags = {},
+  validate,
+}) => {
+  if (useStyledPrompts(flags)) {
+    const answer = await prompts.text({
+      message,
+      placeholder: defaultValue ?? (optional ? "Leave blank for none" : ""),
+      defaultValue,
+      validate: (value) => {
+        const resolved = String(value ?? defaultValue ?? "").trim();
+        if (!optional && !resolved) return "Enter a value.";
+        return resolved && validate ? validate(resolved) : undefined;
+      },
+    });
+    if (prompts.isCancel(answer)) return undefined;
+    return String(answer || defaultValue || "").trim() || undefined;
+  }
   const prompt = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -312,12 +362,22 @@ const promptForPath = async ({ message, defaultValue, optional = false }) => {
           : " (required)";
       const answer = (await prompt.question(`${message}${suffix}: `)).trim();
       const value = answer || defaultValue || "";
+      const invalid = value && validate ? validate(value) : undefined;
+      if (invalid) {
+        console.log(invalid);
+        continue;
+      }
       if (value || optional) return value || undefined;
       console.log("Enter a project-relative path.");
     }
   } finally {
     prompt.close();
   }
+};
+
+const promptForSelection = async ({ message, options, flags }) => {
+  const selected = await promptForChoice({ message, options, flags });
+  return selected?.value;
 };
 
 const firstExistingPath = async (candidates) => {
@@ -391,11 +451,150 @@ const inspectGuidedProject = async (planOptions) => {
     baseline: Boolean(migrationSummary),
     policy,
     policyPath: relative(projectRoot, loaded.paths.sanitizationPolicy),
+    policyAbsolutePath: loaded.paths.sanitizationPolicy,
     migrationSummary,
     runtime: await pathExists(
       join(loaded.paths.runtimeWorkdir, "baseline.json"),
     ),
   };
+};
+
+const reviewPolicyInteractively = async ({ state, flags }) => {
+  const { source, draft } = await readReviewablePolicyDraft(
+    state.policyAbsolutePath,
+  );
+  const totalColumns = draft.tables.reduce(
+    (total, table) => total + (table.columns?.length ?? 0),
+    0,
+  );
+  let reviewedColumns = 0;
+  if (useStyledPrompts(flags)) {
+    prompts.note(
+      [
+        `${formatCount(totalColumns, "column")} require explicit review.`,
+        "No row values are displayed or changed by this step.",
+        "The safest replacement-oriented choices appear first.",
+      ].join("\n"),
+      "Prepare the script",
+    );
+  }
+  const policy = await completePolicyDraft({
+    draft,
+    reviewColumn: async ({ table, column }) => {
+      reviewedColumns += 1;
+      const label = `${table}.${column} (${reviewedColumns}/${totalColumns})`;
+      const action = await promptForSelection({
+        message: `${label}: how should this value be handled?`,
+        flags,
+        options: [
+          {
+            label: "Replace with synthetic data",
+            hint: "Safest default for user-provided values",
+            value: "REPLACE WITH SYNTHETIC",
+          },
+          {
+            label: "Pseudonymize consistently",
+            hint: "Preserve stable relationships without original values",
+            value: "PSEUDONYMIZE",
+          },
+          {
+            label: "Derive a safe value",
+            value: "DERIVE",
+          },
+          { label: "Exclude this field", value: "EXCLUDE" },
+          {
+            label: "Keep exactly",
+            hint: "Use only when retaining the value is explicitly safe",
+            value: "KEEP EXACTLY",
+          },
+        ],
+      });
+      if (!action) throw new Error("Policy review was cancelled.");
+      const generated = await promptForSelection({
+        message: `${label}: is this column always database-generated?`,
+        flags,
+        options: [
+          { label: "No", value: "NEVER" },
+          { label: "Yes", value: "ALWAYS" },
+        ],
+      });
+      if (!generated) throw new Error("Policy review was cancelled.");
+      const identity = await promptForSelection({
+        message: `${label}: is this an identity column?`,
+        flags,
+        options: [
+          { label: "No", value: "NO" },
+          { label: "Yes", value: "YES" },
+        ],
+      });
+      if (!identity) throw new Error("Policy review was cancelled.");
+      const hasForeignKey = await promptForConfirmation(
+        `${label}: does this column reference another table?`,
+        flags,
+        { cancelValue: null },
+      );
+      if (hasForeignKey === null) {
+        throw new Error("Policy review was cancelled.");
+      }
+      let foreignKey = null;
+      if (hasForeignKey) {
+        const schema = await promptForPath({
+          message: `${label}: referenced schema`,
+          defaultValue: "public",
+          flags,
+          validate: (value) =>
+            /^[a-z][a-z0-9_]{0,62}$/u.test(value)
+              ? undefined
+              : "Use a lowercase PostgreSQL identifier.",
+        });
+        const referencedTable = await promptForPath({
+          message: `${label}: referenced table`,
+          flags,
+          validate: (value) =>
+            /^[a-z][a-z0-9_]{0,62}$/u.test(value)
+              ? undefined
+              : "Use a lowercase PostgreSQL identifier.",
+        });
+        const referencedColumn = await promptForPath({
+          message: `${label}: referenced column`,
+          flags,
+          validate: (value) =>
+            /^[a-z][a-z0-9_]{0,62}$/u.test(value)
+              ? undefined
+              : "Use a lowercase PostgreSQL identifier.",
+        });
+        if (!schema || !referencedTable || !referencedColumn) {
+          throw new Error("Policy review was cancelled.");
+        }
+        foreignKey = {
+          schema,
+          table: referencedTable,
+          column: referencedColumn,
+        };
+      }
+      return { action, generated, identity, foreignKey };
+    },
+  });
+  const accepted = await promptForConfirmation(
+    `Save ${formatCount(totalColumns, "reviewed column")} and activate this policy?`,
+    flags,
+  );
+  if (!accepted) return false;
+  await applyReviewedPolicy({
+    path: state.policyAbsolutePath,
+    originalSource: source,
+    policy,
+  });
+  if (useStyledPrompts(flags)) {
+    prompts.log.success(
+      `${formatCount(totalColumns, "column")} reviewed; the policy is ready for baseline creation.`,
+    );
+  } else {
+    console.log(
+      `Reviewed policy saved: ${formatCount(totalColumns, "column")} classified.`,
+    );
+  }
+  return true;
 };
 
 const runGuidedHome = async ({ flags, planOptions }) => {
@@ -407,87 +606,120 @@ const runGuidedHome = async ({ flags, planOptions }) => {
   if (!state.node.supported) {
     options.push({
       label: "Show Node.js 24 setup instructions",
+      hint: "Required before Rehearsal can change this project",
       command: "node-help",
     });
   } else if (state.config === "missing") {
     options.push({
-      label: "Set up Rehearsal",
+      label: "Set the stage",
+      hint: "Create safe local configuration",
       command: "setup-write",
     });
-  } else {
-    options.push({ label: "Check readiness", command: "doctor" });
-  }
-  if (state.node.supported && state.baseline) {
+  } else if (state.baseline) {
     options.push(
-      { label: "Review the migration plan", command: "explain" },
       { label: "Run a rehearsal", command: "run" },
+      { label: "Review the migration plan", command: "explain" },
       { label: "Show candidate migrations", command: "candidates" },
+      { label: "Check readiness", command: "doctor" },
     );
   } else if (state.node.supported && state.config === "valid") {
     if (state.policy === "missing") {
       options.push({
-        label: "Prepare a reviewable baseline policy draft",
+        label: "Prepare the script",
+        hint: "Create a reviewable policy draft",
         command: "baseline-prepare",
       });
     } else if (state.policy === "needs-review") {
       options.push({
-        label: "Review the baseline policy draft",
+        label: "Review the script",
+        hint: "Classify every column interactively",
         command: "policy-review",
       });
     } else {
       options.push({
-        label: "Create a baseline from safe local files",
+        label: "Create the baseline",
+        hint: "Activate reviewed local inputs",
         command: "baseline-guide",
       });
     }
+    options.push({ label: "Check readiness", command: "doctor" });
+  } else {
+    options.push({ label: "Check readiness", command: "doctor" });
   }
   if (state.node.supported && state.runtime) {
-    options.push(
-      { label: "Show local runtime status", command: "status" },
-      { label: "Verify the local runtime", command: "verify" },
-      { label: "Reset to the baseline", command: "reset" },
-      { label: "Stop the local runtime", command: "stop" },
-      { label: "Discard the local runtime", command: "discard" },
-    );
+    options.push({
+      label: "Manage the local runtime",
+      hint: "Status, verify, reset, stop, or discard",
+      command: "manage-runtime",
+    });
+  }
+  if (lastGuidedDetails) {
+    options.push({
+      label: "Show details from the last action",
+      command: "last-details",
+    });
   }
   options.push(
     { label: "Show all commands", command: "help" },
     { label: "Exit", command: "exit" },
   );
 
-  console.log(
-    [
-      "",
-      terminalStyle(flags, "1;36", "REHEARSAL"),
-      "Safe local migration testing",
-      "",
-      terminalStyle(flags, "1", state.detected.projectName),
-      `${marker(state.node.supported)} Node.js ${state.node.version}${state.node.supported ? "" : " (Node.js 24 required)"}`,
-      `${marker(state.detected.hasSupabaseConfig)} Supabase project detected`,
-      `${marker(state.detected.hasMigrations)} Migration history detected`,
-      `${marker(state.config === "valid")} Rehearsal configuration${state.config === "invalid" ? " needs attention" : ""}`,
-      ...(state.config === "valid"
-        ? [
-            `${marker(state.policy === "reviewed")} ${state.policy === "needs-review" ? "Baseline policy needs review" : state.policy === "reviewed" ? "Baseline policy reviewed" : "Baseline policy needed"}`,
-          ]
-        : []),
-      `${marker(state.baseline)} Verified baseline`,
-      ...(state.runtime ? [`${marker(true)} Disposable runtime created`] : []),
-      ...(state.configError
-        ? ["", terminalStyle(flags, "33", `! ${state.configError}`)]
-        : []),
-      "",
-      "What would you like to do?",
-      "",
-      ...options.map(
-        (option, index) =>
-          `  ${index === 0 ? terminalStyle(flags, "36", "›") : " "} ${index + 1}. ${option.label}`,
-      ),
-      "",
-    ].join("\n"),
-  );
+  const statusLines = [
+    `${marker(state.node.supported)} Node.js ${state.node.version}${state.node.supported ? "" : " (Node.js 24 required)"}`,
+    `${marker(state.detected.hasSupabaseConfig)} Supabase project detected`,
+    `${marker(state.detected.hasMigrations)} Migration history detected`,
+    `${marker(state.config === "valid")} Rehearsal configuration${state.config === "invalid" ? " needs attention" : ""}`,
+    ...(state.config === "valid"
+      ? [
+          `${marker(state.policy === "reviewed")} ${state.policy === "needs-review" ? "Baseline policy needs review" : state.policy === "reviewed" ? "Baseline policy reviewed" : "Baseline policy needed"}`,
+        ]
+      : []),
+    `${marker(state.baseline)} Verified baseline`,
+    ...(state.runtime ? [`${marker(true)} Disposable runtime created`] : []),
+    ...(state.configError
+      ? ["", terminalStyle(flags, "33", `! ${state.configError}`)]
+      : []),
+  ];
+  const stage =
+    state.config !== "valid"
+      ? 1
+      : state.policy !== "reviewed"
+        ? 2
+        : !state.baseline
+          ? 3
+          : 4;
+  if (useStyledPrompts(flags)) {
+    prompts.note(
+      statusLines.join("\n"),
+      `${state.detected.projectName} · Stage ${stage} of 4`,
+    );
+  } else {
+    console.log(
+      [
+        "",
+        terminalStyle(flags, "1;36", "REHEARSAL"),
+        "Safe local migration testing",
+        "",
+        terminalStyle(flags, "1", state.detected.projectName),
+        `Stage ${stage} of 4`,
+        ...statusLines,
+        "",
+        "What would you like to do?",
+        "",
+        ...options.map(
+          (option, index) =>
+            `  ${index === 0 ? terminalStyle(flags, "36", "›") : " "} ${index + 1}. ${option.label}`,
+        ),
+        "",
+      ].join("\n"),
+    );
+  }
 
-  const selected = await promptForChoice({ message: "Choose", options });
+  const selected = await promptForChoice({
+    message: "What would you like to do?",
+    options,
+    flags,
+  });
   if (selected.command === "exit") {
     console.log("No changes made.");
     return null;
@@ -506,20 +738,55 @@ const runGuidedHome = async ({ flags, planOptions }) => {
         "Then reinstall Rehearsal in your scratch project and run npx rehearsal again.",
       ].join("\n"),
     );
-    return null;
+    return "refresh";
   }
   if (selected.command === "policy-review") {
-    console.log(
-      [
-        "",
-        terminalStyle(flags, "1", "REVIEW THE BASELINE POLICY"),
-        `Open ${state.policyPath} and complete every REVIEW REQUIRED decision.`,
-        "For each column, classify its sanitization action, generated status, identity behavior, and foreign key.",
-        'Remove "draft": true only after every decision has been reviewed.',
-        "Then run rehearsal again to continue.",
-      ].join("\n"),
-    );
-    return null;
+    try {
+      await reviewPolicyInteractively({ state, flags });
+    } catch (error) {
+      if (String(error?.message ?? error) !== "Policy review was cancelled.") {
+        throw error;
+      }
+      if (useStyledPrompts(flags)) {
+        prompts.cancel("Policy review cancelled; the draft was not changed.");
+      } else {
+        console.log("Policy review cancelled; the draft was not changed.");
+      }
+    }
+    return "refresh";
+  }
+  if (selected.command === "last-details") {
+    if (useStyledPrompts(flags)) {
+      prompts.note(lastGuidedDetails, "Technical details");
+    } else {
+      console.log(`\nTECHNICAL DETAILS\n${lastGuidedDetails}`);
+    }
+    return "refresh";
+  }
+  if (selected.command === "manage-runtime") {
+    const runtimeAction = await promptForChoice({
+      message: "Manage the disposable local runtime",
+      flags,
+      options: [
+        { label: "Show status", command: "status" },
+        { label: "Verify runtime", command: "verify" },
+        { label: "Reset to the immutable baseline", command: "reset" },
+        { label: "Stop runtime", command: "stop" },
+        { label: "Discard runtime", command: "discard" },
+        { label: "Back", command: "exit" },
+      ],
+    });
+    if (!runtimeAction || runtimeAction.command === "exit") return "refresh";
+    if (["reset", "discard"].includes(runtimeAction.command)) {
+      const accepted = await promptForConfirmation(
+        runtimeAction.command === "reset"
+          ? "Reset the disposable runtime and remove its current changes?"
+          : "Discard the disposable runtime? The immutable baseline will remain.",
+        flags,
+      );
+      if (!accepted) return "refresh";
+    }
+    return runtimeAction.command;
   }
   if (["baseline-guide", "baseline-prepare"].includes(selected.command)) {
     console.log(
@@ -541,10 +808,12 @@ const runGuidedHome = async ({ flags, planOptions }) => {
     flags.recordsPath = await promptForPath({
       message: "Sanitized NDJSON records",
       defaultValue: recordsDefault,
+      flags,
     });
     flags.ledgerPath = await promptForPath({
       message: "Migration ledger",
       defaultValue: ledgerDefault,
+      flags,
     });
     if (selected.command === "baseline-prepare") {
       const preparationPlan = await planBaselinePreparation({
@@ -562,10 +831,11 @@ const runGuidedHome = async ({ flags, planOptions }) => {
       console.log(`\n${renderBaselinePreparation(preview, flags)}\n`);
       const accepted = await promptForConfirmation(
         `Create the REVIEW REQUIRED draft at ${preview.destination}?`,
+        flags,
       );
       if (!accepted) {
         console.log("No changes made.");
-        return null;
+        return "refresh";
       }
       flags.preparationPlan = preparationPlan;
       flags.write = true;
@@ -574,6 +844,7 @@ const runGuidedHome = async ({ flags, planOptions }) => {
     flags.assetsPath = await promptForPath({
       message: "Storage asset manifest (optional)",
       optional: true,
+      flags,
     });
     return "baseline create";
   }
@@ -588,10 +859,11 @@ const runGuidedHome = async ({ flags, planOptions }) => {
   console.log(`\n${renderSetup(preview)}\n`);
   const accepted = await promptForConfirmation(
     "Create these project-local files?",
+    flags,
   );
   if (!accepted) {
     console.log("No changes made.");
-    return null;
+    return "refresh";
   }
   flags.setupPlan = setupPlan;
   flags.write = true;
@@ -652,6 +924,7 @@ const prepareCandidateConfirmation = async ({
   );
   const accepted = await promptForConfirmation(
     `Apply exactly ${summary.candidateCount === 1 ? "this migration" : "these migrations"}?`,
+    flags,
   );
   if (!accepted) {
     console.log("No changes made.");
@@ -709,7 +982,10 @@ const runManager = ({ action, flags }) => {
     discard: "Removing the disposable local runtime",
     verify: "Verifying the current local runtime",
   }[action];
-  if (isHumanTerminal(flags)) {
+  const spinner = useStyledPrompts(flags) ? prompts.spinner() : null;
+  if (spinner) {
+    spinner.start(`${actionDescription}. This can take a moment.`);
+  } else if (isHumanTerminal(flags)) {
     console.log(
       `\n${terminalStyle(flags, "1;36", action === "run" ? "REHEARSING" : "REHEARSAL")}\n${terminalStyle(flags, "36", "→")} ${actionDescription}. This can take a moment.`,
     );
@@ -721,8 +997,12 @@ const runManager = ({ action, flags }) => {
     stdio: ["inherit", "pipe", "pipe"],
     maxBuffer: 16 * 1024 * 1024,
   });
-  if (result.error) throw result.error;
+  if (result.error) {
+    if (spinner) spinner.stop(`${actionDescription} did not complete.`);
+    throw result.error;
+  }
   if (result.status !== 0) {
+    if (spinner) spinner.stop(`${actionDescription} did not complete.`);
     const completeOutput = [
       String(result.stdout ?? ""),
       String(result.stderr ?? ""),
@@ -757,7 +1037,11 @@ const runManager = ({ action, flags }) => {
     });
   }
   const durationMs = performance.now() - runtimeStartedMs;
-  if (isHumanTerminal(flags)) {
+  if (spinner) {
+    spinner.stop(
+      `${actionDescription} completed in ${formatDuration(durationMs)}.`,
+    );
+  } else if (isHumanTerminal(flags)) {
     console.log(
       `${terminalStyle(flags, "32", "✓")} Local runtime step completed in ${formatDuration(durationMs)}.`,
     );
@@ -913,7 +1197,9 @@ const runSetup = async ({ flags, planOptions }) => {
       readiness.state === "READY"
         ? "Next: run rehearsal explain to review the migration plan."
         : needsBaselinePolicy
-          ? "Next: run rehearsal again and choose Prepare a reviewable baseline policy draft."
+          ? flags.guided
+            ? "Next: choose Prepare the script to create a reviewable policy draft."
+            : "Next: run rehearsal again and choose Prepare a reviewable baseline policy draft."
           : "Next: complete the remaining readiness items shown above.",
   };
 };
@@ -998,9 +1284,16 @@ const runBaselinePreparation = async ({ flags, planOptions }) => {
       ledgerPath: flags.ledgerPath,
     }));
   if (flags.write) await applyBaselinePreparation(plan);
-  return summarizeBaselinePreparation(plan, {
+  const result = summarizeBaselinePreparation(plan, {
     mode: flags.write ? "written" : "preview",
   });
+  return flags.guided && flags.write
+    ? {
+        ...result,
+        nextAction:
+          "Next: choose Review the script to classify every column interactively.",
+      }
+    : result;
 };
 
 const renderBaselinePreparation = (result, flags = {}) =>
@@ -1047,29 +1340,7 @@ Commands:
 
 Options: --json --verbose --debug --plain --config=<path>`;
 
-const main = async () => {
-  const { flags, positionals } = parseArguments(process.argv.slice(2));
-  let command = positionals.join(" ") || "help";
-  const planOptions = {
-    projectRoot,
-    configPath: flags.configPath,
-  };
-  const wantsAutomaticGuide =
-    positionals.length === 0 &&
-    !flags.help &&
-    !flags.json &&
-    process.stdin.isTTY &&
-    process.stdout.isTTY;
-  if (command === "guide" || wantsAutomaticGuide) {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      throw new Error(
-        "The guided home screen requires an interactive terminal. Run rehearsal --help to list scriptable commands.",
-      );
-    }
-    const selected = await runGuidedHome({ flags, planOptions });
-    if (!selected) return;
-    command = selected;
-  }
+const executeCommand = async ({ command, flags, planOptions, guided }) => {
   if (command === "help" || flags.help) {
     console.log(usage());
     return;
@@ -1109,7 +1380,9 @@ const main = async () => {
         [
           `Activated synthetic baseline ${baseline.generationId}: ${formatCount(baseline.rowCount, "row")} across ${formatCount(baseline.tableCount, "table")}; ${formatCount(baseline.migrationCount, "migration")} through ${baseline.migrationCutoff}.`,
           "",
-          "Next: run rehearsal doctor to check readiness.",
+          flags.guided
+            ? "Next: choose Run a rehearsal when you are ready."
+            : "Next: run rehearsal doctor to check readiness.",
         ].join("\n"),
     });
     return;
@@ -1123,7 +1396,7 @@ const main = async () => {
       render: renderDoctor,
       status: data.state === "READY" ? "success" : "not_ready",
     });
-    if (data.state !== "READY") process.exitCode = 1;
+    if (data.state !== "READY" && !guided) process.exitCode = 1;
     return;
   }
   if (command === "explain" || (command === "run" && flags.dryRun)) {
@@ -1171,19 +1444,34 @@ const main = async () => {
     const runtime = runManager({ action: command, flags });
     let applicationProof;
     if (command === "run") {
-      if (isHumanTerminal(flags)) {
+      const proofSpinner = useStyledPrompts(flags) ? prompts.spinner() : null;
+      if (proofSpinner) {
+        proofSpinner.start("Running the project-owned application proof.");
+      } else if (isHumanTerminal(flags)) {
         console.log(
           `${terminalStyle(flags, "36", "→")} Running the project-owned application proof.`,
         );
       }
-      applicationProof = await runApplicationProof(planOptions);
-      if (isHumanTerminal(flags)) {
+      try {
+        applicationProof = await runApplicationProof(planOptions);
+      } catch (error) {
+        if (proofSpinner) proofSpinner.stop("Application proof failed.");
+        throw error;
+      }
+      if (proofSpinner) {
+        proofSpinner.stop("Application proof passed.");
+      } else if (isHumanTerminal(flags)) {
         console.log(
           `${terminalStyle(flags, "32", "✓")} Application proof passed.`,
         );
       }
     }
     const data = command === "run" ? { runtime, applicationProof } : runtime;
+    if (guided) {
+      lastGuidedDetails = [runtime.output, applicationProof?.output]
+        .filter(Boolean)
+        .join("\n");
+    }
     emit({
       command,
       data,
@@ -1203,6 +1491,23 @@ const main = async () => {
           verify:
             "Next: continue testing, reset to the baseline, or stop the runtime.",
         }[runtimeResult.action];
+        if (guided) {
+          const title =
+            runtimeResult.action === "run"
+              ? "REHEARSAL PASSED"
+              : "ACTION COMPLETE";
+          return [
+            title,
+            `✓ ${runtimeResult.action} completed in ${formatDuration(runtimeResult.durationMs)}`,
+            value.applicationProof
+              ? `✓ Application proof passed: ${value.applicationProof.command}`
+              : null,
+            "",
+            "Technical output is available from Show details in the guide.",
+          ]
+            .filter(Boolean)
+            .join("\n");
+        }
         return [
           runtimeResult.output ||
             `Rehearsal ${runtimeResult.action} completed.`,
@@ -1219,6 +1524,60 @@ const main = async () => {
     return;
   }
   throw new Error(`Unknown Rehearsal command: ${command}.\n\n${usage()}`);
+};
+
+const resetGuidedFlags = (flags) => {
+  flags.dryRun = false;
+  flags.write = false;
+  flags.confirmation = undefined;
+  flags.recordsPath = undefined;
+  flags.ledgerPath = undefined;
+  flags.assetsPath = undefined;
+  flags.setupPlan = undefined;
+  flags.preparationPlan = undefined;
+};
+
+const main = async () => {
+  const { flags, positionals } = parseArguments(process.argv.slice(2));
+  const command = positionals.join(" ") || "help";
+  const planOptions = {
+    projectRoot,
+    configPath: flags.configPath,
+  };
+  const wantsAutomaticGuide =
+    positionals.length === 0 &&
+    !flags.help &&
+    !flags.json &&
+    process.stdin.isTTY &&
+    process.stdout.isTTY;
+  const guided = command === "guide" || wantsAutomaticGuide;
+  if (!guided) {
+    await executeCommand({ command, flags, planOptions, guided: false });
+    return;
+  }
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(
+      "The guided home screen requires an interactive terminal. Run rehearsal --help to list scriptable commands.",
+    );
+  }
+  flags.guided = true;
+  if (useStyledPrompts(flags)) {
+    prompts.intro("REHEARSAL · Safe local migration testing");
+  }
+  while (true) {
+    resetGuidedFlags(flags);
+    const selected = await runGuidedHome({ flags, planOptions });
+    if (!selected) break;
+    if (selected === "refresh") continue;
+    await executeCommand({
+      command: selected,
+      flags,
+      planOptions,
+      guided: true,
+    });
+  }
+  if (useStyledPrompts(flags))
+    prompts.outro("Stage saved. See you next rehearsal.");
 };
 
 try {

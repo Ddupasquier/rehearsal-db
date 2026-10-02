@@ -47,7 +47,8 @@ npx rehearsal
 
 Choose **Set up Rehearsal** in the guide. It previews a versioned configuration, a
 dedicated local-only Supabase configuration using available ports, and protective
-`.gitignore` entries before asking permission to write.
+`.gitignore` entries before asking permission to write. The guide remains open afterward
+and recommends the next incomplete stage.
 
 The same flow is available noninteractively as an explicit preview and write:
 
@@ -104,7 +105,12 @@ npx rehearsal baseline prepare \
   --write
 ```
 
-Review every `REVIEW REQUIRED` field, replace it with correct metadata, and remove
+After creating the draft, choose **Review the script** in the guide. Rehearsal walks each
+column through sanitization action, generated status, identity status, and optional
+foreign-key metadata. Every answer is explicit, the complete policy is validated before
+writing, and the original draft is replaced only if it did not change during review.
+
+For noninteractive workflows, review every `REVIEW REQUIRED` field directly and remove
 `"draft": true` only after that review. Rehearsal refuses to activate a draft.
 
 Historical migration `supabase/migrations/20260101000000_create_widgets.sql`:

@@ -19,6 +19,12 @@ whether it is an identity column, and its foreign-key target or explicit absence
 draft uses `REVIEW REQUIRED` placeholders and cannot be activated until they are
 replaced and the `draft` marker is removed.
 
+In an interactive terminal, the guided **Review the script** action completes these
+decisions one column at a time. Replacement-oriented actions are shown first, retaining
+a value is explicitly labeled as sensitive, and no choice is silently inferred. The
+reviewer validates the completed policy and refuses to overwrite a draft changed during
+the session.
+
 The package exports `validateSanitizationCoverage` and
 `applySanitizationAction` as generic primitives:
 
