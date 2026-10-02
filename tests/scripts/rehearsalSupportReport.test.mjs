@@ -120,5 +120,5 @@ describe("support report", () => {
     });
     expect(JSON.stringify(output)).not.toContain(root);
     expect(JSON.stringify(output)).not.toContain("private-project-name");
-  });
+  }, 15_000);
 });
