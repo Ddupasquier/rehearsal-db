@@ -24,6 +24,11 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   uses a fresh random local password per runtime, and requires exact Rehearsal ownership
   labels before removing resources.
 
+### Fixed
+
+- Plain-terminal nested menus now print their choices before asking for a number,
+  including database selection, discovered baseline inputs, and runtime management.
+
 ## [0.1.0-beta.5] - 2026-10-01
 
 ### Added

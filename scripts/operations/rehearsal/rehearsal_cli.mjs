@@ -277,7 +277,12 @@ const formatDuration = (durationMs) =>
     ? `${Math.round(durationMs)}ms`
     : `${(durationMs / 1_000).toFixed(1)}s`;
 
-const promptForChoice = async ({ message, options, flags = {} }) => {
+const promptForChoice = async ({
+  message,
+  options,
+  flags = {},
+  optionsAlreadyShown = false,
+}) => {
   if (useStyledPrompts(flags)) {
     const selected = await prompts.select({
       message,
@@ -291,6 +296,18 @@ const promptForChoice = async ({ message, options, flags = {} }) => {
     return prompts.isCancel(selected)
       ? options.find((option) => option.command === "exit")
       : selected;
+  }
+  if (!optionsAlreadyShown) {
+    console.log(
+      [
+        "",
+        ...options.map(
+          (option, index) =>
+            `  ${index === 0 ? "›" : " "} ${index + 1}. ${option.label}${option.hint ? ` — ${option.hint}` : ""}`,
+        ),
+        "",
+      ].join("\n"),
+    );
   }
   const prompt = createInterface({
     input: process.stdin,
@@ -896,6 +913,7 @@ const runGuidedHome = async ({ flags, planOptions }) => {
     message: "What would you like to do?",
     options,
     flags,
+    optionsAlreadyShown: !useStyledPrompts(flags),
   });
   if (selected.command === "exit") {
     return null;
