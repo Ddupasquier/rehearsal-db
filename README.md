@@ -117,6 +117,9 @@ baseline inputs. Before activation it validates records, migration evidence, and
 Storage files, then shows a value-free count summary for confirmation. The explicit
 commands remain the stable interface for automation and CI.
 
+Press `Ctrl+Z` at a guided prompt to exit Rehearsal completely. The guide restores the
+terminal instead of leaving a suspended process behind.
+
 Choose **Get help** at any stage, or run `npx rehearsal support`, to create a copy-ready
 environment and readiness report for a GitHub issue. It works before setup and omits row
 values, credentials, project paths, migration SQL, and baseline identifiers. Review every

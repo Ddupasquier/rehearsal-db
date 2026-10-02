@@ -485,6 +485,26 @@ describe("guided terminal journey", () => {
     expect(output).toContain("See you at the next rehearsal.");
   }, 15_000);
 
+  it("exits the whole guided session on Ctrl+Z in styled and plain terminals", async () => {
+    for (const plain of [false, true]) {
+      const root = await makeProject();
+      const output = String(
+        await runInPty({
+          cwd: root,
+          plain,
+          interactions: [
+            { after: "What would you like to do?", write: "\u001A" },
+          ],
+        }),
+      )
+        .replaceAll("\r", "")
+        .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+
+      expect(output).toContain("Rehearsal exited.");
+      expect(output).not.toContain("See you at the next rehearsal.");
+    }
+  }, 15_000);
+
   it("runs help actions from the styled menu and returns home", async () => {
     const root = await makeProject();
     const output = String(
