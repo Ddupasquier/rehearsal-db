@@ -19,6 +19,10 @@ import { createCandidateMigrationReceipt } from "./runtime_restore.mjs";
 import { readMigrationFileInventory } from "./migration_history.mjs";
 import { REHEARSAL_VERSION } from "./diagnostics.mjs";
 import { readRehearsalServiceEnvironment } from "./service_environment.mjs";
+import {
+  readBoundRuntimeSanitizationPolicy,
+  validateRuntimeSanitizationPolicy,
+} from "./sanitization_policy.mjs";
 
 const commandAvailable = (command, args = ["--version"]) => {
   const result = spawnSync(command, args, {
@@ -155,8 +159,15 @@ const assertConfiguredCommand = async ({ command, projectRoot }) => {
 
 const loadPlanInputs = async (options = {}) => {
   const loaded = await loadRehearsalConfig(options);
-  const baseline = await verifyActiveBaseline({
-    artifactRoot: loaded.paths.artifactDirectory,
+  const [baseline, policyBytes] = await Promise.all([
+    verifyActiveBaseline({
+      artifactRoot: loaded.paths.artifactDirectory,
+    }),
+    readFile(loaded.paths.sanitizationPolicy),
+  ]);
+  readBoundRuntimeSanitizationPolicy({
+    bytes: policyBytes,
+    expectedSha256: baseline.sanitizationPolicySha256,
   });
   const currentFiles = await readMigrationFileInventory(
     new URL("./", pathToFileURL(`${loaded.paths.migrationDirectory}/`)),
@@ -411,6 +422,18 @@ export const runRehearsalDoctor = async (options = {}) => {
       },
       remediation:
         "Correct the missing project path in the Rehearsal configuration.",
+    },
+    {
+      id: "sanitization-policy",
+      label: "Reviewed sanitization policy",
+      run: async () => {
+        const policy = validateRuntimeSanitizationPolicy(
+          JSON.parse(await readFile(paths.sanitizationPolicy, "utf8")),
+        );
+        return `${policy.tables.length} table classifications reviewed through ${policy.migrationCutoff}`;
+      },
+      remediation:
+        "Complete every REVIEW REQUIRED decision, remove draft only after review, and retry.",
     },
     {
       id: "runtime-isolation",

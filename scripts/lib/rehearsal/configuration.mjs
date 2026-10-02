@@ -13,7 +13,9 @@ export {
   SANITIZATION_ACTIONS,
   applySanitizationAction,
   normalizeSanitizationAction,
+  readBoundRuntimeSanitizationPolicy,
   validateSanitizationCoverage,
+  validateRuntimeSanitizationPolicy,
 } from "./sanitization_policy.mjs";
 
 export const REHEARSAL_CONFIG_VERSION = 1;
@@ -494,12 +496,15 @@ export const inspectDetectedProject = async ({
       ? "yarn"
       : "npm";
   const scripts = packageJson.scripts ?? {};
+  const normalizedProjectName = String(packageJson.name ?? basename(root))
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/gu, "-")
+    .replace(/^-|-$/gu, "");
+  const projectName =
+    normalizedProjectName.slice(0, 52).replace(/-$/u, "") ||
+    "rehearsal-project";
   return {
-    projectName:
-      String(packageJson.name ?? basename(root))
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/gu, "-")
-        .replace(/^-|-$/gu, "") || "rehearsal-project",
+    projectName,
     packageManager,
     hasSupabaseConfig: await hasPath("supabase/config.toml"),
     hasMigrations: await hasPath("supabase/migrations"),
@@ -515,7 +520,13 @@ export const inspectDetectedProject = async ({
   };
 };
 
-export const renderDetectedConfig = (detected) => `// @ts-check
+export const renderDetectedConfig = (
+  detected,
+  {
+    applicationUrl = "http://localhost:5175",
+    ports = { api: 58321, database: 58322, studio: 58323 },
+  } = {},
+) => `// @ts-check
 import { defineRehearsalConfig } from "@rehearsal-db/core";
 
 export default defineRehearsalConfig({
@@ -537,11 +548,11 @@ export default defineRehearsalConfig({
 		environmentFile: ".rehearsal/runtime.env",
 	},
 	runtime: {
-		applicationUrl: "http://localhost:5175",
+		applicationUrl: ${JSON.stringify(applicationUrl)},
 		projectId: "${detected.projectName}-rehearsal",
-		apiPort: 58321,
-		databasePort: 58322,
-		studioPort: 58323,
+		apiPort: ${ports.api},
+		databasePort: ${ports.database},
+		studioPort: ${ports.studio},
 	},
 	safety: {
 		allowedHosts: ["127.0.0.1", "::1", "localhost"],

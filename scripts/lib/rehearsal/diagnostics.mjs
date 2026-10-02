@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 
 export const REHEARSAL_RESULT_VERSION = 1;
-export const REHEARSAL_VERSION = "0.1.0-beta.2";
+export const REHEARSAL_VERSION = "0.1.0-beta.3";
 
 export const REHEARSAL_EXIT_CODES = Object.freeze({
   success: 0,
@@ -96,7 +96,9 @@ const inferCategory = (error) => {
   if (/candidate|migration history diverges/iu.test(message)) {
     return "migration_candidate_failure";
   }
-  if (/baseline|artifact|generation/iu.test(message)) return "baseline_invalid";
+  if (/baseline|artifact|generation|sanitization policy/iu.test(message)) {
+    return "baseline_invalid";
+  }
   if (/migration|ledger|replay/iu.test(message)) {
     return "migration_verification_failure";
   }
@@ -106,7 +108,9 @@ const inferCategory = (error) => {
   if (/loopback|hosted|unsafe|credential|outbound/iu.test(message)) {
     return "unsafe_environment";
   }
-  if (/docker|supabase|runtime|command|enoent/iu.test(message)) {
+  if (
+    /docker|supabase|runtime|command|enoent|node\.js|ports?\b/iu.test(message)
+  ) {
     return "runtime_dependency_failure";
   }
   return "internal_failure";

@@ -19,6 +19,7 @@ import {
   createMigrationReplayReceipt,
   readMigrationSourceBundle,
 } from "./migration_history.mjs";
+import { validateRuntimeSanitizationPolicy } from "./sanitization_policy.mjs";
 
 const resolveProjectInput = (projectRoot, value, label) => {
   if (typeof value !== "string" || value.trim() === "") {
@@ -103,10 +104,9 @@ export const createSyntheticBaselineFromFiles = async ({
         })),
       )
     : [];
-  const policy = JSON.parse(policyBytes.toString("utf8"));
-  if (!Array.isArray(policy.tables)) {
-    throw new Error("The configured sanitization policy does not list tables.");
-  }
+  const policy = validateRuntimeSanitizationPolicy(
+    JSON.parse(policyBytes.toString("utf8")),
+  );
   const expectedTables = policy.tables
     .filter((table) => table.sourceRows !== "EXCLUDE")
     .map((table) => table.name);
@@ -117,6 +117,11 @@ export const createSyntheticBaselineFromFiles = async ({
     JSON.parse(ledgerBytes.toString("utf8")),
     "Synthetic migration ledger",
   );
+  if (policy.migrationCutoff !== sourceMigrationHistory.at(-1).version) {
+    throw new Error(
+      `The sanitization policy cutoff ${policy.migrationCutoff} does not match migration ledger cutoff ${sourceMigrationHistory.at(-1).version}.`,
+    );
+  }
   const migrationFiles = await readMigrationSourceBundle({
     directory: new URL(
       "./",

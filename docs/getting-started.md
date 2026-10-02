@@ -34,18 +34,30 @@ its labeled local runtime. It does not need a hosted Supabase project or credent
 
 ## 1. Install and initialize
 
+Confirm this shell is running the supported Node.js major before installing:
+
+```bash
+node --version # v24.x
+```
+
 ```bash
 npm install --save-dev @rehearsal-db/core@beta
-npx rehearsal init
+npx rehearsal
 ```
 
-`init` is a preview. Read the generated configuration, then explicitly write it:
+Choose **Set up Rehearsal** in the guide. It previews a versioned configuration, a
+dedicated local-only Supabase configuration using available ports, and protective
+`.gitignore` entries before asking permission to write.
+
+The same flow is available noninteractively as an explicit preview and write:
 
 ```bash
-npx rehearsal init --write
+npx rehearsal setup
+npx rehearsal setup --write
 ```
 
-Rehearsal never overwrites an existing configuration.
+Rehearsal never overwrites an existing configuration. For config-only/manual setup, use
+`npx rehearsal init` followed by `npx rehearsal init --write`.
 
 The generated configuration is intentionally incomplete until you review its ports,
 project ID, application commands, and project-owned input paths. Do not run `doctor`
@@ -53,14 +65,14 @@ until the next section's files exist.
 
 ## 2. Add the project-owned inputs
 
-Create the paths named by `rehearsal.config.mjs`:
+Review or create the project-owned inputs named by `rehearsal.config.mjs`:
 
-- a dedicated local Supabase `config.toml`;
+- the dedicated local Supabase `config.toml` (`setup` creates a conservative one);
 - a sanitization policy describing every exported field;
 - an active baseline below `.rehearsal/`;
 - an application proof command that exits nonzero when the restored app is wrong.
 
-For the generated default paths:
+If you used config-only `init`, also create the dedicated Supabase config manually:
 
 ```bash
 mkdir -p infrastructure/rehearsal/supabase infrastructure/rehearsal rehearsal
@@ -78,6 +90,22 @@ restored relationship and the candidate schema—not merely that `/` returns 200
 Start with synthetic rows shaped like your schema. Do not start onboarding with
 production data. The following SQL, policy, row, and ledger form one matched example;
 do not mix them with differently shaped snippets.
+
+If you already have the safe NDJSON rows and migration ledger, Rehearsal can enumerate
+their table and column shape into a fail-closed policy draft without printing values:
+
+```bash
+npx rehearsal baseline prepare \
+  --records=rehearsal/synthetic-data.ndjson \
+  --ledger=rehearsal/migration-ledger.json
+npx rehearsal baseline prepare \
+  --records=rehearsal/synthetic-data.ndjson \
+  --ledger=rehearsal/migration-ledger.json \
+  --write
+```
+
+Review every `REVIEW REQUIRED` field, replace it with correct metadata, and remove
+`"draft": true` only after that review. Rehearsal refuses to activate a draft.
 
 Historical migration `supabase/migrations/20260101000000_create_widgets.sql`:
 

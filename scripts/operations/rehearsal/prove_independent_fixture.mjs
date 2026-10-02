@@ -5,7 +5,15 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -139,6 +147,36 @@ const main = async () => {
       { capture: true, cwd },
     );
     packageInstalled = true;
+    const fixtureConfigPath = join(cwd, "rehearsal.config.mjs");
+    const fixtureConfig = await readFile(fixtureConfigPath);
+    await rm(fixtureConfigPath);
+    const setupPreview = executeCliOrThrow({
+      cwd,
+      args: ["setup", "--json"],
+      label: "setup preview",
+    });
+    if (
+      JSON.parse(setupPreview.stdout).data?.mode !== "preview" ||
+      (await runtimeExists(fixtureConfigPath))
+    ) {
+      throw new Error("Setup preview unexpectedly mutated the fixture.");
+    }
+    const setupWrite = executeCliOrThrow({
+      cwd,
+      args: ["setup", "--write", "--json"],
+      label: "setup write",
+    });
+    if (
+      JSON.parse(setupWrite.stdout).data?.mode !== "written" ||
+      !(await runtimeExists(
+        join(cwd, "infrastructure/rehearsal/supabase/config.toml"),
+      ))
+    ) {
+      throw new Error("Setup did not create its previewed local scaffolding.");
+    }
+    await writeFile(fixtureConfigPath, fixtureConfig);
+    await rm(join(cwd, "infrastructure"), { recursive: true, force: true });
+    commandsProven.push("setup");
     const publicImports = spawnSync(
       process.execPath,
       [
@@ -166,6 +204,46 @@ const main = async () => {
     executeCliOrThrow({ cwd, args: ["init", "--json"], label: "init" });
     commandsProven.push("init");
     let startedAt = performance.now();
+    const policyPath = join(cwd, "rehearsal/sanitization-policy.json");
+    const reviewedPolicy = await readFile(policyPath);
+    await rm(policyPath);
+    const preparationArguments = [
+      "baseline",
+      "prepare",
+      "--records=rehearsal/sanitized-data.ndjson",
+      "--ledger=rehearsal/migration-ledger.json",
+      "--json",
+    ];
+    const preparationPreview = executeCliOrThrow({
+      cwd,
+      args: preparationArguments,
+      label: "baseline prepare preview",
+    });
+    if (preparationPreview.stdout.includes("Synthetic Widget")) {
+      throw new Error("Baseline preparation unexpectedly printed a row value.");
+    }
+    executeCliOrThrow({
+      cwd,
+      args: [...preparationArguments, "--write"],
+      label: "baseline prepare write",
+    });
+    const draftFailure = executeCli({
+      cwd,
+      args: [
+        "baseline",
+        "create",
+        "--records=rehearsal/sanitized-data.ndjson",
+        "--ledger=rehearsal/migration-ledger.json",
+        "--json",
+      ],
+    });
+    if (draftFailure.status === 0 || !draftFailure.stdout.includes("draft")) {
+      throw new Error(
+        `The unreviewed policy draft was not refused: ${draftFailure.stdout || draftFailure.stderr}`,
+      );
+    }
+    await writeFile(policyPath, reviewedPolicy);
+    commandsProven.push("baseline prepare");
     const baselineCreate = executeCliOrThrow({
       cwd,
       args: [

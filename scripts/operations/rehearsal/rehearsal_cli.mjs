@@ -6,9 +6,10 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import {
   RehearsalError,
@@ -23,6 +24,7 @@ import {
   findRehearsalConfigPath,
   loadRehearsalConfig,
   renderDetectedConfig,
+  validateRuntimeSanitizationPolicy,
 } from "../../lib/rehearsal/configuration.mjs";
 import {
   buildRehearsalPlan,
@@ -31,6 +33,18 @@ import {
   runRehearsalDoctor,
 } from "../../lib/rehearsal/plan.mjs";
 import { createSyntheticBaselineFromFiles } from "../../lib/rehearsal/baseline_builder.mjs";
+import {
+  applyBaselinePreparation,
+  planBaselinePreparation,
+  summarizeBaselinePreparation,
+} from "../../lib/rehearsal/baseline_preparation.mjs";
+import {
+  applyRehearsalSetup,
+  inspectRehearsalNodeRuntime,
+  planRehearsalSetup,
+  summarizeRehearsalSetup,
+} from "../../lib/rehearsal/setup.mjs";
+import { formatCount } from "../../lib/rehearsal/human_output.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = process.cwd();
@@ -48,6 +62,7 @@ const parseArguments = (arguments_) => {
     verbosity: "normal",
     dryRun: false,
     write: false,
+    plain: false,
     configPath: undefined,
     confirmation: undefined,
     recordsPath: undefined,
@@ -62,6 +77,7 @@ const parseArguments = (arguments_) => {
     else if (argument === "--debug") flags.verbosity = "debug";
     else if (argument === "--dry-run") flags.dryRun = true;
     else if (argument === "--write") flags.write = true;
+    else if (argument === "--plain") flags.plain = true;
     else if (argument.startsWith("--config=")) {
       flags.configPath = argument.slice("--config=".length);
     } else if (argument.startsWith("--confirm-candidates=")) {
@@ -109,7 +125,7 @@ const renderPlan = (plan, verbosity) => {
     "",
     "Baseline",
     `  ✓ ${plan.baseline.generationId}`,
-    `  ✓ ${plan.baseline.tableCount} tables; ${plan.baseline.rowCount} rows`,
+    `  ✓ ${formatCount(plan.baseline.tableCount, "table")}; ${formatCount(plan.baseline.rowCount, "row")}`,
     `  ✓ ${plan.baseline.verification}`,
     "",
     "Migrations",
@@ -121,6 +137,10 @@ const renderPlan = (plan, verbosity) => {
     ...verbose,
     "",
     plan.guarantee,
+    "",
+    plan.migrations.candidateCount
+      ? "Next: run rehearsal run to review and confirm this exact candidate set."
+      : "Next: run rehearsal run to verify the baseline and application proof.",
   ].join("\n");
 };
 
@@ -138,12 +158,20 @@ const renderDoctor = (doctor, verbosity) => {
   )) {
     if (check.remediation) lines.push(`  Try: ${check.remediation}`);
   }
-  if (doctor.ambientHostedVariables.presentButQuarantined.length) {
+  if (doctor.ambientHostedVariables?.presentButQuarantined.length) {
     lines.push(
       `! ${doctor.ambientHostedVariables.presentButQuarantined.length} ambient hosted credential variables detected and quarantined.`,
     );
   }
-  return [...lines, "", doctor.state].join("\n");
+  return [
+    ...lines,
+    "",
+    doctor.state,
+    "",
+    doctor.state === "READY"
+      ? "Next: run rehearsal explain to review the migration plan."
+      : "Next: fix the items above, then run rehearsal doctor again.",
+  ].join("\n");
 };
 
 const renderBaseline = (baseline) =>
@@ -201,7 +229,439 @@ const renderCandidates = (summary, verbosity) =>
             : `  → ${migration.filename} (${migration.sha256})`,
         )
       : ["  ✓ No candidate migrations"]),
+    "",
+    summary.candidateCount
+      ? "Next: run rehearsal run for a guided confirmation, or pass the full digest in automation."
+      : "Next: run rehearsal run to verify the baseline and application proof.",
   ].join("\n");
+
+const pathExists = (path) =>
+  access(path)
+    .then(() => true)
+    .catch((error) => {
+      if (error?.code === "ENOENT") return false;
+      throw error;
+    });
+
+const useColor = (flags) =>
+  !flags.plain &&
+  process.stdout.isTTY &&
+  process.env.NO_COLOR === undefined &&
+  process.env.TERM !== "dumb";
+
+const terminalStyle = (flags, code, value) =>
+  useColor(flags) ? `\u001B[${code}m${value}\u001B[0m` : value;
+
+const isHumanTerminal = (flags) =>
+  !flags.json && process.stdin.isTTY && process.stdout.isTTY;
+
+const formatDuration = (durationMs) =>
+  durationMs < 1_000
+    ? `${Math.round(durationMs)}ms`
+    : `${(durationMs / 1_000).toFixed(1)}s`;
+
+const promptForChoice = async ({ message, options }) => {
+  const prompt = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    while (true) {
+      const answer = (await prompt.question(`${message} [1]: `)).trim();
+      const selected = answer === "" ? 1 : Number(answer);
+      if (
+        Number.isInteger(selected) &&
+        selected >= 1 &&
+        selected <= options.length
+      ) {
+        return options[selected - 1];
+      }
+      console.log(`Choose a number from 1 to ${options.length}.`);
+    }
+  } finally {
+    prompt.close();
+  }
+};
+
+const promptForConfirmation = async (message) => {
+  const prompt = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    const answer = (await prompt.question(`${message} (y/N) `))
+      .trim()
+      .toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    prompt.close();
+  }
+};
+
+const promptForPath = async ({ message, defaultValue, optional = false }) => {
+  const prompt = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    while (true) {
+      const suffix = defaultValue
+        ? ` [${defaultValue}]`
+        : optional
+          ? ""
+          : " (required)";
+      const answer = (await prompt.question(`${message}${suffix}: `)).trim();
+      const value = answer || defaultValue || "";
+      if (value || optional) return value || undefined;
+      console.log("Enter a project-relative path.");
+    }
+  } finally {
+    prompt.close();
+  }
+};
+
+const firstExistingPath = async (candidates) => {
+  for (const candidate of candidates) {
+    if (await pathExists(join(projectRoot, candidate))) return candidate;
+  }
+  return undefined;
+};
+
+const inspectGuidedProject = async (planOptions) => {
+  const detected = await inspectDetectedProject({ projectRoot });
+  const node = inspectRehearsalNodeRuntime();
+  let configPath;
+  try {
+    configPath = await findRehearsalConfigPath(planOptions);
+  } catch (error) {
+    if (
+      !String(error?.message ?? error).startsWith("No Rehearsal configuration")
+    ) {
+      throw error;
+    }
+  }
+  if (!configPath) {
+    return {
+      detected,
+      node,
+      config: "missing",
+      baseline: false,
+      runtime: false,
+    };
+  }
+  let loaded;
+  try {
+    loaded = await loadRehearsalConfig(planOptions);
+  } catch (error) {
+    return {
+      detected,
+      node,
+      config: "invalid",
+      configPath,
+      configError: redactDiagnosticValue(String(error?.message ?? error)),
+      baseline: false,
+      runtime: false,
+    };
+  }
+  let migrationSummary;
+  try {
+    migrationSummary = candidateSummary(
+      await inspectRehearsalMigrations(planOptions),
+    );
+  } catch {
+    // Doctor owns the detailed, safely redacted explanation for an invalid or
+    // absent baseline. The home screen only needs enough state to guide users.
+  }
+  let policy = "missing";
+  if (await pathExists(loaded.paths.sanitizationPolicy)) {
+    try {
+      validateRuntimeSanitizationPolicy(
+        JSON.parse(await readFile(loaded.paths.sanitizationPolicy, "utf8")),
+      );
+      policy = "reviewed";
+    } catch {
+      policy = "needs-review";
+    }
+  }
+  return {
+    detected,
+    node,
+    config: "valid",
+    configPath,
+    baseline: Boolean(migrationSummary),
+    policy,
+    policyPath: relative(projectRoot, loaded.paths.sanitizationPolicy),
+    migrationSummary,
+    runtime: await pathExists(
+      join(loaded.paths.runtimeWorkdir, "baseline.json"),
+    ),
+  };
+};
+
+const runGuidedHome = async ({ flags, planOptions }) => {
+  const state = await inspectGuidedProject(planOptions);
+  const marker = (complete) =>
+    complete ? terminalStyle(flags, "32", "✓") : terminalStyle(flags, "2", "○");
+  const options = [];
+
+  if (!state.node.supported) {
+    options.push({
+      label: "Show Node.js 24 setup instructions",
+      command: "node-help",
+    });
+  } else if (state.config === "missing") {
+    options.push({
+      label: "Set up Rehearsal",
+      command: "setup-write",
+    });
+  } else {
+    options.push({ label: "Check readiness", command: "doctor" });
+  }
+  if (state.node.supported && state.baseline) {
+    options.push(
+      { label: "Review the migration plan", command: "explain" },
+      { label: "Run a rehearsal", command: "run" },
+      { label: "Show candidate migrations", command: "candidates" },
+    );
+  } else if (state.node.supported && state.config === "valid") {
+    if (state.policy === "missing") {
+      options.push({
+        label: "Prepare a reviewable baseline policy draft",
+        command: "baseline-prepare",
+      });
+    } else if (state.policy === "needs-review") {
+      options.push({
+        label: "Review the baseline policy draft",
+        command: "policy-review",
+      });
+    } else {
+      options.push({
+        label: "Create a baseline from safe local files",
+        command: "baseline-guide",
+      });
+    }
+  }
+  if (state.node.supported && state.runtime) {
+    options.push(
+      { label: "Show local runtime status", command: "status" },
+      { label: "Verify the local runtime", command: "verify" },
+      { label: "Reset to the baseline", command: "reset" },
+      { label: "Stop the local runtime", command: "stop" },
+      { label: "Discard the local runtime", command: "discard" },
+    );
+  }
+  options.push(
+    { label: "Show all commands", command: "help" },
+    { label: "Exit", command: "exit" },
+  );
+
+  console.log(
+    [
+      "",
+      terminalStyle(flags, "1;36", "REHEARSAL"),
+      "Safe local migration testing",
+      "",
+      terminalStyle(flags, "1", state.detected.projectName),
+      `${marker(state.node.supported)} Node.js ${state.node.version}${state.node.supported ? "" : " (Node.js 24 required)"}`,
+      `${marker(state.detected.hasSupabaseConfig)} Supabase project detected`,
+      `${marker(state.detected.hasMigrations)} Migration history detected`,
+      `${marker(state.config === "valid")} Rehearsal configuration${state.config === "invalid" ? " needs attention" : ""}`,
+      ...(state.config === "valid"
+        ? [
+            `${marker(state.policy === "reviewed")} ${state.policy === "needs-review" ? "Baseline policy needs review" : state.policy === "reviewed" ? "Baseline policy reviewed" : "Baseline policy needed"}`,
+          ]
+        : []),
+      `${marker(state.baseline)} Verified baseline`,
+      ...(state.runtime ? [`${marker(true)} Disposable runtime created`] : []),
+      ...(state.configError
+        ? ["", terminalStyle(flags, "33", `! ${state.configError}`)]
+        : []),
+      "",
+      "What would you like to do?",
+      "",
+      ...options.map(
+        (option, index) =>
+          `  ${index === 0 ? terminalStyle(flags, "36", "›") : " "} ${index + 1}. ${option.label}`,
+      ),
+      "",
+    ].join("\n"),
+  );
+
+  const selected = await promptForChoice({ message: "Choose", options });
+  if (selected.command === "exit") {
+    console.log("No changes made.");
+    return null;
+  }
+  if (selected.command === "node-help") {
+    console.log(
+      [
+        "",
+        terminalStyle(flags, "1", "NODE.JS 24 REQUIRED"),
+        `This shell is using Node.js ${state.node.version}. Rehearsal has not changed your project.`,
+        "",
+        "With nvm:",
+        "  nvm install 24",
+        "  nvm use 24",
+        "",
+        "Then reinstall Rehearsal in your scratch project and run npx rehearsal again.",
+      ].join("\n"),
+    );
+    return null;
+  }
+  if (selected.command === "policy-review") {
+    console.log(
+      [
+        "",
+        terminalStyle(flags, "1", "REVIEW THE BASELINE POLICY"),
+        `Open ${state.policyPath} and complete every REVIEW REQUIRED decision.`,
+        "For each column, classify its sanitization action, generated status, identity behavior, and foreign key.",
+        'Remove "draft": true only after every decision has been reviewed.',
+        "Then run rehearsal again to continue.",
+      ].join("\n"),
+    );
+    return null;
+  }
+  if (["baseline-guide", "baseline-prepare"].includes(selected.command)) {
+    console.log(
+      [
+        "",
+        terminalStyle(flags, "1", "CREATE A SAFE BASELINE"),
+        "Rehearsal only reads the local files you name here.",
+        "It does not extract data or contact a hosted Supabase project.",
+        "",
+      ].join("\n"),
+    );
+    const recordsDefault = await firstExistingPath([
+      "rehearsal/sanitized-data.ndjson",
+      "rehearsal/synthetic-data.ndjson",
+    ]);
+    const ledgerDefault = await firstExistingPath([
+      "rehearsal/migration-ledger.json",
+    ]);
+    flags.recordsPath = await promptForPath({
+      message: "Sanitized NDJSON records",
+      defaultValue: recordsDefault,
+    });
+    flags.ledgerPath = await promptForPath({
+      message: "Migration ledger",
+      defaultValue: ledgerDefault,
+    });
+    if (selected.command === "baseline-prepare") {
+      const preparationPlan = await planBaselinePreparation({
+        ...planOptions,
+        recordsPath: flags.recordsPath,
+        ledgerPath: flags.ledgerPath,
+      });
+      const preview = {
+        ...summarizeBaselinePreparation(preparationPlan, {
+          mode: "preview",
+        }),
+        nextAction:
+          "Review this schema-only summary. No file is written unless you approve below.",
+      };
+      console.log(`\n${renderBaselinePreparation(preview, flags)}\n`);
+      const accepted = await promptForConfirmation(
+        `Create the REVIEW REQUIRED draft at ${preview.destination}?`,
+      );
+      if (!accepted) {
+        console.log("No changes made.");
+        return null;
+      }
+      flags.preparationPlan = preparationPlan;
+      flags.write = true;
+      return "baseline prepare";
+    }
+    flags.assetsPath = await promptForPath({
+      message: "Storage asset manifest (optional)",
+      optional: true,
+    });
+    return "baseline create";
+  }
+  if (selected.command !== "setup-write") return selected.command;
+
+  const setupPlan = await planRehearsalSetup({ projectRoot });
+  const preview = {
+    ...summarizeRehearsalSetup(setupPlan, { mode: "preview" }),
+    nextAction:
+      "Review this plan. No files are written unless you approve below.",
+  };
+  console.log(`\n${renderSetup(preview)}\n`);
+  const accepted = await promptForConfirmation(
+    "Create these project-local files?",
+  );
+  if (!accepted) {
+    console.log("No changes made.");
+    return null;
+  }
+  flags.setupPlan = setupPlan;
+  flags.write = true;
+  return "setup";
+};
+
+const prepareCandidateConfirmation = async ({
+  command,
+  flags,
+  planOptions,
+}) => {
+  if (!["run", "migrate"].includes(command) || flags.dryRun) {
+    return true;
+  }
+  const summary = candidateSummary(
+    await inspectRehearsalMigrations(planOptions),
+  );
+  if (summary.candidateCount === 0) return true;
+  if (flags.confirmation === summary.candidateSha256) return true;
+  const interactive =
+    !flags.json && process.stdin.isTTY && process.stdout.isTTY;
+  if (!interactive || flags.confirmation) {
+    throw new RehearsalError({
+      category: "migration_candidate_failure",
+      code: "CANDIDATE_CONFIRMATION_REQUIRED",
+      message: flags.confirmation
+        ? "The candidate migration confirmation does not match the current candidate set."
+        : "Candidate migration confirmation is required in noninteractive use.",
+      expected: summary.candidateSha256,
+      actual: flags.confirmation ?? "missing",
+      context: {
+        command,
+        candidateCount: summary.candidateCount,
+        candidates: summary.candidates.map((migration) => migration.filename),
+      },
+      refused:
+        "Rehearsal did not reset, start, or modify the disposable runtime.",
+      suggestions: [
+        "Run rehearsal candidates, review every file, then pass the current digest with --confirm-candidates=.",
+      ],
+    });
+  }
+  console.log(
+    [
+      "",
+      terminalStyle(
+        flags,
+        "1",
+        `${summary.candidateCount} candidate migration${summary.candidateCount === 1 ? "" : "s"}`,
+      ),
+      "",
+      ...summary.candidates.map((migration) => `  → ${migration.filename}`),
+      "",
+      `Candidate set: ${summary.candidateSha256.slice(0, 12)}`,
+      "",
+      "Rehearsal will apply only this exact set to the disposable local runtime.",
+    ].join("\n"),
+  );
+  const accepted = await promptForConfirmation(
+    `Apply exactly ${summary.candidateCount === 1 ? "this migration" : "these migrations"}?`,
+  );
+  if (!accepted) {
+    console.log("No changes made.");
+    return false;
+  }
+  // The manager independently recomputes this digest. A file changed after this
+  // review is therefore rejected before candidate SQL is applied.
+  flags.confirmation = summary.candidateSha256;
+  return true;
+};
 
 const emit = ({ command, data, flags, render, status = "success" }) => {
   const result = createRehearsalResult({
@@ -238,6 +698,22 @@ const runManager = ({ action, flags }) => {
       process.env[key] === undefined ? [] : [[key, process.env[key]]],
     ),
   );
+  const runtimeStartedMs = performance.now();
+  const actionDescription = {
+    run: "Restoring the baseline and applying reviewed migrations",
+    start: "Starting the disposable local runtime",
+    migrate: "Applying reviewed migrations to the current runtime",
+    reset: "Restoring the immutable baseline",
+    status: "Inspecting the disposable local runtime",
+    stop: "Stopping the disposable local runtime",
+    discard: "Removing the disposable local runtime",
+    verify: "Verifying the current local runtime",
+  }[action];
+  if (isHumanTerminal(flags)) {
+    console.log(
+      `\n${terminalStyle(flags, "1;36", action === "run" ? "REHEARSING" : "REHEARSAL")}\n${terminalStyle(flags, "36", "→")} ${actionDescription}. This can take a moment.`,
+    );
+  }
   const result = spawnSync(process.execPath, args, {
     cwd: projectRoot,
     encoding: "utf8",
@@ -280,8 +756,15 @@ const runManager = ({ action, flags }) => {
       cause: new Error(completeOutput || `exit ${result.status}`),
     });
   }
+  const durationMs = performance.now() - runtimeStartedMs;
+  if (isHumanTerminal(flags)) {
+    console.log(
+      `${terminalStyle(flags, "32", "✓")} Local runtime step completed in ${formatDuration(durationMs)}.`,
+    );
+  }
   return {
     action,
+    durationMs: Math.round(durationMs * 100) / 100,
     output: redactDiagnosticValue(String(result.stdout ?? "").trim()),
   };
 };
@@ -412,10 +895,140 @@ const renderInit = (result) =>
     result.nextAction,
   ].join("\n");
 
+const runSetup = async ({ flags, planOptions }) => {
+  const plan = flags.setupPlan ?? (await planRehearsalSetup({ projectRoot }));
+  if (flags.write) await applyRehearsalSetup(plan);
+  const result = summarizeRehearsalSetup(plan, {
+    mode: flags.write ? "written" : "preview",
+  });
+  if (!flags.write) return result;
+  const readiness = await runRehearsalDoctor(planOptions);
+  const needsBaselinePolicy = readiness.checks.some(
+    (check) => check.id === "sanitization-policy" && check.status === "fail",
+  );
+  return {
+    ...result,
+    readiness,
+    nextAction:
+      readiness.state === "READY"
+        ? "Next: run rehearsal explain to review the migration plan."
+        : needsBaselinePolicy
+          ? "Next: run rehearsal again and choose Prepare a reviewable baseline policy draft."
+          : "Next: complete the remaining readiness items shown above.",
+  };
+};
+
+const summarizeSetupReadinessChecks = (readiness) => {
+  const failures = readiness.checks.filter((check) => check.status === "fail");
+  const policyMissing = failures.some(
+    (check) =>
+      check.id === "sanitization-policy" &&
+      /ENOENT|no such file/iu.test(check.detail),
+  );
+  const baselineMissing = failures.some(
+    (check) =>
+      check.id === "baseline" && /ENOENT|no such file/iu.test(check.detail),
+  );
+  const hidden = new Set([
+    ...(policyMissing ? ["sanitization-policy"] : []),
+    ...(baselineMissing
+      ? ["baseline", "baseline-permissions", "migration-history"]
+      : []),
+  ]);
+  if (
+    policyMissing &&
+    failures.some(
+      (check) =>
+        check.id === "paths" && /sanitization-policy/iu.test(check.detail),
+    )
+  ) {
+    hidden.add("paths");
+  }
+  const passed = readiness.checks.filter(
+    (check) => check.status === "pass",
+  ).length;
+  return [
+    ...(passed ? [`  ✓ ${passed} environment and safety checks passed`] : []),
+    ...failures
+      .filter((check) => !hidden.has(check.id))
+      .map((check) => `  ○ ${check.label}: ${check.detail}`),
+    ...(policyMissing
+      ? ["  ○ Baseline policy: not created yet (next guided step)"]
+      : []),
+    ...(baselineMissing
+      ? ["  ○ Verified baseline: not created yet (after policy review)"]
+      : []),
+  ];
+};
+
+const renderSetup = (result) => {
+  const actionMarker = { create: "+", update: "~", unchanged: "=" };
+  return [
+    `REHEARSAL SETUP — ${result.mode.toUpperCase()}`,
+    `Project: ${result.project}`,
+    `Runtime ID: ${result.projectId}`,
+    `Application: ${result.applicationUrl}`,
+    `Ports: API ${result.ports.api}, database ${result.ports.database}, Studio ${result.ports.studio}`,
+    "",
+    "Files",
+    ...result.files.map(
+      (file) => `  ${actionMarker[file.action]} ${file.action} ${file.path}`,
+    ),
+    "",
+    "Safety boundaries",
+    ...result.safety.map((barrier) => `  ✓ ${barrier}`),
+    ...(result.readiness
+      ? [
+          "",
+          `Readiness — ${result.readiness.state}`,
+          ...summarizeSetupReadinessChecks(result.readiness),
+        ]
+      : []),
+    "",
+    result.nextAction,
+  ].join("\n");
+};
+
+const runBaselinePreparation = async ({ flags, planOptions }) => {
+  const plan =
+    flags.preparationPlan ??
+    (await planBaselinePreparation({
+      ...planOptions,
+      recordsPath: flags.recordsPath,
+      ledgerPath: flags.ledgerPath,
+    }));
+  if (flags.write) await applyBaselinePreparation(plan);
+  return summarizeBaselinePreparation(plan, {
+    mode: flags.write ? "written" : "preview",
+  });
+};
+
+const renderBaselinePreparation = (result, flags = {}) =>
+  [
+    `BASELINE POLICY — ${result.mode.toUpperCase()}`,
+    `Destination: ${result.destination}`,
+    `Records: ${formatCount(result.rowCount, "row")} from ${result.recordsPath}`,
+    `Migrations: ${formatCount(result.migrationCount, "migration")} through ${result.migrationCutoff}`,
+    "",
+    "Detected shape (values are never printed)",
+    ...result.tables.map(
+      (table) =>
+        `  ${terminalStyle(flags, "36", "→")} ${table.name}: ${formatCount(table.rowCount, "row")}; ${table.columns.join(", ")}`,
+    ),
+    "",
+    "Every column is marked REVIEW REQUIRED for action, generated status, identity, and foreign key metadata.",
+    "The draft cannot be activated until those decisions are completed.",
+    "",
+    result.nextAction,
+  ].join("\n");
+
 const usage = () => `Usage: rehearsal <command> [options]
 
 Commands:
+  guide                       Open the interactive, state-aware home screen
+  setup [--write]             Preview or create safe first-run scaffolding
   init [--write]              Preview or explicitly write safe starter config
+  baseline prepare --records= --ledger= [--write] Create a fail-closed policy draft
   baseline create --records= --ledger= [--assets=] Create a baseline from safe local inputs
   doctor                     Check whether Rehearsal is safe and ready
   explain                    Show the immutable execution plan
@@ -432,22 +1045,53 @@ Commands:
   discard                    Remove only this project's disposable runtime
   verify                     Verify the current local Rehearsal runtime
 
-Options: --json --verbose --debug --config=<path>`;
+Options: --json --verbose --debug --plain --config=<path>`;
 
 const main = async () => {
   const { flags, positionals } = parseArguments(process.argv.slice(2));
-  const command = positionals.join(" ") || "help";
+  let command = positionals.join(" ") || "help";
   const planOptions = {
     projectRoot,
     configPath: flags.configPath,
   };
+  const wantsAutomaticGuide =
+    positionals.length === 0 &&
+    !flags.help &&
+    !flags.json &&
+    process.stdin.isTTY &&
+    process.stdout.isTTY;
+  if (command === "guide" || wantsAutomaticGuide) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      throw new Error(
+        "The guided home screen requires an interactive terminal. Run rehearsal --help to list scriptable commands.",
+      );
+    }
+    const selected = await runGuidedHome({ flags, planOptions });
+    if (!selected) return;
+    command = selected;
+  }
   if (command === "help" || flags.help) {
     console.log(usage());
+    return;
+  }
+  if (command === "setup") {
+    const data = await runSetup({ flags, planOptions });
+    emit({ command, data, flags, render: renderSetup });
     return;
   }
   if (command === "init") {
     const data = await runInit({ flags });
     emit({ command, data, flags, render: renderInit });
+    return;
+  }
+  if (command === "baseline prepare") {
+    const data = await runBaselinePreparation({ flags, planOptions });
+    emit({
+      command,
+      data,
+      flags,
+      render: (result) => renderBaselinePreparation(result, flags),
+    });
     return;
   }
   if (command === "baseline create") {
@@ -462,7 +1106,11 @@ const main = async () => {
       data,
       flags,
       render: (baseline) =>
-        `Activated synthetic baseline ${baseline.generationId}: ${baseline.rowCount} rows across ${baseline.tableCount} tables; ${baseline.migrationCount} migrations through ${baseline.migrationCutoff}.`,
+        [
+          `Activated synthetic baseline ${baseline.generationId}: ${formatCount(baseline.rowCount, "row")} across ${formatCount(baseline.tableCount, "table")}; ${formatCount(baseline.migrationCount, "migration")} through ${baseline.migrationCutoff}.`,
+          "",
+          "Next: run rehearsal doctor to check readiness.",
+        ].join("\n"),
     });
     return;
   }
@@ -515,28 +1163,56 @@ const main = async () => {
     if (flags.dryRun && command !== "run") {
       throw new Error("--dry-run is supported only by rehearsal run.");
     }
+    if (
+      !(await prepareCandidateConfirmation({ command, flags, planOptions }))
+    ) {
+      return;
+    }
     const runtime = runManager({ action: command, flags });
-    const data =
-      command === "run"
-        ? {
-            runtime,
-            applicationProof: await runApplicationProof(planOptions),
-          }
-        : runtime;
+    let applicationProof;
+    if (command === "run") {
+      if (isHumanTerminal(flags)) {
+        console.log(
+          `${terminalStyle(flags, "36", "→")} Running the project-owned application proof.`,
+        );
+      }
+      applicationProof = await runApplicationProof(planOptions);
+      if (isHumanTerminal(flags)) {
+        console.log(
+          `${terminalStyle(flags, "32", "✓")} Application proof passed.`,
+        );
+      }
+    }
+    const data = command === "run" ? { runtime, applicationProof } : runtime;
     emit({
       command,
       data,
       flags,
       render: (value) => {
         const runtimeResult = value.runtime ?? value;
+        const nextAction = {
+          run: "Next: exercise the local application, then run rehearsal verify.",
+          start:
+            "Next: exercise the local application or run rehearsal status.",
+          migrate: "Next: run rehearsal verify to prove the current runtime.",
+          reset: "Next: run rehearsal verify or continue testing locally.",
+          status: "Next: run rehearsal verify, reset, stop, or discard.",
+          stop: "Next: run rehearsal start when you want to resume.",
+          discard:
+            "The disposable runtime was removed; the immutable baseline remains.",
+          verify:
+            "Next: continue testing, reset to the baseline, or stop the runtime.",
+        }[runtimeResult.action];
         return [
           runtimeResult.output ||
             `Rehearsal ${runtimeResult.action} completed.`,
           value.applicationProof
             ? `Application proof passed: ${value.applicationProof.command}`
             : null,
+          nextAction ? "" : null,
+          nextAction,
         ]
-          .filter(Boolean)
+          .filter((entry) => entry !== null)
           .join("\n");
       },
     });

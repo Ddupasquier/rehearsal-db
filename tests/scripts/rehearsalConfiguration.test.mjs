@@ -249,4 +249,19 @@ describe("Rehearsal configuration", () => {
     expect(stdout).toContain("Usage: rehearsal <command>");
     expect(stdout).toContain("candidates");
   });
+
+  it("guides an unconfigured project through doctor without crashing", async () => {
+    const root = await makeProject();
+    let result;
+    try {
+      await execute(process.execPath, [cliPath, "doctor"], { cwd: root });
+    } catch (error) {
+      result = error;
+    }
+
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("NOT READY");
+    expect(result.stdout).toContain("Next: fix the items above");
+    expect(result.stderr).toBe("");
+  });
 });

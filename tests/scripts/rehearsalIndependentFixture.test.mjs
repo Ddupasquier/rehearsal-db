@@ -7,6 +7,7 @@ import {
   readdir,
   readFile,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -78,6 +79,9 @@ const createProject = async () => {
   const inventory = await readMigrationFileInventory(
     new URL("./", pathToFileURL(`${join(root, "supabase/migrations")}/`)),
   );
+  const policyBytes = await readFile(
+    join(root, "rehearsal/sanitization-policy.json"),
+  );
   await createAndActivateBaseline({
     artifactRoot: join(root, ".rehearsal"),
     generationId: "20260101T000000Z-aaaaaaaaaaaa",
@@ -90,7 +94,9 @@ const createProject = async () => {
     metadata: {
       migrationCutoff: "20260101000000",
       migrationHistorySha256: "a".repeat(64),
-      sanitizationPolicySha256: "b".repeat(64),
+      sanitizationPolicySha256: createHash("sha256")
+        .update(policyBytes)
+        .digest("hex"),
     },
     expectedTables: ["widgets"],
     migrationFiles: [
@@ -136,6 +142,28 @@ describe("independent Rehearsal fixture", () => {
     expect(explain.data.baseline.rowCount).toBe(1);
     expect(explain.data.migrations.candidateCount).toBe(1);
     expect(await hashTree(root)).toEqual(before);
+  });
+
+  it("rejects a missing candidate confirmation before creating a runtime", async () => {
+    const root = await createProject();
+    let failure;
+    try {
+      await execute(process.execPath, [cliPath, "run", "--json"], {
+        cwd: root,
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeDefined();
+    expect(failure.code).toBe(6);
+    expect(JSON.parse(failure.stdout).error).toMatchObject({
+      category: "migration_candidate_failure",
+      code: "CANDIDATE_CONFIRMATION_REQUIRED",
+    });
+    await expect(stat(join(root, ".rehearsal/runtime"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("rejects modified represented history before any runtime action", async () => {
