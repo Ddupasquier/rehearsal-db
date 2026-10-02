@@ -9,6 +9,10 @@ const TARGETS = Object.freeze({
     id: "supabase",
     label: "Supabase",
   }),
+  postgresql: Object.freeze({
+    id: "postgresql",
+    label: "PostgreSQL",
+  }),
 });
 
 export const REHEARSAL_RUNTIME_TARGETS = Object.freeze(Object.keys(TARGETS));
@@ -27,6 +31,9 @@ export const runRuntimeTarget = async (target) => {
   switch (resolved.id) {
     case "supabase":
       await import("./supabase_runtime.mjs");
+      return;
+    case "postgresql":
+      await import("./postgresql_runtime.mjs");
       return;
     default:
       throw new Error(`No runtime driver is installed for ${resolved.id}.`);

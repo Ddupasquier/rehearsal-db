@@ -33,6 +33,7 @@ const makeProject = async () => {
   temporaryRoots.push(root);
   await Promise.all([
     mkdir(join(root, "supabase/migrations"), { recursive: true }),
+    mkdir(join(root, "database/migrations"), { recursive: true }),
     mkdir(join(root, "infrastructure/rehearsal/supabase"), {
       recursive: true,
     }),
@@ -73,6 +74,33 @@ export default defineRehearsalConfig({
 	safety: { hostedAccess: "disabled", outboundNetwork: "deny" },
 	verification: { commands: ["npm test"] },
 	${overrides}
+});
+`;
+
+const postgresqlConfigSource = () => `
+import { defineRehearsalConfig } from ${JSON.stringify(configurationModuleUrl)};
+export default defineRehearsalConfig({
+	schemaVersion: 1,
+	project: { name: "fixture-project" },
+	postgresql: {
+		migrationDirectory: "database/migrations",
+		runtimeWorkdir: ".rehearsal/runtime",
+		image: "postgres:17-alpine",
+		database: "fixture",
+		user: "rehearsal",
+	},
+	baseline: {
+		artifactDirectory: ".rehearsal",
+		sanitizationPolicy: "infrastructure/rehearsal/policy.json",
+	},
+	application: { startCommand: "npm run dev", proofCommand: "npm test" },
+	runtime: {
+		target: "postgresql",
+		applicationUrl: "http://localhost:5175",
+		projectId: "fixture-rehearsal",
+		databasePort: 58322,
+	},
+	safety: { hostedAccess: "disabled", outboundNetwork: "deny" },
 });
 `;
 
@@ -186,6 +214,34 @@ describe("Rehearsal configuration", () => {
         loadRehearsalConfig({ projectRoot: root, configPath: path }),
       ).rejects.toThrow(expected);
     }
+  });
+
+  it("loads a plain PostgreSQL target without Supabase configuration", async () => {
+    const root = await makeProject();
+    await writeFile(
+      join(root, "rehearsal.config.mjs"),
+      postgresqlConfigSource(),
+    );
+
+    const loaded = await loadRehearsalConfig({ projectRoot: root });
+
+    expect(loaded.config.runtime).toMatchObject({
+      target: "postgresql",
+      ports: { database: 58322 },
+    });
+    expect(loaded.config.supabase).toBeNull();
+    expect(loaded.config.postgresql).toMatchObject({
+      image: "postgres:17-alpine",
+      database: "fixture",
+      user: "rehearsal",
+    });
+    expect(loaded.paths).toMatchObject({
+      migrationDirectory: join(root, "database/migrations"),
+      runtimeWorkdir: join(root, ".rehearsal/runtime"),
+      rehearsalConfig: null,
+      serviceEnvironment: null,
+      supabaseWorkdir: null,
+    });
   });
 
   it("detects safe onboarding facts and renders a fail-closed preview", async () => {

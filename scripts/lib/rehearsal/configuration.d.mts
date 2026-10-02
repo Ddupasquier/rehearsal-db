@@ -3,13 +3,20 @@ export type RehearsalConfigVersion = 1;
 export interface RehearsalConfig {
   schemaVersion: RehearsalConfigVersion;
   project: { name: string };
-  supabase: {
+  supabase?: {
     workdir: string;
     migrationDirectory: string;
     rehearsalConfig: string;
     runtimeWorkdir: string;
     serviceEnvironmentFile?: string;
     serviceEnvironmentVariables?: string[];
+  };
+  postgresql?: {
+    migrationDirectory: string;
+    runtimeWorkdir?: string;
+    image?: string;
+    database?: string;
+    user?: string;
   };
   baseline: {
     artifactDirectory?: string;
@@ -22,12 +29,12 @@ export interface RehearsalConfig {
     runtimeAdapter?: string;
   };
   runtime: {
-    target?: "supabase";
+    target?: "supabase" | "postgresql";
     applicationUrl?: string;
     projectId?: string;
-    apiPort: number;
+    apiPort?: number;
     databasePort: number;
-    studioPort: number;
+    studioPort?: number;
   };
   safety?: {
     allowedHosts?: string[];
@@ -57,6 +64,13 @@ export declare const renderDetectedConfig: (
   options?: {
     applicationUrl?: string;
     ports?: { api: number; database: number; studio: number };
+  },
+) => string;
+export declare const renderDetectedPostgresqlConfig: (
+  detected: unknown,
+  options?: {
+    applicationUrl?: string;
+    databasePort?: number;
   },
 ) => string;
 export declare const SANITIZATION_ACTIONS: Readonly<{

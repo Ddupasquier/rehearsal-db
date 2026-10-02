@@ -36,3 +36,16 @@ jobs:
         with:
           version: 2.117.0
       - run: npm run test:fixture
+
+  postgresql-fixture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: docker pull postgres:17-alpine
+      - run: npm run test:fixture:postgresql

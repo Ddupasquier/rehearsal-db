@@ -13,12 +13,16 @@ changed migration history, incomplete artifacts, or an unverified runtime.
 ## Independent barriers
 
 - loopback-only application and service URLs;
-- a dedicated unlinked Supabase workdir and project ID;
+- a dedicated unlinked Supabase workdir, or an exactly named and labeled PostgreSQL
+  container and volume;
 - exact non-overlapping local ports;
 - a clean child-process environment that omits hosted credentials;
 - immutable baseline files and checksums;
 - exact migration-prefix and candidate digests;
 - local runtime labels used for bounded stop/removal;
+- PostgreSQL images must already exist locally and are never pulled implicitly;
+- plain PostgreSQL receives a fresh random password per disposable runtime, retained
+  only in owner-readable ignored runtime files;
 - successful receipts written only after verification.
 
 No single environment variable or config edit should redirect the tool to production.

@@ -7,8 +7,8 @@ values or credentials.
 | Command                                                      | Mutates local state | Purpose                                                   |
 | ------------------------------------------------------------ | ------------------- | --------------------------------------------------------- |
 | `rehearsal` or `rehearsal guide`                             | No by default       | Open the guided, state-aware interactive home screen.     |
-| `rehearsal setup`                                            | No                  | Preview safe config, local runtime, and ignore files.     |
-| `rehearsal setup --write`                                    | Project files       | Create the previewed first-run scaffolding.               |
+| `rehearsal setup --target=supabase\|postgresql`              | No                  | Preview safe config, local runtime, and ignore files.     |
+| `rehearsal setup --target=<target> --write`                  | Project files       | Create the previewed first-run scaffolding.               |
 | `rehearsal init`                                             | No                  | Preview safe starter configuration.                       |
 | `rehearsal init --write`                                     | Config only         | Create config without overwriting.                        |
 | `rehearsal baseline prepare --records= --ledger=`            | No                  | Preview a fail-closed policy draft from local shape.      |
@@ -67,11 +67,11 @@ the same safety decisions and cancellation behavior.
 At any guided prompt, `Ctrl+Z` exits the entire Rehearsal session and restores the
 terminal. It does not leave a suspended process behind.
 
-`setup` chooses an available local port block and generates a conservative Supabase
-configuration with hosted access and optional networked services disabled. It does not
-overwrite an existing Rehearsal config, dedicated Supabase config, or concurrently
-changed `.gitignore`. After writing, it includes a Doctor readiness summary. `init`
-remains available for config-only/manual onboarding.
+`setup` chooses an available local port and generates either a conservative Supabase
+runtime or a loopback-only PostgreSQL runtime. It does not overwrite an existing
+Rehearsal config, dedicated Supabase config, or concurrently changed `.gitignore`. The
+PostgreSQL driver requires its configured official image to exist locally and never
+pulls it implicitly. After writing, setup includes a Doctor readiness summary.
 
 `support` reports the Rehearsal, Node.js, npm, Supabase CLI, Docker client, and Docker
 server versions plus readiness check statuses. It can run before configuration exists.

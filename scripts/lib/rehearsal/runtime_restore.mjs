@@ -236,7 +236,11 @@ const buildForeignKeyChecks = (manifest) =>
     })
     .join("\n\t");
 
-export const buildRestoreSqlSuffix = ({ manifest, tableCounts }) => {
+export const buildRestoreSqlSuffix = ({
+  manifest,
+  tableCounts,
+  restoreSupabaseAuth = true,
+}) => {
   if (!Array.isArray(manifest?.tables) || !tableCounts) {
     throw new Error("A reviewed manifest and exact row counts are required.");
   }
@@ -252,7 +256,7 @@ truncate table ${manifest.tables
     .map((table) => `public.${quoteIdentifier(table.name)}`)
     .join(", ")}
 restart identity cascade;
-${buildAuthRestoreSql(manifest)}
+${restoreSupabaseAuth ? buildAuthRestoreSql(manifest) : ""}
 ${tables.map(buildTableRestoreSql).join("\n")}
 ${tables.map(buildIdentitySequenceSql).filter(Boolean).join("\n")}
 set local session_replication_role = origin;

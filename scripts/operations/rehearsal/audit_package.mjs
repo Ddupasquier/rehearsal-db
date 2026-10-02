@@ -45,6 +45,7 @@ for (const required of [
   "scripts/operations/database/manage_rehearsal_database.mjs",
   "scripts/lib/runtime/runtime_target.mjs",
   "scripts/lib/runtime/supabase_runtime.mjs",
+  "scripts/lib/runtime/postgresql_runtime.mjs",
 ]) {
   if (!paths.includes(required)) {
     throw new Error(`Package is missing required public file ${required}.`);
@@ -53,6 +54,7 @@ for (const required of [
 for (const repositoryOnly of [
   "scripts/operations/rehearsal/audit_package.mjs",
   "scripts/operations/rehearsal/prove_independent_fixture.mjs",
+  "scripts/operations/rehearsal/prove_postgresql_fixture.mjs",
 ]) {
   if (paths.includes(repositoryOnly)) {
     throw new Error(`Package includes repository-only file ${repositoryOnly}.`);

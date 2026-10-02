@@ -19,12 +19,23 @@ writes setup files.
 Start Docker Desktop or Colima, confirm `docker info`, then rerun `rehearsal doctor`.
 Restarting the computer is rarely necessary.
 
+## Doctor says the PostgreSQL image is unavailable
+
+Rehearsal will not download an image during a rehearsal. Pull and review the exact image
+declared in `rehearsal.config.mjs`, then rerun Doctor:
+
+```bash
+docker pull postgres:17-alpine
+npx rehearsal doctor
+```
+
 ## A port is already in use
 
 Rerun `rehearsal setup` to select a different available block. Setup checks both active
 listeners and whether every selected port can be bound, then checks again before writing.
 For an existing configuration, choose unique non-privileged ports and mirror them in the
-dedicated Supabase config. Do not stop an unrelated database to make defaults fit.
+dedicated Supabase config when using Supabase. Do not stop an unrelated database to make
+defaults fit.
 
 ## Baseline checksum mismatch
 

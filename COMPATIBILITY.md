@@ -20,3 +20,8 @@ or successful verification receipt.
 The first stable `1.0.0` requires external beta evidence, a support policy, and a settled
 public API. Supporting additional database families, package managers, or operating
 systems is not implied by the 0.x contract.
+
+The PostgreSQL target covers timestamped SQL migrations running in a dedicated local
+`postgres` Docker image. It does not imply support for hosted connection strings,
+existing unmanaged servers, ORM-specific nested migration formats, Supabase Storage, or
+Supabase Auth emulation.

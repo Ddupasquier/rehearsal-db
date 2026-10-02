@@ -109,7 +109,9 @@ const inferCategory = (error) => {
     return "unsafe_environment";
   }
   if (
-    /docker|supabase|runtime|command|enoent|node\.js|ports?\b/iu.test(message)
+    /docker|postgres(?:ql)?|supabase|runtime|command|enoent|node\.js|ports?\b/iu.test(
+      message,
+    )
   ) {
     return "runtime_dependency_failure";
   }

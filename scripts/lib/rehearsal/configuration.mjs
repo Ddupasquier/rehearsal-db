@@ -30,6 +30,11 @@ export const REHEARSAL_DEFAULTS = Object.freeze({
   safety: Object.freeze({
     allowedHosts: Object.freeze(["127.0.0.1", "::1", "localhost"]),
     blockedEnvironmentVariables: Object.freeze([
+      "DATABASE_URL",
+      "PGHOST",
+      "PGPASSWORD",
+      "PGPORT",
+      "PGUSER",
       "SUPABASE_ACCESS_TOKEN",
       "SUPABASE_DB_PASSWORD",
       "SUPABASE_PROJECT_ID",
@@ -49,6 +54,8 @@ const CONFIG_FILENAMES = Object.freeze([
 
 const LOOPBACK_HOSTS = new Set(REHEARSAL_DEFAULTS.safety.allowedHosts);
 const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/u;
+const DATABASE_IDENTIFIER_PATTERN = /^[a-z][a-z0-9_]{0,62}$/u;
+const POSTGRES_IMAGE_PATTERN = /^postgres:\d+(?:\.\d+)?-alpine$/u;
 const SAFE_COMMAND_PATTERN = /^[^\n\r\0]+$/u;
 
 const isPlainObject = (value) =>
@@ -142,6 +149,7 @@ const normalizeConfig = (input) => {
       "schemaVersion",
       "project",
       "supabase",
+      "postgresql",
       "baseline",
       "application",
       "runtime",
@@ -165,19 +173,46 @@ const normalizeConfig = (input) => {
     );
   }
 
-  const supabase = assertPlainObject(root.supabase, "config.supabase");
-  assertKnownKeys(
-    supabase,
-    [
-      "workdir",
-      "migrationDirectory",
-      "rehearsalConfig",
-      "runtimeWorkdir",
-      "serviceEnvironmentFile",
-      "serviceEnvironmentVariables",
-    ],
-    "config.supabase",
-  );
+  const runtimeTarget = resolveRuntimeTarget(root.runtime?.target).id;
+  const supabase =
+    runtimeTarget === "supabase"
+      ? assertPlainObject(root.supabase, "config.supabase")
+      : null;
+  const postgresql =
+    runtimeTarget === "postgresql"
+      ? assertPlainObject(root.postgresql, "config.postgresql")
+      : null;
+  if (runtimeTarget === "supabase" && root.postgresql !== undefined) {
+    throw new Error(
+      "config.postgresql is not allowed when config.runtime.target is supabase.",
+    );
+  }
+  if (runtimeTarget === "postgresql" && root.supabase !== undefined) {
+    throw new Error(
+      "config.supabase is not allowed when config.runtime.target is postgresql.",
+    );
+  }
+  if (supabase) {
+    assertKnownKeys(
+      supabase,
+      [
+        "workdir",
+        "migrationDirectory",
+        "rehearsalConfig",
+        "runtimeWorkdir",
+        "serviceEnvironmentFile",
+        "serviceEnvironmentVariables",
+      ],
+      "config.supabase",
+    );
+  }
+  if (postgresql) {
+    assertKnownKeys(
+      postgresql,
+      ["migrationDirectory", "runtimeWorkdir", "image", "database", "user"],
+      "config.postgresql",
+    );
+  }
   const baseline = assertPlainObject(root.baseline, "config.baseline");
   assertKnownKeys(
     baseline,
@@ -242,9 +277,13 @@ const normalizeConfig = (input) => {
   }
 
   const ports = {
-    api: assertPort(runtime.apiPort, "config.runtime.apiPort"),
+    ...(runtimeTarget === "supabase"
+      ? { api: assertPort(runtime.apiPort, "config.runtime.apiPort") }
+      : {}),
     database: assertPort(runtime.databasePort, "config.runtime.databasePort"),
-    studio: assertPort(runtime.studioPort, "config.runtime.studioPort"),
+    ...(runtimeTarget === "supabase"
+      ? { studio: assertPort(runtime.studioPort, "config.runtime.studioPort") }
+      : {}),
   };
   if (new Set(Object.values(ports)).size !== Object.values(ports).length) {
     throw new Error("Rehearsal runtime ports must be unique.");
@@ -255,7 +294,7 @@ const normalizeConfig = (input) => {
     throw new Error("config.verification.commands must be an array.");
   }
   const serviceEnvironmentVariables =
-    supabase.serviceEnvironmentVariables ?? [];
+    supabase?.serviceEnvironmentVariables ?? [];
   if (!Array.isArray(serviceEnvironmentVariables)) {
     throw new Error(
       "config.supabase.serviceEnvironmentVariables must be an array.",
@@ -277,41 +316,105 @@ const normalizeConfig = (input) => {
     );
   }
   if (
-    Boolean(supabase.serviceEnvironmentFile) !==
+    Boolean(supabase?.serviceEnvironmentFile) !==
     Boolean(normalizedServiceEnvironmentVariables.length)
   ) {
     throw new Error(
       "config.supabase.serviceEnvironmentFile and serviceEnvironmentVariables must be configured together.",
     );
   }
+  const authenticationProviders = safety.authenticationProviders
+    ? assertStringArray(
+        safety.authenticationProviders,
+        "config.safety.authenticationProviders",
+      )
+    : [];
+  if (runtimeTarget === "postgresql" && authenticationProviders.length > 0) {
+    throw new Error(
+      "config.safety.authenticationProviders is available only for the Supabase target.",
+    );
+  }
 
   return Object.freeze({
     schemaVersion: REHEARSAL_CONFIG_VERSION,
     project: Object.freeze({ name: projectName }),
-    supabase: Object.freeze({
-      workdir: assertRelativePath(supabase.workdir, "config.supabase.workdir"),
-      migrationDirectory: assertRelativePath(
-        supabase.migrationDirectory,
-        "config.supabase.migrationDirectory",
-      ),
-      rehearsalConfig: assertRelativePath(
-        supabase.rehearsalConfig,
-        "config.supabase.rehearsalConfig",
-      ),
-      runtimeWorkdir: assertRelativePath(
-        supabase.runtimeWorkdir,
-        "config.supabase.runtimeWorkdir",
-      ),
-      serviceEnvironmentFile: supabase.serviceEnvironmentFile
-        ? assertRelativePath(
-            supabase.serviceEnvironmentFile,
-            "config.supabase.serviceEnvironmentFile",
-          )
-        : null,
-      serviceEnvironmentVariables: Object.freeze(
-        normalizedServiceEnvironmentVariables,
-      ),
-    }),
+    supabase: supabase
+      ? Object.freeze({
+          workdir: assertRelativePath(
+            supabase.workdir,
+            "config.supabase.workdir",
+          ),
+          migrationDirectory: assertRelativePath(
+            supabase.migrationDirectory,
+            "config.supabase.migrationDirectory",
+          ),
+          rehearsalConfig: assertRelativePath(
+            supabase.rehearsalConfig,
+            "config.supabase.rehearsalConfig",
+          ),
+          runtimeWorkdir: assertRelativePath(
+            supabase.runtimeWorkdir,
+            "config.supabase.runtimeWorkdir",
+          ),
+          serviceEnvironmentFile: supabase.serviceEnvironmentFile
+            ? assertRelativePath(
+                supabase.serviceEnvironmentFile,
+                "config.supabase.serviceEnvironmentFile",
+              )
+            : null,
+          serviceEnvironmentVariables: Object.freeze(
+            normalizedServiceEnvironmentVariables,
+          ),
+        })
+      : null,
+    postgresql: postgresql
+      ? Object.freeze({
+          migrationDirectory: assertRelativePath(
+            postgresql.migrationDirectory,
+            "config.postgresql.migrationDirectory",
+          ),
+          runtimeWorkdir: assertRelativePath(
+            postgresql.runtimeWorkdir ?? ".rehearsal/runtime",
+            "config.postgresql.runtimeWorkdir",
+          ),
+          image: (() => {
+            const image = assertNonEmptyString(
+              postgresql.image ?? "postgres:17-alpine",
+              "config.postgresql.image",
+            );
+            if (!POSTGRES_IMAGE_PATTERN.test(image)) {
+              throw new Error(
+                "config.postgresql.image must name an official versioned Alpine PostgreSQL image, such as postgres:17-alpine.",
+              );
+            }
+            return image;
+          })(),
+          database: (() => {
+            const database = assertNonEmptyString(
+              postgresql.database ?? "postgres",
+              "config.postgresql.database",
+            );
+            if (!DATABASE_IDENTIFIER_PATTERN.test(database)) {
+              throw new Error(
+                "config.postgresql.database must be a safe lowercase PostgreSQL identifier.",
+              );
+            }
+            return database;
+          })(),
+          user: (() => {
+            const user = assertNonEmptyString(
+              postgresql.user ?? "postgres",
+              "config.postgresql.user",
+            );
+            if (!DATABASE_IDENTIFIER_PATTERN.test(user)) {
+              throw new Error(
+                "config.postgresql.user must be a safe lowercase PostgreSQL identifier.",
+              );
+            }
+            return user;
+          })(),
+        })
+      : null,
     baseline: Object.freeze({
       artifactDirectory: assertRelativePath(
         baseline.artifactDirectory ??
@@ -345,7 +448,7 @@ const normalizeConfig = (input) => {
             ),
     }),
     runtime: Object.freeze({
-      target: resolveRuntimeTarget(runtime.target).id,
+      target: runtimeTarget,
       applicationUrl: assertLoopbackUrl(
         runtime.applicationUrl ?? REHEARSAL_DEFAULTS.runtime.applicationUrl,
         "config.runtime.applicationUrl",
@@ -366,14 +469,7 @@ const normalizeConfig = (input) => {
           "config.safety.blockedEnvironmentVariables",
         ),
       ),
-      authenticationProviders: Object.freeze(
-        safety.authenticationProviders
-          ? assertStringArray(
-              safety.authenticationProviders,
-              "config.safety.authenticationProviders",
-            )
-          : [],
-      ),
+      authenticationProviders: Object.freeze(authenticationProviders),
       hostedAccess: "disabled",
       outboundNetwork: "deny",
     }),
@@ -437,14 +533,22 @@ export const loadRehearsalConfig = async ({
     applicationEnvironment: resolveOwnedPath(
       config.application.environmentFile,
     ),
-    migrationDirectory: resolveOwnedPath(config.supabase.migrationDirectory),
-    rehearsalConfig: resolveOwnedPath(config.supabase.rehearsalConfig),
-    runtimeWorkdir: resolveOwnedPath(config.supabase.runtimeWorkdir),
-    serviceEnvironment: config.supabase.serviceEnvironmentFile
+    migrationDirectory: resolveOwnedPath(
+      (config.supabase ?? config.postgresql).migrationDirectory,
+    ),
+    rehearsalConfig: config.supabase
+      ? resolveOwnedPath(config.supabase.rehearsalConfig)
+      : null,
+    runtimeWorkdir: resolveOwnedPath(
+      (config.supabase ?? config.postgresql).runtimeWorkdir,
+    ),
+    serviceEnvironment: config.supabase?.serviceEnvironmentFile
       ? resolveOwnedPath(config.supabase.serviceEnvironmentFile)
       : null,
     sanitizationPolicy: resolveOwnedPath(config.baseline.sanitizationPolicy),
-    supabaseWorkdir: resolveOwnedPath(config.supabase.workdir),
+    supabaseWorkdir: config.supabase
+      ? resolveOwnedPath(config.supabase.workdir)
+      : null,
     runtimeAdapter: config.application.runtimeAdapter
       ? resolveOwnedPath(config.application.runtimeAdapter)
       : null,
@@ -457,7 +561,7 @@ export const loadRehearsalConfig = async ({
   const requiredRuntimeWorkdir = join(paths.artifactDirectory, "runtime");
   if (paths.runtimeWorkdir !== requiredRuntimeWorkdir) {
     throw new Error(
-      "config.supabase.runtimeWorkdir must resolve to the runtime directory inside config.baseline.artifactDirectory.",
+      `config.${config.runtime.target}.runtimeWorkdir must resolve to the runtime directory inside config.baseline.artifactDirectory.`,
     );
   }
   const environmentRelativePath = relative(
@@ -505,6 +609,13 @@ export const inspectDetectedProject = async ({
       ? "yarn"
       : "npm";
   const scripts = packageJson.scripts ?? {};
+  const postgresqlMigrationDirectory = (
+    await Promise.all(
+      ["database/migrations", "db/migrations", "migrations"].map(
+        async (path) => ({ path, exists: await hasPath(path) }),
+      ),
+    )
+  ).find(({ exists }) => exists)?.path;
   const normalizedProjectName = String(packageJson.name ?? basename(root))
     .toLowerCase()
     .replace(/[^a-z0-9-]+/gu, "-")
@@ -517,6 +628,9 @@ export const inspectDetectedProject = async ({
     packageManager,
     hasSupabaseConfig: await hasPath("supabase/config.toml"),
     hasMigrations: await hasPath("supabase/migrations"),
+    hasPostgresqlMigrations: Boolean(postgresqlMigrationDirectory),
+    postgresqlMigrationDirectory:
+      postgresqlMigrationDirectory ?? "database/migrations",
     applicationCommand:
       ["dev:rehearsal", "dev", "start"]
         .find((name) => typeof scripts[name] === "string")
@@ -570,6 +684,53 @@ export default defineRehearsalConfig({
 			"SUPABASE_ACCESS_TOKEN",
 			"SUPABASE_DB_PASSWORD",
 			"SUPABASE_PROJECT_ID",
+		],
+		hostedAccess: "disabled",
+		outboundNetwork: "deny",
+	},
+	verification: { commands: [${JSON.stringify(detected.verificationCommand)}] },
+});
+`;
+
+export const renderDetectedPostgresqlConfig = (
+  detected,
+  { applicationUrl = "http://localhost:5175", databasePort = 58322 } = {},
+) => `// @ts-check
+import { defineRehearsalConfig } from "@rehearsal-db/core";
+
+export default defineRehearsalConfig({
+	schemaVersion: 1,
+	project: { name: ${JSON.stringify(detected.projectName)} },
+	postgresql: {
+		migrationDirectory: ${JSON.stringify(detected.postgresqlMigrationDirectory)},
+		runtimeWorkdir: ".rehearsal/runtime",
+		image: "postgres:17-alpine",
+		database: "postgres",
+		user: "postgres",
+	},
+	baseline: {
+		artifactDirectory: ".rehearsal",
+		sanitizationPolicy: "infrastructure/rehearsal/sanitization-policy.json",
+	},
+	application: {
+		startCommand: ${JSON.stringify(detected.applicationCommand)},
+		proofCommand: ${JSON.stringify(detected.verificationCommand)},
+		environmentFile: ".rehearsal/runtime.env",
+	},
+	runtime: {
+		target: "postgresql",
+		applicationUrl: ${JSON.stringify(applicationUrl)},
+		projectId: "${detected.projectName}-rehearsal",
+		databasePort: ${databasePort},
+	},
+	safety: {
+		allowedHosts: ["127.0.0.1", "::1", "localhost"],
+		blockedEnvironmentVariables: [
+			"DATABASE_URL",
+			"PGHOST",
+			"PGPASSWORD",
+			"PGPORT",
+			"PGUSER",
 		],
 		hostedAccess: "disabled",
 		outboundNetwork: "deny",
