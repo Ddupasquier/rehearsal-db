@@ -64,6 +64,9 @@ help instead of prompting. Use `--plain` to disable decorative terminal styling.
 `NO_COLOR` also selects the plain numbered interface. Both interactive modes preserve
 the same safety decisions and cancellation behavior.
 
+At any guided prompt, `Ctrl+Z` exits the entire Rehearsal session and restores the
+terminal. It does not leave a suspended process behind.
+
 `setup` chooses an available local port block and generates a conservative Supabase
 configuration with hosted access and optional networked services disabled. It does not
 overwrite an existing Rehearsal config, dedicated Supabase config, or concurrently

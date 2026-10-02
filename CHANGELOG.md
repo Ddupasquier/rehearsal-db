@@ -5,6 +5,11 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Changed
+
+- Pressing `Ctrl+Z` at an interactive guide prompt now exits Rehearsal cleanly instead
+  of suspending the process and leaving it attached to the terminal.
+
 ## [0.1.0-beta.5] - 2026-10-01
 
 ### Added

@@ -1801,6 +1801,34 @@ const resetGuidedFlags = (flags) => {
   flags.preparationPlan = undefined;
 };
 
+const installGuidedExitShortcut = (flags) => {
+  let exiting = false;
+  const exit = () => {
+    if (exiting) return;
+    exiting = true;
+    if (process.stdin.isTTY && process.stdin.isRaw) {
+      process.stdin.setRawMode(false);
+    }
+    process.stdout.write("\u001B[?25h");
+    if (useStyledPrompts(flags)) {
+      prompts.outro("Rehearsal exited.");
+    } else {
+      console.log("\nRehearsal exited.");
+    }
+    process.exit(0);
+  };
+  const onInput = (chunk) => {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (bytes.includes(0x1a)) exit();
+  };
+  process.stdin.prependListener("data", onInput);
+  process.prependListener("SIGTSTP", exit);
+  return () => {
+    process.stdin.removeListener("data", onInput);
+    process.removeListener("SIGTSTP", exit);
+  };
+};
+
 const main = async () => {
   const { flags, positionals } = parseArguments(process.argv.slice(2));
   const command = positionals.join(" ") || "help";
@@ -1825,20 +1853,25 @@ const main = async () => {
     );
   }
   flags.guided = true;
+  const removeGuidedExitShortcut = installGuidedExitShortcut(flags);
   if (useStyledPrompts(flags)) {
     prompts.intro("REHEARSAL · Safe local migration testing");
   }
-  while (true) {
-    resetGuidedFlags(flags);
-    const selected = await runGuidedHome({ flags, planOptions });
-    if (!selected) break;
-    if (selected === "refresh") continue;
-    await executeCommand({
-      command: selected,
-      flags,
-      planOptions,
-      guided: true,
-    });
+  try {
+    while (true) {
+      resetGuidedFlags(flags);
+      const selected = await runGuidedHome({ flags, planOptions });
+      if (!selected) break;
+      if (selected === "refresh") continue;
+      await executeCommand({
+        command: selected,
+        flags,
+        planOptions,
+        guided: true,
+      });
+    }
+  } finally {
+    removeGuidedExitShortcut();
   }
   if (useStyledPrompts(flags)) {
     prompts.outro("See you at the next rehearsal.");
