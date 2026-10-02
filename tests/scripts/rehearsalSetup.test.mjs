@@ -159,6 +159,8 @@ describe("guided Rehearsal setup", () => {
     expect(config).toContain('project: { name: "setup-fixture" }');
     expect(config).toContain('target: "supabase"');
     expect(config).toContain("apiPort: 58321");
+    expect(config).toContain("CHECK: commands detected from package.json");
+    expect(config).toContain("Keep passwords, tokens, and production URLs out");
     expect(localSupabase).toContain('project_id = "setup-fixture-rehearsal"');
     expect(localSupabase).toContain("major_version = 15");
     expect(gitignore).toContain("# Rehearsal local artifacts");
@@ -192,6 +194,8 @@ describe("guided Rehearsal setup", () => {
     expect(config).toContain('target: "postgresql"');
     expect(config).toContain('image: "postgres:17-alpine"');
     expect(config).toContain("databasePort: 58322");
+    expect(config).toContain("CHECK: commands detected from package.json");
+    expect(config).toContain("docs/configuration.md");
     await expect(
       stat(join(root, "infrastructure/rehearsal/supabase/config.toml")),
     ).rejects.toMatchObject({ code: "ENOENT" });
@@ -199,6 +203,14 @@ describe("guided Rehearsal setup", () => {
 
   it("exposes preview and explicit write through the public CLI", async () => {
     const root = await makeProject();
+    await mkdir(join(root, "node_modules/@rehearsal-db"), {
+      recursive: true,
+    });
+    await symlink(
+      process.cwd(),
+      join(root, "node_modules/@rehearsal-db/core"),
+      "dir",
+    );
     const preview = JSON.parse(
       (
         await execute(process.execPath, [cliPath, "setup", "--json"], {

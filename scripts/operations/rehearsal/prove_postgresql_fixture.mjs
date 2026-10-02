@@ -215,10 +215,28 @@ const main = async () => {
       ["reset", ["reset", "--json"]],
       ["stop", ["stop", "--json"]],
       ["start", ["start", "--json"]],
-      ["discard", ["discard", "--json"]],
     ]) {
       executeCliOrThrow({ cwd, label, args });
     }
+    const cleanupPlan = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        label: "cleanup",
+        args: ["cleanup", "--include-runtime", "--json"],
+      }).stdout,
+    ).data.plan;
+    executeCliOrThrow({
+      cwd,
+      label: "cleanup apply",
+      args: [
+        "cleanup",
+        "--include-runtime",
+        "--write",
+        `--confirm-cleanup=${cleanupPlan.digest}`,
+        "--json",
+      ],
+    });
+    executeCliOrThrow({ cwd, label: "discard", args: ["discard", "--json"] });
 
     await cp(
       join(cwd, "broken/20260101000200_invalid_candidate.sql"),

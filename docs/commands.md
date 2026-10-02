@@ -59,10 +59,35 @@ and process exit code, not parse human-facing text.
 | `npx rehearsal reset`                                 | Discard runtime edits and restore the baseline.                     |
 | `npx rehearsal stop`                                  | Stop the runtime but keep its local state.                          |
 | `npx rehearsal discard`                               | Remove this project's disposable runtime and volume.                |
+| `npx rehearsal cleanup`                               | Preview conservative cleanup without removing anything.             |
 
 In a terminal, the guide displays candidate filenames and asks for confirmation. In a
 script, copy the digest from `candidates` into `--confirm-candidates`. Adding, removing,
 reordering, or editing a migration changes that digest.
+
+## Clean up disk space
+
+Start with a preview:
+
+```bash
+npx rehearsal cleanup
+```
+
+By default, cleanup selects only old baseline generations beyond the retention setting
+in `rehearsal.config.mjs`. Add options to broaden the preview:
+
+| Command option      | Additional resources considered                                        |
+| ------------------- | ---------------------------------------------------------------------- |
+| `--include-runtime` | This project's disposable runtime and its database volumes.            |
+| `--include-images`  | Older unused Supabase images; the newest image for each service stays. |
+| `--write`           | Apply the exact freshly verified preview.                              |
+| `--confirm-cleanup` | Full cleanup digest printed by the preview; required with `--write`.   |
+
+Image cleanup never removes an image used by any running or stopped container and never
+runs a global Docker prune. Images may be shared by projects and can be downloaded again,
+so they remain excluded unless you explicitly add `--include-images`. Database volumes
+belonging to other projects are never included. This follows
+[Docker's conservative pruning guidance](https://docs.docker.com/engine/manage-resources/pruning/).
 
 ## Common options
 
@@ -74,5 +99,9 @@ reordering, or editing a migration changes that digest.
 | `--plain`                       | Disable decorative interactive prompts.                          |
 | `--config=<path>`               | Use a specific config file inside the project.                   |
 | `--target=supabase\|postgresql` | Choose the setup target.                                         |
+| `--include-runtime`             | Include this project's runtime in a cleanup preview.             |
+| `--include-images`              | Include older unused Supabase images in a cleanup preview.       |
+| `--confirm-cleanup=<digest>`    | Confirm the exact cleanup set printed by the preview.            |
+| `--write`                       | Apply a setup, policy, or cleanup preview.                       |
 
 Run `npx rehearsal --help` to print the command list available in your installed version.

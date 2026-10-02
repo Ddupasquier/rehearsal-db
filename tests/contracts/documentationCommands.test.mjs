@@ -27,6 +27,7 @@ const documentedCommands = [
   "status",
   "stop",
   "discard",
+  "cleanup",
   "verify",
 ];
 
@@ -66,6 +67,7 @@ describe("documented CLI contract", () => {
       "status",
       "stop",
       "discard",
+      "cleanup",
       "verify",
     ]) {
       expect(fixtureProof).toContain(`\"${command}\"`);
@@ -166,6 +168,29 @@ describe("documented CLI contract", () => {
     });
     expect(tutorial).toContain("tests/fixtures/postgresql-project");
     expect(tutorial).toContain("20260101000100_add_widget_description.sql");
+  });
+
+  it("respects user-owned container runtime capacity", async () => {
+    const [runtimeSource, cleanupSource, configuration] = await Promise.all([
+      readFile(
+        join(root, "scripts/lib/environment/local_supabase.mjs"),
+        "utf8",
+      ),
+      readFile(join(root, "scripts/lib/rehearsal/cleanup.mjs"), "utf8"),
+      readFile(join(root, "docs/configuration.md"), "utf8"),
+    ]);
+
+    expect(runtimeSource).toContain('runLocalCommand("colima", ["start"]');
+    expect(runtimeSource).not.toContain('"--disk"');
+    expect(runtimeSource).not.toContain('"--memory"');
+    expect(cleanupSource).toContain('"ls", "--all", "--quiet"');
+    expect(cleanupSource).not.toMatch(
+      /(?:system|image|container|volume) prune/u,
+    );
+    expect(cleanupSource).not.toContain('"--force"');
+    expect(cleanupSource).toContain("exact --confirm-cleanup digest");
+    expect(configuration).toContain("autoStartColima");
+    expect(configuration).toContain("retainBaselineGenerations");
   });
 
   it("keeps npm publication behind an exact-artifact human gate", async () => {

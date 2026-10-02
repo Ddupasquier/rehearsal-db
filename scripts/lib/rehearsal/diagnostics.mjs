@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 
 export const REHEARSAL_RESULT_VERSION = 1;
-export const REHEARSAL_VERSION = "0.1.0-beta.6";
+export const REHEARSAL_VERSION = "0.1.0-beta.7";
 
 export const REHEARSAL_EXIT_CODES = Object.freeze({
   success: 0,

@@ -23,6 +23,8 @@ export const REHEARSAL_CONFIG_VERSION = 1;
 
 export const REHEARSAL_DEFAULTS = Object.freeze({
   baseline: Object.freeze({ artifactDirectory: ".rehearsal" }),
+  containerRuntime: Object.freeze({ autoStartColima: true }),
+  cleanup: Object.freeze({ retainBaselineGenerations: 2 }),
   runtime: Object.freeze({
     applicationUrl: "http://localhost:5175",
     projectId: "rehearsal-local",
@@ -111,6 +113,20 @@ const assertPort = (value, path) => {
   return value;
 };
 
+const assertBoolean = (value, path) => {
+  if (typeof value !== "boolean") {
+    throw new Error(`${path} must be true or false.`);
+  }
+  return value;
+};
+
+const assertPositiveInteger = (value, path) => {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`${path} must be a positive integer.`);
+  }
+  return value;
+};
+
 const assertStringArray = (value, path) => {
   if (
     !Array.isArray(value) ||
@@ -151,6 +167,8 @@ const normalizeConfig = (input) => {
       "supabase",
       "postgresql",
       "baseline",
+      "containerRuntime",
+      "cleanup",
       "application",
       "runtime",
       "safety",
@@ -219,6 +237,17 @@ const normalizeConfig = (input) => {
     ["artifactDirectory", "sanitizationPolicy"],
     "config.baseline",
   );
+  const containerRuntime = assertPlainObject(
+    root.containerRuntime ?? {},
+    "config.containerRuntime",
+  );
+  assertKnownKeys(
+    containerRuntime,
+    ["autoStartColima"],
+    "config.containerRuntime",
+  );
+  const cleanup = assertPlainObject(root.cleanup ?? {}, "config.cleanup");
+  assertKnownKeys(cleanup, ["retainBaselineGenerations"], "config.cleanup");
   const application = assertPlainObject(root.application, "config.application");
   assertKnownKeys(
     application,
@@ -424,6 +453,20 @@ const normalizeConfig = (input) => {
       sanitizationPolicy: assertRelativePath(
         baseline.sanitizationPolicy,
         "config.baseline.sanitizationPolicy",
+      ),
+    }),
+    containerRuntime: Object.freeze({
+      autoStartColima: assertBoolean(
+        containerRuntime.autoStartColima ??
+          REHEARSAL_DEFAULTS.containerRuntime.autoStartColima,
+        "config.containerRuntime.autoStartColima",
+      ),
+    }),
+    cleanup: Object.freeze({
+      retainBaselineGenerations: assertPositiveInteger(
+        cleanup.retainBaselineGenerations ??
+          REHEARSAL_DEFAULTS.cleanup.retainBaselineGenerations,
+        "config.cleanup.retainBaselineGenerations",
       ),
     }),
     application: Object.freeze({
@@ -649,27 +692,60 @@ export const renderDetectedConfig = (
     applicationUrl = "http://localhost:5175",
     ports = { api: 58321, database: 58322, studio: 58323 },
   } = {},
-) => `// @ts-check
+) =>
+  `// @ts-check
+/**
+ * Rehearsal configuration for ${detected.projectName}.
+ * Generated from this project by \`npx rehearsal\` and safe to commit.
+ * Review the CHECK comments. Keep passwords, tokens, and production URLs out of this file.
+ * Docs: https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/configuration.md
+ */
 import { defineRehearsalConfig } from "@rehearsal-db/core";
 
 export default defineRehearsalConfig({
+	// Configuration format. Rehearsal will explain if an upgrade is ever needed.
 	schemaVersion: 1,
+	// Stable local name used in Rehearsal labels and reports.
 	project: { name: ${JSON.stringify(detected.projectName)} },
+
+	// Project files Rehearsal reads. Every path stays inside this repository.
 	supabase: {
 		workdir: ".",
 		migrationDirectory: "supabase/migrations",
 		rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml",
 		runtimeWorkdir: ".rehearsal/runtime",
+
+		// Optional local-only identity-provider credentials. Enable both keys together.
+		// serviceEnvironmentFile: ".env.rehearsal-service.local",
+		// serviceEnvironmentVariables: ["LOCAL_IDP_CLIENT_ID", "LOCAL_IDP_SECRET"],
 	},
+
+	// Immutable local baseline files. Rehearsal never reads production on your behalf.
 	baseline: {
 		artifactDirectory: ".rehearsal",
 		sanitizationPolicy: "infrastructure/rehearsal/sanitization-policy.json",
 	},
+
+	// Reuse any running Docker-compatible engine; start Colima only when needed.
+	containerRuntime: {
+		autoStartColima: true,
+	},
+
+	// Keep this many baseline generations, always including the active one.
+	cleanup: {
+		retainBaselineGenerations: 2,
+	},
+
 	application: {
+		// CHECK: commands detected from package.json. Change them if they are not correct.
 		startCommand: ${JSON.stringify(detected.applicationCommand)},
 		proofCommand: ${JSON.stringify(detected.verificationCommand)},
 		environmentFile: ".rehearsal/runtime.env",
+		// Optional project-specific restore hook:
+		// runtimeAdapter: "infrastructure/rehearsal/runtime-adapter.mjs",
 	},
+
+	// Disposable local runtime identity, URL, and dedicated ports.
 	runtime: {
 		target: "supabase",
 		applicationUrl: ${JSON.stringify(applicationUrl)},
@@ -678,6 +754,8 @@ export default defineRehearsalConfig({
 		databasePort: ${ports.database},
 		studioPort: ${ports.studio},
 	},
+
+	// Only local runtime URLs are accepted; common hosted credentials are quarantined.
 	safety: {
 		allowedHosts: ["127.0.0.1", "::1", "localhost"],
 		blockedEnvironmentVariables: [
@@ -688,19 +766,29 @@ export default defineRehearsalConfig({
 		hostedAccess: "disabled",
 		outboundNetwork: "deny",
 	},
-	verification: { commands: [${JSON.stringify(detected.verificationCommand)}] },
 });
-`;
+`.replaceAll("\t", "  ");
 
 export const renderDetectedPostgresqlConfig = (
   detected,
   { applicationUrl = "http://localhost:5175", databasePort = 58322 } = {},
-) => `// @ts-check
+) =>
+  `// @ts-check
+/**
+ * Rehearsal configuration for ${detected.projectName}.
+ * Generated from this project by \`npx rehearsal\` and safe to commit.
+ * Review the CHECK comments. Keep passwords, tokens, and production URLs out of this file.
+ * Docs: https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/configuration.md
+ */
 import { defineRehearsalConfig } from "@rehearsal-db/core";
 
 export default defineRehearsalConfig({
+	// Configuration format. Rehearsal will explain if an upgrade is ever needed.
 	schemaVersion: 1,
+	// Stable local name used in Rehearsal labels and reports.
 	project: { name: ${JSON.stringify(detected.projectName)} },
+
+	// Disposable PostgreSQL settings. The image must already exist locally.
 	postgresql: {
 		migrationDirectory: ${JSON.stringify(detected.postgresqlMigrationDirectory)},
 		runtimeWorkdir: ".rehearsal/runtime",
@@ -708,21 +796,41 @@ export default defineRehearsalConfig({
 		database: "postgres",
 		user: "postgres",
 	},
+
+	// Immutable local baseline files. Rehearsal never reads production on your behalf.
 	baseline: {
 		artifactDirectory: ".rehearsal",
 		sanitizationPolicy: "infrastructure/rehearsal/sanitization-policy.json",
 	},
+
+	// Reuse any running Docker-compatible engine; start Colima only when needed.
+	containerRuntime: {
+		autoStartColima: true,
+	},
+
+	// Keep this many baseline generations, always including the active one.
+	cleanup: {
+		retainBaselineGenerations: 2,
+	},
+
 	application: {
+		// CHECK: commands detected from package.json. Change them if they are not correct.
 		startCommand: ${JSON.stringify(detected.applicationCommand)},
 		proofCommand: ${JSON.stringify(detected.verificationCommand)},
 		environmentFile: ".rehearsal/runtime.env",
+		// Optional project-specific restore hook:
+		// runtimeAdapter: "infrastructure/rehearsal/runtime-adapter.mjs",
 	},
+
+	// Disposable local runtime identity, URL, and dedicated database port.
 	runtime: {
 		target: "postgresql",
 		applicationUrl: ${JSON.stringify(applicationUrl)},
 		projectId: "${detected.projectName}-rehearsal",
 		databasePort: ${databasePort},
 	},
+
+	// Only local runtime URLs are accepted; common hosted credentials are quarantined.
 	safety: {
 		allowedHosts: ["127.0.0.1", "::1", "localhost"],
 		blockedEnvironmentVariables: [
@@ -735,6 +843,5 @@ export default defineRehearsalConfig({
 		hostedAccess: "disabled",
 		outboundNetwork: "deny",
 	},
-	verification: { commands: [${JSON.stringify(detected.verificationCommand)}] },
 });
-`;
+`.replaceAll("\t", "  ");

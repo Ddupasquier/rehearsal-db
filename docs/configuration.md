@@ -6,29 +6,55 @@ Most users should let the guide create this file:
 npx rehearsal
 ```
 
-Use this page when reviewing or changing the generated `rehearsal.config.mjs`. The schema
-is strict: misspelled fields, unknown fields, and unsupported versions are errors. The
-`.mjs` extension works in both CommonJS and ESM projects.
+The first run uses your chosen database type and detects the project name, migration
+folder, package-manager commands, and free local ports. After you approve the setup
+preview, it creates a commented `rehearsal.config.mjs` with those values filled in.
+Installation itself does not use a `postinstall` script or silently modify the project.
+
+Review lines marked `CHECK`, especially the application proof command. Optional settings
+are present as commented examples, and secrets never belong in this file. Rehearsal will
+not overwrite an existing config.
+
+Use this page when changing the generated file. The schema is strict: misspelled fields,
+unknown fields, and unsupported versions are errors. The `.mjs` extension works in both
+CommonJS and ESM projects.
 
 ```ts
+// @ts-check
 import { defineRehearsalConfig } from "@rehearsal-db/core";
 
 export default defineRehearsalConfig({
+  // Configuration format. Rehearsal will explain if an upgrade is ever needed.
   schemaVersion: 1,
+  // Stable local name used in Rehearsal labels and reports.
   project: { name: "example-app" },
+
+  // Project files Rehearsal reads. Every path stays inside this repository.
   supabase: {
     workdir: ".",
     migrationDirectory: "supabase/migrations",
     rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml",
     runtimeWorkdir: ".rehearsal/runtime",
+
+    // Optional; configure both keys together.
+    // serviceEnvironmentFile: ".env.rehearsal-service.local",
+    // serviceEnvironmentVariables: ["LOCAL_IDP_CLIENT_ID", "LOCAL_IDP_SECRET"],
   },
   baseline: {
     artifactDirectory: ".rehearsal",
     sanitizationPolicy: "infrastructure/rehearsal/sanitization-policy.json",
   },
+  containerRuntime: {
+    autoStartColima: true,
+  },
+  cleanup: {
+    retainBaselineGenerations: 2,
+  },
   application: {
+    // CHECK: replace these when the detected package scripts are not correct.
     startCommand: "npm run dev:rehearsal",
     proofCommand: "npm run test:rehearsal",
+    environmentFile: ".rehearsal/runtime.env",
   },
   runtime: {
     target: "supabase",
@@ -38,7 +64,16 @@ export default defineRehearsalConfig({
     databasePort: 58322,
     studioPort: 58323,
   },
-  safety: { hostedAccess: "disabled", outboundNetwork: "deny" },
+  safety: {
+    allowedHosts: ["127.0.0.1", "::1", "localhost"],
+    blockedEnvironmentVariables: [
+      "SUPABASE_ACCESS_TOKEN",
+      "SUPABASE_DB_PASSWORD",
+      "SUPABASE_PROJECT_ID",
+    ],
+    hostedAccess: "disabled",
+    outboundNetwork: "deny",
+  },
 });
 ```
 
@@ -50,6 +85,26 @@ All paths resolve inside the consuming project. The artifact directory must be n
 
 Rehearsal never overwrites this config. To start over, move the existing file somewhere
 safe, run setup again, and compare the two files before deleting either one.
+
+## Container runtime and cleanup
+
+```ts
+containerRuntime: {
+  autoStartColima: true,
+},
+cleanup: {
+  retainBaselineGenerations: 2,
+},
+```
+
+Rehearsal uses whichever Docker-compatible engine already answers `docker info`. If none
+is running and `autoStartColima` is `true`, Rehearsal may run `colima start`. It respects
+the user's Colima CPU, memory, and disk settings and never changes them. Set the field to
+`false` when you prefer to start Docker or Colima yourself.
+
+`retainBaselineGenerations` controls how many immutable baseline generations survive
+`rehearsal cleanup`; it must be at least 1. Runtime deletion and shared-image inspection
+are command choices, not automatic retention settings. See [CLI commands](commands.md).
 
 ## Supabase service environment
 
@@ -67,9 +122,12 @@ terminate at local Auth. They do not grant hosted database access.
 
 ## Safety fields
 
-Version 1 accepts loopback hosts only. `hostedAccess` can only be `disabled`, and
-`outboundNetwork` can only be `deny`. Ambient hosted Supabase variables are quarantined
-from child processes. There is no force flag to weaken these rules.
+Version 1 accepts loopback runtime URLs only. `hostedAccess` can only be `disabled`, and
+`outboundNetwork` can only be `deny`. Common hosted Supabase and PostgreSQL credentials
+are quarantined from child processes. These fields are fail-closed configuration rules,
+not a host firewall: trusted project proof commands and runtime adapters remain ordinary
+local code and must be reviewed. There is no force flag to weaken the configuration
+rules.
 
 ## Ports and project identity
 

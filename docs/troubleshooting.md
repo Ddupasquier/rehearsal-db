@@ -39,6 +39,29 @@ writes setup files.
 Start Docker Desktop or Colima, confirm `docker info`, then rerun `rehearsal doctor`.
 Restarting the computer is rarely necessary.
 
+## Docker or Colima is out of disk space
+
+Preview what Rehearsal can safely remove:
+
+```bash
+npx rehearsal cleanup --include-images
+```
+
+Review the list, then add `--write` and the printed `--confirm-cleanup` digest. Rehearsal
+keeps the newest Supabase image for each service, refuses images used by any running or
+stopped container, and never runs a global Docker or volume prune. Add
+`--include-runtime` only when this project's disposable database may also be removed.
+
+For example, copy the full digest from your preview:
+
+```bash
+npx rehearsal cleanup --include-images --write --confirm-cleanup=PASTE_FULL_DIGEST_HERE
+```
+
+For Colima, disk capacity belongs to the user rather than the project. Increase it with
+`colima stop` followed by a larger `colima start --disk <GiB>` value. Rehearsal respects
+that configuration and does not choose a disk size.
+
 ## The guide does not show styled menus
 
 Rehearsal uses numbered menus when terminal styling is unavailable, `NO_COLOR` is set, or

@@ -468,6 +468,7 @@ const resetRuntime = async () => {
       workdir: runtimeWorkdir,
       exclude: ["edge-runtime", "logflare", "vector", "realtime"],
       environment: serviceEnvironment,
+      autoStartColima: config.containerRuntime.autoStartColima,
     });
     const structuralSchemaSha256 = await restoreProductionSchema(active);
     await restoreBaselineRows(active);
@@ -532,6 +533,7 @@ const startRuntime = async () => {
     workdir: runtimeWorkdir,
     exclude: ["edge-runtime", "logflare", "vector", "realtime"],
     environment: serviceEnvironment,
+    autoStartColima: config.containerRuntime.autoStartColima,
   });
   const projectRuntime = configureProjectRuntime({ environment, baseline });
   await writeRuntimeEnvironment({

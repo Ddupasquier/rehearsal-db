@@ -5,10 +5,22 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.7] - 2026-10-02
+
 ### Added
 
-- A concise post-beta.6 roadmap prioritizes real-project acceptance, easier baseline
-  onboarding, and another ordinary PostgreSQL project before further database expansion.
+- A concise roadmap prioritizes real-project acceptance, easier baseline onboarding,
+  and another ordinary PostgreSQL project before further database expansion.
+- A preview-first cleanup command for old baseline generations, the current project's
+  disposable runtime, and explicitly selected older unused Supabase images. Applying a
+  cleanup requires the exact digest from its preview.
+- First-run setup now generates a fully populated, commented configuration that explains
+  safe defaults, project-specific checks, and optional local-only settings in place.
+
+### Changed
+
+- Rehearsal now respects user-owned Colima CPU, memory, and disk settings. Projects may
+  configure Colima auto-start and baseline retention in `rehearsal.config.mjs`.
 
 ### Fixed
 
@@ -182,7 +194,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.6...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.7...HEAD
+[0.1.0-beta.7]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.6...v0.1.0-beta.7
 [0.1.0-beta.6]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.5...v0.1.0-beta.6
 [0.1.0-beta.5]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.4...v0.1.0-beta.5
 [0.1.0-beta.4]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.3...v0.1.0-beta.4

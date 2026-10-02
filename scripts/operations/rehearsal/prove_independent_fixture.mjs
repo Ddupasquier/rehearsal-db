@@ -412,6 +412,25 @@ from public.widgets;`,
       args: ["stop", "--json"],
       label: "second stop",
     });
+    const cleanupPlan = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        args: ["cleanup", "--include-runtime", "--json"],
+        label: "cleanup preview",
+      }).stdout,
+    ).data.plan;
+    commandsProven.push("cleanup");
+    executeCliOrThrow({
+      cwd,
+      args: [
+        "cleanup",
+        "--include-runtime",
+        "--write",
+        `--confirm-cleanup=${cleanupPlan.digest}`,
+        "--json",
+      ],
+      label: "cleanup apply",
+    });
     executeCliOrThrow({
       cwd,
       args: ["discard", "--json"],

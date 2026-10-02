@@ -478,7 +478,7 @@ export const listIncompleteBaselineBuilds = async ({ artifactRoot }) => {
   }
 };
 
-export const pruneBaselineGenerations = async ({
+export const planBaselineGenerationPrune = async ({
   artifactRoot,
   retain = 2,
 }) => {
@@ -516,7 +516,36 @@ export const pruneBaselineGenerations = async ({
   const removed = entries
     .map((entry) => entry.name)
     .filter((name) => !retained.has(name));
-  for (const name of removed) {
+  return { retained: [...retained], removed };
+};
+
+export const pruneBaselineGenerations = async ({
+  artifactRoot,
+  retain = 2,
+  expectedRemoved,
+}) => {
+  const root = assertArtifactRoot(artifactRoot);
+  const plan = await planBaselineGenerationPrune({
+    artifactRoot: root,
+    retain,
+  });
+  const generationsRoot = join(root, generationsDirectoryName);
+  if (
+    expectedRemoved &&
+    (expectedRemoved.length !== plan.removed.length ||
+      expectedRemoved.some((name, index) => name !== plan.removed[index]))
+  ) {
+    throw new Error(
+      "Rehearsal baseline generations changed after the cleanup preview.",
+    );
+  }
+  for (const name of plan.removed) {
+    const active = await resolveActiveBaselinePaths({ artifactRoot: root });
+    if (basename(active.generationDirectory) === name) {
+      throw new Error(
+        "Refusing to prune the active Rehearsal baseline generation.",
+      );
+    }
     const target = assertInsideRoot(
       generationsRoot,
       join(generationsRoot, name),
@@ -525,7 +554,7 @@ export const pruneBaselineGenerations = async ({
     await makeArtifactTreeWritable(target);
     await rm(target, { recursive: true, force: true });
   }
-  return { retained: [...retained], removed };
+  return plan;
 };
 
 export const removeBaselineArtifactRoot = async ({ artifactRoot }) => {
