@@ -232,12 +232,11 @@ describe("guided terminal journey", () => {
         interactions: [
           { after: "What would you like to do? [1]:", write: "1\n" },
           {
-            after:
-              "Sanitized NDJSON records [rehearsal/synthetic-data.ndjson]:",
+            after: "Sanitized NDJSON records [1]:",
             write: "\n",
           },
           {
-            after: "Migration ledger [rehearsal/migration-ledger.json]:",
+            after: "Migration ledger [1]:",
             write: "\n",
           },
           {
@@ -277,7 +276,7 @@ describe("guided terminal journey", () => {
             write: "rehearsal/synthetic-data.ndjson\n",
           },
           {
-            after: "Migration ledger [rehearsal/migration-ledger.json]:",
+            after: "Migration ledger [1]:",
             write: "\n",
           },
           { after: "What would you like to do? [1]:", write: "5\n" },
@@ -293,6 +292,33 @@ describe("guided terminal journey", () => {
     await expect(
       readFile(join(root, "rehearsal/sanitization-policy.json"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  }, 15_000);
+
+  it("accepts each single detected baseline input with Enter in the styled guide", async () => {
+    const root = await makeBaselineInputProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: false,
+        interactions: [
+          { after: "What would you like to do?", write: "\r" },
+          { after: "Sanitized NDJSON records", write: "\r" },
+          { after: "Migration ledger", write: "\r" },
+          {
+            after: "Create the REVIEW REQUIRED draft",
+            write: "\u0003",
+          },
+          { after: "What would you like to do?", write: "\u0003" },
+        ],
+      }),
+    )
+      .replaceAll("\r", "")
+      .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+
+    expect(output).toContain("rehearsal/synthetic-data.ndjson");
+    expect(output).toContain("rehearsal/migration-ledger.json");
+    expect(output).toContain("BASELINE POLICY — PREVIEW");
+    expect(output).not.toContain("Enter a value.");
   }, 15_000);
 
   it("applies table defaults and reviews only suggested exceptions", async () => {
