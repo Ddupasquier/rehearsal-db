@@ -105,10 +105,13 @@ npx rehearsal baseline prepare \
   --write
 ```
 
-After creating the draft, choose **Review the script** in the guide. Rehearsal walks each
-column through sanitization action, generated status, identity status, and optional
-foreign-key metadata. Every answer is explicit, the complete policy is validated before
-writing, and the original draft is replaced only if it did not change during review.
+After creating the draft, choose **Review the script** in the guide. For each table,
+choose between reviewing every column or applying the displayed safe defaults and
+reviewing only exceptions. Rehearsal suggests identifiers, relationship columns, and
+timestamps as exceptions. Every saved column still records sanitization action,
+generated status, identity status, and optional foreign-key metadata. The complete
+policy is validated before writing, and the original draft is replaced only if it did
+not change during review.
 
 For noninteractive workflows, review every `REVIEW REQUIRED` field directly and remove
 `"draft": true` only after that review. Rehearsal refuses to activate a draft.

@@ -43,8 +43,9 @@ flags.
 The guide is a persistent session: after setup, policy review, baseline creation, or a
 runtime action it re-reads project state and offers the next relevant action. Generated
 policy drafts can be completed interactively without editing JSON. Each column still
-requires explicit action, generated, identity, and foreign-key decisions; the guide does
-not silently infer them.
+receives explicit action, generated, identity, and foreign-key decisions. A human may
+apply the displayed safe preset to a table, then review only selected exceptions; the
+guide never silently applies a preset.
 
 `baseline prepare` reads only table and column names from the NDJSON records; row values
 are never included in its result. Its generated policy deliberately marks every column
