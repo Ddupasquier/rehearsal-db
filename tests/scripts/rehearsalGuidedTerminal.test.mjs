@@ -90,6 +90,21 @@ const makeProject = async () => {
   return root;
 };
 
+const makePostgresqlProject = async () => {
+  const root = await mkdtemp(join(tmpdir(), "rehearsal-guided-postgresql-"));
+  roots.push(root);
+  await mkdir(join(root, "database/migrations"), { recursive: true });
+  await writeFile(
+    join(root, "package.json"),
+    `${JSON.stringify({ name: "guided-postgresql-fixture", scripts: { test: "node --test" } })}\n`,
+  );
+  await writeFile(
+    join(root, "database/migrations/20260101000000_create_widgets.sql"),
+    "create table public.widgets(id bigint primary key);\n",
+  );
+  return root;
+};
+
 const makePolicyProject = async () => {
   const root = await makeProject();
   await mkdir(join(root, "rehearsal"), { recursive: true });
@@ -223,6 +238,38 @@ afterEach(async () => {
 });
 
 describe("guided terminal journey", () => {
+  it("shows nested PostgreSQL setup choices in the plain guide", async () => {
+    const root = await makePostgresqlProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: true,
+        interactions: [
+          { after: "What would you like to do? [1]:", write: "\n" },
+          {
+            after: "Which database should Rehearsal use? [1]:",
+            write: "\n",
+          },
+          {
+            after: "Create these project-local files? (y/N)",
+            write: "n\n",
+          },
+          { after: "What would you like to do? [1]:", write: "4\n" },
+        ],
+      }),
+    ).replaceAll("\r", "");
+
+    expect(output).toContain("1. PostgreSQL");
+    expect(output).toContain("2. Supabase");
+    expect(output).toContain("Database: PostgreSQL");
+    expect(output).toContain(
+      "PostgreSQL binds only to a dedicated loopback port",
+    );
+    await expect(
+      readFile(join(root, "rehearsal.config.mjs"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  }, 15_000);
+
   it("discovers and preflights baseline inputs before writing a policy draft", async () => {
     const root = await makeBaselineInputProject();
     const output = String(
