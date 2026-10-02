@@ -278,6 +278,7 @@ const promptForChoice = async ({ message, options, flags = {} }) => {
   if (useStyledPrompts(flags)) {
     const selected = await prompts.select({
       message,
+      maxItems: options.length,
       options: options.map((option) => ({
         value: option,
         label: option.label,
@@ -346,7 +347,7 @@ const promptForPath = async ({
       placeholder: defaultValue ?? (optional ? "Leave blank for none" : ""),
       defaultValue,
       validate: (value) => {
-        const resolved = String(value ?? defaultValue ?? "").trim();
+        const resolved = String(value || defaultValue || "").trim();
         if (!optional && !resolved) return "Enter a value.";
         return resolved && validate ? validate(resolved) : undefined;
       },
@@ -386,13 +387,6 @@ const promptForDiscoveredPath = async ({
   optional = false,
   flags,
 }) => {
-  if (candidates.length <= 1 && !optional) {
-    return promptForPath({
-      message,
-      defaultValue: candidates[0],
-      flags,
-    });
-  }
   if (candidates.length === 0) {
     return promptForPath({ message, optional, flags });
   }

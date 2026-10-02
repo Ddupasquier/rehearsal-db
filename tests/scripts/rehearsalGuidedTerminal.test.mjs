@@ -1,14 +1,35 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { spawn } from "@lydell/node-pty";
+import { createSyntheticBaselineFromFiles } from "../../scripts/lib/rehearsal/baseline_builder.mjs";
 
 const roots = [];
 const cliPath = join(
   process.cwd(),
   "scripts/operations/rehearsal/rehearsal_cli.mjs",
 );
+
+const makeTreeWritable = async (path) => {
+  await chmod(path, 0o700).catch(() => undefined);
+  for (const entry of await readdir(path, { withFileTypes: true }).catch(
+    () => [],
+  )) {
+    const child = join(path, entry.name);
+    if (entry.isDirectory()) await makeTreeWritable(child);
+    else if (!entry.isSymbolicLink()) await chmod(child, 0o600);
+  }
+};
 
 const runInPty = ({ cwd, interactions, plain }) =>
   new Promise((resolve, reject) => {
@@ -178,9 +199,26 @@ const makeBaselineInputProject = async () => {
   return root;
 };
 
+const makeCompleteProject = async () => {
+  const root = await mkdtemp(join(tmpdir(), "rehearsal-guided-complete-"));
+  roots.push(root);
+  await cp(join(process.cwd(), "tests/fixtures/rehearsal-project"), root, {
+    recursive: true,
+  });
+  await createSyntheticBaselineFromFiles({
+    projectRoot: root,
+    recordsPath: "rehearsal/sanitized-data.ndjson",
+    ledgerPath: "rehearsal/migration-ledger.json",
+  });
+  return root;
+};
+
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+    roots.splice(0).map(async (root) => {
+      await makeTreeWritable(root);
+      await rm(root, { recursive: true, force: true });
+    }),
   );
 });
 
@@ -194,12 +232,11 @@ describe("guided terminal journey", () => {
         interactions: [
           { after: "What would you like to do? [1]:", write: "1\n" },
           {
-            after:
-              "Sanitized NDJSON records [rehearsal/synthetic-data.ndjson]:",
+            after: "Sanitized NDJSON records [1]:",
             write: "\n",
           },
           {
-            after: "Migration ledger [rehearsal/migration-ledger.json]:",
+            after: "Migration ledger [1]:",
             write: "\n",
           },
           {
@@ -239,7 +276,7 @@ describe("guided terminal journey", () => {
             write: "rehearsal/synthetic-data.ndjson\n",
           },
           {
-            after: "Migration ledger [rehearsal/migration-ledger.json]:",
+            after: "Migration ledger [1]:",
             write: "\n",
           },
           { after: "What would you like to do? [1]:", write: "5\n" },
@@ -255,6 +292,33 @@ describe("guided terminal journey", () => {
     await expect(
       readFile(join(root, "rehearsal/sanitization-policy.json"), "utf8"),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  }, 15_000);
+
+  it("accepts each single detected baseline input with Enter in the styled guide", async () => {
+    const root = await makeBaselineInputProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: false,
+        interactions: [
+          { after: "What would you like to do?", write: "\r" },
+          { after: "Sanitized NDJSON records", write: "\r" },
+          { after: "Migration ledger", write: "\r" },
+          {
+            after: "Create the REVIEW REQUIRED draft",
+            write: "\u0003",
+          },
+          { after: "What would you like to do?", write: "\u0003" },
+        ],
+      }),
+    )
+      .replaceAll("\r", "")
+      .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+
+    expect(output).toContain("rehearsal/synthetic-data.ndjson");
+    expect(output).toContain("rehearsal/migration-ledger.json");
+    expect(output).toContain("BASELINE POLICY — PREVIEW");
+    expect(output).not.toContain("Enter a value.");
   }, 15_000);
 
   it("applies table defaults and reviews only suggested exceptions", async () => {
@@ -419,5 +483,62 @@ describe("guided terminal journey", () => {
     expect(output).toContain("guided-terminal-fixture");
     expect(output).toContain("Set the stage");
     expect(output).toContain("See you at the next rehearsal.");
+  }, 15_000);
+
+  it("runs help actions from the styled menu and returns home", async () => {
+    const root = await makeProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: false,
+        interactions: [
+          {
+            after: "What would you like to do?",
+            write: "\u001B[B\r",
+          },
+          {
+            after: "Report a reproducible issue:",
+            write: "",
+          },
+          {
+            after: "↑/↓",
+            write: "\u001B[B\u001B[B\r",
+          },
+          {
+            after: "Usage: rehearsal <command> [options]",
+            write: "",
+          },
+          {
+            after: "↑/↓",
+            write: "\u001B[B\u001B[B\u001B[B\r",
+          },
+        ],
+      }),
+    )
+      .replaceAll("\r", "")
+      .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+
+    expect(output).toContain("REHEARSAL SUPPORT REPORT");
+    expect(output).toContain("Usage: rehearsal <command> [options]");
+    expect(output).toContain("See you at the next rehearsal.");
+  }, 15_000);
+
+  it("keeps every action visible in the completed styled menu", async () => {
+    const root = await makeCompleteProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: false,
+        interactions: [
+          { after: "What would you like to do?", write: "\u0003" },
+        ],
+      }),
+    )
+      .replaceAll("\r", "")
+      .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+
+    expect(output).toContain("Get help");
+    expect(output).toContain("Show all commands");
+    expect(output).toContain("Exit");
   }, 15_000);
 });
