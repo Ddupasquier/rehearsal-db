@@ -55,6 +55,7 @@ import {
   readReviewablePolicyDraft,
   suggestPolicyExceptionColumns,
 } from "../../lib/rehearsal/policy_review.mjs";
+import { collectRehearsalSupportReport } from "../../lib/rehearsal/support_report.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = process.cwd();
@@ -823,6 +824,11 @@ const runGuidedHome = async ({ flags, planOptions }) => {
     });
   }
   options.push(
+    {
+      label: "Get help",
+      hint: "Create a safe, copy-ready support report",
+      command: "support",
+    },
     { label: "Show all commands", command: "help" },
     { label: "Exit", command: "exit" },
   );
@@ -1535,6 +1541,38 @@ const renderBaselineInputInspection = (result, flags = {}) =>
     "All inputs are project-local regular files and passed structural validation.",
   ].join("\n");
 
+const renderSupportReport = (report) => {
+  const toolLine = (label, tool) =>
+    `${label}: ${tool.status === "available" ? tool.version : tool.status.replaceAll("_", " ")}`;
+  return [
+    "REHEARSAL SUPPORT REPORT",
+    "",
+    `Rehearsal: ${report.rehearsalVersion}`,
+    `System: ${report.system.platform} ${report.system.architecture} (${report.system.release})`,
+    `Node.js: ${report.system.node}`,
+    toolLine("npm", report.tools.npm),
+    toolLine("Supabase CLI", report.tools.supabase),
+    toolLine("Docker client", report.tools.dockerClient),
+    toolLine("Docker server", report.tools.dockerServer),
+    "",
+    `Readiness: ${report.readiness.state}`,
+    ...report.readiness.checks.map((check) =>
+      check.status === "pass"
+        ? `  ✓ ${check.label}`
+        : `  ✗ ${check.label}${check.remediation ? ` — ${check.remediation}` : ""}`,
+    ),
+    ...(report.readiness.quarantinedHostedVariableCount
+      ? [
+          `  ! ${formatCount(report.readiness.quarantinedHostedVariableCount, "ambient hosted variable")} detected and quarantined`,
+        ]
+      : []),
+    "",
+    "Privacy: no row values, credentials, project paths, migration SQL, or baseline identifiers are included.",
+    "Review this report before sharing it.",
+    `Report a reproducible issue: ${report.supportUrl}`,
+  ].join("\n");
+};
+
 const usage = () => `Usage: rehearsal <command> [options]
 
 Commands:
@@ -1544,6 +1582,7 @@ Commands:
   baseline prepare --records= --ledger= [--write] Create a fail-closed policy draft
   baseline create --records= --ledger= [--assets=] Create a baseline from safe local inputs
   doctor                     Check whether Rehearsal is safe and ready
+  support                    Print a safe, copy-ready support report
   explain                    Show the immutable execution plan
   run --dry-run              Alias the exact explain plan without mutations
   run --confirm-candidates=  Execute reset, migration, and verification locally
@@ -1623,6 +1662,11 @@ const executeCommand = async ({ command, flags, planOptions, guided }) => {
       status: data.state === "READY" ? "success" : "not_ready",
     });
     if (data.state !== "READY" && !guided) process.exitCode = 1;
+    return;
+  }
+  if (command === "support") {
+    const data = await collectRehearsalSupportReport(planOptions);
+    emit({ command, data, flags, render: renderSupportReport });
     return;
   }
   if (command === "explain" || (command === "run" && flags.dryRun)) {

@@ -207,7 +207,7 @@ describe("guided terminal journey", () => {
               "Create the REVIEW REQUIRED draft at rehearsal/sanitization-policy.json? (y/N)",
             write: "y\n",
           },
-          { after: "What would you like to do? [1]:", write: "4\n" },
+          { after: "What would you like to do? [1]:", write: "5\n" },
         ],
       }),
     ).replaceAll("\r", "");
@@ -242,7 +242,7 @@ describe("guided terminal journey", () => {
             after: "Migration ledger [rehearsal/migration-ledger.json]:",
             write: "\n",
           },
-          { after: "What would you like to do? [1]:", write: "4\n" },
+          { after: "What would you like to do? [1]:", write: "5\n" },
         ],
       }),
     ).replaceAll("\r", "");
@@ -312,7 +312,7 @@ describe("guided terminal journey", () => {
             after: "Save 3 classified columns and activate this policy? (y/N)",
             write: "y\n",
           },
-          { after: "What would you like to do? [1]:", write: "4\n" },
+          { after: "What would you like to do? [1]:", write: "5\n" },
         ],
       }),
     ).replaceAll("\r", "");
@@ -357,8 +357,8 @@ describe("guided terminal journey", () => {
         cwd: root,
         plain: true,
         interactions: [
-          { after: "What would you like to do? [1]:", write: "2\n" },
           { after: "What would you like to do? [1]:", write: "3\n" },
+          { after: "What would you like to do? [1]:", write: "4\n" },
         ],
       }),
     ).replaceAll("\r", "");
@@ -378,6 +378,27 @@ describe("guided terminal journey", () => {
         "setupVisible": true,
       }
     `);
+  }, 15_000);
+
+  it("offers a privacy-safe support report from the guide", async () => {
+    const root = await makeProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: true,
+        interactions: [
+          { after: "What would you like to do? [1]:", write: "2\n" },
+          { after: "What would you like to do? [1]:", write: "4\n" },
+        ],
+      }),
+    ).replaceAll("\r", "");
+
+    expect(output).toContain("REHEARSAL SUPPORT REPORT");
+    expect(output).toContain(
+      "Privacy: no row values, credentials, project paths, migration SQL, or baseline identifiers are included.",
+    );
+    expect(output).toContain("Report a reproducible issue:");
+    expect(output).not.toContain(root);
   }, 15_000);
 
   it("renders the styled guide in a real PTY and handles cancellation", async () => {

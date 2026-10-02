@@ -93,6 +93,7 @@ npx rehearsal baseline prepare --records=<safe.ndjson> --ledger=<ledger.json>
 npx rehearsal baseline prepare --records=<safe.ndjson> --ledger=<ledger.json> --write
 npx rehearsal baseline create --records=<safe.ndjson> --ledger=<ledger.json>
 npx rehearsal doctor
+npx rehearsal support
 npx rehearsal explain
 npx rehearsal run --dry-run
 npx rehearsal candidates
@@ -115,6 +116,11 @@ completion receipts, optional technical details, and bounded discovery of likely
 baseline inputs. Before activation it validates records, migration evidence, and optional
 Storage files, then shows a value-free count summary for confirmation. The explicit
 commands remain the stable interface for automation and CI.
+
+Choose **Get help** at any stage, or run `npx rehearsal support`, to create a copy-ready
+environment and readiness report for a GitHub issue. It works before setup and omits row
+values, credentials, project paths, migration SQL, and baseline identifiers. Review every
+report before sharing it.
 
 `setup` previews a conservative first-run scaffold: the Rehearsal configuration, a
 dedicated local-only Supabase configuration on an available port block, and protective

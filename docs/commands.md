@@ -15,6 +15,7 @@ values or credentials.
 | `rehearsal baseline prepare --records= --ledger= --write`    | Policy only         | Write the draft without exposing row values.              |
 | `rehearsal baseline create --records=<path> --ledger=<path>` | Artifact only       | Activate a baseline from explicit safe local inputs.      |
 | `rehearsal doctor`                                           | No                  | Check dependencies, inputs, and safety barriers.          |
+| `rehearsal support`                                          | No                  | Print a privacy-safe, copy-ready support report.          |
 | `rehearsal explain`                                          | No                  | Print the immutable execution plan.                       |
 | `rehearsal run --dry-run`                                    | No                  | Alias the same plan used by `explain`.                    |
 | `rehearsal candidates`                                       | No                  | Print pending migrations and their exact digest.          |
@@ -68,3 +69,9 @@ configuration with hosted access and optional networked services disabled. It do
 overwrite an existing Rehearsal config, dedicated Supabase config, or concurrently
 changed `.gitignore`. After writing, it includes a Doctor readiness summary. `init`
 remains available for config-only/manual onboarding.
+
+`support` reports the Rehearsal, Node.js, npm, Supabase CLI, Docker client, and Docker
+server versions plus readiness check statuses. It can run before configuration exists.
+The report deliberately excludes project names and paths, row values, credentials,
+migration SQL, baseline identifiers, and raw command output. It reports only the count
+of quarantined hosted variables, never their names. Always review it before sharing.
