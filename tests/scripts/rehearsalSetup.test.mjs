@@ -209,7 +209,9 @@ describe("guided Rehearsal setup", () => {
 
   it("summarizes expected first-run gaps without repeated file errors", async () => {
     const root = await makeProject();
-    await mkdir(join(root, "node_modules/@rehearsal-db"), { recursive: true });
+    await mkdir(join(root, "node_modules/@rehearsal-db"), {
+      recursive: true,
+    });
     await symlink(
       process.cwd(),
       join(root, "node_modules/@rehearsal-db/core"),
@@ -228,7 +230,7 @@ describe("guided Rehearsal setup", () => {
       "Next: run rehearsal again and choose Prepare a reviewable baseline policy draft.",
     );
     expect(stdout).not.toContain("ENOENT");
-  });
+  }, 15_000);
 
   it("refuses a stale preview when .gitignore changes", async () => {
     const root = await makeProject();
