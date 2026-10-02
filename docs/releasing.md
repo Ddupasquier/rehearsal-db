@@ -52,7 +52,16 @@ publication must change and prove the workflow before narrowing that permission.
     protected integration branches and rerun their complete verification.
 
 The workflow publishes prereleases under the `beta` dist-tag and refuses a stable
-version. A stable tag requires a later contract, compatibility, and release decision.
+version. While Rehearsal has no stable release, the workflow also moves `latest` to the
+same reviewed beta. This keeps the npm package page and the ordinary
+`npm install @rehearsal-db/core` command current. When Rehearsal gains a stable release,
+`latest` must switch to the stable line while `beta` continues to identify prereleases.
+
+The trusted publisher allows `npm dist-tag` only so this workflow can maintain those two
+tags without a stored npm token. A manual workflow run from `main` can repair the tags
+for the exact prerelease version currently recorded in `package.json`; it cannot publish
+a package or select a different version. The protected `npm` environment still supplies
+the human approval gate.
 
 Creating the repository, passing CI, extracting the engine, merging a release branch,
 or creating a tag does not authorize npm publication. Publication requires explicit

@@ -179,6 +179,7 @@ describe("documented CLI contract", () => {
       workflow.indexOf("\n  prepare:"),
       workflow.indexOf("\n  publish:"),
     );
+    const syncTagsJob = workflow.slice(workflow.indexOf("\n  sync-tags:"));
 
     expect(workflow).toContain("environment: npm");
     expect(workflow).toContain("actions/upload-artifact@v7");
@@ -189,6 +190,22 @@ describe("documented CLI contract", () => {
     expect(workflow).toContain('test "$RELEASE_PRERELEASE" = "true"');
     expect(workflow).toContain('test "$PACKAGE_PRIVATE" = "false"');
     expect(workflow).toContain("--access public --tag beta --provenance");
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("npm install --global npm@11.21.0");
+    expect(workflow).toContain(
+      'npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta',
+    );
+    expect(workflow).toContain(
+      'npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest',
+    );
+    expect(workflow).toContain(
+      "tags.beta === version && tags.latest === version",
+    );
+    expect(syncTagsJob).toContain("github.ref == 'refs/heads/main'");
+    expect(syncTagsJob).toContain(
+      `PACKAGE_VERSION="$(node -p "require('./package.json').version")"`,
+    );
+    expect(syncTagsJob).not.toContain("npm publish");
     expect(workflow).toContain('REGISTRY_SHA1="$(npm view');
     expect(workflow).toContain("for attempt in {1..36}");
     expect(workflow).toContain("after six minutes");
@@ -207,6 +224,12 @@ describe("documented CLI contract", () => {
       "short-lived GitHub OIDC identity",
     );
     expect(normalizedReleaseGuide).toContain("does not read an npm token");
+    expect(normalizedReleaseGuide).toContain(
+      "the npm package page and the ordinary `npm install @rehearsal-db/core` command current",
+    );
+    expect(normalizedReleaseGuide).toContain(
+      "it cannot publish a package or select a different version",
+    );
   });
 
   it("states the initial support and product boundaries without overclaiming", async () => {

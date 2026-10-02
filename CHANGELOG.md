@@ -10,6 +10,13 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - A concise post-beta.6 roadmap prioritizes real-project acceptance, easier baseline
   onboarding, and another ordinary PostgreSQL project before further database expansion.
 
+### Fixed
+
+- Beta publishing now updates both npm's `beta` and `latest` tags after registry
+  verification, keeping the package page and default install on the newest reviewed
+  beta. A protected manual repair path fixes existing tag drift without storing an npm
+  token or choosing an arbitrary version.
+
 ## [0.1.0-beta.6] - 2026-10-02
 
 ### Changed
