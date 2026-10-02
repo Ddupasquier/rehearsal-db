@@ -97,7 +97,16 @@ jobs:
           echo "$EXPECTED_SHA1  $TARBALL" | sha1sum --check --strict
           echo "$EXPECTED_SHA256  $TARBALL" | sha256sum --check --strict
       - name: Publish with trusted OIDC
-        run: npm publish "$TARBALL" --access public --tag beta --provenance
+        run: |
+          REGISTRY_SHA1="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.shasum 2>/dev/null || true)"
+          if test -z "$REGISTRY_SHA1"; then
+            npm publish "$TARBALL" --access public --tag beta --provenance
+          elif test "$REGISTRY_SHA1" = "$EXPECTED_SHA1"; then
+            echo "The exact approved candidate is already published; continuing verification."
+          else
+            echo "The published version does not match the approved candidate." >&2
+            exit 1
+          fi
       - name: Verify the registry artifact and executable
         run: |
           for attempt in {1..36}; do
@@ -117,4 +126,13 @@ jobs:
           npm init --yes >/dev/null
           npm install --ignore-scripts "$PACKAGE_NAME@$PACKAGE_VERSION"
           npx --no-install rehearsal --help >/dev/null
-          npm audit signatures
+          for attempt in {1..36}; do
+            if npm audit signatures; then
+              break
+            fi
+            if test "$attempt" = "36"; then
+              echo "Registry signatures or provenance did not become available after six minutes." >&2
+              exit 1
+            fi
+            sleep 10
+          done
