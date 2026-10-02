@@ -22,6 +22,12 @@ export interface RehearsalConfig {
     artifactDirectory?: string;
     sanitizationPolicy: string;
   };
+  containerRuntime?: {
+    autoStartColima?: boolean;
+  };
+  cleanup?: {
+    retainBaselineGenerations?: number;
+  };
   application: {
     startCommand: string;
     proofCommand: string;

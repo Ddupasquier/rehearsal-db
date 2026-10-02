@@ -1,12 +1,12 @@
 # Next steps
 
-Rehearsal `0.1.0-beta.6` supports guided Supabase and ordinary PostgreSQL rehearsals.
+The current Rehearsal beta supports guided Supabase and ordinary PostgreSQL rehearsals.
 The next work should be driven by real project use before adding more database targets.
 
 ## 1. Complete the first real-project acceptance run
 
-Update an existing Supabase application to `0.1.0-beta.6` on its own clean branch, then
-prove:
+Update an existing Supabase application to `@rehearsal-db/core@beta` on its own clean
+branch, then prove:
 
 - `doctor` reports `READY`;
 - the intended candidate migrations are the only candidates;

@@ -237,7 +237,7 @@ export const buildRehearsalPlan = async (options = {}) => {
         "versioned configuration accepts loopback hosts only",
         `runtime uses a dedicated local ${config.runtime.target === "supabase" ? "Supabase workdir" : "PostgreSQL container and volume"} and project id`,
         "child processes receive an allowlisted environment",
-        "application egress policy denies hosted targets and side effects",
+        "configuration accepts only loopback runtime URLs and quarantines common hosted credentials",
         ...(config.safety.authenticationProviders.length
           ? [
               `external identity is limited to: ${config.safety.authenticationProviders.join(", ")}`,
@@ -651,7 +651,7 @@ export const runRehearsalDoctor = async (options = {}) => {
     },
     {
       id: "safety-policy",
-      label: "Hosted access and side effects",
+      label: "Hosted target configuration",
       run: async () => {
         if (
           config.safety.hostedAccess !== "disabled" ||
@@ -660,8 +660,8 @@ export const runRehearsalDoctor = async (options = {}) => {
           throw new Error("The safety policy is not fail closed.");
         }
         return config.safety.authenticationProviders.length
-          ? `hosted access disabled; application egress denied; identity providers: ${config.safety.authenticationProviders.join(", ")}`
-          : "hosted access disabled; outbound network denied";
+          ? `hosted database targets disabled; hosted credentials quarantined; local identity providers: ${config.safety.authenticationProviders.join(", ")}`
+          : "hosted database targets disabled; common hosted credentials quarantined";
       },
       remediation: "Restore the version-1 fail-closed safety policy.",
     },

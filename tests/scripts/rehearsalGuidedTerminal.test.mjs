@@ -291,7 +291,7 @@ describe("guided terminal journey", () => {
               "Create the REVIEW REQUIRED draft at rehearsal/sanitization-policy.json? (y/N)",
             write: "y\n",
           },
-          { after: "What would you like to do? [1]:", write: "5\n" },
+          { after: "What would you like to do? [1]:", write: "6\n" },
         ],
       }),
     ).replaceAll("\r", "");
@@ -326,7 +326,7 @@ describe("guided terminal journey", () => {
             after: "Migration ledger [1]:",
             write: "\n",
           },
-          { after: "What would you like to do? [1]:", write: "5\n" },
+          { after: "What would you like to do? [1]:", write: "6\n" },
         ],
       }),
     ).replaceAll("\r", "");
@@ -423,7 +423,7 @@ describe("guided terminal journey", () => {
             after: "Save 3 classified columns and activate this policy? (y/N)",
             write: "y\n",
           },
-          { after: "What would you like to do? [1]:", write: "5\n" },
+          { after: "What would you like to do? [1]:", write: "6\n" },
         ],
       }),
     ).replaceAll("\r", "");
@@ -605,7 +605,30 @@ describe("guided terminal journey", () => {
       .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
 
     expect(output).toContain("Get help");
+    expect(output).toContain("Clean up disk space");
     expect(output).toContain("Show all commands");
     expect(output).toContain("Exit");
+  }, 15_000);
+
+  it("previews cleanup from the completed plain guide without deleting", async () => {
+    const root = await makeCompleteProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: true,
+        interactions: [
+          { after: "What would you like to do? [1]:", write: "5\n" },
+          {
+            after: "What may Rehearsal include in the cleanup preview? [1]:",
+            write: "\n",
+          },
+          { after: "What would you like to do? [1]:", write: "8\n" },
+        ],
+      }),
+    ).replaceAll("\r", "");
+
+    expect(output).toContain("REHEARSAL CLEANUP — PREVIEW");
+    expect(output).toContain("Nothing has been removed");
+    expect(output).toContain("See you at the next rehearsal.");
   }, 15_000);
 });

@@ -56,6 +56,10 @@ import {
   suggestPolicyExceptionColumns,
 } from "../../lib/rehearsal/policy_review.mjs";
 import { collectRehearsalSupportReport } from "../../lib/rehearsal/support_report.mjs";
+import {
+  applyRehearsalCleanup,
+  planRehearsalCleanup,
+} from "../../lib/rehearsal/cleanup.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = process.cwd();
@@ -81,6 +85,9 @@ const parseArguments = (arguments_) => {
     ledgerPath: undefined,
     assetsPath: undefined,
     target: undefined,
+    includeRuntime: false,
+    includeImages: false,
+    cleanupConfirmation: undefined,
   };
   const positionals = [];
   for (const argument of arguments_) {
@@ -95,6 +102,8 @@ const parseArguments = (arguments_) => {
       flags.configPath = argument.slice("--config=".length);
     } else if (argument.startsWith("--confirm-candidates=")) {
       flags.confirmation = argument.slice("--confirm-candidates=".length);
+    } else if (argument.startsWith("--confirm-cleanup=")) {
+      flags.cleanupConfirmation = argument.slice("--confirm-cleanup=".length);
     } else if (argument.startsWith("--records=")) {
       flags.recordsPath = argument.slice("--records=".length);
     } else if (argument.startsWith("--ledger=")) {
@@ -103,6 +112,10 @@ const parseArguments = (arguments_) => {
       flags.assetsPath = argument.slice("--assets=".length);
     } else if (argument.startsWith("--target=")) {
       flags.target = argument.slice("--target=".length);
+    } else if (argument === "--include-runtime") {
+      flags.includeRuntime = true;
+    } else if (argument === "--include-images") {
+      flags.includeImages = true;
     } else if (argument.startsWith("--")) {
       throw new Error(`Unknown Rehearsal option: ${argument}.`);
     } else positionals.push(argument);
@@ -131,7 +144,7 @@ const renderPlan = (plan, verbosity) => {
     "Environment",
     `  ✓ ${plan.environment.kind}`,
     `  ✓ Hosted access ${plan.environment.hostedAccess}`,
-    `  ✓ Application/provider-data egress ${plan.environment.outboundNetwork}`,
+    `  ✓ Hosted target configuration ${plan.environment.outboundNetwork}`,
     ...(plan.environment.authenticationProviders.length
       ? [
           `  ✓ External identity providers ${plan.environment.authenticationProviders.join(", ")}`,
@@ -834,6 +847,13 @@ const runGuidedHome = async ({ flags, planOptions }) => {
       command: "manage-runtime",
     });
   }
+  if (state.node.supported && state.config === "valid") {
+    options.push({
+      label: "Clean up disk space",
+      hint: "Preview old baselines, the runtime, and unused images",
+      command: "cleanup-guide",
+    });
+  }
   if (lastGuidedDetails) {
     options.push({
       label: "Show details from the last action",
@@ -981,6 +1001,60 @@ const runGuidedHome = async ({ flags, planOptions }) => {
       if (!accepted) return "refresh";
     }
     return runtimeAction.command;
+  }
+  if (selected.command === "cleanup-guide") {
+    const cleanupScope = await promptForChoice({
+      message: "What may Rehearsal include in the cleanup preview?",
+      flags,
+      options: [
+        {
+          label: "Old baselines only",
+          hint: "Keep the configured number of recent generations",
+          command: "baselines",
+        },
+        {
+          label: "Old baselines and this project's runtime",
+          hint: "Also remove the disposable database and its volumes",
+          command: "runtime",
+        },
+        {
+          label: "Old baselines and older unused Supabase images",
+          hint: "Images may be shared and can be downloaded again",
+          command: "images",
+        },
+        {
+          label: "Everything above",
+          command: "all",
+        },
+        { label: "Back", command: "exit" },
+      ],
+    });
+    if (!cleanupScope || cleanupScope.command === "exit") return "refresh";
+    flags.includeRuntime = ["runtime", "all"].includes(cleanupScope.command);
+    flags.includeImages = ["images", "all"].includes(cleanupScope.command);
+    flags.cleanupPlan = await planRehearsalCleanup({
+      ...planOptions,
+      includeRuntime: flags.includeRuntime,
+      includeImages: flags.includeImages,
+    });
+    console.log(
+      `\n${renderCleanup({ mode: "preview", plan: flags.cleanupPlan })}`,
+    );
+    const selectedCount =
+      flags.cleanupPlan.baselines.removed.length +
+      (flags.cleanupPlan.runtime.included && flags.cleanupPlan.runtime.detected
+        ? 1
+        : 0) +
+      flags.cleanupPlan.images.candidates.length;
+    if (selectedCount === 0) return "refresh";
+    const accepted = await promptForConfirmation(
+      "Remove exactly the resources shown above?",
+      flags,
+    );
+    if (!accepted) return "refresh";
+    flags.write = true;
+    flags.cleanupConfirmation = flags.cleanupPlan.digest;
+    return "cleanup";
   }
   if (["baseline-guide", "baseline-prepare"].includes(selected.command)) {
     console.log(
@@ -1641,6 +1715,112 @@ const renderSupportReport = (report) => {
   ].join("\n");
 };
 
+const formatBytes = (bytes) => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const unit = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  );
+  const value = bytes / 1024 ** unit;
+  return `${value >= 10 || unit === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
+};
+
+const renderCleanup = (result) => {
+  const plan = result.plan;
+  const imageBytes = plan.images.candidates.reduce(
+    (total, image) => total + image.bytes,
+    0,
+  );
+  const dockerImages = plan.docker.resources.find(
+    (resource) => resource.Type === "Images",
+  );
+  const selectedCount =
+    plan.baselines.removed.length +
+    (plan.runtime.included && plan.runtime.detected ? 1 : 0) +
+    plan.images.candidates.length;
+  return [
+    `REHEARSAL CLEANUP — ${result.mode.toUpperCase()}`,
+    `Project: ${plan.project}`,
+    ...(dockerImages
+      ? [
+          `Docker images: ${dockerImages.Size}; ${dockerImages.Reclaimable} reclaimable across Docker`,
+        ]
+      : ["Docker usage: unavailable"]),
+    ...(plan.docker.disk
+      ? [
+          `Container disk: ${formatBytes(plan.docker.disk.usedBytes)} used of ${formatBytes(plan.docker.disk.totalBytes)}; ${formatBytes(plan.docker.disk.availableBytes)} free (${plan.docker.disk.usedPercent}% used)`,
+        ]
+      : []),
+    "",
+    "Project-owned files",
+    plan.baselines.available
+      ? `  ${plan.baselines.removed.length ? "→" : "✓"} ${formatCount(plan.baselines.removed.length, "old baseline generation")} selected; keeping ${plan.baselines.retained.length}`
+      : "  ○ No active baseline found",
+    "",
+    "Disposable runtime",
+    !plan.runtime.detected
+      ? "  ✓ No runtime found"
+      : plan.runtime.included
+        ? "  → Current project runtime selected"
+        : "  ○ Current project runtime preserved (add --include-runtime to select it)",
+    "",
+    "Shared Docker images",
+    !plan.images.requested
+      ? "  ○ Not inspected (add --include-images to inspect older unused Supabase images)"
+      : !plan.images.inspected
+        ? "  ! Docker is unavailable; images could not be inspected"
+        : plan.images.candidates.length
+          ? `  → ${formatCount(plan.images.candidates.length, "older unused Supabase image")} selected; approximately ${formatBytes(imageBytes)}`
+          : "  ✓ No older unused Supabase images found",
+    ...(plan.images.candidates.length
+      ? plan.images.candidates.flatMap((image) =>
+          image.tags.map((tag) => `    ${tag}`),
+        )
+      : []),
+    "",
+    ...(result.mode === "preview"
+      ? selectedCount
+        ? [
+            "Nothing has been removed.",
+            `Cleanup set: ${plan.digest.slice(0, 12)}`,
+            `Exact confirmation: --confirm-cleanup=${plan.digest}`,
+            "Review this list, then rerun the same command with --write and the exact confirmation above.",
+          ]
+        : [
+            "Nothing has been removed, and nothing is currently selected.",
+            "Use --include-runtime or --include-images only when you want those shared resources considered.",
+          ]
+      : [
+          `Removed ${formatCount(result.applied.baselines.removed.length, "old baseline generation")}.`,
+          result.applied.runtimeRemoved
+            ? "Removed this project's disposable runtime and volumes."
+            : "Preserved this project's disposable runtime.",
+          `Removed ${formatCount(result.applied.imagesRemoved.length, "unused image tag")}.`,
+        ]),
+  ].join("\n");
+};
+
+const runCleanup = async ({ flags, planOptions }) => {
+  const plan =
+    flags.cleanupPlan ??
+    (await planRehearsalCleanup({
+      ...planOptions,
+      includeRuntime: flags.includeRuntime,
+      includeImages: flags.includeImages,
+    }));
+  if (!flags.write) return { mode: "preview", plan };
+  const applied = await applyRehearsalCleanup({
+    plan,
+    confirmation: flags.cleanupConfirmation,
+    ...planOptions,
+    removeRuntime: async () => {
+      runManager({ action: "discard", flags });
+    },
+  });
+  return { mode: "written", plan, applied };
+};
+
 const usage = () => `Usage: rehearsal <command> [options]
 
 Commands:
@@ -1663,6 +1843,8 @@ Commands:
   status                     Report the disposable local runtime state
   stop                       Stop only this project's local runtime
   discard                    Remove only this project's disposable runtime
+  cleanup [--include-runtime] [--include-images] [--write] [--confirm-cleanup=]
+                             Preview or apply conservative disk cleanup
   verify                     Verify the current local Rehearsal runtime
 
 Options: --json --verbose --debug --plain --config=<path> --target=supabase|postgresql`;
@@ -1735,6 +1917,11 @@ const executeCommand = async ({ command, flags, planOptions, guided }) => {
   if (command === "support") {
     const data = await collectRehearsalSupportReport(planOptions);
     emit({ command, data, flags, render: renderSupportReport });
+    return;
+  }
+  if (command === "cleanup") {
+    const data = await runCleanup({ flags, planOptions });
+    emit({ command, data, flags, render: renderCleanup });
     return;
   }
   if (command === "explain" || (command === "run" && flags.dryRun)) {
@@ -1872,8 +2059,12 @@ const resetGuidedFlags = (flags) => {
   flags.ledgerPath = undefined;
   flags.assetsPath = undefined;
   flags.target = undefined;
+  flags.includeRuntime = false;
+  flags.includeImages = false;
+  flags.cleanupConfirmation = undefined;
   flags.setupPlan = undefined;
   flags.preparationPlan = undefined;
+  flags.cleanupPlan = undefined;
 };
 
 const installGuidedExitShortcut = (flags) => {

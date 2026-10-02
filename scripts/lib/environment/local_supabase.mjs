@@ -62,14 +62,13 @@ export const localCommandSucceeds = (
     stdio: "ignore",
   }).status === 0;
 
-export const ensureLocalContainerRuntime = ({ cwd = process.cwd() } = {}) => {
+export const ensureLocalContainerRuntime = ({
+  cwd = process.cwd(),
+  autoStartColima = true,
+} = {}) => {
   if (localCommandSucceeds("docker", ["info"], { cwd })) return;
-  if (localCommandSucceeds("colima", ["version"], { cwd })) {
-    runLocalCommand(
-      "colima",
-      ["start", "--cpu", "4", "--memory", "4", "--disk", "40"],
-      { cwd },
-    );
+  if (autoStartColima && localCommandSucceeds("colima", ["version"], { cwd })) {
+    runLocalCommand("colima", ["start"], { cwd });
   }
   if (!localCommandSucceeds("docker", ["info"], { cwd })) {
     throw new Error(
@@ -118,8 +117,9 @@ export const startLocalSupabase = ({
   exclude = [],
   environment = {},
   applyMigrations = true,
+  autoStartColima = true,
 } = {}) => {
-  ensureLocalContainerRuntime({ cwd });
+  ensureLocalContainerRuntime({ cwd, autoStartColima });
   const startArguments = withWorkdir(
     ["start", ...(exclude.length ? ["--exclude", exclude.join(",")] : [])],
     workdir,

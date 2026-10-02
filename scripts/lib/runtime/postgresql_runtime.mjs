@@ -27,6 +27,7 @@ import {
   summarizeRestoreError,
 } from "../rehearsal/runtime_restore.mjs";
 import { readBoundRuntimeSanitizationPolicy } from "../rehearsal/sanitization_policy.mjs";
+import { ensureLocalContainerRuntime } from "../environment/local_supabase.mjs";
 
 const repositoryRoot = process.cwd();
 const loadedConfiguration = await loadRehearsalConfig({
@@ -105,11 +106,10 @@ const assertRuntimePath = () => {
 };
 
 const assertDocker = () => {
-  if (!commandSucceeds("docker", ["info"])) {
-    throw new Error(
-      "A running Docker-compatible runtime is required. Start Docker or Colima, then retry.",
-    );
-  }
+  ensureLocalContainerRuntime({
+    cwd: repositoryRoot,
+    autoStartColima: config.containerRuntime.autoStartColima,
+  });
 };
 
 const inspectResourceLabel = (kind, name) =>

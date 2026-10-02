@@ -31,9 +31,11 @@ npm install --save-dev @rehearsal-db/core@beta
 npx rehearsal
 ```
 
-The guide shows your progress and offers the next safe action. On first use, choose
-**Set the stage**, select Supabase or PostgreSQL, review the preview, and confirm the files
-it will create. Existing files are never overwritten.
+The first run detects your project and offers to create a commented
+`rehearsal.config.mjs` with the project name, migration paths, commands, ports, and safe
+defaults already filled in. Choose **Set the stage**, select Supabase or PostgreSQL,
+review the preview, and confirm the files it will create. Existing files are never
+overwritten.
 
 For PostgreSQL, download the reviewed local image once before running the guide:
 
@@ -60,6 +62,10 @@ Start with synthetic data. Rehearsal does not copy or sanitize production data f
 4. Review the exact candidate migration list.
 5. Run the rehearsal and your application proof.
 6. Test the local application, then verify, reset, stop, or discard the runtime.
+
+When local disk space gets tight, choose **Clean up disk space** in the guide. Rehearsal
+previews old baseline generations first and keeps runtime or shared-image removal
+explicit.
 
 Press `Ctrl+Z` at any guided prompt to exit the whole session. Choose **Get help**, or run
 `npx rehearsal support`, to create a privacy-safe diagnostic report.

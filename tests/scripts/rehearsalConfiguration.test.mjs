@@ -131,6 +131,8 @@ describe("Rehearsal configuration", () => {
     ]);
     expect(loaded.config.supabase.serviceEnvironmentFile).toBeNull();
     expect(loaded.config.supabase.serviceEnvironmentVariables).toEqual([]);
+    expect(loaded.config.containerRuntime).toEqual({ autoStartColima: true });
+    expect(loaded.config.cleanup).toEqual({ retainBaselineGenerations: 2 });
   });
 
   it("rejects unknown properties, versions, hosted URLs, and escaping paths", async () => {
@@ -206,6 +208,16 @@ describe("Rehearsal configuration", () => {
         ),
         "must be configured together",
       ],
+      [
+        "container-runtime",
+        configSource("containerRuntime: { autoStartColima: 40 },"),
+        "must be true or false",
+      ],
+      [
+        "cleanup-retention",
+        configSource("cleanup: { retainBaselineGenerations: 0 },"),
+        "must be a positive integer",
+      ],
     ]) {
       const root = await makeProject();
       const path = join(root, `${name}.config.mjs`);
@@ -259,6 +271,16 @@ describe("Rehearsal configuration", () => {
     expect(detected.hasMigrations).toBe(true);
     expect(source).toContain('hostedAccess: "disabled"');
     expect(source).toContain('outboundNetwork: "deny"');
+    expect(source).toContain("containerRuntime:");
+    expect(source).toContain("autoStartColima: true");
+    expect(source).toContain("cleanup:");
+    expect(source).toContain("retainBaselineGenerations: 2");
+    expect(source).toContain("Generated from this project by `npx rehearsal`");
+    expect(source).toContain("CHECK: commands detected from package.json");
+    expect(source).toContain(
+      '// serviceEnvironmentFile: ".env.rehearsal-service.local"',
+    );
+    expect(source).toContain("docs/configuration.md");
     expect(source).not.toContain("project-ref");
   });
 
