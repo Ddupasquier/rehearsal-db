@@ -37,7 +37,7 @@ publication must change and prove the workflow before narrowing that permission.
    onboarding. Correct and retest the first confusing, missing, or wrong instruction.
 5. Change `private` to `false` only in the reviewed release change.
 6. Record the exact tarball filename, SHA-1, SHA-256, allowlisted files, unpacked size,
-   executable, and zero-runtime-dependency result.
+   executable, declared runtime dependency inventory, and dependency audit result.
 7. Obtain explicit publication authorization for that exact version and artifact.
 8. Merge the approved release commit through protected `main` and create the exact
    `v<package-version>` tag and GitHub release.

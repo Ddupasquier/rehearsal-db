@@ -40,6 +40,12 @@ bounded local Storage bytes; every manifest `file` must also remain inside the p
 The guided home screen can ask for these paths so they do not need to be supplied as
 flags.
 
+The guide is a persistent session: after setup, policy review, baseline creation, or a
+runtime action it re-reads project state and offers the next relevant action. Generated
+policy drafts can be completed interactively without editing JSON. Each column still
+requires explicit action, generated, identity, and foreign-key decisions; the guide does
+not silently infer them.
+
 `baseline prepare` reads only table and column names from the NDJSON records; row values
 are never included in its result. Its generated policy deliberately marks every column
 decision `REVIEW REQUIRED` and cannot be activated until a human completes the metadata
@@ -50,6 +56,8 @@ Automation should use `--json` and inspect both exit status and the versioned en
 Exit-code meanings are documented in the root README. Scripts must not parse human text.
 When standard input or output is not an interactive terminal, bare `rehearsal` prints
 help instead of prompting. Use `--plain` to disable decorative terminal styling.
+`NO_COLOR` also selects the plain numbered interface. Both interactive modes preserve
+the same safety decisions and cancellation behavior.
 
 `setup` chooses an available local port block and generates a conservative Supabase
 configuration with hosted access and optional networked services disabled. It does not

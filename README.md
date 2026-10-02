@@ -108,8 +108,10 @@ npx rehearsal discard
 ```
 
 Running `npx rehearsal` in a terminal opens a state-aware guide that shows completed
-setup steps and recommends available actions. The explicit commands remain the stable
-interface for automation and CI.
+setup steps and recommends available actions. The guide stays open after each action,
+re-inspects the project, and advances to the next useful step. It includes an interactive
+column-by-column policy reviewer, concise completion receipts, and optional technical
+details. The explicit commands remain the stable interface for automation and CI.
 
 `setup` previews a conservative first-run scaffold: the Rehearsal configuration, a
 dedicated local-only Supabase configuration on an available port block, and protective
