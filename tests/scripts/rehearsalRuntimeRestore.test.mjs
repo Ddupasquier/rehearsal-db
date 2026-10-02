@@ -103,6 +103,13 @@ describe("Rehearsal runtime restore", () => {
     expect(suffix).toContain(
       "Rehearsal foreign-key mismatch for profiles.user_id",
     );
+    const postgresqlSuffix = buildRestoreSqlSuffix({
+      manifest,
+      tableCounts: { profiles: 1 },
+      restoreSupabaseAuth: false,
+    });
+    expect(postgresqlSuffix).not.toContain("insert into auth.users");
+    expect(postgresqlSuffix).toContain('insert into public."profiles"');
   });
 
   it("accepts only an exact immutable baseline prefix", () => {

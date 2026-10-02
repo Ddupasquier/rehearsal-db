@@ -170,6 +170,33 @@ describe("guided Rehearsal setup", () => {
     );
   });
 
+  it("creates minimal plain PostgreSQL scaffolding without Supabase files", async () => {
+    const root = await makeProject();
+    const plan = await planRehearsalSetup({
+      projectRoot: root,
+      target: "postgresql",
+      isPortAvailable: async () => true,
+    });
+
+    expect(plan).toMatchObject({
+      target: "postgresql",
+      ports: { database: 58322 },
+    });
+    expect(plan.files.map(({ path }) => path)).toEqual([
+      "rehearsal.config.mjs",
+      ".gitignore",
+    ]);
+    await applyRehearsalSetup(plan);
+
+    const config = await readFile(join(root, "rehearsal.config.mjs"), "utf8");
+    expect(config).toContain('target: "postgresql"');
+    expect(config).toContain('image: "postgres:17-alpine"');
+    expect(config).toContain("databasePort: 58322");
+    await expect(
+      stat(join(root, "infrastructure/rehearsal/supabase/config.toml")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("exposes preview and explicit write through the public CLI", async () => {
     const root = await makeProject();
     const preview = JSON.parse(

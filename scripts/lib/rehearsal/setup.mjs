@@ -9,7 +9,9 @@ import { dirname, join, relative, resolve } from "node:path";
 import {
   inspectDetectedProject,
   renderDetectedConfig,
+  renderDetectedPostgresqlConfig,
 } from "./configuration.mjs";
+import { resolveRuntimeTarget } from "../runtime/runtime_target.mjs";
 
 const CONFIG_PATH = "rehearsal.config.mjs";
 const LOCAL_SUPABASE_CONFIG_PATH =
@@ -209,20 +211,26 @@ const assertCreateTargetAvailable = async (file) => {
 export const planRehearsalSetup = async ({
   projectRoot = process.cwd(),
   isPortAvailable,
+  target = "supabase",
 } = {}) => {
   const root = resolve(projectRoot);
+  const runtimeTarget = resolveRuntimeTarget(target).id;
   const detected = await inspectDetectedProject({ projectRoot: root });
   const ports = await findAvailableRehearsalPorts({
     ...(isPortAvailable ? { isAvailable: isPortAvailable } : {}),
   });
   const applicationUrl = "http://localhost:5175";
   const projectId = `${detected.projectName}-rehearsal`;
-  const sourceSupabaseConfig = await readOptionalFile(
-    join(root, "supabase/config.toml"),
-  );
+  const sourceSupabaseConfig =
+    runtimeTarget === "supabase"
+      ? await readOptionalFile(join(root, "supabase/config.toml"))
+      : null;
   const originalGitignore = await readOptionalFile(join(root, GITIGNORE_PATH));
   const nextGitignore = appendGitignoreEntries(originalGitignore);
-  for (const path of [CONFIG_PATH, LOCAL_SUPABASE_CONFIG_PATH]) {
+  for (const path of [
+    CONFIG_PATH,
+    ...(runtimeTarget === "supabase" ? [LOCAL_SUPABASE_CONFIG_PATH] : []),
+  ]) {
     if (await pathExists(join(root, path))) {
       throw new Error(
         `Rehearsal setup will not overwrite the existing file at ${path}.`,
@@ -235,23 +243,34 @@ export const planRehearsalSetup = async ({
       absolutePath: join(root, CONFIG_PATH),
       action: "create",
       mode: 0o600,
-      content: renderDetectedConfig(detected, {
-        applicationUrl,
-        ports,
-      }),
+      content:
+        runtimeTarget === "supabase"
+          ? renderDetectedConfig(detected, {
+              applicationUrl,
+              ports,
+            })
+          : renderDetectedPostgresqlConfig(detected, {
+              applicationUrl,
+              databasePort: ports.database,
+            }),
     },
-    {
-      path: LOCAL_SUPABASE_CONFIG_PATH,
-      absolutePath: join(root, LOCAL_SUPABASE_CONFIG_PATH),
-      action: "create",
-      mode: 0o600,
-      content: renderSafeLocalSupabaseConfig({
-        projectId,
-        applicationUrl,
-        ports,
-        databaseMajorVersion: databaseMajorVersionFrom(sourceSupabaseConfig),
-      }),
-    },
+    ...(runtimeTarget === "supabase"
+      ? [
+          {
+            path: LOCAL_SUPABASE_CONFIG_PATH,
+            absolutePath: join(root, LOCAL_SUPABASE_CONFIG_PATH),
+            action: "create",
+            mode: 0o600,
+            content: renderSafeLocalSupabaseConfig({
+              projectId,
+              applicationUrl,
+              ports,
+              databaseMajorVersion:
+                databaseMajorVersionFrom(sourceSupabaseConfig),
+            }),
+          },
+        ]
+      : []),
     {
       path: GITIGNORE_PATH,
       absolutePath: join(root, GITIGNORE_PATH),
@@ -270,15 +289,24 @@ export const planRehearsalSetup = async ({
     projectRoot: root,
     project: detected.projectName,
     projectId,
+    target: runtimeTarget,
     applicationUrl,
     detected,
-    ports,
+    ports: runtimeTarget === "supabase" ? ports : { database: ports.database },
     isPortAvailable: isPortAvailable ?? isRehearsalPortAvailable,
     files,
     safety: [
       "hosted access remains disabled",
-      "the Supabase runtime binds to dedicated local ports",
-      "external identity providers, realtime, edge functions, and analytics start disabled",
+      runtimeTarget === "supabase"
+        ? "the Supabase runtime binds to dedicated local ports"
+        : "PostgreSQL binds only to a dedicated loopback port",
+      ...(runtimeTarget === "supabase"
+        ? [
+            "external identity providers, realtime, edge functions, and analytics start disabled",
+          ]
+        : [
+            "the runtime uses an already-installed official PostgreSQL image and never pulls implicitly",
+          ]),
       "configuration files are never overwritten and .gitignore updates are concurrency-checked",
     ],
   };
@@ -331,13 +359,17 @@ export const summarizeRehearsalSetup = (plan, { mode }) => ({
   mode,
   project: plan.project,
   projectId: plan.projectId,
+  target: plan.target,
   applicationUrl: plan.applicationUrl,
   detected: plan.detected,
-  ports: {
-    api: plan.ports.api,
-    database: plan.ports.database,
-    studio: plan.ports.studio,
-  },
+  ports:
+    plan.target === "supabase"
+      ? {
+          api: plan.ports.api,
+          database: plan.ports.database,
+          studio: plan.ports.studio,
+        }
+      : { database: plan.ports.database },
   files: plan.files.map((file) => ({ path: file.path, action: file.action })),
   safety: plan.safety,
   nextAction:

@@ -75,9 +75,33 @@ only this project.
 configurations and currently defaults to `"supabase"`, so upgrading does not change an
 existing project's behavior. Unknown targets are rejected before any runtime action.
 
-The driver boundary is internal in this beta. Project-owned runtime adapters remain the
-place for application-specific setup and checks; they do not replace the database
-driver.
+For ordinary PostgreSQL, use `postgresql` instead of `supabase`:
+
+```ts
+postgresql: {
+  migrationDirectory: "database/migrations",
+  runtimeWorkdir: ".rehearsal/runtime",
+  image: "postgres:17-alpine",
+  database: "postgres",
+  user: "postgres",
+},
+runtime: {
+  target: "postgresql",
+  applicationUrl: "http://localhost:5175",
+  projectId: "example-app-rehearsal",
+  databasePort: 58322,
+},
+```
+
+The image must be an official versioned Alpine PostgreSQL image and must already exist
+locally. Rehearsal runs it with `--pull=never`, publishes it only on `127.0.0.1`, and
+creates a fresh random runtime password in owner-readable ignored files. It manages only
+the exactly named container and volume carrying the matching project label.
+Plain PostgreSQL does not restore Supabase Storage assets or synthesize Supabase Auth
+users.
+
+Project-owned runtime adapters remain the place for application-specific setup and
+checks; they do not replace the database driver.
 
 ## Application proof
 

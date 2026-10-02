@@ -80,6 +80,7 @@ const parseArguments = (arguments_) => {
     recordsPath: undefined,
     ledgerPath: undefined,
     assetsPath: undefined,
+    target: undefined,
   };
   const positionals = [];
   for (const argument of arguments_) {
@@ -100,6 +101,8 @@ const parseArguments = (arguments_) => {
       flags.ledgerPath = argument.slice("--ledger=".length);
     } else if (argument.startsWith("--assets=")) {
       flags.assetsPath = argument.slice("--assets=".length);
+    } else if (argument.startsWith("--target=")) {
+      flags.target = argument.slice("--target=".length);
     } else if (argument.startsWith("--")) {
       throw new Error(`Unknown Rehearsal option: ${argument}.`);
     } else positionals.push(argument);
@@ -502,6 +505,7 @@ const inspectGuidedProject = async (planOptions) => {
       detected,
       node,
       config: "missing",
+      target: detected.hasSupabaseConfig ? "supabase" : "postgresql",
       baseline: false,
       runtime: false,
     };
@@ -514,6 +518,7 @@ const inspectGuidedProject = async (planOptions) => {
       detected,
       node,
       config: "invalid",
+      target: undefined,
       configPath,
       configError: redactDiagnosticValue(String(error?.message ?? error)),
       baseline: false,
@@ -544,6 +549,7 @@ const inspectGuidedProject = async (planOptions) => {
     detected,
     node,
     config: "valid",
+    target: loaded.config.runtime.target,
     configPath,
     baseline: Boolean(migrationSummary),
     policy,
@@ -829,8 +835,16 @@ const runGuidedHome = async ({ flags, planOptions }) => {
 
   const statusLines = [
     `${marker(state.node.supported)} Node.js ${state.node.version}${state.node.supported ? "" : " (Node.js 24 required)"}`,
-    `${marker(state.detected.hasSupabaseConfig)} Supabase project detected`,
-    `${marker(state.detected.hasMigrations)} Migration history detected`,
+    `${marker(
+      state.target === "supabase"
+        ? state.detected.hasSupabaseConfig
+        : state.detected.hasPostgresqlMigrations,
+    )} ${state.target === "supabase" ? "Supabase" : "PostgreSQL"} project detected`,
+    `${marker(
+      state.target === "supabase"
+        ? state.detected.hasMigrations
+        : state.detected.hasPostgresqlMigrations,
+    )} Migration history detected`,
     `${marker(state.config === "valid")} Rehearsal configuration${state.config === "invalid" ? " needs attention" : ""}`,
     ...(state.config === "valid"
       ? [
@@ -956,7 +970,7 @@ const runGuidedHome = async ({ flags, planOptions }) => {
         "",
         terminalStyle(flags, "1", "CREATE A SAFE BASELINE"),
         "Rehearsal only reads the local files you name here.",
-        "It does not extract data or contact a hosted Supabase project.",
+        "It does not extract data or contact a hosted database.",
         "",
       ].join("\n"),
     );
@@ -968,9 +982,13 @@ const runGuidedHome = async ({ flags, planOptions }) => {
       discovered.ledgers.length
         ? `Migration ledgers: ${discovered.ledgers.join(", ")}`
         : "Migration ledgers: none detected",
-      discovered.assetManifests.length
-        ? `Storage manifests: ${discovered.assetManifests.join(", ")}`
-        : "Storage manifests: none detected",
+      ...(state.target === "supabase"
+        ? [
+            discovered.assetManifests.length
+              ? `Storage manifests: ${discovered.assetManifests.join(", ")}`
+              : "Storage manifests: none detected",
+          ]
+        : []),
       "Only paths and file structure were inspected; row values stay hidden.",
     ];
     if (useStyledPrompts(flags)) {
@@ -1017,12 +1035,15 @@ const runGuidedHome = async ({ flags, planOptions }) => {
         flags.write = true;
         return "baseline prepare";
       }
-      flags.assetsPath = await promptForDiscoveredPath({
-        message: "Storage assets",
-        candidates: discovered.assetManifests,
-        optional: true,
-        flags,
-      });
+      flags.assetsPath =
+        state.target === "supabase"
+          ? await promptForDiscoveredPath({
+              message: "Storage assets",
+              candidates: discovered.assetManifests,
+              optional: true,
+              flags,
+            })
+          : undefined;
       const inspection = await inspectBaselineInputFiles({
         ...planOptions,
         recordsPath: flags.recordsPath,
@@ -1052,7 +1073,26 @@ const runGuidedHome = async ({ flags, planOptions }) => {
   }
   if (selected.command !== "setup-write") return selected.command;
 
-  const setupPlan = await planRehearsalSetup({ projectRoot });
+  const targetChoice = await promptForChoice({
+    message: "Which database should Rehearsal use?",
+    flags,
+    options:
+      state.target === "supabase"
+        ? [
+            { label: "Supabase", command: "supabase" },
+            { label: "PostgreSQL", command: "postgresql" },
+          ]
+        : [
+            { label: "PostgreSQL", command: "postgresql" },
+            { label: "Supabase", command: "supabase" },
+          ],
+  });
+  if (!targetChoice) return "refresh";
+  flags.target = targetChoice.command;
+  const setupPlan = await planRehearsalSetup({
+    projectRoot,
+    target: flags.target,
+  });
   const preview = {
     ...summarizeRehearsalSetup(setupPlan, { mode: "preview" }),
     nextAction:
@@ -1215,6 +1255,14 @@ const runManager = ({ action, flags }) => {
     const inferred = normalizeRehearsalError(
       new Error(completeOutput || `Rehearsal ${action} failed.`),
     );
+    const category =
+      action === "migrate" ||
+      (action === "run" &&
+        /migrateRuntime|candidate migration|migration up/iu.test(
+          completeOutput,
+        ))
+        ? "migration_candidate_failure"
+        : inferred.category;
     const conciseOutput = completeOutput
       .replaceAll(String.fromCodePoint(27), "")
       .split("\n")
@@ -1224,7 +1272,7 @@ const runManager = ({ action, flags }) => {
       .join("\n")
       .slice(-2_000);
     throw new RehearsalError({
-      category: inferred.category,
+      category,
       code: `MANAGER_${action.toUpperCase()}_FAILED`,
       message: `The local Rehearsal ${action} operation did not complete.`,
       expected: "the isolated runtime operation to finish and verify",
@@ -1382,7 +1430,12 @@ const renderInit = (result) =>
   ].join("\n");
 
 const runSetup = async ({ flags, planOptions }) => {
-  const plan = flags.setupPlan ?? (await planRehearsalSetup({ projectRoot }));
+  const plan =
+    flags.setupPlan ??
+    (await planRehearsalSetup({
+      projectRoot,
+      target: flags.target ?? "supabase",
+    }));
   if (flags.write) await applyRehearsalSetup(plan);
   const result = summarizeRehearsalSetup(plan, {
     mode: flags.write ? "written" : "preview",
@@ -1454,9 +1507,12 @@ const renderSetup = (result) => {
   return [
     `REHEARSAL SETUP — ${result.mode.toUpperCase()}`,
     `Project: ${result.project}`,
+    `Database: ${result.target === "postgresql" ? "PostgreSQL" : "Supabase"}`,
     `Runtime ID: ${result.projectId}`,
     `Application: ${result.applicationUrl}`,
-    `Ports: API ${result.ports.api}, database ${result.ports.database}, Studio ${result.ports.studio}`,
+    result.target === "postgresql"
+      ? `Port: database ${result.ports.database}`
+      : `Ports: API ${result.ports.api}, database ${result.ports.database}, Studio ${result.ports.studio}`,
     "",
     "Files",
     ...result.files.map(
@@ -1571,7 +1627,7 @@ const usage = () => `Usage: rehearsal <command> [options]
 
 Commands:
   guide                       Open the interactive, state-aware home screen
-  setup [--write]             Preview or create safe first-run scaffolding
+  setup [--target=] [--write] Preview or create safe first-run scaffolding
   init [--write]              Preview or explicitly write safe starter config
   baseline prepare --records= --ledger= [--write] Create a fail-closed policy draft
   baseline create --records= --ledger= [--assets=] Create a baseline from safe local inputs
@@ -1591,7 +1647,7 @@ Commands:
   discard                    Remove only this project's disposable runtime
   verify                     Verify the current local Rehearsal runtime
 
-Options: --json --verbose --debug --plain --config=<path>`;
+Options: --json --verbose --debug --plain --config=<path> --target=supabase|postgresql`;
 
 const executeCommand = async ({ command, flags, planOptions, guided }) => {
   if (command === "help" || flags.help) {
@@ -1797,6 +1853,7 @@ const resetGuidedFlags = (flags) => {
   flags.recordsPath = undefined;
   flags.ledgerPath = undefined;
   flags.assetsPath = undefined;
+  flags.target = undefined;
   flags.setupPlan = undefined;
   flags.preparationPlan = undefined;
 };

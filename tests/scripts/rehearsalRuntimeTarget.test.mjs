@@ -10,10 +10,14 @@ describe("Rehearsal runtime target", () => {
       id: "supabase",
       label: "Supabase",
     });
-    expect(REHEARSAL_RUNTIME_TARGETS).toEqual(["supabase"]);
+    expect(REHEARSAL_RUNTIME_TARGETS).toEqual(["supabase", "postgresql"]);
   });
 
   it("fails closed instead of loading an unknown driver", () => {
+    expect(resolveRuntimeTarget("postgresql")).toEqual({
+      id: "postgresql",
+      label: "PostgreSQL",
+    });
     expect(() => resolveRuntimeTarget("mysql")).toThrow(
       "Unsupported Rehearsal runtime target: mysql",
     );

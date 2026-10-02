@@ -10,10 +10,19 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - Pressing `Ctrl+Z` at an interactive guide prompt now exits Rehearsal cleanly instead
   of suspending the process and leaving it attached to the terminal.
 - Database lifecycle selection now goes through a closed runtime-driver boundary while
-  preserving Supabase as the default and only supported target. This creates a safe,
-  testable seam for PostgreSQL without changing existing configurations.
+  preserving Supabase as the backward-compatible default. This created the safe,
+  testable seam used by the PostgreSQL target without changing existing configurations.
 - The installed-package proof now chooses an available local port block and a unique
   project identity, so local verification does not collide with another Rehearsal run.
+
+### Added
+
+- An ordinary PostgreSQL runtime target with guided setup, loopback-only Docker
+  isolation, exact migration receipts, baseline restore, application proof, lifecycle
+  commands, and a separate installed-package integration proof.
+- PostgreSQL setup refuses implicit image downloads and Supabase-only Storage baselines,
+  uses a fresh random local password per runtime, and requires exact Rehearsal ownership
+  labels before removing resources.
 
 ## [0.1.0-beta.5] - 2026-10-01
 

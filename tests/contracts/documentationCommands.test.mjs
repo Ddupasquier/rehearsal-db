@@ -207,12 +207,13 @@ describe("documented CLI contract", () => {
     }
     expect(readme).toContain("Local cost and storage");
     expect(readme.replace(/\s+/gu, " ")).toContain(
-      "does not support an arbitrary unmanaged PostgreSQL",
+      "does not accept a hosted or independently managed database URL",
     );
     expect(configuration).toContain(
       "advanced entry points are ESM JavaScript APIs in the first beta",
     );
-    expect(manifest.description).toContain("Supabase migrations");
-    expect(manifest.description).not.toMatch(/PostgreSQL and Supabase/iu);
+    expect(manifest.description).toContain(
+      "PostgreSQL and Supabase migrations",
+    );
   });
 });

@@ -105,6 +105,14 @@ const resultCheck = async ({ id, label, run, remediation }) => {
 };
 
 const assertRuntimeConfigMatches = async ({ config, paths }) => {
+  if (config.runtime.target === "postgresql") {
+    if (paths.rehearsalConfig !== null || paths.supabaseWorkdir !== null) {
+      throw new Error(
+        "The PostgreSQL target unexpectedly resolved Supabase paths.",
+      );
+    }
+    return `isolated PostgreSQL image ${config.postgresql.image} and a loopback database port are configured`;
+  }
   const source = await readFile(paths.rehearsalConfig, "utf8");
   const expected = [
     ["project_id", config.runtime.projectId],
@@ -218,7 +226,7 @@ export const buildRehearsalPlan = async (options = {}) => {
     },
     environment: {
       target: config.runtime.target,
-      kind: "isolated_local_supabase",
+      kind: `isolated_local_${config.runtime.target}`,
       applicationUrl: config.runtime.applicationUrl,
       projectId: config.runtime.projectId,
       ports: config.runtime.ports,
@@ -227,7 +235,7 @@ export const buildRehearsalPlan = async (options = {}) => {
       authenticationProviders: config.safety.authenticationProviders,
       barriers: [
         "versioned configuration accepts loopback hosts only",
-        "runtime uses a dedicated local Supabase workdir and project id",
+        `runtime uses a dedicated local ${config.runtime.target === "supabase" ? "Supabase workdir" : "PostgreSQL container and volume"} and project id`,
         "child processes receive an allowlisted environment",
         "application egress policy denies hosted targets and side effects",
         ...(config.safety.authenticationProviders.length
@@ -383,14 +391,37 @@ export const runRehearsalDoctor = async (options = {}) => {
       remediation: "Use npm for the initial Rehearsal contract.",
     },
     {
-      id: "supabase-cli",
-      label: "Supabase CLI",
+      id:
+        config.runtime.target === "supabase"
+          ? "supabase-cli"
+          : "postgresql-image",
+      label:
+        config.runtime.target === "supabase"
+          ? "Supabase CLI"
+          : "PostgreSQL image",
       run: async () => {
-        const result = commandAvailable("supabase");
-        if (!result.available) throw new Error("Supabase CLI is unavailable.");
-        return result.version;
+        if (config.runtime.target === "supabase") {
+          const result = commandAvailable("supabase");
+          if (!result.available)
+            throw new Error("Supabase CLI is unavailable.");
+          return result.version;
+        }
+        const result = commandAvailable("docker", [
+          "image",
+          "inspect",
+          config.postgresql.image,
+        ]);
+        if (!result.available) {
+          throw new Error(
+            `PostgreSQL image ${config.postgresql.image} is unavailable locally.`,
+          );
+        }
+        return config.postgresql.image;
       },
-      remediation: "Install the Supabase CLI in the project and retry.",
+      remediation:
+        config.runtime.target === "supabase"
+          ? "Install the Supabase CLI in the project and retry."
+          : `Pull and review ${config.postgresql.image}, then retry.`,
     },
     {
       id: "docker",
@@ -413,13 +444,17 @@ export const runRehearsalDoctor = async (options = {}) => {
       run: async () => {
         await Promise.all([
           verifyPath(paths.migrationDirectory, "directory"),
-          verifyPath(paths.rehearsalConfig, "file"),
+          ...(paths.rehearsalConfig
+            ? [verifyPath(paths.rehearsalConfig, "file")]
+            : []),
           verifyPath(paths.sanitizationPolicy, "file"),
           ...(paths.runtimeAdapter
             ? [verifyPath(paths.runtimeAdapter, "file")]
             : []),
         ]);
-        return "migrations, local runtime config, and sanitization policy exist";
+        return config.runtime.target === "supabase"
+          ? "migrations, local runtime config, and sanitization policy exist"
+          : "migrations and sanitization policy exist";
       },
       remediation:
         "Correct the missing project path in the Rehearsal configuration.",
@@ -447,6 +482,9 @@ export const runRehearsalDoctor = async (options = {}) => {
       id: "service-environment",
       label: "Local service credentials",
       run: async () => {
+        if (config.runtime.target === "postgresql") {
+          return "no local service credentials required";
+        }
         const environment = await readRehearsalServiceEnvironment({
           path: paths.serviceEnvironment,
           keys: config.supabase.serviceEnvironmentVariables,
@@ -473,6 +511,42 @@ export const runRehearsalDoctor = async (options = {}) => {
         );
         const occupied = availability.filter((entry) => !entry.available);
         if (occupied.length) {
+          if (config.runtime.target === "postgresql") {
+            const status = spawnSync(
+              "docker",
+              [
+                "ps",
+                "--filter",
+                `label=com.rehearsal-db.project=${config.runtime.projectId}`,
+                "--format",
+                "{{.Ports}}",
+              ],
+              {
+                cwd: projectRoot,
+                encoding: "utf8",
+                env: Object.fromEntries(
+                  ["HOME", "LANG", "LC_ALL", "PATH", "SHELL", "TMPDIR"].flatMap(
+                    (key) =>
+                      process.env[key] === undefined
+                        ? []
+                        : [[key, process.env[key]]],
+                  ),
+                ),
+                stdio: ["ignore", "pipe", "pipe"],
+              },
+            );
+            if (
+              status.status !== 0 ||
+              !String(status.stdout).includes(
+                `127.0.0.1:${config.runtime.ports.database}->5432/tcp`,
+              )
+            ) {
+              throw new Error(
+                `Configured database port is occupied by an unverified process: database=${config.runtime.ports.database}.`,
+              );
+            }
+            return "occupied only by the configured local Rehearsal runtime";
+          }
           const serviceEnvironment = await readRehearsalServiceEnvironment({
             path: paths.serviceEnvironment,
             keys: config.supabase.serviceEnvironmentVariables,

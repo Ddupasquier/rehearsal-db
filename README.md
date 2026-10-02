@@ -1,11 +1,12 @@
 # Rehearsal
 
-Rehearsal tests pending Supabase migrations against a verified, sanitized,
+Rehearsal tests pending PostgreSQL migrations against a verified, sanitized,
 production-shaped baseline in a disposable local environment. It is designed for the
 historical edge cases that synthetic seed data rarely represents.
 
-Version 0.1 targets Supabase CLI projects running PostgreSQL locally. It does not yet
-claim support for arbitrary unmanaged PostgreSQL installations.
+Version 0.1 supports Supabase CLI projects and ordinary PostgreSQL projects through
+separate local runtime drivers. Both run in disposable Docker state bound only to
+loopback; Rehearsal does not connect to an existing PostgreSQL server.
 
 Public beta releases are distributed through npm as `@rehearsal-db/core`. Publication is
 restricted to reviewed artifacts from protected `main`; source availability alone does
@@ -35,7 +36,7 @@ a new schema. Rehearsal also proves that:
 - historical migration files still match the baseline's digest-addressed prefix;
 - only the exact suffix is treated as candidate work;
 - production-shaped relationships survive restore and migration;
-- optional bounded Storage objects retain exact checksums through local restore;
+- optional bounded Supabase Storage objects retain exact checksums through local restore;
 - the resulting local application can pass a project-owned proof;
 - unsafe or ambiguous state stops execution.
 
@@ -53,13 +54,13 @@ Rehearsal complements existing database workflows instead of replacing them:
 
 The package does not extract production data. A project may use Rehearsal entirely with
 synthetic data, or build its own least-privilege extraction and sanitization boundary.
-The current beta runs local Supabase services and therefore does not support an arbitrary
-unmanaged PostgreSQL server.
+The current beta starts either local Supabase services or its own plain PostgreSQL
+container. It does not accept a hosted or independently managed database URL.
 
 ## Local cost and storage
 
 Rehearsal itself has no hosted-service fee and never creates a cloud database. Normal
-local costs are Docker CPU, memory, and disk space for Supabase images, the immutable
+local costs are Docker CPU, memory, and disk space for database images, the immutable
 baseline, optional retained Storage assets, and the disposable runtime. Production-shaped
 artifacts can be large: review their manifest size before activation, keep bounded
 retention, and use `rehearsal discard` when the runtime is no longer needed. Deleting the
@@ -85,8 +86,8 @@ produced by `npm pack` from a local checkout. In a consuming project, the comman
 
 ```bash
 npx rehearsal
-npx rehearsal setup
-npx rehearsal setup --write
+npx rehearsal setup --target=supabase
+npx rehearsal setup --target=postgresql --write
 npx rehearsal init
 npx rehearsal init --write
 npx rehearsal baseline prepare --records=<safe.ndjson> --ledger=<ledger.json>
@@ -125,10 +126,11 @@ environment and readiness report for a GitHub issue. It works before setup and o
 values, credentials, project paths, migration SQL, and baseline identifiers. Review every
 report before sharing it.
 
-`setup` previews a conservative first-run scaffold: the Rehearsal configuration, a
-dedicated local-only Supabase configuration on an available port block, and protective
-`.gitignore` entries. It writes only with `--write`, never overwrites project files, and
-does not copy enabled external providers from the application's Supabase configuration.
+`setup` asks whether the project uses Supabase or ordinary PostgreSQL, then previews a
+conservative first-run scaffold and protective `.gitignore` entries. Supabase receives a
+dedicated local config; PostgreSQL receives a loopback-only database port and an
+official local image declaration. It writes only with `--write` and never overwrites
+project files.
 After writing, it runs the same readiness checks as `doctor` and shows the remaining
 project-owned inputs. Use `init` when you want to create only the configuration file
 manually.
@@ -156,9 +158,9 @@ The `rehearsal` executable is the public command contract. Repository availabili
 not itself authorize an npm publication.
 
 To try the entire workflow without configuring a project or touching hosted data, clone
-this repository and run `npm ci --ignore-scripts && npm run test:fixture`. It installs
-the exact packed artifact into a clean synthetic Supabase project and proves both
-success and failure.
+this repository and run `npm ci --ignore-scripts && npm run test:fixture`. The ordinary
+PostgreSQL proof is `npm run test:fixture:postgresql`. Both install the exact packed
+artifact into a clean synthetic project and prove success and failure.
 
 ## Configuration
 
@@ -193,6 +195,7 @@ export default defineRehearsalConfig({
     environmentFile: ".rehearsal/runtime.env",
   },
   runtime: {
+    target: "supabase",
     applicationUrl: "http://localhost:5175",
     projectId: "my-app-rehearsal",
     apiPort: 58321,
@@ -218,23 +221,29 @@ export default defineRehearsalConfig({
 | -------------------------------------- | ---------- | -------- | ------------------------- | ------------------------------------------------------------- |
 | `schemaVersion`                        | `1`        | Yes      | None                      | Pins configuration meaning; unknown versions fail.            |
 | `project.name`                         | `string`   | Yes      | None                      | Stable lowercase local identifier.                            |
-| `supabase.workdir`                     | `string`   | Yes      | None                      | Project-owned Supabase workdir; cannot escape the project.    |
-| `supabase.migrationDirectory`          | `string`   | Yes      | None                      | Ordered application migration source.                         |
-| `supabase.rehearsalConfig`             | `string`   | Yes      | None                      | Dedicated unlinked local Supabase configuration.              |
-| `supabase.runtimeWorkdir`              | `string`   | Yes      | None                      | Must be `<artifactDirectory>/runtime`; always disposable.     |
+| `supabase.workdir`                     | `string`   | Supabase | None                      | Project-owned Supabase workdir; cannot escape the project.    |
+| `supabase.migrationDirectory`          | `string`   | Supabase | None                      | Ordered Supabase migration source.                            |
+| `supabase.rehearsalConfig`             | `string`   | Supabase | None                      | Dedicated unlinked local Supabase configuration.              |
+| `supabase.runtimeWorkdir`              | `string`   | Supabase | None                      | Must be `<artifactDirectory>/runtime`; always disposable.     |
 | `supabase.serviceEnvironmentFile`      | `string`   | No       | None                      | Owner-only ignored credentials for the local service stack.   |
 | `supabase.serviceEnvironmentVariables` | `string[]` | No       | `[]`                      | Exact variables accepted from the service environment file.   |
+| `postgresql.migrationDirectory`        | `string`   | Postgres | None                      | Ordered plain PostgreSQL migration source.                    |
+| `postgresql.runtimeWorkdir`            | `string`   | No       | `.rehearsal/runtime`      | Guarded disposable runtime metadata.                          |
+| `postgresql.image`                     | `string`   | No       | `postgres:17-alpine`      | Preinstalled official PostgreSQL image; never pulled.         |
+| `postgresql.database`                  | `string`   | No       | `postgres`                | Local disposable database name.                               |
+| `postgresql.user`                      | `string`   | No       | `postgres`                | Local disposable database user.                               |
 | `baseline.artifactDirectory`           | `string`   | No       | `.rehearsal`              | Must be named `.rehearsal`; deletion-safe artifact boundary.  |
 | `baseline.sanitizationPolicy`          | `string`   | Yes      | None                      | Exhaustive project-owned classification policy.               |
 | `application.startCommand`             | `string`   | Yes      | None                      | Starts the app against the verified local runtime.            |
 | `application.proofCommand`             | `string`   | Yes      | None                      | Project-owned proof after migration.                          |
 | `application.environmentFile`          | `string`   | No       | `.rehearsal/runtime.env`  | Owner-only generated local runtime variables.                 |
 | `application.runtimeAdapter`           | `string`   | No       | None                      | Advanced project-owned post-restore adapter path.             |
+| `runtime.target`                       | `string`   | No       | `supabase`                | Selects `supabase` or `postgresql`.                           |
 | `runtime.applicationUrl`               | URL        | No       | `http://localhost:5175`   | Must use an explicitly allowed loopback host.                 |
 | `runtime.projectId`                    | `string`   | No       | `rehearsal-local`         | Dedicated local Supabase/Docker identity.                     |
-| `runtime.apiPort`                      | TCP port   | Yes      | None                      | Dedicated non-privileged API port.                            |
+| `runtime.apiPort`                      | TCP port   | Supabase | None                      | Dedicated non-privileged API port.                            |
 | `runtime.databasePort`                 | TCP port   | Yes      | None                      | Dedicated non-privileged PostgreSQL port.                     |
-| `runtime.studioPort`                   | TCP port   | Yes      | None                      | Dedicated non-privileged Studio port.                         |
+| `runtime.studioPort`                   | TCP port   | Supabase | None                      | Dedicated non-privileged Studio port.                         |
 | `safety.allowedHosts`                  | `string[]` | No       | loopback hosts            | Version 1 rejects any non-loopback entry.                     |
 | `safety.blockedEnvironmentVariables`   | `string[]` | No       | Supabase hosted variables | Ambient values excluded from child processes.                 |
 | `safety.authenticationProviders`       | `string[]` | No       | `[]`                      | Declared identity-only external exchanges.                    |

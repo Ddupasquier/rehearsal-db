@@ -1,0 +1,9 @@
+{
+  "name": "rehearsal-postgresql-fixture",
+  "private": true,
+  "scripts": {
+    "dev": "node -e \"process.exit(0)\"",
+    "proof": "node proof.mjs",
+    "test": "npm run proof"
+  }
+}
