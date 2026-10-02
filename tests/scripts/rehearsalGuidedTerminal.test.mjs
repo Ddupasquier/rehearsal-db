@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -69,6 +69,68 @@ const makeProject = async () => {
   return root;
 };
 
+const makePolicyProject = async () => {
+  const root = await makeProject();
+  await mkdir(join(root, "rehearsal"), { recursive: true });
+  await writeFile(
+    join(root, "rehearsal.config.mjs"),
+    `export default {
+  schemaVersion: 1,
+  project: { name: "guided-policy-fixture" },
+  supabase: {
+    workdir: ".",
+    migrationDirectory: "supabase/migrations",
+    rehearsalConfig: "supabase/config.toml",
+    runtimeWorkdir: ".rehearsal/runtime",
+  },
+  baseline: {
+    artifactDirectory: ".rehearsal",
+    sanitizationPolicy: "rehearsal/sanitization-policy.json",
+  },
+  application: {
+    startCommand: "npm run dev",
+    proofCommand: "npm run test",
+  },
+  runtime: {
+    applicationUrl: "http://localhost:5175",
+    projectId: "guided-policy-fixture",
+    apiPort: 58341,
+    databasePort: 58342,
+    studioPort: 58343,
+  },
+  safety: { hostedAccess: "disabled", outboundNetwork: "deny" },
+};
+`,
+  );
+  await writeFile(
+    join(root, "rehearsal/sanitization-policy.json"),
+    `${JSON.stringify(
+      {
+        policyVersion: 1,
+        draft: true,
+        migrationCutoff: "20260101000000",
+        tables: [
+          {
+            name: "widgets",
+            group: "synthetic",
+            sourceRows: "STREAM AND SANITIZE",
+            columns: ["created_at", "id", "name"].map((name) => ({
+              name,
+              action: "REVIEW REQUIRED",
+              generated: "REVIEW REQUIRED",
+              identity: "REVIEW REQUIRED",
+              foreignKey: "REVIEW REQUIRED",
+            })),
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return root;
+};
+
 afterEach(async () => {
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
@@ -76,6 +138,99 @@ afterEach(async () => {
 });
 
 describe("guided terminal journey", () => {
+  it("applies table defaults and reviews only suggested exceptions", async () => {
+    const root = await makePolicyProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: true,
+        interactions: [
+          { after: "What would you like to do? [1]:", write: "1\n" },
+          {
+            after: "widgets: how would you like to review 3 columns? [1]:",
+            write: "\n",
+          },
+          {
+            after: "Choose comma-separated numbers, all, or none [1,2]:",
+            write: "\n",
+          },
+          {
+            after: "widgets.created_at: how should this value be handled? [1]:",
+            write: "3\n",
+          },
+          {
+            after:
+              "widgets.created_at: is this column always database-generated? [1]:",
+            write: "\n",
+          },
+          {
+            after: "widgets.created_at: is this an identity column? [1]:",
+            write: "\n",
+          },
+          {
+            after:
+              "widgets.created_at: does this column reference another table? (y/N)",
+            write: "\n",
+          },
+          {
+            after: "widgets.id: how should this value be handled? [1]:",
+            write: "5\n",
+          },
+          {
+            after: "widgets.id: is this column always database-generated? [1]:",
+            write: "\n",
+          },
+          {
+            after: "widgets.id: is this an identity column? [1]:",
+            write: "2\n",
+          },
+          {
+            after:
+              "widgets.id: does this column reference another table? (y/N)",
+            write: "\n",
+          },
+          {
+            after: "Save 3 classified columns and activate this policy? (y/N)",
+            write: "y\n",
+          },
+          { after: "What would you like to do? [1]:", write: "4\n" },
+        ],
+      }),
+    ).replaceAll("\r", "");
+    const policy = JSON.parse(
+      await readFile(join(root, "rehearsal/sanitization-policy.json"), "utf8"),
+    );
+
+    expect(output).toContain("widgets: 1 safe default; 2 individual reviews");
+    expect(output).toContain(
+      "3 columns classified (1 safe default; 2 individual reviews)",
+    );
+    expect(policy).not.toHaveProperty("draft");
+    expect(policy.tables[0].columns).toEqual([
+      {
+        name: "created_at",
+        action: "DERIVE",
+        generated: "NEVER",
+        identity: "NO",
+        foreignKey: null,
+      },
+      {
+        name: "id",
+        action: "KEEP EXACTLY",
+        generated: "NEVER",
+        identity: "YES",
+        foreignKey: null,
+      },
+      {
+        name: "name",
+        action: "REPLACE WITH SYNTHETIC",
+        generated: "NEVER",
+        identity: "NO",
+        foreignKey: null,
+      },
+    ]);
+  }, 15_000);
+
   it("returns to the home screen after an action in a real PTY", async () => {
     const root = await makeProject();
     const output = String(

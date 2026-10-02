@@ -49,7 +49,9 @@ import { formatCount } from "../../lib/rehearsal/human_output.mjs";
 import {
   applyReviewedPolicy,
   completePolicyDraft,
+  createSafeTablePreset,
   readReviewablePolicyDraft,
+  suggestPolicyExceptionColumns,
 } from "../../lib/rehearsal/policy_review.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -380,6 +382,71 @@ const promptForSelection = async ({ message, options, flags }) => {
   return selected?.value;
 };
 
+const promptForMultipleChoice = async ({
+  message,
+  options,
+  initialValues = [],
+  flags,
+}) => {
+  if (useStyledPrompts(flags)) {
+    const selected = await prompts.multiselect({
+      message,
+      options: options.map((option) => ({
+        value: option.value,
+        label: option.label,
+        hint: option.hint,
+      })),
+      initialValues,
+      required: false,
+    });
+    return prompts.isCancel(selected) ? undefined : selected;
+  }
+  const initial = new Set(initialValues);
+  console.log("");
+  console.log(message);
+  for (const [index, option] of options.entries()) {
+    console.log(
+      `  ${index + 1}. ${option.label}${initial.has(option.value) ? " (suggested)" : ""}`,
+    );
+  }
+  const defaultNumbers = options
+    .map((option, index) => (initial.has(option.value) ? index + 1 : undefined))
+    .filter(Boolean)
+    .join(",");
+  const prompt = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  try {
+    while (true) {
+      const suffix = defaultNumbers ? ` [${defaultNumbers}]` : " [none]";
+      const answer = (
+        await prompt.question(
+          `Choose comma-separated numbers, all, or none${suffix}: `,
+        )
+      )
+        .trim()
+        .toLowerCase();
+      if (!answer) return [...initialValues];
+      if (answer === "none") return [];
+      if (answer === "all") return options.map((option) => option.value);
+      const indexes = answer.split(",").map((value) => Number(value.trim()));
+      if (
+        indexes.length > 0 &&
+        indexes.every(
+          (index) =>
+            Number.isInteger(index) && index >= 1 && index <= options.length,
+        )
+      ) {
+        return [...new Set(indexes)].map((index) => options[index - 1].value);
+      }
+      console.log(`Choose numbers from 1 to ${options.length}, all, or none.`);
+    }
+  } finally {
+    prompt.close();
+  }
+};
+
 const firstExistingPath = async (candidates) => {
   for (const candidate of candidates) {
     if (await pathExists(join(projectRoot, candidate))) return candidate;
@@ -467,116 +534,180 @@ const reviewPolicyInteractively = async ({ state, flags }) => {
     (total, table) => total + (table.columns?.length ?? 0),
     0,
   );
-  let reviewedColumns = 0;
+  const tableSummaries = [];
+  let individuallyReviewed = 0;
   if (useStyledPrompts(flags)) {
     prompts.note(
       [
-        `${formatCount(totalColumns, "column")} require explicit review.`,
+        `${formatCount(totalColumns, "column")} across ${formatCount(draft.tables.length, "table")} require explicit review.`,
         "No row values are displayed or changed by this step.",
-        "The safest replacement-oriented choices appear first.",
+        "Safe defaults replace values, mark generated NEVER and identity NO, and set no foreign key.",
+        "Likely structural columns start selected for individual review.",
       ].join("\n"),
       "Review the script",
     );
   }
-  const policy = await completePolicyDraft({
-    draft,
-    reviewColumn: async ({ table, column }) => {
-      reviewedColumns += 1;
-      const label = `${table}.${column} (${reviewedColumns}/${totalColumns})`;
-      const action = await promptForSelection({
-        message: `${label}: how should this value be handled?`,
+  const reviewColumn = async ({ table, column }) => {
+    individuallyReviewed += 1;
+    const label = `${table}.${column}`;
+    const action = await promptForSelection({
+      message: `${label}: how should this value be handled?`,
+      flags,
+      options: [
+        {
+          label: "Replace with synthetic data",
+          hint: "Safest default",
+          value: "REPLACE WITH SYNTHETIC",
+        },
+        {
+          label: "Pseudonymize consistently",
+          hint: "Stable links without original values",
+          value: "PSEUDONYMIZE",
+        },
+        {
+          label: "Derive a safe value",
+          value: "DERIVE",
+        },
+        { label: "Exclude this field", value: "EXCLUDE" },
+        {
+          label: "Keep exactly",
+          hint: "Only for values explicitly safe to retain",
+          value: "KEEP EXACTLY",
+        },
+      ],
+    });
+    if (!action) throw new Error("Policy review was cancelled.");
+    const generated = await promptForSelection({
+      message: `${label}: is this column always database-generated?`,
+      flags,
+      options: [
+        { label: "No", value: "NEVER" },
+        { label: "Yes", value: "ALWAYS" },
+      ],
+    });
+    if (!generated) throw new Error("Policy review was cancelled.");
+    const identity = await promptForSelection({
+      message: `${label}: is this an identity column?`,
+      flags,
+      options: [
+        { label: "No", value: "NO" },
+        { label: "Yes", value: "YES" },
+      ],
+    });
+    if (!identity) throw new Error("Policy review was cancelled.");
+    const hasForeignKey = await promptForConfirmation(
+      `${label}: does this column reference another table?`,
+      flags,
+      { cancelValue: null },
+    );
+    if (hasForeignKey === null) {
+      throw new Error("Policy review was cancelled.");
+    }
+    let foreignKey = null;
+    if (hasForeignKey) {
+      const schema = await promptForPath({
+        message: `${label}: referenced schema`,
+        defaultValue: "public",
         flags,
-        options: [
-          {
-            label: "Replace with synthetic data",
-            hint: "Safest default",
-            value: "REPLACE WITH SYNTHETIC",
-          },
-          {
-            label: "Pseudonymize consistently",
-            hint: "Stable links without original values",
-            value: "PSEUDONYMIZE",
-          },
-          {
-            label: "Derive a safe value",
-            value: "DERIVE",
-          },
-          { label: "Exclude this field", value: "EXCLUDE" },
-          {
-            label: "Keep exactly",
-            hint: "Only for values explicitly safe to retain",
-            value: "KEEP EXACTLY",
-          },
-        ],
+        validate: (value) =>
+          /^[a-z][a-z0-9_]{0,62}$/u.test(value)
+            ? undefined
+            : "Use a lowercase PostgreSQL identifier.",
       });
-      if (!action) throw new Error("Policy review was cancelled.");
-      const generated = await promptForSelection({
-        message: `${label}: is this column always database-generated?`,
+      const referencedTable = await promptForPath({
+        message: `${label}: referenced table`,
         flags,
-        options: [
-          { label: "No", value: "NEVER" },
-          { label: "Yes", value: "ALWAYS" },
-        ],
+        validate: (value) =>
+          /^[a-z][a-z0-9_]{0,62}$/u.test(value)
+            ? undefined
+            : "Use a lowercase PostgreSQL identifier.",
       });
-      if (!generated) throw new Error("Policy review was cancelled.");
-      const identity = await promptForSelection({
-        message: `${label}: is this an identity column?`,
+      const referencedColumn = await promptForPath({
+        message: `${label}: referenced column`,
         flags,
-        options: [
-          { label: "No", value: "NO" },
-          { label: "Yes", value: "YES" },
-        ],
+        validate: (value) =>
+          /^[a-z][a-z0-9_]{0,62}$/u.test(value)
+            ? undefined
+            : "Use a lowercase PostgreSQL identifier.",
       });
-      if (!identity) throw new Error("Policy review was cancelled.");
-      const hasForeignKey = await promptForConfirmation(
-        `${label}: does this column reference another table?`,
-        flags,
-        { cancelValue: null },
-      );
-      if (hasForeignKey === null) {
+      if (!schema || !referencedTable || !referencedColumn) {
         throw new Error("Policy review was cancelled.");
       }
-      let foreignKey = null;
-      if (hasForeignKey) {
-        const schema = await promptForPath({
-          message: `${label}: referenced schema`,
-          defaultValue: "public",
-          flags,
-          validate: (value) =>
-            /^[a-z][a-z0-9_]{0,62}$/u.test(value)
-              ? undefined
-              : "Use a lowercase PostgreSQL identifier.",
-        });
-        const referencedTable = await promptForPath({
-          message: `${label}: referenced table`,
-          flags,
-          validate: (value) =>
-            /^[a-z][a-z0-9_]{0,62}$/u.test(value)
-              ? undefined
-              : "Use a lowercase PostgreSQL identifier.",
-        });
-        const referencedColumn = await promptForPath({
-          message: `${label}: referenced column`,
-          flags,
-          validate: (value) =>
-            /^[a-z][a-z0-9_]{0,62}$/u.test(value)
-              ? undefined
-              : "Use a lowercase PostgreSQL identifier.",
-        });
-        if (!schema || !referencedTable || !referencedColumn) {
-          throw new Error("Policy review was cancelled.");
-        }
-        foreignKey = {
-          schema,
-          table: referencedTable,
-          column: referencedColumn,
-        };
+      foreignKey = {
+        schema,
+        table: referencedTable,
+        column: referencedColumn,
+      };
+    }
+    return { action, generated, identity, foreignKey };
+  };
+  const policy = await completePolicyDraft({
+    draft,
+    reviewColumn,
+    reviewTable: async ({ table, columns }) => {
+      if (columns.length === 1) {
+        tableSummaries.push({ table, defaulted: 0, individual: 1 });
+        return {};
       }
-      return { action, generated, identity, foreignKey };
+      const mode = await promptForSelection({
+        message: `${table}: how would you like to review ${formatCount(columns.length, "column")}?`,
+        flags,
+        options: [
+          {
+            label: "Use safe defaults, then review exceptions",
+            hint: "Best for larger tables",
+            value: "preset",
+          },
+          {
+            label: "Review every column individually",
+            value: "individual",
+          },
+        ],
+      });
+      if (!mode) throw new Error("Policy review was cancelled.");
+      if (mode === "individual") {
+        tableSummaries.push({
+          table,
+          defaulted: 0,
+          individual: columns.length,
+        });
+        return {};
+      }
+      const suggested = suggestPolicyExceptionColumns(columns);
+      const exceptions = await promptForMultipleChoice({
+        message: `${table}: select columns that need individual review`,
+        flags,
+        options: columns.map((column) => ({ label: column, value: column })),
+        initialValues: suggested,
+      });
+      if (!exceptions) throw new Error("Policy review was cancelled.");
+      const tableDecisions = createSafeTablePreset(columns);
+      for (const column of exceptions) delete tableDecisions[column];
+      tableSummaries.push({
+        table,
+        defaulted: columns.length - exceptions.length,
+        individual: exceptions.length,
+      });
+      if (useStyledPrompts(flags)) {
+        prompts.log.info(
+          `${table}: ${formatCount(columns.length - exceptions.length, "safe default")}; ${formatCount(exceptions.length, "exception")}.`,
+        );
+      }
+      return tableDecisions;
     },
   });
+  const defaultedColumns = totalColumns - individuallyReviewed;
+  const summaryLines = tableSummaries.map(
+    (summary) =>
+      `${summary.table}: ${formatCount(summary.defaulted, "safe default")}; ${formatCount(summary.individual, "individual review")}`,
+  );
+  if (useStyledPrompts(flags)) {
+    prompts.note(summaryLines.join("\n"), "Review summary");
+  } else {
+    console.log(["", "Review summary", ...summaryLines, ""].join("\n"));
+  }
   const accepted = await promptForConfirmation(
-    `Save ${formatCount(totalColumns, "reviewed column")} and activate this policy?`,
+    `Save ${formatCount(totalColumns, "classified column")} and activate this policy?`,
     flags,
   );
   if (!accepted) return false;
@@ -585,14 +716,11 @@ const reviewPolicyInteractively = async ({ state, flags }) => {
     originalSource: source,
     policy,
   });
+  const result = `${formatCount(totalColumns, "column")} classified (${formatCount(defaultedColumns, "safe default")}; ${formatCount(individuallyReviewed, "individual review")}).`;
   if (useStyledPrompts(flags)) {
-    prompts.log.success(
-      `${formatCount(totalColumns, "column")} reviewed; the policy is ready for baseline creation.`,
-    );
+    prompts.log.success(`${result} The policy is ready for baseline creation.`);
   } else {
-    console.log(
-      `Reviewed policy saved: ${formatCount(totalColumns, "column")} classified.`,
-    );
+    console.log(`Reviewed policy saved: ${result}`);
   }
   return true;
 };
@@ -632,7 +760,7 @@ const runGuidedHome = async ({ flags, planOptions }) => {
     } else if (state.policy === "needs-review") {
       options.push({
         label: "Review the script",
-        hint: "Classify every column interactively",
+        hint: "Apply table presets and review exceptions",
         command: "policy-review",
       });
     } else {

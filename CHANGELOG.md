@@ -5,6 +5,17 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Added
+
+- Scalable policy review with explicit table-level safe defaults, suggested structural
+  exceptions, per-table summaries, and real-PTY coverage of the bulk-review journey.
+
+### Changed
+
+- Guided policy review can classify ordinary columns in bulk as synthetic replacements
+  while keeping likely identifiers, relationships, and timestamps selected for
+  individual review. The saved policy still records every required column decision.
+
 ## [0.1.0-beta.4] - 2026-10-01
 
 ### Added

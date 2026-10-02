@@ -7,6 +7,31 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { validateRuntimeSanitizationPolicy } from "./sanitization_policy.mjs";
 
+export const SAFE_COLUMN_PRESET = Object.freeze({
+  action: "REPLACE WITH SYNTHETIC",
+  generated: "NEVER",
+  identity: "NO",
+  foreignKey: null,
+});
+
+export const createSafeTablePreset = (columns) =>
+  Object.fromEntries(
+    columns.map((column) => [
+      typeof column === "string" ? column : column.name,
+      { ...SAFE_COLUMN_PRESET },
+    ]),
+  );
+
+export const suggestPolicyExceptionColumns = (columns) =>
+  columns
+    .map((column) => (typeof column === "string" ? column : column.name))
+    .filter(
+      (column) =>
+        column === "id" ||
+        column.endsWith("_id") ||
+        ["created_at", "updated_at", "deleted_at"].includes(column),
+    );
+
 export const readReviewablePolicyDraft = async (path) => {
   const source = await readFile(path, "utf8");
   const draft = JSON.parse(source);
@@ -18,18 +43,33 @@ export const readReviewablePolicyDraft = async (path) => {
   return { source, draft };
 };
 
-export const completePolicyDraft = async ({ draft, reviewColumn }) => {
+export const completePolicyDraft = async ({
+  draft,
+  reviewColumn,
+  reviewTable,
+}) => {
   if (draft?.draft !== true || !Array.isArray(draft.tables)) {
     throw new Error("A generated REVIEW REQUIRED policy draft is required.");
   }
   const tables = [];
   for (const table of draft.tables) {
+    const columnNames = (table.columns ?? []).map((column) => column.name);
+    const tableDecisions = reviewTable
+      ? await reviewTable({ table: table.name, columns: columnNames })
+      : {};
     const columns = [];
     for (const column of table.columns ?? []) {
-      const reviewed = await reviewColumn({
-        table: table.name,
-        column: column.name,
-      });
+      const reviewed =
+        tableDecisions?.[column.name] ??
+        (await reviewColumn?.({
+          table: table.name,
+          column: column.name,
+        }));
+      if (!reviewed) {
+        throw new Error(
+          `Policy review did not classify ${table.name}.${column.name}.`,
+        );
+      }
       columns.push({ name: column.name, ...reviewed });
     }
     tables.push({ ...table, columns });
