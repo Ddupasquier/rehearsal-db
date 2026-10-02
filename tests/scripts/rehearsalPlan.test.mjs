@@ -120,6 +120,7 @@ describe("Rehearsal plan", () => {
     const second = await buildRehearsalPlan({ projectRoot: root });
 
     expect(second).toEqual(first);
+    expect(first.environment.target).toBe("supabase");
     expect(first.baseline.rowCount).toBe(1);
     expect(first.migrations.representedCount).toBe(1);
     expect(first.migrations.candidateCount).toBe(0);

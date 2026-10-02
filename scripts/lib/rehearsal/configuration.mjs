@@ -7,6 +7,7 @@
 import { access, readFile, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { resolveRuntimeTarget } from "../runtime/runtime_target.mjs";
 
 export {
   EXCLUDED_VALUE,
@@ -192,7 +193,14 @@ const normalizeConfig = (input) => {
   const runtime = assertPlainObject(root.runtime ?? {}, "config.runtime");
   assertKnownKeys(
     runtime,
-    ["applicationUrl", "projectId", "apiPort", "databasePort", "studioPort"],
+    [
+      "target",
+      "applicationUrl",
+      "projectId",
+      "apiPort",
+      "databasePort",
+      "studioPort",
+    ],
     "config.runtime",
   );
   const safety = assertPlainObject(root.safety ?? {}, "config.safety");
@@ -337,6 +345,7 @@ const normalizeConfig = (input) => {
             ),
     }),
     runtime: Object.freeze({
+      target: resolveRuntimeTarget(runtime.target).id,
       applicationUrl: assertLoopbackUrl(
         runtime.applicationUrl ?? REHEARSAL_DEFAULTS.runtime.applicationUrl,
         "config.runtime.applicationUrl",
@@ -548,6 +557,7 @@ export default defineRehearsalConfig({
 		environmentFile: ".rehearsal/runtime.env",
 	},
 	runtime: {
+		target: "supabase",
 		applicationUrl: ${JSON.stringify(applicationUrl)},
 		projectId: "${detected.projectName}-rehearsal",
 		apiPort: ${ports.api},

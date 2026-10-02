@@ -26,6 +26,7 @@ export default defineRehearsalConfig({
     proofCommand: "npm run test:rehearsal",
   },
   runtime: {
+    target: "supabase",
     applicationUrl: "http://localhost:5175",
     projectId: "example-app-rehearsal",
     apiPort: 58321,
@@ -67,6 +68,16 @@ from child processes. There is no force flag to weaken these rules.
 Use unique, non-privileged ports that do not overlap. `projectId` accepts lowercase
 letters, numbers, and hyphens. It labels the local Docker resources so cleanup targets
 only this project.
+
+## Database runtime
+
+`runtime.target` selects the isolated database driver. It is optional in existing
+configurations and currently defaults to `"supabase"`, so upgrading does not change an
+existing project's behavior. Unknown targets are rejected before any runtime action.
+
+The driver boundary is internal in this beta. Project-owned runtime adapters remain the
+place for application-specific setup and checks; they do not replace the database
+driver.
 
 ## Application proof
 

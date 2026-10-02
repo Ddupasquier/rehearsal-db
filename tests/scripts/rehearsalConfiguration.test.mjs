@@ -92,6 +92,7 @@ describe("Rehearsal configuration", () => {
 
     expect(loaded.config.schemaVersion).toBe(1);
     expect(loaded.config.project.name).toBe("fixture-project");
+    expect(loaded.config.runtime.target).toBe("supabase");
     expect(loaded.paths.migrationDirectory).toBe(
       join(root, "supabase/migrations"),
     );
@@ -115,6 +116,14 @@ describe("Rehearsal configuration", () => {
         "version",
         configSource().replace("schemaVersion: 1", "schemaVersion: 2"),
         "Unsupported Rehearsal configuration version",
+      ],
+      [
+        "runtime-target",
+        configSource().replace(
+          'applicationUrl: "http://localhost:5175"',
+          'target: "mysql", applicationUrl: "http://localhost:5175"',
+        ),
+        "Unsupported Rehearsal runtime target",
       ],
       [
         "hosted",
