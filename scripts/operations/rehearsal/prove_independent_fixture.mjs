@@ -24,6 +24,7 @@ import {
   runLocalCommand,
 } from "../../lib/environment/local_supabase.mjs";
 import { removeBaselineArtifactRoot } from "../../lib/rehearsal/baseline_artifact.mjs";
+import { findAvailableRehearsalPorts } from "../../lib/rehearsal/setup.mjs";
 import {
   buildRehearsalPlan,
   inspectRehearsalMigrations,
@@ -31,7 +32,30 @@ import {
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/rehearsal-project");
-const projectId = "rehearsal-fixture";
+let projectId = "rehearsal-fixture";
+
+const prepareFixtureRuntimeIdentity = async ({ cwd }) => {
+  const ports = await findAvailableRehearsalPorts();
+  projectId = `rehearsal-fixture-${process.pid}`;
+  const configPath = join(cwd, "rehearsal.config.mjs");
+  const localConfigPath = join(cwd, "supabase/config.toml");
+  const replacements = new Map([
+    ["rehearsal-fixture", projectId],
+    ["59320", String(ports.shadow)],
+    ["59321", String(ports.api)],
+    ["59322", String(ports.database)],
+    ["59323", String(ports.studio)],
+    ["59324", String(ports.smtp)],
+    ["59329", String(ports.pooler)],
+  ]);
+  for (const path of [configPath, localConfigPath]) {
+    let source = await readFile(path, "utf8");
+    for (const [current, replacement] of replacements) {
+      source = source.replaceAll(current, replacement);
+    }
+    await writeFile(path, source);
+  }
+};
 
 const findContainer = ({ cwd }) => {
   const output = runLocalCommand(
@@ -119,6 +143,7 @@ const main = async () => {
   let packageInstalled = false;
   try {
     await cp(fixtureSource, cwd, { recursive: true });
+    await prepareFixtureRuntimeIdentity({ cwd });
     await mkdir(packageOutput, { recursive: true });
     const packResult = JSON.parse(
       runLocalCommand(

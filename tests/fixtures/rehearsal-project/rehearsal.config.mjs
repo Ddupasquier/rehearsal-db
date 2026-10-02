@@ -16,6 +16,7 @@ export default {
     proofCommand: "npm run proof",
   },
   runtime: {
+    target: "supabase",
     applicationUrl: "http://localhost:5275",
     projectId: "rehearsal-fixture",
     apiPort: 59321,

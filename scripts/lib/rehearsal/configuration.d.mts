@@ -22,6 +22,7 @@ export interface RehearsalConfig {
     runtimeAdapter?: string;
   };
   runtime: {
+    target?: "supabase";
     applicationUrl?: string;
     projectId?: string;
     apiPort: number;

@@ -157,6 +157,7 @@ describe("guided Rehearsal setup", () => {
       stat(join(root, "rehearsal.config.mjs")),
     ]);
     expect(config).toContain('project: { name: "setup-fixture" }');
+    expect(config).toContain('target: "supabase"');
     expect(config).toContain("apiPort: 58321");
     expect(localSupabase).toContain('project_id = "setup-fixture-rehearsal"');
     expect(localSupabase).toContain("major_version = 15");

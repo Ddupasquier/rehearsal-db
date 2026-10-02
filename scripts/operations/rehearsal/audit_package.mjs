@@ -43,6 +43,8 @@ for (const required of [
   "package.json",
   "scripts/operations/rehearsal/rehearsal_cli.mjs",
   "scripts/operations/database/manage_rehearsal_database.mjs",
+  "scripts/lib/runtime/runtime_target.mjs",
+  "scripts/lib/runtime/supabase_runtime.mjs",
 ]) {
   if (!paths.includes(required)) {
     throw new Error(`Package is missing required public file ${required}.`);

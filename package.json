@@ -39,6 +39,7 @@
   "files": [
     "scripts/lib/environment/local_supabase.mjs",
     "scripts/lib/rehearsal",
+    "scripts/lib/runtime",
     "scripts/operations/database/manage_rehearsal_database.mjs",
     "scripts/operations/rehearsal/rehearsal_cli.mjs",
     "docs/*.md",

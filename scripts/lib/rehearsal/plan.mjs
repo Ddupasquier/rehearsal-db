@@ -217,6 +217,7 @@ export const buildRehearsalPlan = async (options = {}) => {
       project: config.project.name,
     },
     environment: {
+      target: config.runtime.target,
       kind: "isolated_local_supabase",
       applicationUrl: config.runtime.applicationUrl,
       projectId: config.runtime.projectId,
