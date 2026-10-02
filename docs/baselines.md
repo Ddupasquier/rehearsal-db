@@ -1,33 +1,92 @@
 # Baselines
 
-A baseline is an immutable, digest-addressed starting point for a disposable runtime.
-It binds sanitized rows, represented migration bytes, optional Storage assets, schema
-evidence, policy identity, and verification metadata.
+A baseline is the locked starting point for every rehearsal. It combines safe rows with
+the exact historical migrations that created their schema. Resetting the runtime always
+returns to this point.
 
-## Generation lifecycle
+## Required inputs
 
-New content is written to a private building directory. Individual files are checksummed
-and made read-only. A complete manifest is verified before an atomic `current` symlink
-selects the generation. An interrupted build cannot replace the active baseline.
+### Records
 
-## Migration lineage
+Records use NDJSON: one complete JSON object per line. Each object names a table and one
+safe row.
 
-The manifest records the exact ordered historical prefix. A migration with the same
-timestamp but different bytes is modified history, not a candidate. New migrations must
-form an ordered suffix. Candidate confirmation binds the exact filenames and checksums.
+```json
+{ "table": "widgets", "row": { "id": 1, "name": "Synthetic Widget" } }
+```
 
-## Restore lifecycle
+Use synthetic or reviewed sanitized values. A `.json` array is not NDJSON and will be
+rejected.
 
-`reset` destroys only the explicitly labelled local runtime, replays the represented
-schema, streams sanitized rows, restores checksummed local Storage assets, reapplies
-normal enforcement, and verifies counts and foreign keys. A failure removes trust and
-cannot leave a successful receipt.
+### Migration ledger
 
-## Persistence model
+The ledger is a JSON array in migration order:
 
-The baseline never changes during normal use. The restored runtime is writable and its
-changes persist across application restarts while the local containers remain. Run
-`reset` to discard sandbox changes and return to the exact baseline.
+```json
+[
+  {
+    "version": "20260101000000",
+    "name": "create_widgets",
+    "statements": [
+      "create table public.widgets (id bigint primary key, name text not null)"
+    ]
+  }
+]
+```
 
-Treat baseline files as sensitive even after sanitization: owner-only permissions,
-ignored paths, encrypted disks, bounded retention, and explicit deletion are prudent.
+Each entry must match the version, name, order, and SQL represented by the historical
+migration. Equivalent-looking SQL is not enough. Generate this evidence with reviewed
+project tooling for a real migration history; do not reconstruct a large ledger by hand.
+
+### Sanitization policy
+
+The policy records the approved treatment of every included table and column. The guide
+can create a shape-only draft from the records and walk you through its review. A draft
+with undecided fields cannot become a baseline. See [Sanitization](sanitization.md).
+
+### Storage manifest (optional)
+
+Supabase projects may include a bounded set of approved local Storage files. Plain
+PostgreSQL projects do not support Supabase Storage. Every file is checksum-verified and
+must remain inside the project.
+
+## Create a baseline
+
+The guided action is recommended:
+
+```bash
+npx rehearsal
+```
+
+For automation, use explicit safe local paths:
+
+```bash
+npx rehearsal baseline create \
+  --records=rehearsal/sanitized-data.ndjson \
+  --ledger=rehearsal/migration-ledger.json
+```
+
+Add `--assets=rehearsal/assets.json` only when using approved Supabase Storage files.
+Rehearsal validates everything and shows counts before activation. It never extracts data.
+
+## Why historical migrations are locked
+
+The baseline records the exact ordered historical migration files. If a file keeps the
+same timestamp but its bytes change, Rehearsal reports modified history instead of
+treating it as a new candidate. New migrations must form an ordered suffix after the
+baseline cutoff.
+
+## What reset does
+
+`reset` removes only the exactly labeled local runtime, rebuilds the represented schema,
+loads the safe rows, restores approved Storage files when present, and verifies counts and
+relationships. A failed restore cannot produce a successful receipt.
+
+The baseline itself never changes during normal use. Runtime edits persist until you
+reset or discard that runtime.
+
+## Storage and privacy
+
+Baseline files can still be sensitive after sanitization. Rehearsal stores them under the
+ignored `.rehearsal/` directory with checksums and read-only files. Keep them off shared
+drives, use encrypted disks, retain them only as long as needed, and never commit them.

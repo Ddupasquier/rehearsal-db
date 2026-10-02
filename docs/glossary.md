@@ -1,4 +1,4 @@
-# Glossary and architecture
+# Glossary
 
 **Baseline** — immutable sanitized starting artifact.
 
@@ -19,13 +19,12 @@ baseline.
 
 ```mermaid
 flowchart LR
-  A[Project-owned approved source] --> B[Project-owned sanitization]
-  B --> C[Immutable baseline]
-  D[Project migrations] --> E[Digest planner]
-  C --> F[Disposable local Supabase]
-  E --> F
-  F --> G[Project application proof]
-  G --> H[Verified local receipt]
+  A[Safe rows] --> B[Locked baseline]
+  C[Migration files] --> D[Reviewed plan]
+  B --> E[Disposable local database]
+  D --> E
+  E --> F[Application proof]
+  F --> G[Verified result]
 ```
 
 The reusable package owns the path from a completed baseline plus migration directory to

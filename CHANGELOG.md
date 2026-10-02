@@ -7,6 +7,9 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ### Changed
 
+- Beginner documentation now follows one guided path, defines unfamiliar terms where
+  they first appear, provides a disposable PostgreSQL tutorial, and keeps advanced detail
+  in focused reference pages.
 - Pressing `Ctrl+Z` at an interactive guide prompt now exits Rehearsal cleanly instead
   of suspending the process and leaving it attached to the terminal.
 - Database lifecycle selection now goes through a closed runtime-driver boundary while

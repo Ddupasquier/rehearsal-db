@@ -1,5 +1,25 @@
 # Troubleshooting
 
+Start with:
+
+```bash
+npx rehearsal doctor
+```
+
+Doctor names each missing or unsafe item. If you still need help, run
+`npx rehearsal support`, review the report, and attach it to a GitHub issue.
+
+## `npx rehearsal` cannot find the command
+
+Confirm you are in the project directory and install the beta locally:
+
+```bash
+npm install --save-dev @rehearsal-db/core@beta
+npx rehearsal --help
+```
+
+Do not use `sudo` or require a global install.
+
 ## Setup says Node.js 24 is required
 
 Rehearsal intentionally supports one maintained Node.js major in its first beta. Switch
@@ -18,6 +38,15 @@ writes setup files.
 
 Start Docker Desktop or Colima, confirm `docker info`, then rerun `rehearsal doctor`.
 Restarting the computer is rarely necessary.
+
+## The guide does not show styled menus
+
+Rehearsal uses numbered menus when terminal styling is unavailable, `NO_COLOR` is set, or
+`--plain` is used. Enter the number beside your choice. This is the same workflow and has
+the same safety checks.
+
+If bare `npx rehearsal` prints help, the command is not connected to an interactive
+terminal. Run it directly in a terminal rather than through a pipe or background task.
 
 ## Doctor says the PostgreSQL image is unavailable
 
@@ -72,6 +101,11 @@ is the local Auth callback. Do not paste provider secrets into config or termina
 
 `reset` deliberately restores the immutable baseline. `stop` should preserve Docker
 state, but runtime removal or a failed migration discards untrusted state.
+
+## `Ctrl+Z` exits instead of suspending
+
+This is intentional inside the guided interface. It exits the entire Rehearsal session
+and restores the terminal. Choose **Exit** for the same result.
 
 Use `--debug` only after ordinary output is insufficient. Diagnostics are redacted, but
 you should still review output before sharing it publicly.

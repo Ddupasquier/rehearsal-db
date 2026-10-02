@@ -1,422 +1,138 @@
 # Rehearsal
 
-Rehearsal tests pending PostgreSQL migrations against a verified, sanitized,
-production-shaped baseline in a disposable local environment. It is designed for the
-historical edge cases that synthetic seed data rarely represents.
+Rehearsal tests PostgreSQL and Supabase migrations on your computer before you run them
+anywhere important. It restores safe test data into a disposable local database, applies
+only the migrations you approve, and runs your project's own test command.
 
-Version 0.1 supports Supabase CLI projects and ordinary PostgreSQL projects through
-separate local runtime drivers. Both run in disposable Docker state bound only to
-loopback; Rehearsal does not connect to an existing PostgreSQL server.
+Rehearsal never connects to a hosted database. It is a migration-testing tool, not a
+backup system or a production deployment tool.
 
-Public beta releases are distributed through npm as `@rehearsal-db/core`. Publication is
-restricted to reviewed artifacts from protected `main`; source availability alone does
-not enable production access.
+> Rehearsal is in public beta. Use it on a branch and keep a working backup of your
+> project.
 
-## Documentation
+## What you need
 
-- [Getting started](docs/getting-started.md)
-- [End-to-end tutorial](docs/tutorial.md)
-- [Configuration reference](docs/configuration.md)
-- [CLI commands](docs/commands.md)
-- [Sanitization policy](docs/sanitization.md)
-- [Production source boundary](docs/production-source.md)
-- [Baselines](docs/baselines.md)
-- [Project adapters](docs/adapters.md)
-- [Security model](docs/security-model.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Release process](docs/releasing.md)
-- [Glossary and architecture](docs/glossary.md)
+- Node.js 24 and npm
+- Docker Desktop, Colima, or another Docker-compatible engine
+- timestamped `.sql` migration files
+- a project test command that can prove the migrated application works
+- Supabase CLI 2.117.0 for a Supabase project, or the local
+  `postgres:17-alpine` image for a PostgreSQL project
 
-## Why use it?
-
-A migration passing against an empty database proves only that the migration can build
-a new schema. Rehearsal also proves that:
-
-- the baseline is the exact immutable artifact you reviewed;
-- historical migration files still match the baseline's digest-addressed prefix;
-- only the exact suffix is treated as candidate work;
-- production-shaped relationships survive restore and migration;
-- optional bounded Supabase Storage objects retain exact checksums through local restore;
-- the resulting local application can pass a project-owned proof;
-- unsafe or ambiguous state stops execution.
-
-## What Rehearsal is—and is not
-
-Rehearsal complements existing database workflows instead of replacing them:
-
-| Tool or environment                             | Primary job                                 | What Rehearsal adds                                                                                                        |
-| ----------------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Backups and point-in-time recovery              | Recover lost production data                | A disposable, writable migration test; Rehearsal is not disaster recovery.                                                 |
-| Staging                                         | Exercise an integrated deployed application | A local resettable database shaped by reviewed production history, without giving the runtime a hosted target.             |
-| Synthetic seed data                             | Create small, known test scenarios          | Sanitized production-shaped relationships and historical edge cases, when the project explicitly authorizes them.          |
-| Database branches or preview databases          | Isolate hosted database changes             | A loopback-only runtime with immutable baseline checks, exact candidate confirmation, and project-owned acceptance proofs. |
-| Migration linters and migration-only test tools | Inspect SQL or prove a migration applies    | Restore, migrate, run the real application proof, preserve sandbox edits, and reset to the verified baseline.              |
-
-The package does not extract production data. A project may use Rehearsal entirely with
-synthetic data, or build its own least-privilege extraction and sanitization boundary.
-The current beta starts either local Supabase services or its own plain PostgreSQL
-container. It does not accept a hosted or independently managed database URL.
-
-## Local cost and storage
-
-Rehearsal itself has no hosted-service fee and never creates a cloud database. Normal
-local costs are Docker CPU, memory, and disk space for database images, the immutable
-baseline, optional retained Storage assets, and the disposable runtime. Production-shaped
-artifacts can be large: review their manifest size before activation, keep bounded
-retention, and use `rehearsal discard` when the runtime is no longer needed. Deleting the
-runtime does not delete the immutable baseline; baseline retention remains a project-owned
-privacy and disk-management decision.
-
-The restored runtime is intentionally writable. Exact baseline row counts and foreign
-keys are proved during reset before the runtime is accepted; later verification allows
-row-level divergence from sandbox interaction or candidate data migrations while still
-checking the immutable artifact, migration lineage, runtime boundary, and project-owned
-invariants. Reset restores and reproves the exact starting data.
+No database experience is required to follow the guide, but you should understand what
+your migration is intended to change.
 
 ## Quick start
 
-Install the current beta from npm:
+From your project directory:
 
 ```bash
 npm install --save-dev @rehearsal-db/core@beta
-```
-
-Contributors testing an unreleased change can use `npm link` or install the tarball
-produced by `npm pack` from a local checkout. In a consuming project, the commands are:
-
-```bash
 npx rehearsal
-npx rehearsal setup --target=supabase
-npx rehearsal setup --target=postgresql --write
-npx rehearsal init
-npx rehearsal init --write
-npx rehearsal baseline prepare --records=<safe.ndjson> --ledger=<ledger.json>
-npx rehearsal baseline prepare --records=<safe.ndjson> --ledger=<ledger.json> --write
-npx rehearsal baseline create --records=<safe.ndjson> --ledger=<ledger.json>
-npx rehearsal doctor
+```
+
+The guide shows your progress and offers the next safe action. On first use, choose
+**Set the stage**, select Supabase or PostgreSQL, review the preview, and confirm the files
+it will create. Existing files are never overwritten.
+
+For PostgreSQL, download the reviewed local image once before running the guide:
+
+```bash
+docker pull postgres:17-alpine
+```
+
+Rehearsal itself never downloads a database image during a rehearsal.
+
+## Three terms you will see
+
+- **Baseline:** a locked, safe starting copy of your schema and test data.
+- **Candidate migration:** a new migration that is not part of the baseline yet.
+- **Runtime:** the disposable local database where the rehearsal happens.
+
+The baseline may contain synthetic data or properly sanitized production-shaped data.
+Start with synthetic data. Rehearsal does not copy or sanitize production data for you.
+
+## The normal workflow
+
+1. Run `npx rehearsal`.
+2. Let the guide create the local-only configuration.
+3. Review the sanitization policy and create the baseline.
+4. Review the exact candidate migration list.
+5. Run the rehearsal and your application proof.
+6. Test the local application, then verify, reset, stop, or discard the runtime.
+
+Press `Ctrl+Z` at any guided prompt to exit the whole session. Choose **Get help**, or run
+`npx rehearsal support`, to create a privacy-safe diagnostic report.
+
+## What Rehearsal protects
+
+- The database listens only on your computer.
+- Hosted database credentials are removed from child processes.
+- The approved baseline and migration history are checksum-verified.
+- A changed migration produces a new approval digest.
+- Failed migrations cannot leave a runtime marked as trusted.
+- Runtime cleanup targets only resources carrying the exact Rehearsal labels.
+
+Rehearsal does not prove that a migration is correct for every user workflow. Your
+project's proof command should test the behavior that matters, not only whether a page
+loads.
+
+## Supported today
+
+| Environment                                 | Support                |
+| ------------------------------------------- | ---------------------- |
+| Supabase CLI projects                       | Supported              |
+| Ordinary PostgreSQL in local Docker         | Supported              |
+| macOS and Linux                             | Supported              |
+| WSL                                         | Experimental           |
+| Native Windows                              | Not yet supported      |
+| Hosted database URLs                        | Intentionally rejected |
+| MySQL, MongoDB, and other database families | Not yet supported      |
+
+See [COMPATIBILITY.md](COMPATIBILITY.md) for the exact support contract.
+
+## Documentation
+
+Start here:
+
+- [Getting started](docs/getting-started.md) — set up your own project
+- [Safe hands-on tutorial](docs/tutorial.md) — try the full flow in a disposable project
+- [Troubleshooting](docs/troubleshooting.md) — fix common setup problems
+
+Reference:
+
+- [CLI commands](docs/commands.md)
+- [Configuration](docs/configuration.md)
+- [Baselines](docs/baselines.md)
+- [Sanitization](docs/sanitization.md)
+- [Security model](docs/security-model.md)
+- [Project adapters](docs/adapters.md)
+- [Production data boundary](docs/production-source.md)
+- [Glossary and architecture](docs/glossary.md)
+- [Release process](docs/releasing.md)
+
+## Getting support
+
+Run:
+
+```bash
 npx rehearsal support
-npx rehearsal explain
-npx rehearsal run --dry-run
-npx rehearsal candidates
-npx rehearsal inspect baseline
-npx rehearsal inspect migrations
-npx rehearsal start
-npx rehearsal migrate --confirm-candidates=<sha256>
-npx rehearsal status
-npx rehearsal verify
-npx rehearsal reset
-npx rehearsal stop
-npx rehearsal discard
 ```
 
-Running `npx rehearsal` in a terminal opens a state-aware guide that shows completed
-setup steps and recommends available actions. The guide stays open after each action,
-re-inspects the project, and advances to the next useful step. It includes an interactive
-policy reviewer with table-level safe defaults and exception-only column review, concise
-completion receipts, optional technical details, and bounded discovery of likely local
-baseline inputs. Before activation it validates records, migration evidence, and optional
-Storage files, then shows a value-free count summary for confirmation. The explicit
-commands remain the stable interface for automation and CI.
+Review the result, then include it in a
+[GitHub issue](https://github.com/Ddupasquier/rehearsal-db/issues). Never share database
+rows, credentials, connection strings, private migrations, or baseline files. Security
+problems belong in the private process described in [SECURITY.md](SECURITY.md).
 
-Press `Ctrl+Z` at a guided prompt to exit Rehearsal completely. The guide restores the
-terminal instead of leaving a suspended process behind.
+## For contributors
 
-Choose **Get help** at any stage, or run `npx rehearsal support`, to create a copy-ready
-environment and readiness report for a GitHub issue. It works before setup and omits row
-values, credentials, project paths, migration SQL, and baseline identifiers. Review every
-report before sharing it.
-
-`setup` asks whether the project uses Supabase or ordinary PostgreSQL, then previews a
-conservative first-run scaffold and protective `.gitignore` entries. Supabase receives a
-dedicated local config; PostgreSQL receives a loopback-only database port and an
-official local image declaration. It writes only with `--write` and never overwrites
-project files.
-After writing, it runs the same readiness checks as `doctor` and shows the remaining
-project-owned inputs. Use `init` when you want to create only the configuration file
-manually.
-
-`baseline prepare` inspects only the shape of explicit local synthetic records and writes
-a fail-closed sanitization-policy draft. Every column remains `REVIEW REQUIRED` until a
-human classifies its sanitization action, generated/identity behavior, and foreign key.
-Drafts cannot be activated, and a reviewed policy is checksum-bound to its baseline.
-
-`init` previews a type-aware ESM `rehearsal.config.mjs`; it writes only with `--write`
-and never overwrites an existing file. The explicit `.mjs` extension makes the generated
-configuration executable in both CommonJS and ESM projects. Review all detected values.
-Rehearsal intentionally does not detect, copy, or enable a hosted project.
-
-`doctor` must end with `READY` before execution. `explain` and `run --dry-run` use the
-same immutable planner and perform no state-changing operations. In a terminal,
-`rehearsal run` displays and confirms the exact candidate set before touching the local
-runtime. Automation supplies the digest explicitly:
+Use Node.js 24, run `npm ci`, then run:
 
 ```bash
-npx rehearsal run --confirm-candidates=<sha256>
-```
-
-The `rehearsal` executable is the public command contract. Repository availability does
-not itself authorize an npm publication.
-
-To try the entire workflow without configuring a project or touching hosted data, clone
-this repository and run `npm ci --ignore-scripts && npm run test:fixture`. The ordinary
-PostgreSQL proof is `npm run test:fixture:postgresql`. Both install the exact packed
-artifact into a clean synthetic project and prove success and failure.
-
-## Configuration
-
-Configuration has an explicit schema version. Version 1 rejects unknown versions,
-unknown properties, paths outside the project root, non-loopback targets, duplicate or
-privileged ports, enabled hosted access, and permissive outbound networking.
-
-```ts
-import { defineRehearsalConfig } from "@rehearsal-db/core";
-
-export default defineRehearsalConfig({
-  schemaVersion: 1,
-  project: { name: "my-supabase-app" },
-  supabase: {
-    workdir: ".",
-    migrationDirectory: "supabase/migrations",
-    rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml",
-    runtimeWorkdir: ".rehearsal/runtime",
-    serviceEnvironmentFile: ".env.rehearsal-service.local",
-    serviceEnvironmentVariables: [
-      "LOCAL_IDENTITY_CLIENT_ID",
-      "LOCAL_IDENTITY_SECRET",
-    ],
-  },
-  baseline: {
-    artifactDirectory: ".rehearsal",
-    sanitizationPolicy: "infrastructure/rehearsal/sanitization-policy.json",
-  },
-  application: {
-    startCommand: "npm run dev:rehearsal",
-    proofCommand: "npm run test:rehearsal",
-    environmentFile: ".rehearsal/runtime.env",
-  },
-  runtime: {
-    target: "supabase",
-    applicationUrl: "http://localhost:5175",
-    projectId: "my-app-rehearsal",
-    apiPort: 58321,
-    databasePort: 58322,
-    studioPort: 58323,
-  },
-  safety: {
-    allowedHosts: ["127.0.0.1", "::1", "localhost"],
-    blockedEnvironmentVariables: [
-      "SUPABASE_ACCESS_TOKEN",
-      "SUPABASE_DB_PASSWORD",
-      "SUPABASE_PROJECT_ID",
-    ],
-    authenticationProviders: ["example-identity-provider"],
-    hostedAccess: "disabled",
-    outboundNetwork: "deny",
-  },
-  verification: { commands: ["npm run test:rehearsal"] },
-});
-```
-
-| Property                               | Type       | Required | Default                   | Meaning and safety effect                                     |
-| -------------------------------------- | ---------- | -------- | ------------------------- | ------------------------------------------------------------- |
-| `schemaVersion`                        | `1`        | Yes      | None                      | Pins configuration meaning; unknown versions fail.            |
-| `project.name`                         | `string`   | Yes      | None                      | Stable lowercase local identifier.                            |
-| `supabase.workdir`                     | `string`   | Supabase | None                      | Project-owned Supabase workdir; cannot escape the project.    |
-| `supabase.migrationDirectory`          | `string`   | Supabase | None                      | Ordered Supabase migration source.                            |
-| `supabase.rehearsalConfig`             | `string`   | Supabase | None                      | Dedicated unlinked local Supabase configuration.              |
-| `supabase.runtimeWorkdir`              | `string`   | Supabase | None                      | Must be `<artifactDirectory>/runtime`; always disposable.     |
-| `supabase.serviceEnvironmentFile`      | `string`   | No       | None                      | Owner-only ignored credentials for the local service stack.   |
-| `supabase.serviceEnvironmentVariables` | `string[]` | No       | `[]`                      | Exact variables accepted from the service environment file.   |
-| `postgresql.migrationDirectory`        | `string`   | Postgres | None                      | Ordered plain PostgreSQL migration source.                    |
-| `postgresql.runtimeWorkdir`            | `string`   | No       | `.rehearsal/runtime`      | Guarded disposable runtime metadata.                          |
-| `postgresql.image`                     | `string`   | No       | `postgres:17-alpine`      | Preinstalled official PostgreSQL image; never pulled.         |
-| `postgresql.database`                  | `string`   | No       | `postgres`                | Local disposable database name.                               |
-| `postgresql.user`                      | `string`   | No       | `postgres`                | Local disposable database user.                               |
-| `baseline.artifactDirectory`           | `string`   | No       | `.rehearsal`              | Must be named `.rehearsal`; deletion-safe artifact boundary.  |
-| `baseline.sanitizationPolicy`          | `string`   | Yes      | None                      | Exhaustive project-owned classification policy.               |
-| `application.startCommand`             | `string`   | Yes      | None                      | Starts the app against the verified local runtime.            |
-| `application.proofCommand`             | `string`   | Yes      | None                      | Project-owned proof after migration.                          |
-| `application.environmentFile`          | `string`   | No       | `.rehearsal/runtime.env`  | Owner-only generated local runtime variables.                 |
-| `application.runtimeAdapter`           | `string`   | No       | None                      | Advanced project-owned post-restore adapter path.             |
-| `runtime.target`                       | `string`   | No       | `supabase`                | Selects `supabase` or `postgresql`.                           |
-| `runtime.applicationUrl`               | URL        | No       | `http://localhost:5175`   | Must use an explicitly allowed loopback host.                 |
-| `runtime.projectId`                    | `string`   | No       | `rehearsal-local`         | Dedicated local Supabase/Docker identity.                     |
-| `runtime.apiPort`                      | TCP port   | Supabase | None                      | Dedicated non-privileged API port.                            |
-| `runtime.databasePort`                 | TCP port   | Yes      | None                      | Dedicated non-privileged PostgreSQL port.                     |
-| `runtime.studioPort`                   | TCP port   | Supabase | None                      | Dedicated non-privileged Studio port.                         |
-| `safety.allowedHosts`                  | `string[]` | No       | loopback hosts            | Version 1 rejects any non-loopback entry.                     |
-| `safety.blockedEnvironmentVariables`   | `string[]` | No       | Supabase hosted variables | Ambient values excluded from child processes.                 |
-| `safety.authenticationProviders`       | `string[]` | No       | `[]`                      | Declared identity-only external exchanges.                    |
-| `safety.hostedAccess`                  | `disabled` | No       | `disabled`                | Cannot be enabled in version 1.                               |
-| `safety.outboundNetwork`               | `deny`     | No       | `deny`                    | Cannot be weakened in version 1.                              |
-| `verification.commands`                | `string[]` | No       | `[]`                      | Additional declared project checks; commands remain explicit. |
-
-Most projects should not use `runtimeAdapter`. It exists for a project that must create
-synthetic local identities or add application-specific variables after a successful
-restore. The adapter is project-owned, receives only the verified local environment and
-baseline plus a local PostgreSQL executor, and is never bundled into the reusable
-package. Its `configureRuntime` export returns a status message and explicit environment
-variables. It must not read hosted credentials or perform network work.
-
-## What each command proves
-
-### `rehearsal doctor`
-
-Doctor checks Node 24, the Supabase CLI, a running Docker-compatible engine, required
-paths, config/runtime port agreement, baseline checksums and permissions, migration
-prefix integrity, application proof command ownership, and the fail-closed safety
-policy. Ambient hosted credential variables are reported only by name and remain
-quarantined from children.
-
-### `rehearsal explain` and `rehearsal run --dry-run`
-
-Both return the same plan data. They may read and hash configuration, migrations,
-policy, and baseline metadata. They never start or stop services, restore rows, apply a
-migration, launch the application, write a receipt, change an artifact, or contact a
-hosted resource.
-
-### `rehearsal inspect baseline`
-
-Inspection prints format and generation identifiers, the migration cutoff, table and
-row counts, and hashes for baseline data and sanitization policy. It never prints source
-rows or baseline values.
-
-### `rehearsal inspect migrations`
-
-Every local migration receives one interpretation:
-
-- `represented_by_baseline`: exact filename and SHA-256 in the baseline prefix;
-- `candidate`: exact suffix after that prefix, not yet proven in the current runtime;
-- `applied_to_current_runtime`: the exact suffix digest has a verified local receipt;
-- `modified`: a prefix filename or digest changed, so planning fails closed;
-- `invalid`: filename, ordering, uniqueness, or source structure is invalid.
-
-`rehearsal candidates` is the concise machine-friendly alias for this same migration
-inspection and exact candidate digest. It does not apply a migration.
-
-## Machine output and exit codes
-
-Commands that report state accept `--json`. The version-1 envelope contains
-`schemaVersion`, `command`, `status`, `startedAt`, `durationMs`, `warnings`, and `data`.
-Failures contain a versioned error with category, stable code, message, expected and
-actual state, context, refused action, suggestions, and a safe diagnostic identifier.
-
-| Exit | Category                       |
-| ---- | ------------------------------ |
-| 0    | Success                        |
-| 1    | Doctor completed but not ready |
-| 2    | Configuration invalid          |
-| 3    | Unsafe environment             |
-| 4    | Baseline invalid               |
-| 5    | Baseline checksum mismatch     |
-| 6    | Migration candidate failure    |
-| 7    | Migration verification failure |
-| 8    | Application proof failure      |
-| 9    | Runtime or dependency failure  |
-| 10   | Unexpected internal failure    |
-
-Human and JSON output are projections of the same model. `normal`, `--verbose`, and
-`--debug` increase explanation only; none may print secrets or baseline row values.
-
-## Guarantees
-
-Rehearsal version 1 intends to guarantee:
-
-- configuration and runtime targets are local-only;
-- hosted application/database credentials are neither required nor inherited by child processes;
-- application, provider-data, email, and hosted-database side effects fail closed;
-- any declared external identity exchange terminates in the local Auth service and its
-  credentials are read from an exact owner-only allowlist;
-- an active baseline verifies before restore;
-- migration identity uses ordered content digests, not timestamps alone;
-- a changed prefix is never silently reinterpreted as a candidate;
-- restore and migration failures cannot leave a runtime marked trusted;
-- reports omit source rows and redact credentials, connection strings, keys, tokens,
-  JWTs, passwords, and sensitive environment values.
-
-Independent barriers include strict loopback config, a dedicated unlinked Supabase
-workdir/project ID, an allowlisted child environment, and application egress denial.
-A project may explicitly declare an external identity provider, but that does not grant
-hosted application/database access. A single ambient connection string is therefore
-insufficient to redirect an operation.
-
-## Non-guarantees and user responsibilities
-
-Rehearsal does not prove that a migration is semantically correct for every application
-workflow, replace backups or disaster recovery, authorize production access, or make a
-sanitization policy correct merely because it is exhaustive. Project owners must review
-the policy, protect baseline artifacts, write meaningful application proofs, review the
-candidate digest, and keep production credentials outside the Rehearsal configuration.
-
-## Baseline lifecycle
-
-The source boundary exposes only reviewed versioned views through a least-privilege
-read-only role. Every included column has an explicit KEEP, PSEUDONYMIZE, REPLACE,
-EXCLUDE, or DERIVE action. Sanitized rows stream into an owner-only build directory.
-Only after exact hashes, counts, migration receipts, and policy metadata exist does an
-atomic pointer activate the generation. Failed builds cannot replace the current
-baseline.
-
-Restore replays the immutable historical migration bundle, streams sanitized rows into
-the disposable local database, restores optional checksummed Storage assets through the
-loopback service, restores normal enforcement, and verifies counts and foreign keys
-before candidate work begins. The package accepts project-owned asset bytes; it does not
-know how to authorize or extract them from a hosted source.
-
-Project policies may attach field-aware JSON rules and project-owned identity adapters.
-A consuming project can use those boundaries to preserve reviewed application data
-while sanitizing unrelated private values, without teaching the package its table
-names, identity relationships, or privacy decisions.
-
-## CI example
-
-The tracked [verification workflow](.github/workflows/verify.yml) is intentionally based
-on the synthetic independent fixture. A real repository should provide its own protected
-sanitized baseline through an approved artifact mechanism; never commit production data
-or credentials just to make CI convenient.
-
-## Run the independent proof
-
-From this repository on Node.js 24 with Docker running:
-
-```bash
+npm run check
+npm run test:fixture:postgresql
 npm run test:fixture
 ```
 
-The proof copies the tracked synthetic fixture to a disposable directory, builds its
-one-row and one-asset baseline, runs the public CLI through one valid migration and
-application proof, verifies the exact Storage byte, then introduces invalid PostgreSQL.
-Success means the valid migration preserved its row and asset, the invalid migration
-received the intended stable failure category, and the untrusted runtime was removed.
-It neither needs nor inherits application-specific or hosted credentials.
-
-## Support matrix for the first beta
-
-| Runtime or tool  | Status       | Initial contract                                      |
-| ---------------- | ------------ | ----------------------------------------------------- |
-| Node.js 24       | Supported    | Exact maintained major                                |
-| npm              | Supported    | Lockfile-backed install and CLI                       |
-| macOS            | Supported    | Directly exercised with Docker/Colima                 |
-| Linux            | Supported    | Ubuntu x64 CI and Bookworm arm64 Colima proofs        |
-| WSL              | Experimental | Must be exercised and documented before support claim |
-| Native Windows   | Unsupported  | Path, Docker, signal, and shell behavior unproven     |
-| pnpm             | Unsupported  | Detection is informational until direct proof exists  |
-| Yarn             | Unsupported  | Detection is informational until direct proof exists  |
-| MySQL/Mongo/etc. | Unsupported  | Version 1 is PostgreSQL/Supabase only                 |
-
-## Troubleshooting
-
-- `NOT READY` after Docker: start Docker Desktop or Colima, then rerun doctor.
-- Baseline checksum mismatch: do not repair the hash manually. Rebuild through the
-  reviewed extraction/sanitization workflow.
-- Migration prefix divergence: restore the exact reviewed historical file or create a
-  new baseline; never rename the edited file into the candidate suffix.
-- Candidate confirmation mismatch: rerun explain, review the exact ordered candidates,
-  and use the new digest only if those files are intended.
-- Hosted target refusal: remove the hosted value. Version 1 has no override.
-- Application proof failure: inspect the project-owned proof output; the database must
-  not be treated as verified.
-
-Security reporting, compatibility promises, and regression measurements are defined in
-[SECURITY.md](SECURITY.md), [COMPATIBILITY.md](COMPATIBILITY.md), and
-[BENCHMARKS.md](BENCHMARKS.md).
+The fixture commands install the packed package into clean synthetic projects. They do
+not connect to hosted services. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full rules.

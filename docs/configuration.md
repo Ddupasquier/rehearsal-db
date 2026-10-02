@@ -1,9 +1,14 @@
 # Configuration reference
 
-`rehearsal.config.mjs` is executable configuration with a strict versioned schema. The
-initializer uses an explicit ESM extension so the same generated file works in CommonJS
-and ESM projects.
-Unknown fields and unknown schema versions are errors, not warnings.
+Most users should let the guide create this file:
+
+```bash
+npx rehearsal
+```
+
+Use this page when reviewing or changing the generated `rehearsal.config.mjs`. The schema
+is strict: misspelled fields, unknown fields, and unsupported versions are errors. The
+`.mjs` extension works in both CommonJS and ESM projects.
 
 ```ts
 import { defineRehearsalConfig } from "@rehearsal-db/core";
@@ -42,6 +47,9 @@ export default defineRehearsalConfig({
 All paths resolve inside the consuming project. The artifact directory must be named
 `.rehearsal`; this is an intentional deletion guard. `runtimeWorkdir` must be its
 `runtime` child, and the generated application environment file must remain inside it.
+
+Rehearsal never overwrites this config. To start over, move the existing file somewhere
+safe, run setup again, and compare the two files before deleting either one.
 
 ## Supabase service environment
 

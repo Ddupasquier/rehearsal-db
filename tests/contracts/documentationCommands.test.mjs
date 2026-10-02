@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { access, readFile, readdir } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +14,7 @@ const documentedCommands = [
   "baseline prepare",
   "baseline create",
   "doctor",
+  "support",
   "explain",
   "run --dry-run",
   "run --confirm-candidates=",
@@ -91,6 +92,30 @@ describe("documented CLI contract", () => {
     }
   });
 
+  it("does not contain broken local Markdown links", async () => {
+    const rootFiles = (await readdir(root))
+      .filter((file) => file.endsWith(".md"))
+      .map((file) => join(root, file));
+    const guideFiles = (await readdir(join(root, "docs")))
+      .filter((file) => file.endsWith(".md"))
+      .map((file) => join(root, "docs", file));
+
+    for (const file of [...rootFiles, ...guideFiles]) {
+      const markdown = await readFile(file, "utf8");
+      const links = [...markdown.matchAll(/(?<!!)\[[^\]]+\]\(([^)]+)\)/gu)].map(
+        ([, link]) => link,
+      );
+
+      for (const link of links) {
+        if (/^(?:https?:|mailto:|#)/u.test(link)) continue;
+        const localPath = link.split("#", 1)[0].replace(/^<|>$/gu, "");
+        await expect(access(resolve(dirname(file), localPath))).resolves.toBe(
+          undefined,
+        );
+      }
+    }
+  });
+
   it("installs the current prerelease through the beta distribution tag", async () => {
     const [readme, gettingStarted] = await Promise.all([
       readFile(join(root, "README.md"), "utf8"),
@@ -102,50 +127,44 @@ describe("documented CLI contract", () => {
     expect(gettingStarted).toContain(installCommand);
   });
 
-  it("keeps the copyable baseline inputs aligned with the proved fixture", async () => {
-    const [gettingStarted, policy, ledger, records, historicalMigration] =
-      await Promise.all([
-        readFile(join(root, "docs/getting-started.md"), "utf8"),
-        readFile(
-          join(
-            root,
-            "tests/fixtures/rehearsal-project/rehearsal/sanitization-policy.json",
-          ),
-          "utf8",
-        ),
-        readFile(
-          join(
-            root,
-            "tests/fixtures/rehearsal-project/rehearsal/migration-ledger.json",
-          ),
-          "utf8",
-        ),
-        readFile(
-          join(
-            root,
-            "tests/fixtures/rehearsal-project/rehearsal/sanitized-data.ndjson",
-          ),
-          "utf8",
-        ),
-        readFile(
-          join(
-            root,
-            "tests/fixtures/rehearsal-project/supabase/migrations/20260101000000_create_widgets.sql",
-          ),
-          "utf8",
-        ),
-      ]);
+  it("keeps the beginner journey aligned with the guide labels", async () => {
+    const [gettingStarted, cliSource] = await Promise.all([
+      readFile(join(root, "docs/getting-started.md"), "utf8"),
+      readFile(cli, "utf8"),
+    ]);
+
+    for (const action of [
+      "Set the stage",
+      "Prepare the script",
+      "Review the script",
+      "Create the baseline",
+      "Run a rehearsal",
+    ]) {
+      expect(gettingStarted).toContain(action);
+      expect(cliSource).toContain(action);
+    }
+  });
+
+  it("keeps beginner examples parseable and tied to the proved fixture", async () => {
+    const [baselineGuide, tutorial] = await Promise.all([
+      readFile(join(root, "docs/baselines.md"), "utf8"),
+      readFile(join(root, "docs/tutorial.md"), "utf8"),
+    ]);
     const documentedJson = [
-      ...gettingStarted.matchAll(/```json\n([\s\S]*?)\n```/gu),
+      ...baselineGuide.matchAll(/```json\n([\s\S]*?)\n```/gu),
     ].map(([, source]) => JSON.parse(source));
 
-    expect(documentedJson).toContainEqual(JSON.parse(policy));
-    expect(documentedJson).toContainEqual(JSON.parse(ledger));
-    expect(documentedJson).toContainEqual(JSON.parse(records));
-    const documentedSql = [
-      ...gettingStarted.matchAll(/```sql\n([\s\S]*?)\n```/gu),
-    ].map(([, source]) => source);
-    expect(documentedSql).toContain(historicalMigration.trimEnd());
+    expect(documentedJson).toHaveLength(2);
+    expect(documentedJson[0]).toMatchObject({
+      table: "widgets",
+      row: { id: 1 },
+    });
+    expect(documentedJson[1][0]).toMatchObject({
+      version: "20260101000000",
+      name: "create_widgets",
+    });
+    expect(tutorial).toContain("tests/fixtures/postgresql-project");
+    expect(tutorial).toContain("20260101000100_add_widget_description.sql");
   });
 
   it("keeps npm publication behind an exact-artifact human gate", async () => {
@@ -196,19 +215,10 @@ describe("documented CLI contract", () => {
       readFile(join(root, "package.json"), "utf8").then(JSON.parse),
     ]);
 
-    for (const comparison of [
-      "Backups and point-in-time recovery",
-      "Staging",
-      "Synthetic seed data",
-      "Database branches or preview databases",
-      "Migration linters and migration-only test tools",
-    ]) {
-      expect(readme).toContain(comparison);
-    }
-    expect(readme).toContain("Local cost and storage");
-    expect(readme.replace(/\s+/gu, " ")).toContain(
-      "does not accept a hosted or independently managed database URL",
-    );
+    expect(readme.replace(/\s+/gu, " ")).toContain("not a backup system");
+    expect(readme).toContain("Hosted database URLs");
+    expect(readme).toContain("Intentionally rejected");
+    expect(readme).toContain("MySQL, MongoDB");
     expect(configuration).toContain(
       "advanced entry points are ESM JavaScript APIs in the first beta",
     );
