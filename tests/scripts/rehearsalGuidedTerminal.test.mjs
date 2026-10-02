@@ -471,11 +471,19 @@ describe("guided terminal journey", () => {
             write: "\u001B[B\r",
           },
           {
-            after: "What would you like to do?",
+            after: "Report a reproducible issue:",
+            write: "",
+          },
+          {
+            after: "↑/↓",
             write: "\u001B[B\u001B[B\r",
           },
           {
-            after: "What would you like to do?",
+            after: "Usage: rehearsal <command> [options]",
+            write: "",
+          },
+          {
+            after: "↑/↓",
             write: "\u001B[B\u001B[B\u001B[B\r",
           },
         ],
