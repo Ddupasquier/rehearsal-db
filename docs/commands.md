@@ -1,80 +1,78 @@
 # CLI commands
 
-All commands run from the consuming project root. State-reporting commands accept
-`--json`; `--verbose` and `--debug` increase safe diagnostics without revealing row
-values or credentials.
+Run commands from the project directory containing `rehearsal.config.mjs`. The examples
+use `npx`, so a global install is not required.
 
-| Command                                                      | Mutates local state | Purpose                                                   |
-| ------------------------------------------------------------ | ------------------- | --------------------------------------------------------- |
-| `rehearsal` or `rehearsal guide`                             | No by default       | Open the guided, state-aware interactive home screen.     |
-| `rehearsal setup --target=supabase\|postgresql`              | No                  | Preview safe config, local runtime, and ignore files.     |
-| `rehearsal setup --target=<target> --write`                  | Project files       | Create the previewed first-run scaffolding.               |
-| `rehearsal init`                                             | No                  | Preview safe starter configuration.                       |
-| `rehearsal init --write`                                     | Config only         | Create config without overwriting.                        |
-| `rehearsal baseline prepare --records= --ledger=`            | No                  | Preview a fail-closed policy draft from local shape.      |
-| `rehearsal baseline prepare --records= --ledger= --write`    | Policy only         | Write the draft without exposing row values.              |
-| `rehearsal baseline create --records=<path> --ledger=<path>` | Artifact only       | Activate a baseline from explicit safe local inputs.      |
-| `rehearsal doctor`                                           | No                  | Check dependencies, inputs, and safety barriers.          |
-| `rehearsal support`                                          | No                  | Print a privacy-safe, copy-ready support report.          |
-| `rehearsal explain`                                          | No                  | Print the immutable execution plan.                       |
-| `rehearsal run --dry-run`                                    | No                  | Alias the same plan used by `explain`.                    |
-| `rehearsal candidates`                                       | No                  | Print pending migrations and their exact digest.          |
-| `rehearsal inspect baseline`                                 | No                  | Print data-free artifact provenance.                      |
-| `rehearsal inspect migrations`                               | No                  | Classify each migration.                                  |
-| `rehearsal run --confirm-candidates=<sha256>`                | Yes, local only     | Reset, apply exact candidates, verify, and run app proof. |
-| `rehearsal start`                                            | Runtime only        | Start a verified runtime without resetting its data.      |
-| `rehearsal migrate --confirm-candidates=<sha256>`            | Yes, local only     | Apply the exact suffix without resetting current data.    |
-| `rehearsal verify`                                           | No data mutation    | Verify the current local runtime and receipt.             |
-| `rehearsal status`                                           | No                  | Report runtime, baseline, and candidate state.            |
-| `rehearsal reset`                                            | Yes, local only     | Replace runtime data with the immutable baseline.         |
-| `rehearsal stop`                                             | Runtime only        | Stop this project's local services.                       |
-| `rehearsal discard`                                          | Yes, local only     | Remove only this project's disposable runtime and volume. |
+## Guided mode
 
-In an interactive terminal, `run` and `migrate` display the candidate files and ask for
-confirmation before touching the runtime. In automation, they require the digest from
-the current candidate set. Any added, removed, reordered, or edited migration changes
-the digest and invalidates either form of confirmation.
+```bash
+npx rehearsal
+```
 
-`baseline create` never extracts data. The NDJSON and migration-ledger files must already
-exist inside the project and be safe to retain. Add `--assets=<manifest.json>` to include
-bounded local Storage bytes; every manifest `file` must also remain inside the project.
-The guided home screen scans a bounded set of small project-local JSON and NDJSON files,
-skips generated and private runtime directories, and offers structurally matching paths
-so they do not need to be memorized. It never displays row values. Before activation it
-validates the selected files and referenced assets, shows row, table, migration, and asset
-counts, and asks for confirmation. Invalid input returns to the guide without writing.
+The guide reads the current project state and recommends the next useful action. It stays
+open after each action. Press `Ctrl+Z` at a prompt to exit the entire session.
 
-The guide is a persistent session: after setup, policy review, baseline creation, or a
-runtime action it re-reads project state and offers the next relevant action. Generated
-policy drafts can be completed interactively without editing JSON. Each column still
-receives explicit action, generated, identity, and foreign-key decisions. A human may
-apply the displayed safe preset to a table, then review only selected exceptions; the
-guide never silently applies a preset.
+Use `npx rehearsal guide` for the same screen or add `--plain` to use numbered menus
+without decorative terminal styling. When input or output is not an interactive terminal,
+bare `npx rehearsal` prints help instead of waiting for input.
 
-`baseline prepare` reads only table and column names from the NDJSON records; row values
-are never included in its result. Its generated policy deliberately marks every column
-decision `REVIEW REQUIRED` and cannot be activated until a human completes the metadata
-and removes the `draft` marker. Rehearsal binds the reviewed policy checksum to the
-baseline and rejects later policy changes during planning and restore.
+## Setup and baseline
 
-Automation should use `--json` and inspect both exit status and the versioned envelope.
-Exit-code meanings are documented in the root README. Scripts must not parse human text.
-When standard input or output is not an interactive terminal, bare `rehearsal` prints
-help instead of prompting. Use `--plain` to disable decorative terminal styling.
-`NO_COLOR` also selects the plain numbered interface. Both interactive modes preserve
-the same safety decisions and cancellation behavior.
+| Command                                                           | What it does                                           |
+| ----------------------------------------------------------------- | ------------------------------------------------------ |
+| `npx rehearsal setup --target=supabase`                           | Preview Supabase setup files.                          |
+| `npx rehearsal setup --target=postgresql`                         | Preview PostgreSQL setup files.                        |
+| Add `--write` to either setup command                             | Create the previewed files without overwriting.        |
+| `npx rehearsal init`                                              | Preview only `rehearsal.config.mjs`.                   |
+| `npx rehearsal init --write`                                      | Create only `rehearsal.config.mjs`.                    |
+| `npx rehearsal baseline prepare --records=<path> --ledger=<path>` | Preview a sanitization-policy draft.                   |
+| Add `--write` to `baseline prepare`                               | Write the draft for human review.                      |
+| `npx rehearsal baseline create --records=<path> --ledger=<path>`  | Create and activate a baseline from safe local inputs. |
 
-At any guided prompt, `Ctrl+Z` exits the entire Rehearsal session and restores the
-terminal. It does not leave a suspended process behind.
+Add `--assets=<manifest.json>` to `baseline create` only for approved local Supabase
+Storage files. Baseline commands never extract data or connect to another database.
 
-`setup` chooses an available local port and generates either a conservative Supabase
-runtime or a loopback-only PostgreSQL runtime. It does not overwrite an existing
-Rehearsal config, dedicated Supabase config, or concurrently changed `.gitignore`. The
-PostgreSQL driver requires its configured official image to exist locally and never
-pulls it implicitly. After writing, setup includes a Doctor readiness summary.
+## Check and inspect
 
-`support` reports the Rehearsal, Node.js, npm, Supabase CLI, Docker client, and Docker
-server versions plus readiness check statuses. It can run before configuration exists.
-The report deliberately excludes project names and paths, row values, credentials,
-migration SQL, baseline identifiers, and raw command output. It reports only the count
-of quarantined hosted variables, never their names. Always review it before sharing.
+| Command                            | What it does                                          |
+| ---------------------------------- | ----------------------------------------------------- |
+| `npx rehearsal doctor`             | Check dependencies, inputs, and safety rules.         |
+| `npx rehearsal support`            | Print a privacy-safe report for a support request.    |
+| `npx rehearsal explain`            | Show the exact plan without changing anything.        |
+| `npx rehearsal run --dry-run`      | Show the same non-mutating plan.                      |
+| `npx rehearsal candidates`         | List pending migrations and their approval digest.    |
+| `npx rehearsal inspect baseline`   | Show baseline metadata without row values.            |
+| `npx rehearsal inspect migrations` | Classify every historical and candidate migration.    |
+| `npx rehearsal status`             | Report baseline, candidates, and local runtime state. |
+
+State-reporting commands accept `--json` for scripts. Scripts should use the JSON fields
+and process exit code, not parse human-facing text.
+
+## Run and manage the local database
+
+| Command                                               | What it does                                                        |
+| ----------------------------------------------------- | ------------------------------------------------------------------- |
+| `npx rehearsal run --confirm-candidates=<sha256>`     | Reset, apply the exact candidates, verify, and run the app proof.   |
+| `npx rehearsal migrate --confirm-candidates=<sha256>` | Apply the exact candidates without resetting existing runtime data. |
+| `npx rehearsal start`                                 | Start an existing verified runtime.                                 |
+| `npx rehearsal verify`                                | Verify the current runtime and receipt.                             |
+| `npx rehearsal reset`                                 | Discard runtime edits and restore the baseline.                     |
+| `npx rehearsal stop`                                  | Stop the runtime but keep its local state.                          |
+| `npx rehearsal discard`                               | Remove this project's disposable runtime and volume.                |
+
+In a terminal, the guide displays candidate filenames and asks for confirmation. In a
+script, copy the digest from `candidates` into `--confirm-candidates`. Adding, removing,
+reordering, or editing a migration changes that digest.
+
+## Common options
+
+| Option                          | Meaning                                                          |
+| ------------------------------- | ---------------------------------------------------------------- |
+| `--json`                        | Return the versioned machine-readable result.                    |
+| `--verbose`                     | Show more safe detail.                                           |
+| `--debug`                       | Show the most diagnostic detail; still review it before sharing. |
+| `--plain`                       | Disable decorative interactive prompts.                          |
+| `--config=<path>`               | Use a specific config file inside the project.                   |
+| `--target=supabase\|postgresql` | Choose the setup target.                                         |
+
+Run `npx rehearsal --help` to print the command list available in your installed version.

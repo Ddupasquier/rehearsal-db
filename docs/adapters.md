@@ -1,7 +1,8 @@
 # Project runtime adapters
 
 These project-owned hooks are different from Rehearsal's database runtime drivers. A
-database driver starts and manages a kind of local database, such as Supabase. A project
+database driver starts and manages a kind of local database, such as Supabase or plain
+PostgreSQL. A project
 runtime adapter adds narrowly scoped application behavior after that database is ready.
 
 Adapters are an advanced escape hatch for project-specific restore behavior. They live

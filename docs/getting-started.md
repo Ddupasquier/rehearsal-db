@@ -1,18 +1,13 @@
 # Getting started
 
-This guide creates a safe local Rehearsal project from synthetic data. It does not
-connect to production, request hosted credentials, or require an existing baseline.
+This guide sets up Rehearsal in an existing project. It creates a disposable database on
+your computer and never connects to a hosted database.
 
-## Prerequisites
+Want to experiment first? Use the [safe hands-on tutorial](tutorial.md).
 
-- Node.js 24
-- npm
-- Docker Desktop, Colima, or another Docker-compatible engine
-- timestamped SQL migrations
-- for Supabase: Supabase CLI 2.117.0 (the version proved by package CI)
-- for ordinary PostgreSQL: a reviewed local `postgres:17-alpine` image
+## 1. Check the required tools
 
-Confirm the tools first:
+You need Node.js 24, npm, and a running Docker-compatible engine:
 
 ```bash
 node --version
@@ -20,286 +15,137 @@ npm --version
 docker info
 ```
 
-For Supabase, also run `supabase --version`. For ordinary PostgreSQL, prepare the image
-explicitly so Rehearsal never downloads software during a rehearsal:
+`node --version` must begin with `v24`. If `docker info` fails, start Docker Desktop,
+Colima, or your usual Docker engine.
 
-```bash
-docker pull postgres:17-alpine
-```
+Choose the extra requirement for your project:
 
-If you want to see the complete lifecycle before touching your own project, clone the
-Rehearsal repository and run:
+- **Supabase:** install Supabase CLI 2.117.0 and run `supabase --version`.
+- **PostgreSQL:** download the local database image once:
 
-```bash
-npm ci --ignore-scripts
-npm run test:fixture
-npm run test:fixture:postgresql
-```
+  ```bash
+  docker pull postgres:17-alpine
+  ```
 
-That proof installs the packed package into a disposable fictional project, restores a
-row and Storage object, applies a valid migration, rejects invalid SQL, and removes only
-its labeled local runtime. It does not need a hosted Supabase project or credentials.
+Rehearsal will use that image with downloads disabled.
 
-## 1. Install and initialize
+## 2. Install and open the guide
 
-Confirm this shell is running the supported Node.js major before installing:
-
-```bash
-node --version # v24.x
-```
+Run these commands from the directory containing your project's `package.json`:
 
 ```bash
 npm install --save-dev @rehearsal-db/core@beta
 npx rehearsal
 ```
 
-Choose **Set up Rehearsal** in the guide, then choose Supabase or PostgreSQL. It previews
-the versioned configuration, isolated local runtime, and protective `.gitignore` entries
-before asking permission to write. The guide remains open afterward and recommends the
-next incomplete stage.
+Choose **Set the stage**, then choose Supabase or PostgreSQL. Rehearsal previews every file
+before asking to create it. It will not replace an existing file.
 
-The same flow is available noninteractively as an explicit preview and write:
+Review the generated `rehearsal.config.mjs`, especially:
 
-```bash
-npx rehearsal setup --target=supabase
-npx rehearsal setup --target=supabase --write
-# or
-npx rehearsal setup --target=postgresql
-npx rehearsal setup --target=postgresql --write
-```
+- the migration directory;
+- the application start and proof commands;
+- the local ports.
 
-Rehearsal never overwrites an existing configuration. For config-only/manual setup, use
-`npx rehearsal init` followed by `npx rehearsal init --write`.
+The proof command should check behavior changed by the migration. A test that only checks
+whether the home page loads is usually too weak.
 
-The generated configuration is intentionally incomplete until you review its ports,
-project ID, application commands, and project-owned input paths. Do not run `doctor`
-until the next section's files exist.
+## 3. Prepare safe baseline inputs
 
-## 2. Add the project-owned inputs
+A **baseline** is the locked starting point restored before each rehearsal. Start with a
+small synthetic dataset. Do not use raw production data.
 
-Review or create the project-owned inputs named by `rehearsal.config.mjs`:
+Rehearsal needs:
 
-- for Supabase, the dedicated local `config.toml` (`setup` creates one);
-- a sanitization policy describing every exported field;
-- an active baseline below `.rehearsal/`;
-- an application proof command that exits nonzero when the restored app is wrong.
+| Input               | What it contains                                     |
+| ------------------- | ---------------------------------------------------- |
+| Records             | Safe rows in NDJSON format: one JSON object per line |
+| Migration ledger    | The historical migrations represented by those rows  |
+| Sanitization policy | A decision for every included table and column       |
+| Storage manifest    | Optional Supabase Storage files only                 |
 
-If you used config-only `init`, also create the dedicated Supabase config manually:
-
-```bash
-mkdir -p infrastructure/rehearsal/supabase infrastructure/rehearsal rehearsal
-cp supabase/config.toml infrastructure/rehearsal/supabase/config.toml
-```
-
-Edit the copied Supabase config. Give it the same unique `project_id`, API port, database
-port, and Studio port used by `rehearsal.config.mjs`. Disable services your proof does
-not need. This must remain an unlinked local config; never run `supabase link` from it.
-
-Also replace the generated `application.startCommand`, `application.proofCommand`, and
-`verification.commands` with real commands from your project. The proof should check a
-restored relationship and the candidate schema—not merely that `/` returns 200.
-
-Start with synthetic rows shaped like your schema. Do not start onboarding with
-production data. The following SQL, policy, row, and ledger form one matched example;
-do not mix them with differently shaped snippets.
-
-The example below uses Supabase paths and includes a Storage migration. For ordinary
-PostgreSQL, place the same timestamped SQL files in the migration directory generated by
-setup and omit Storage SQL and `--assets`.
-
-If you already have the safe NDJSON rows and migration ledger, Rehearsal can enumerate
-their table and column shape into a fail-closed policy draft without printing values:
-
-```bash
-npx rehearsal baseline prepare \
-  --records=rehearsal/synthetic-data.ndjson \
-  --ledger=rehearsal/migration-ledger.json
-npx rehearsal baseline prepare \
-  --records=rehearsal/synthetic-data.ndjson \
-  --ledger=rehearsal/migration-ledger.json \
-  --write
-```
-
-Running `npx rehearsal` instead discovers structurally matching project-local inputs and
-offers them in the guide. Discovery is bounded, ignores generated/runtime directories,
-and returns paths only. Before a policy draft or immutable baseline is written, Rehearsal
-validates the selected files and presents a value-free shape and count summary.
-
-After creating the draft, choose **Review the script** in the guide. For each table,
-choose between reviewing every column or applying the displayed safe defaults and
-reviewing only exceptions. Rehearsal suggests identifiers, relationship columns, and
-timestamps as exceptions. Every saved column still records sanitization action,
-generated status, identity status, and optional foreign-key metadata. The complete
-policy is validated before writing, and the original draft is replaced only if it did
-not change during review.
-
-For noninteractive workflows, review every `REVIEW REQUIRED` field directly and remove
-`"draft": true` only after that review. Rehearsal refuses to activate a draft.
-
-Historical migration `supabase/migrations/20260101000000_create_widgets.sql`:
-
-```sql
-create table public.widgets (
-	id bigint generated by default as identity primary key,
-	name text not null,
-	created_at timestamptz not null default now()
-);
-
-insert into storage.buckets (id, name, public)
-values ('fixture-assets', 'fixture-assets', false);
-```
-
-Sanitization policy `infrastructure/rehearsal/sanitization-policy.json`:
+A record looks like this:
 
 ```json
-{
-  "policyVersion": 1,
-  "migrationCutoff": "20260101000000",
-  "tables": [
-    {
-      "name": "widgets",
-      "group": "synthetic",
-      "sourceRows": "STREAM AND SANITIZE",
-      "columns": [
-        {
-          "name": "id",
-          "action": "KEEP EXACTLY",
-          "generated": "NEVER",
-          "identity": "YES",
-          "foreignKey": null
-        },
-        {
-          "name": "name",
-          "action": "REPLACE WITH SYNTHETIC",
-          "generated": "NEVER",
-          "identity": "NO",
-          "foreignKey": null
-        },
-        {
-          "name": "created_at",
-          "action": "DERIVE",
-          "generated": "NEVER",
-          "identity": "NO",
-          "foreignKey": null
-        }
-      ]
-    }
-  ]
-}
+{ "table": "widgets", "row": { "id": 1, "name": "Synthetic Widget" } }
 ```
 
-Safe row `rehearsal/synthetic-data.ndjson` (one JSON object per physical line):
+Put your safe records and ledger inside the project. Conventional names such as
+`rehearsal/sanitized-data.ndjson` and `rehearsal/migration-ledger.json` are discovered
+automatically. The guide inspects their structure but does not print row values.
 
-```json
-{
-  "table": "widgets",
-  "row": {
-    "id": 1,
-    "name": "Synthetic Widget",
-    "created_at": "2026-01-01T00:00:00.000Z"
-  }
-}
-```
+Follow the guide's recommended actions:
 
-Migration ledger `rehearsal/migration-ledger.json`:
+1. **Prepare the script** creates a draft sanitization policy.
+2. **Review the script** asks you to classify every table and column.
+3. **Create the baseline** validates and activates the reviewed inputs.
 
-```json
-[
-  {
-    "version": "20260101000000",
-    "name": "create_widgets",
-    "statements": [
-      "create table public.widgets (\n\tid bigint generated by default as identity primary key,\n\tname text not null,\n\tcreated_at timestamptz not null default now()\n)",
-      "insert into storage.buckets (id, name, public)\nvalues ('fixture-assets', 'fixture-assets', false)"
-    ]
-  }
-]
-```
+Rehearsal will not activate a policy containing undecided fields.
 
-The ledger is evidence, not a second migration language. Its version, name, order, and
-statements must exactly represent the historical migration bytes in the baseline. SQL
-that is merely equivalent is rejected. For a production-shaped baseline, generate this
-ledger through the project's reviewed source/export tooling; do not reconstruct years of
-history by hand.
+The ledger must describe the exact historical SQL included in the baseline. Do not type
+years of migration history by hand for a real project. Generate it through reviewed
+project tooling. The [tutorial](tutorial.md) contains a complete synthetic example, and
+[Baselines](baselines.md) explains the file formats.
 
-Then activate the safe input:
+## 4. Reach READY
 
-```bash
-npx rehearsal baseline create \
-  --records=rehearsal/synthetic-data.ndjson \
-  --ledger=rehearsal/migration-ledger.json
-```
+The guide displays four setup stages. Continue with its recommended action until all
+checks are complete and the project reports `READY`.
 
-The independent fixture in this repository is the executable reference example.
-
-Expected result:
-
-```text
-Activated synthetic baseline ...: 1 rows across 1 tables; 1 migrations through 20260101000000.
-```
-
-## 3. Check readiness
+You can run the same check directly:
 
 ```bash
 npx rehearsal doctor
 ```
 
-Do not continue until it ends with `READY`. Doctor checks the local-only boundary,
-dependencies, artifact integrity, migration lineage, ports, and project commands.
-
-If it reports `NOT READY`, fix each named prerequisite and rerun it. Do not bypass a
-check or copy a hosted connection string into the generated runtime environment.
-
-## 4. Review pending work
-
-```bash
-npx rehearsal explain
-npx rehearsal candidates
-npx rehearsal inspect baseline
-npx rehearsal inspect migrations
-```
-
-The plan prints an exact candidate digest. It does not start services or change data.
+If it reports `NOT READY`, fix the listed item and run it again. Do not bypass a check or
+add a hosted connection string.
 
 ## 5. Run the rehearsal
 
+Choose **Run a rehearsal**. Rehearsal shows the exact candidate migrations and asks for
+confirmation before it changes the disposable runtime.
+
+A successful run:
+
+1. restores the baseline;
+2. applies only the migrations you approved;
+3. verifies the local database;
+4. runs your application proof.
+
+Your original baseline remains unchanged.
+
+## 6. Test and clean up
+
+Use the guide for normal runtime tasks:
+
+- **Verify** checks the current runtime.
+- **Reset** discards runtime edits and restores the baseline.
+- **Stop** stops the runtime but keeps its local state.
+- **Discard** removes this project's disposable runtime and volume.
+
+Press `Ctrl+Z` at any prompt to exit the entire guide. It will not leave a suspended
+process behind.
+
+## Command-line setup
+
+The guide is recommended for people. Scripts and CI can use explicit commands:
+
 ```bash
-npx rehearsal run --confirm-candidates=<sha256>
+npx rehearsal setup --target=postgresql --write
+npx rehearsal doctor
+npx rehearsal candidates
+npx rehearsal run --confirm-candidates=PASTE_DIGEST_HERE
 ```
 
-Rehearsal restores the immutable baseline, applies only the confirmed migration suffix,
-verifies the runtime, and runs the project-owned application proof. The resulting local
-database is writable, so you can test real application changes without mutating the
-baseline.
+Replace `postgresql` with `supabase` when needed. See [CLI commands](commands.md) for the
+complete reference and [Troubleshooting](troubleshooting.md) when a check fails.
 
-## 6. Work, verify, and reset
+## Files Rehearsal creates
 
-```bash
-npx rehearsal status
-npx rehearsal start
-npx rehearsal verify
-npx rehearsal reset
-npx rehearsal stop
-```
+- `rehearsal.config.mjs` — reviewed project configuration
+- `.rehearsal/` — ignored baselines, runtime files, and receipts
+- `.rehearsal/runtime.env` — generated local-only application variables
+- `infrastructure/rehearsal/supabase/config.toml` — Supabase-only local configuration
 
-Changes persist in the disposable runtime until `reset` or runtime removal. `start`
-resumes that runtime without resetting it. `reset` restores the exact baseline. `stop`
-stops only this project's runtime.
-
-## Next steps
-
-- Follow [the full tutorial](tutorial.md).
-- Read [the security model](security-model.md) before designing a production export.
-- Define an exhaustive [sanitization policy](sanitization.md).
-- Learn the [baseline lifecycle](baselines.md).
-
-## Generated files
-
-- `rehearsal.config.mjs` is written only by `init --write`. Its explicit ESM extension
-  works whether the consuming project's `package.json` uses CommonJS or ESM.
-- `.rehearsal/generations/<id>/` contains one immutable baseline generation.
-- `.rehearsal/current` selects the active generation atomically.
-- `.rehearsal/runtime/` contains the disposable local Supabase project and receipts.
-- `.rehearsal/runtime.env` contains generated loopback-only application credentials.
-
-Ignore all of `.rehearsal/`. Do not commit it even when its inputs were synthetic.
+Keep `.rehearsal/` out of source control, even when its data is synthetic.

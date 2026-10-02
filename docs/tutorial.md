@@ -1,96 +1,107 @@
-# Tutorial: rehearse a migration in a new project
+# Safe hands-on tutorial
 
-This walkthrough uses a fictional `widgets` application. It demonstrates the complete
-consumer workflow without importing private or hosted data.
+This tutorial runs a complete PostgreSQL rehearsal in a temporary fictional project. It
+does not use your application, production data, or a hosted database.
 
-## Create the application migration history
+Allow about five minutes. You need Node.js 24 and a running Docker-compatible engine.
 
-The project begins with one historical migration:
+## 1. Prepare Rehearsal
 
-```sql
-create table public.widgets (
-  id bigint generated always as identity primary key,
-  name text not null
-);
-```
-
-Place it at `supabase/migrations/20260101000000_create_widgets.sql`. Add a second,
-candidate migration:
-
-```sql
-alter table public.widgets add column description text;
-```
-
-Place that at `supabase/migrations/20260101000100_add_widget_description.sql`.
-
-## Configure the isolated runtime
-
-Run `npx rehearsal init --write`, then edit the result. Give the runtime unique local
-ports and a unique project ID. Its `rehearsalConfig` must point at a dedicated, unlinked
-Supabase config. Never reuse a hosted project reference or production environment file.
-
-Keep the generated `.rehearsal` directory ignored. It contains local artifacts and
-runtime state, not source code.
-
-## Build a synthetic baseline
-
-The baseline contains the historical migration bundle, a one-row sanitized data stream,
-and a manifest binding their checksums. Baseline construction is deliberately separate
-from runtime execution: the application owns extraction and policy; the engine accepts
-only a completed, verified artifact.
-
-Write the safe rows to `rehearsal/synthetic-data.ndjson` and the exact represented
-statements to `rehearsal/migration-ledger.json`, then run:
+If you do not already have this repository, clone it:
 
 ```bash
-npx rehearsal baseline create \
-  --records=rehearsal/synthetic-data.ndjson \
-  --ledger=rehearsal/migration-ledger.json
+git clone https://github.com/Ddupasquier/rehearsal-db.git
+cd rehearsal-db
 ```
 
-For an executable sample, inspect `tests/fixtures/rehearsal-project` in the repository.
-The maintained fixture proof invokes this public command through the packed npm tarball
-and never contacts a hosted service.
-
-## Prove planning is non-mutating
+Then run:
 
 ```bash
-npx rehearsal doctor
-npx rehearsal explain
-npx rehearsal run --dry-run
-npx rehearsal candidates --json
+npm ci --ignore-scripts
+docker pull postgres:17-alpine
 ```
 
-`explain` and `run --dry-run` return the same execution plan. At this point no local
-database has been restored.
+If you already have this repository open, use that checkout.
 
-## Run and inspect
+## 2. Make a temporary project
 
-Copy the exact digest from `candidates`:
+From the Rehearsal repository root, run this block exactly:
 
 ```bash
-npx rehearsal run --confirm-candidates=<sha256>
-npx rehearsal inspect migrations
+rehearsal_repo=$PWD
+tutorial_dir=$(mktemp -d)
+cp -R tests/fixtures/postgresql-project "$tutorial_dir/app"
+cd "$tutorial_dir/app"
+npm install --ignore-scripts --no-save "$rehearsal_repo"
+```
+
+The temporary project contains:
+
+- one historical migration that creates a `widgets` table;
+- one candidate migration that adds a `description` column;
+- one synthetic row;
+- a reviewed sanitization policy;
+- an application proof that checks the migrated database.
+
+## 3. Create the baseline
+
+Open the guide:
+
+```bash
+npx rehearsal
+```
+
+The project begins at Stage 3 of 4. Choose **Create the baseline**. Accept the detected
+record and ledger files, review the summary, then confirm creation.
+
+The project should advance to Stage 4 of 4 with every item checked.
+
+## 4. Run the migration
+
+Choose **Run a rehearsal**. The guide should show exactly one candidate:
+
+```text
+20260101000100_add_widget_description.sql
+```
+
+Confirm it. Rehearsal creates a loopback-only PostgreSQL container, restores the baseline,
+applies the candidate, and runs the fixture proof.
+
+Success ends with an application-proof message and suggests exercising the local
+application before verification.
+
+## 5. Try the runtime commands
+
+Exit the guide, then run:
+
+```bash
 npx rehearsal status
+npx rehearsal verify
+npx rehearsal reset
+npx rehearsal stop
+npx rehearsal discard
 ```
 
-The historical migration should be `represented_by_baseline`; the description migration
-should be `applied_to_current_runtime`. Test normal creates, updates, and deletes through
-your local application. They affect only this disposable database.
+`discard` removes only the labeled tutorial container and volume. The temporary project
+directory remains on disk and can be deleted when you no longer need it.
 
-## Prove failure behavior
+## What you proved
 
-Add a timestamped migration containing invalid SQL, rerun `candidates`, and use its new
-digest. The command must fail with `migration_candidate_failure`, remove the untrusted
-runtime, and never produce a successful receipt.
+You used the same packaged CLI a normal project installs. Rehearsal verified the baseline,
+approved an exact migration, ran it in a disposable database, tested the result, and
+cleaned up only its own runtime.
 
-Then restore the valid migration set and rerun:
+Next, follow [Getting started](getting-started.md) in your own project. Start with synthetic
+rows until the workflow and application proof are reliable.
+
+## Supabase check
+
+If Supabase CLI 2.117.0 is installed, the repository also has a fully automated Supabase
+proof:
 
 ```bash
-npx rehearsal reset
-npx rehearsal verify
-npx rehearsal stop
+cd "$rehearsal_repo"
+npm run test:fixture
 ```
 
-That cycle—plan, confirm exact bytes, run, exercise the app, reset—is the normal Rehearsal
-workflow.
+The PostgreSQL equivalent is `npm run test:fixture:postgresql`.
