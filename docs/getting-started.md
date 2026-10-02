@@ -105,6 +105,11 @@ npx rehearsal baseline prepare \
   --write
 ```
 
+Running `npx rehearsal` instead discovers structurally matching project-local inputs and
+offers them in the guide. Discovery is bounded, ignores generated/runtime directories,
+and returns paths only. Before a policy draft or immutable baseline is written, Rehearsal
+validates the selected files and presents a value-free shape and count summary.
+
 After creating the draft, choose **Review the script** in the guide. For each table,
 choose between reviewing every column or applying the displayed safe defaults and
 reviewing only exceptions. Rehearsal suggests identifiers, relationship columns, and

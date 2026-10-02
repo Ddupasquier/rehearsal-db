@@ -16,6 +16,7 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyBaselinePreparation,
+  inspectBaselineInputFiles,
   planBaselinePreparation,
 } from "../../scripts/lib/rehearsal/baseline_preparation.mjs";
 import { createSyntheticBaselineFromFiles } from "../../scripts/lib/rehearsal/baseline_builder.mjs";
@@ -101,6 +102,64 @@ afterEach(async () => {
 });
 
 describe("baseline preparation", () => {
+  it("preflights records, migrations, and optional storage without exposing values", async () => {
+    const root = await makeProject();
+    await writeFile(join(root, "rehearsal/exact-byte.txt"), "asset-value");
+    await writeFile(
+      join(root, "rehearsal/assets.json"),
+      `${JSON.stringify([
+        {
+          bucket: "fixture-assets",
+          objectPath: "proof/exact-byte.txt",
+          contentType: "text/plain",
+          file: "rehearsal/exact-byte.txt",
+        },
+      ])}\n`,
+    );
+
+    const inspection = await inspectBaselineInputFiles({
+      projectRoot: root,
+      recordsPath: "rehearsal/synthetic-data.ndjson",
+      ledgerPath: "rehearsal/migration-ledger.json",
+      assetsPath: "rehearsal/assets.json",
+    });
+
+    expect(inspection).toMatchObject({
+      recordsPath: "rehearsal/synthetic-data.ndjson",
+      ledgerPath: "rehearsal/migration-ledger.json",
+      assetsPath: "rehearsal/assets.json",
+      rowCount: 2,
+      migrationCount: 1,
+      assetCount: 1,
+    });
+    expect(JSON.stringify(inspection)).not.toContain(
+      "value-that-must-not-be-printed",
+    );
+  });
+
+  it("rejects invalid storage manifests before baseline creation", async () => {
+    const root = await makeProject();
+    await writeFile(
+      join(root, "rehearsal/assets.json"),
+      `${JSON.stringify([
+        {
+          bucket: "fixture-assets",
+          objectPath: "../escape.txt",
+          file: "rehearsal/missing.txt",
+        },
+      ])}\n`,
+    );
+
+    await expect(
+      inspectBaselineInputFiles({
+        projectRoot: root,
+        recordsPath: "rehearsal/synthetic-data.ndjson",
+        ledgerPath: "rehearsal/migration-ledger.json",
+        assetsPath: "rehearsal/assets.json",
+      }),
+    ).rejects.toThrow("entry 1 has an invalid shape");
+  });
+
   it("creates a schema-only fail-closed policy draft", async () => {
     const root = await makeProject();
     const plan = await planBaselinePreparation({

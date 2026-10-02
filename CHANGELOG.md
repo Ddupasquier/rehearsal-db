@@ -9,12 +9,17 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 - Scalable policy review with explicit table-level safe defaults, suggested structural
   exceptions, per-table summaries, and real-PTY coverage of the bulk-review journey.
+- Bounded project-local discovery for baseline records, migration ledgers, and optional
+  Storage manifests, plus a value-free structural preflight before activation.
 
 ### Changed
 
 - Guided policy review can classify ordinary columns in bulk as synthetic replacements
   while keeping likely identifiers, relationships, and timestamps selected for
   individual review. The saved policy still records every required column decision.
+- The baseline guide offers detected inputs instead of requiring memorized paths,
+  validates referenced Storage files up front, previews counts without row values, and
+  returns to the guide with an actionable message when validation fails.
 
 ## [0.1.0-beta.4] - 2026-10-01
 

@@ -37,8 +37,11 @@ the digest and invalidates either form of confirmation.
 `baseline create` never extracts data. The NDJSON and migration-ledger files must already
 exist inside the project and be safe to retain. Add `--assets=<manifest.json>` to include
 bounded local Storage bytes; every manifest `file` must also remain inside the project.
-The guided home screen can ask for these paths so they do not need to be supplied as
-flags.
+The guided home screen scans a bounded set of small project-local JSON and NDJSON files,
+skips generated and private runtime directories, and offers structurally matching paths
+so they do not need to be memorized. It never displays row values. Before activation it
+validates the selected files and referenced assets, shows row, table, migration, and asset
+counts, and asks for confirmation. Invalid input returns to the guide without writing.
 
 The guide is a persistent session: after setup, policy review, baseline creation, or a
 runtime action it re-reads project state and offers the next relevant action. Generated
