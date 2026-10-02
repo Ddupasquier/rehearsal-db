@@ -17,6 +17,31 @@ const TARGETS = Object.freeze({
 
 export const REHEARSAL_RUNTIME_TARGETS = Object.freeze(Object.keys(TARGETS));
 
+export const parseRuntimeInvocation = (arguments_ = process.argv.slice(2)) => {
+  const action = arguments_.find((argument) => !argument.startsWith("--"));
+  const valueAfter = (prefix) =>
+    arguments_
+      .find((argument) => argument.startsWith(prefix))
+      ?.slice(prefix.length);
+  return Object.freeze({
+    action: action ?? "status",
+    configPath: valueAfter("--config="),
+    confirmation: valueAfter("--confirm-candidates="),
+  });
+};
+
+export const buildRuntimeManagerArguments = ({
+  managerPath,
+  action,
+  configPath,
+  confirmation,
+}) => [
+  managerPath,
+  action,
+  ...(configPath ? [`--config=${configPath}`] : []),
+  ...(confirmation ? [`--confirm-candidates=${confirmation}`] : []),
+];
+
 export const resolveRuntimeTarget = (value = "supabase") => {
   if (typeof value !== "string" || !Object.hasOwn(TARGETS, value)) {
     throw new Error(

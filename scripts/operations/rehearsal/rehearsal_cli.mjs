@@ -60,6 +60,7 @@ import {
   applyRehearsalCleanup,
   planRehearsalCleanup,
 } from "../../lib/rehearsal/cleanup.mjs";
+import { buildRuntimeManagerArguments } from "../../lib/runtime/runtime_target.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = process.cwd();
@@ -1283,10 +1284,12 @@ const emit = ({ command, data, flags, render, status = "success" }) => {
 };
 
 const runManager = ({ action, flags }) => {
-  const args = [managerPath, action];
-  if (flags.confirmation) {
-    args.push(`--confirm-candidates=${flags.confirmation}`);
-  }
+  const args = buildRuntimeManagerArguments({
+    managerPath,
+    action,
+    configPath: flags.configPath,
+    confirmation: flags.confirmation,
+  });
   const environment = Object.fromEntries(
     [
       "CI",

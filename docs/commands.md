@@ -97,7 +97,7 @@ belonging to other projects are never included. This follows
 | `--verbose`                     | Show more safe detail.                                           |
 | `--debug`                       | Show the most diagnostic detail; still review it before sharing. |
 | `--plain`                       | Disable decorative interactive prompts.                          |
-| `--config=<path>`               | Use a specific config file inside the project.                   |
+| `--config=<path>`               | Use only this config for planning and every runtime action.      |
 | `--target=supabase\|postgresql` | Choose the setup target.                                         |
 | `--include-runtime`             | Include this project's runtime in a cleanup preview.             |
 | `--include-images`              | Include older unused Supabase images in a cleanup preview.       |
@@ -105,3 +105,8 @@ belonging to other projects are never included. This follows
 | `--write`                       | Apply a setup, policy, or cleanup preview.                       |
 
 Run `npx rehearsal --help` to print the command list available in your installed version.
+
+When a project has more than one config, pass `--config=<path>` on every command for the
+non-default one. Rehearsal keeps that exact config selected through status, run, reset,
+start, migrate, verify, stop, discard, and cleanup; it will not fall back to
+`rehearsal.config.mjs` during a runtime action.

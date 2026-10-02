@@ -5,6 +5,14 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.8] - 2026-10-02
+
+### Fixed
+
+- Lifecycle commands now preserve an explicit `--config=<path>` through runtime
+  selection and execution. A command cannot silently operate on the default config's
+  baseline, runtime identity, ports, or cleanup target instead.
+
 ## [0.1.0-beta.7] - 2026-10-02
 
 ### Added
@@ -194,7 +202,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.7...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.8...HEAD
+[0.1.0-beta.8]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.7...v0.1.0-beta.8
 [0.1.0-beta.7]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.6...v0.1.0-beta.7
 [0.1.0-beta.6]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.5...v0.1.0-beta.6
 [0.1.0-beta.5]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.4...v0.1.0-beta.5

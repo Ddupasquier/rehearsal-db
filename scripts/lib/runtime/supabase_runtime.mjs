@@ -50,10 +50,13 @@ import {
   compareProductionSchemaDumps,
 } from "../rehearsal/schema_snapshot.mjs";
 import { formatCount } from "../rehearsal/human_output.mjs";
+import { parseRuntimeInvocation } from "./runtime_target.mjs";
 
 const repositoryRoot = process.cwd();
+const invocation = parseRuntimeInvocation();
 const loadedConfiguration = await loadRehearsalConfig({
   projectRoot: repositoryRoot,
+  configPath: invocation.configPath,
 });
 const { config, paths: configuredPaths } = loadedConfiguration;
 const artifactRoot = configuredPaths.artifactDirectory;
@@ -76,7 +79,7 @@ const runtimeAdapter = configuredPaths.runtimeAdapter
   ? await import(pathToFileURL(configuredPaths.runtimeAdapter).href)
   : null;
 const environmentKeyPattern = /^[A-Z][A-Z0-9_]*$/u;
-const action = process.argv[2] ?? "status";
+const action = invocation.action;
 
 const readServiceEnvironment = () =>
   readRehearsalServiceEnvironment({
@@ -662,9 +665,7 @@ const migrateRuntime = async () => {
   console.log(
     `${receipt.candidates.length === 1 ? "Candidate migration" : "Candidate migrations"} (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ")}`,
   );
-  const confirmation = process.argv
-    .find((argument) => argument.startsWith("--confirm-candidates="))
-    ?.slice("--confirm-candidates=".length);
+  const confirmation = invocation.confirmation;
   if (confirmation !== receipt.candidateSha256) {
     throw new Error(
       "Candidate migration confirmation is missing or does not match the exact SHA-256.",
