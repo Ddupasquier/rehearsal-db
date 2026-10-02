@@ -131,6 +131,53 @@ const makePolicyProject = async () => {
   return root;
 };
 
+const makeBaselineInputProject = async () => {
+  const root = await makeProject();
+  await mkdir(join(root, "rehearsal"), { recursive: true });
+  await writeFile(
+    join(root, "rehearsal.config.mjs"),
+    `export default {
+  schemaVersion: 1,
+  project: { name: "guided-input-fixture" },
+  supabase: {
+    workdir: ".",
+    migrationDirectory: "supabase/migrations",
+    rehearsalConfig: "supabase/config.toml",
+    runtimeWorkdir: ".rehearsal/runtime",
+  },
+  baseline: {
+    artifactDirectory: ".rehearsal",
+    sanitizationPolicy: "rehearsal/sanitization-policy.json",
+  },
+  application: { startCommand: "npm run dev", proofCommand: "npm run test" },
+  runtime: {
+    applicationUrl: "http://localhost:5175",
+    projectId: "guided-input-fixture",
+    apiPort: 58341,
+    databasePort: 58342,
+    studioPort: 58343,
+  },
+  safety: { hostedAccess: "disabled", outboundNetwork: "deny" },
+};
+`,
+  );
+  await writeFile(
+    join(root, "rehearsal/synthetic-data.ndjson"),
+    `${JSON.stringify({ table: "widgets", row: { id: 1, name: "never-print-this-value" } })}\n`,
+  );
+  await writeFile(
+    join(root, "rehearsal/migration-ledger.json"),
+    `${JSON.stringify([
+      {
+        version: "20260101000000",
+        name: "create_widgets",
+        statements: ["create table public.widgets(id bigint)"],
+      },
+    ])}\n`,
+  );
+  return root;
+};
+
 afterEach(async () => {
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
@@ -138,6 +185,78 @@ afterEach(async () => {
 });
 
 describe("guided terminal journey", () => {
+  it("discovers and preflights baseline inputs before writing a policy draft", async () => {
+    const root = await makeBaselineInputProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: true,
+        interactions: [
+          { after: "What would you like to do? [1]:", write: "1\n" },
+          {
+            after:
+              "Sanitized NDJSON records [rehearsal/synthetic-data.ndjson]:",
+            write: "\n",
+          },
+          {
+            after: "Migration ledger [rehearsal/migration-ledger.json]:",
+            write: "\n",
+          },
+          {
+            after:
+              "Create the REVIEW REQUIRED draft at rehearsal/sanitization-policy.json? (y/N)",
+            write: "y\n",
+          },
+          { after: "What would you like to do? [1]:", write: "4\n" },
+        ],
+      }),
+    ).replaceAll("\r", "");
+
+    expect(output).toContain("Detected safe local inputs");
+    expect(output).toContain("Records: rehearsal/synthetic-data.ndjson");
+    expect(output).toContain("BASELINE POLICY — PREVIEW");
+    expect(output).toContain("widgets: 1 row; id, name");
+    expect(output).not.toContain("never-print-this-value");
+    await expect(
+      readFile(join(root, "rehearsal/sanitization-policy.json"), "utf8"),
+    ).resolves.toContain('"draft": true');
+  }, 15_000);
+
+  it("explains invalid baseline inputs and safely returns to the guide", async () => {
+    const root = await makeBaselineInputProject();
+    await writeFile(
+      join(root, "rehearsal/synthetic-data.ndjson"),
+      "invalid ndjson\n",
+    );
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: true,
+        interactions: [
+          { after: "What would you like to do? [1]:", write: "1\n" },
+          {
+            after: "Sanitized NDJSON records (required):",
+            write: "rehearsal/synthetic-data.ndjson\n",
+          },
+          {
+            after: "Migration ledger [rehearsal/migration-ledger.json]:",
+            write: "\n",
+          },
+          { after: "What would you like to do? [1]:", write: "4\n" },
+        ],
+      }),
+    ).replaceAll("\r", "");
+
+    expect(output).toContain("BASELINE INPUTS NEED ATTENTION");
+    expect(output).toContain(
+      "Synthetic baseline input contains invalid NDJSON",
+    );
+    expect(output.match(/Safe local migration testing/gu)).toHaveLength(2);
+    await expect(
+      readFile(join(root, "rehearsal/sanitization-policy.json"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  }, 15_000);
+
   it("applies table defaults and reviews only suggested exceptions", async () => {
     const root = await makePolicyProject();
     const output = String(

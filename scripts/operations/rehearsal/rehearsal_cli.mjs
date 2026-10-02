@@ -36,9 +36,11 @@ import {
 import { createSyntheticBaselineFromFiles } from "../../lib/rehearsal/baseline_builder.mjs";
 import {
   applyBaselinePreparation,
+  inspectBaselineInputFiles,
   planBaselinePreparation,
   summarizeBaselinePreparation,
 } from "../../lib/rehearsal/baseline_preparation.mjs";
+import { discoverBaselineInputFiles } from "../../lib/rehearsal/input_discovery.mjs";
 import {
   applyRehearsalSetup,
   inspectRehearsalNodeRuntime,
@@ -377,6 +379,46 @@ const promptForPath = async ({
   }
 };
 
+const promptForDiscoveredPath = async ({
+  message,
+  candidates,
+  optional = false,
+  flags,
+}) => {
+  if (candidates.length <= 1 && !optional) {
+    return promptForPath({
+      message,
+      defaultValue: candidates[0],
+      flags,
+    });
+  }
+  if (candidates.length === 0) {
+    return promptForPath({ message, optional, flags });
+  }
+  const noneValue = "\0none";
+  const manualValue = "\0manual";
+  const selected = await promptForSelection({
+    message,
+    flags,
+    options: [
+      ...(optional
+        ? [
+            {
+              label: "No storage assets",
+              hint: "Continue without an asset manifest",
+              value: noneValue,
+            },
+          ]
+        : []),
+      ...candidates.map((path) => ({ label: path, value: path })),
+      { label: "Enter another path", value: manualValue },
+    ],
+  });
+  if (!selected || selected === noneValue) return undefined;
+  if (selected !== manualValue) return selected;
+  return promptForPath({ message, optional, flags });
+};
+
 const promptForSelection = async ({ message, options, flags }) => {
   const selected = await promptForChoice({ message, options, flags });
   return selected?.value;
@@ -445,13 +487,6 @@ const promptForMultipleChoice = async ({
   } finally {
     prompt.close();
   }
-};
-
-const firstExistingPath = async (candidates) => {
-  for (const candidate of candidates) {
-    if (await pathExists(join(projectRoot, candidate))) return candidate;
-  }
-  return undefined;
 };
 
 const inspectGuidedProject = async (planOptions) => {
@@ -925,55 +960,95 @@ const runGuidedHome = async ({ flags, planOptions }) => {
         "",
       ].join("\n"),
     );
-    const recordsDefault = await firstExistingPath([
-      "rehearsal/sanitized-data.ndjson",
-      "rehearsal/synthetic-data.ndjson",
-    ]);
-    const ledgerDefault = await firstExistingPath([
-      "rehearsal/migration-ledger.json",
-    ]);
-    flags.recordsPath = await promptForPath({
+    const discovered = await discoverBaselineInputFiles({ projectRoot });
+    const detectedLines = [
+      discovered.records.length
+        ? `Records: ${discovered.records.join(", ")}`
+        : "Records: none detected",
+      discovered.ledgers.length
+        ? `Migration ledgers: ${discovered.ledgers.join(", ")}`
+        : "Migration ledgers: none detected",
+      discovered.assetManifests.length
+        ? `Storage manifests: ${discovered.assetManifests.join(", ")}`
+        : "Storage manifests: none detected",
+      "Only paths and file structure were inspected; row values stay hidden.",
+    ];
+    if (useStyledPrompts(flags)) {
+      prompts.note(detectedLines.join("\n"), "Detected safe local inputs");
+    } else {
+      console.log(
+        ["Detected safe local inputs", ...detectedLines, ""].join("\n"),
+      );
+    }
+    flags.recordsPath = await promptForDiscoveredPath({
       message: "Sanitized NDJSON records",
-      defaultValue: recordsDefault,
+      candidates: discovered.records,
       flags,
     });
-    flags.ledgerPath = await promptForPath({
+    flags.ledgerPath = await promptForDiscoveredPath({
       message: "Migration ledger",
-      defaultValue: ledgerDefault,
+      candidates: discovered.ledgers,
       flags,
     });
-    if (selected.command === "baseline-prepare") {
-      const preparationPlan = await planBaselinePreparation({
+    try {
+      if (selected.command === "baseline-prepare") {
+        const preparationPlan = await planBaselinePreparation({
+          ...planOptions,
+          recordsPath: flags.recordsPath,
+          ledgerPath: flags.ledgerPath,
+        });
+        const preview = {
+          ...summarizeBaselinePreparation(preparationPlan, {
+            mode: "preview",
+          }),
+          nextAction:
+            "Review this schema-only summary. No file is written unless you approve below.",
+        };
+        console.log(`\n${renderBaselinePreparation(preview, flags)}\n`);
+        const accepted = await promptForConfirmation(
+          `Create the REVIEW REQUIRED draft at ${preview.destination}?`,
+          flags,
+        );
+        if (!accepted) {
+          console.log("No changes made.");
+          return "refresh";
+        }
+        flags.preparationPlan = preparationPlan;
+        flags.write = true;
+        return "baseline prepare";
+      }
+      flags.assetsPath = await promptForDiscoveredPath({
+        message: "Storage assets",
+        candidates: discovered.assetManifests,
+        optional: true,
+        flags,
+      });
+      const inspection = await inspectBaselineInputFiles({
         ...planOptions,
         recordsPath: flags.recordsPath,
         ledgerPath: flags.ledgerPath,
+        assetsPath: flags.assetsPath,
       });
-      const preview = {
-        ...summarizeBaselinePreparation(preparationPlan, {
-          mode: "preview",
-        }),
-        nextAction:
-          "Review this schema-only summary. No file is written unless you approve below.",
-      };
-      console.log(`\n${renderBaselinePreparation(preview, flags)}\n`);
+      console.log(`\n${renderBaselineInputInspection(inspection, flags)}\n`);
       const accepted = await promptForConfirmation(
-        `Create the REVIEW REQUIRED draft at ${preview.destination}?`,
+        "Create and activate this immutable local baseline?",
         flags,
       );
       if (!accepted) {
         console.log("No changes made.");
         return "refresh";
       }
-      flags.preparationPlan = preparationPlan;
-      flags.write = true;
-      return "baseline prepare";
+      return "baseline create";
+    } catch (error) {
+      const message = redactDiagnosticValue(String(error?.message ?? error));
+      if (useStyledPrompts(flags)) {
+        prompts.cancel("These baseline inputs need attention.");
+        prompts.note(message, "How to continue");
+      } else {
+        console.log(`\nBASELINE INPUTS NEED ATTENTION\n${message}\n`);
+      }
+      return "refresh";
     }
-    flags.assetsPath = await promptForPath({
-      message: "Storage asset manifest (optional)",
-      optional: true,
-      flags,
-    });
-    return "baseline create";
   }
   if (selected.command !== "setup-write") return selected.command;
 
@@ -1442,6 +1517,24 @@ const renderBaselinePreparation = (result, flags = {}) =>
     result.nextAction,
   ].join("\n");
 
+const renderBaselineInputInspection = (result, flags = {}) =>
+  [
+    "BASELINE INPUTS — READY",
+    `Records: ${formatCount(result.rowCount, "row")} across ${formatCount(result.tables.length, "table")} from ${result.recordsPath}`,
+    `Migrations: ${formatCount(result.migrationCount, "migration")} through ${result.migrationCutoff} from ${result.ledgerPath}`,
+    result.assetsPath
+      ? `Storage: ${formatCount(result.assetCount, "asset")} from ${result.assetsPath}`
+      : "Storage: no asset manifest selected",
+    "",
+    "Detected tables (values are never printed)",
+    ...result.tables.map(
+      (table) =>
+        `  ${terminalStyle(flags, "36", "→")} ${table.name}: ${formatCount(table.rowCount, "row")}`,
+    ),
+    "",
+    "All inputs are project-local regular files and passed structural validation.",
+  ].join("\n");
+
 const usage = () => `Usage: rehearsal <command> [options]
 
 Commands:
@@ -1493,6 +1586,12 @@ const executeCommand = async ({ command, flags, planOptions, guided }) => {
     return;
   }
   if (command === "baseline create") {
+    await inspectBaselineInputFiles({
+      ...planOptions,
+      recordsPath: flags.recordsPath,
+      ledgerPath: flags.ledgerPath,
+      assetsPath: flags.assetsPath,
+    });
     const data = await createSyntheticBaselineFromFiles({
       ...planOptions,
       recordsPath: flags.recordsPath,
