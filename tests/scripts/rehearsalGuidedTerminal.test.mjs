@@ -1,14 +1,35 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { spawn } from "@lydell/node-pty";
+import { createSyntheticBaselineFromFiles } from "../../scripts/lib/rehearsal/baseline_builder.mjs";
 
 const roots = [];
 const cliPath = join(
   process.cwd(),
   "scripts/operations/rehearsal/rehearsal_cli.mjs",
 );
+
+const makeTreeWritable = async (path) => {
+  await chmod(path, 0o700).catch(() => undefined);
+  for (const entry of await readdir(path, { withFileTypes: true }).catch(
+    () => [],
+  )) {
+    const child = join(path, entry.name);
+    if (entry.isDirectory()) await makeTreeWritable(child);
+    else if (!entry.isSymbolicLink()) await chmod(child, 0o600);
+  }
+};
 
 const runInPty = ({ cwd, interactions, plain }) =>
   new Promise((resolve, reject) => {
@@ -178,9 +199,26 @@ const makeBaselineInputProject = async () => {
   return root;
 };
 
+const makeCompleteProject = async () => {
+  const root = await mkdtemp(join(tmpdir(), "rehearsal-guided-complete-"));
+  roots.push(root);
+  await cp(join(process.cwd(), "tests/fixtures/rehearsal-project"), root, {
+    recursive: true,
+  });
+  await createSyntheticBaselineFromFiles({
+    projectRoot: root,
+    recordsPath: "rehearsal/sanitized-data.ndjson",
+    ledgerPath: "rehearsal/migration-ledger.json",
+  });
+  return root;
+};
+
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+    roots.splice(0).map(async (root) => {
+      await makeTreeWritable(root);
+      await rm(root, { recursive: true, force: true });
+    }),
   );
 });
 
@@ -419,5 +457,54 @@ describe("guided terminal journey", () => {
     expect(output).toContain("guided-terminal-fixture");
     expect(output).toContain("Set the stage");
     expect(output).toContain("See you at the next rehearsal.");
+  }, 15_000);
+
+  it("runs help actions from the styled menu and returns home", async () => {
+    const root = await makeProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: false,
+        interactions: [
+          {
+            after: "What would you like to do?",
+            write: "\u001B[B\r",
+          },
+          {
+            after: "What would you like to do?",
+            write: "\u001B[B\u001B[B\r",
+          },
+          {
+            after: "What would you like to do?",
+            write: "\u001B[B\u001B[B\u001B[B\r",
+          },
+        ],
+      }),
+    )
+      .replaceAll("\r", "")
+      .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+
+    expect(output).toContain("REHEARSAL SUPPORT REPORT");
+    expect(output).toContain("Usage: rehearsal <command> [options]");
+    expect(output).toContain("See you at the next rehearsal.");
+  }, 15_000);
+
+  it("keeps every action visible in the completed styled menu", async () => {
+    const root = await makeCompleteProject();
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: false,
+        interactions: [
+          { after: "What would you like to do?", write: "\u0003" },
+        ],
+      }),
+    )
+      .replaceAll("\r", "")
+      .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
+
+    expect(output).toContain("Get help");
+    expect(output).toContain("Show all commands");
+    expect(output).toContain("Exit");
   }, 15_000);
 });

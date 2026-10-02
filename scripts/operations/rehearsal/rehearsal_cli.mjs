@@ -278,6 +278,7 @@ const promptForChoice = async ({ message, options, flags = {} }) => {
   if (useStyledPrompts(flags)) {
     const selected = await prompts.select({
       message,
+      maxItems: options.length,
       options: options.map((option) => ({
         value: option,
         label: option.label,
