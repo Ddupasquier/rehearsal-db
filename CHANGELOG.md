@@ -5,6 +5,11 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Added
+
+- A concise post-beta.6 roadmap prioritizes real-project acceptance, easier baseline
+  onboarding, and another ordinary PostgreSQL project before further database expansion.
+
 ## [0.1.0-beta.6] - 2026-10-02
 
 ### Changed

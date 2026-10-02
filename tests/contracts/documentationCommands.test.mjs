@@ -87,6 +87,7 @@ describe("documented CLI contract", () => {
       "troubleshooting",
       "releasing",
       "glossary",
+      "roadmap",
     ]) {
       expect(readme).toContain(`docs/${guide}.md`);
     }
