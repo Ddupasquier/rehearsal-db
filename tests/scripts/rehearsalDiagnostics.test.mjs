@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   REHEARSAL_EXIT_CODES,
@@ -7,6 +8,8 @@ import {
   renderHumanError,
   serializeRehearsalError,
 } from "../../scripts/lib/rehearsal/diagnostics.mjs";
+
+const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
 
 const canaries = {
   password: "never-print-this-password",
@@ -98,7 +101,7 @@ describe("Rehearsal diagnostics", () => {
       data: { state: "READY", credentials: canaries },
     });
     expect(result.schemaVersion).toBe(1);
-    expect(result.rehearsalVersion).toBe("0.1.0-beta.5");
+    expect(result.rehearsalVersion).toBe(packageVersion);
     expect(result.data.state).toBe("READY");
     expect(JSON.stringify(result)).not.toContain("never-print-this-password");
   });

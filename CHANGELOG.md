@@ -5,6 +5,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.6] - 2026-10-02
+
 ### Changed
 
 - Beginner documentation now follows one guided path, defines unfamiliar terms where
@@ -168,7 +170,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.5...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.6...HEAD
+[0.1.0-beta.6]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.5...v0.1.0-beta.6
 [0.1.0-beta.5]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.4...v0.1.0-beta.5
 [0.1.0-beta.4]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.3...v0.1.0-beta.4
 [0.1.0-beta.3]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.2...v0.1.0-beta.3
