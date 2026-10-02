@@ -51,7 +51,13 @@ export declare const loadRehearsalConfig: (options?: {
 export declare const inspectDetectedProject: (options?: {
   projectRoot?: string;
 }) => Promise<unknown>;
-export declare const renderDetectedConfig: (detected: unknown) => string;
+export declare const renderDetectedConfig: (
+  detected: unknown,
+  options?: {
+    applicationUrl?: string;
+    ports?: { api: number; database: number; studio: number };
+  },
+) => string;
 export declare const SANITIZATION_ACTIONS: Readonly<{
   KEEP: "KEEP";
   PSEUDONYMIZE: "PSEUDONYMIZE";
@@ -75,6 +81,13 @@ export declare const validateSanitizationCoverage: (options: {
   columnCount: number;
   tables: ReadonlyArray<Record<string, unknown>>;
 }>;
+export declare const validateRuntimeSanitizationPolicy: (
+  policy: unknown,
+) => unknown;
+export declare const readBoundRuntimeSanitizationPolicy: (options: {
+  bytes: Uint8Array | string;
+  expectedSha256: string;
+}) => unknown;
 export declare const applySanitizationAction: (options: {
   action: string;
   value: unknown;

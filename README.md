@@ -84,8 +84,13 @@ Contributors testing an unreleased change can use `npm link` or install the tarb
 produced by `npm pack` from a local checkout. In a consuming project, the commands are:
 
 ```bash
+npx rehearsal
+npx rehearsal setup
+npx rehearsal setup --write
 npx rehearsal init
 npx rehearsal init --write
+npx rehearsal baseline prepare --records=<safe.ndjson> --ledger=<ledger.json>
+npx rehearsal baseline prepare --records=<safe.ndjson> --ledger=<ledger.json> --write
 npx rehearsal baseline create --records=<safe.ndjson> --ledger=<ledger.json>
 npx rehearsal doctor
 npx rehearsal explain
@@ -102,14 +107,32 @@ npx rehearsal stop
 npx rehearsal discard
 ```
 
+Running `npx rehearsal` in a terminal opens a state-aware guide that shows completed
+setup steps and recommends available actions. The explicit commands remain the stable
+interface for automation and CI.
+
+`setup` previews a conservative first-run scaffold: the Rehearsal configuration, a
+dedicated local-only Supabase configuration on an available port block, and protective
+`.gitignore` entries. It writes only with `--write`, never overwrites project files, and
+does not copy enabled external providers from the application's Supabase configuration.
+After writing, it runs the same readiness checks as `doctor` and shows the remaining
+project-owned inputs. Use `init` when you want to create only the configuration file
+manually.
+
+`baseline prepare` inspects only the shape of explicit local synthetic records and writes
+a fail-closed sanitization-policy draft. Every column remains `REVIEW REQUIRED` until a
+human classifies its sanitization action, generated/identity behavior, and foreign key.
+Drafts cannot be activated, and a reviewed policy is checksum-bound to its baseline.
+
 `init` previews a type-aware ESM `rehearsal.config.mjs`; it writes only with `--write`
 and never overwrites an existing file. The explicit `.mjs` extension makes the generated
 configuration executable in both CommonJS and ESM projects. Review all detected values.
 Rehearsal intentionally does not detect, copy, or enable a hosted project.
 
 `doctor` must end with `READY` before execution. `explain` and `run --dry-run` use the
-same immutable planner and perform no state-changing operations. If migrations are
-pending, execution requires the exact candidate digest printed by the plan:
+same immutable planner and perform no state-changing operations. In a terminal,
+`rehearsal run` displays and confirms the exact candidate set before touching the local
+runtime. Automation supplies the digest explicitly:
 
 ```bash
 npx rehearsal run --confirm-candidates=<sha256>

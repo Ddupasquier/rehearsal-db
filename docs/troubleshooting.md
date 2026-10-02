@@ -1,5 +1,19 @@
 # Troubleshooting
 
+## Setup says Node.js 24 is required
+
+Rehearsal intentionally supports one maintained Node.js major in its first beta. Switch
+the current shell before installing or running it. With nvm:
+
+```bash
+nvm install 24
+nvm use 24
+node --version
+```
+
+Then reinstall Rehearsal in the consuming project. The guided CLI checks this before it
+writes setup files.
+
 ## Doctor says Docker is unavailable
 
 Start Docker Desktop or Colima, confirm `docker info`, then rerun `rehearsal doctor`.
@@ -7,8 +21,10 @@ Restarting the computer is rarely necessary.
 
 ## A port is already in use
 
-Choose three unique non-privileged ports in config and mirror them in the dedicated
-Supabase config. Do not stop an unrelated database to make the default ports fit.
+Rerun `rehearsal setup` to select a different available block. Setup checks both active
+listeners and whether every selected port can be bound, then checks again before writing.
+For an existing configuration, choose unique non-privileged ports and mirror them in the
+dedicated Supabase config. Do not stop an unrelated database to make defaults fit.
 
 ## Baseline checksum mismatch
 

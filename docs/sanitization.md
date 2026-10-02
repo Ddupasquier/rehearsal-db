@@ -13,6 +13,12 @@ Every exported field should receive one action:
 
 Fail if a new column is unclassified. Do not default unknown fields to `KEEP`.
 
+For runtime restore, each included column must also classify whether it is generated,
+whether it is an identity column, and its foreign-key target or explicit absence. Run
+`rehearsal baseline prepare` to create a shape-only draft from synthetic NDJSON. The
+draft uses `REVIEW REQUIRED` placeholders and cannot be activated until they are
+replaced and the `draft` marker is removed.
+
 The package exports `validateSanitizationCoverage` and
 `applySanitizationAction` as generic primitives:
 
@@ -67,3 +73,7 @@ Before activation, verify:
 
 Completeness is not correctness. Human review of the policy and export boundary remains
 mandatory before any real source is introduced.
+
+The exact reviewed policy bytes are checksum-bound to the active baseline. Planning,
+candidate inspection, and runtime restore refuse to continue if that file later changes;
+build a new reviewed baseline instead of editing the active policy in place.

@@ -8,7 +8,10 @@ const execute = promisify(execFile);
 const root = process.cwd();
 const cli = join(root, "scripts/operations/rehearsal/rehearsal_cli.mjs");
 const documentedCommands = [
+  "guide",
+  "setup",
   "init",
+  "baseline prepare",
   "baseline create",
   "doctor",
   "explain",
@@ -46,7 +49,9 @@ describe("documented CLI contract", () => {
     }
 
     for (const command of [
+      "setup",
       "doctor",
+      "baseline prepare",
       "baseline create",
       "explain",
       "run --dry-run",

@@ -5,6 +5,40 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.3] - 2026-10-01
+
+### Added
+
+- A state-aware interactive home screen that guides setup, baseline preparation,
+  migration review, runtime management, verification, and cleanup without requiring
+  users to memorize commands.
+- A safe `setup` workflow that previews and creates a dedicated local Supabase config,
+  chooses an available port block, updates protective ignore rules, and summarizes
+  readiness without overwriting project files.
+- A schema-only `baseline prepare` workflow that generates a fail-closed policy draft
+  with explicit `REVIEW REQUIRED` decisions and never prints source row values.
+- Interactive confirmation of the exact candidate migration set plus friendly progress
+  and timing while a rehearsal runs.
+
+### Changed
+
+- Human output now recommends the next useful action, uses compact first-run readiness
+  summaries, respects `NO_COLOR` and `--plain`, and renders singular counts correctly.
+- Bare `rehearsal` opens the guide only in a terminal and remains noninteractive and
+  script-safe when standard input or output is redirected.
+
+### Fixed
+
+- Setup detects unsupported Node.js versions before writing, ignores ports occupied by
+  Docker or SSH forwarding, and rechecks its selected ports immediately before commit.
+- Generated project identifiers are bounded to values accepted by the local runtime.
+
+### Security
+
+- Reviewed sanitization policy bytes are checksum-bound to the active baseline and are
+  revalidated during planning and runtime restore.
+- Draft or incomplete sanitization policies cannot be activated as baselines.
+
 ## [0.1.0-beta.2] - 2026-09-15
 
 ### Fixed
@@ -72,7 +106,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.2...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.3...HEAD
+[0.1.0-beta.3]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.2...v0.1.0-beta.3
 [0.1.0-beta.2]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.1...v0.1.0-beta.2
 [0.1.0-beta.1]: https://github.com/Ddupasquier/rehearsal-db/releases/tag/v0.1.0-beta.1
 [0.1.0-beta.0]: https://github.com/Ddupasquier/rehearsal-db/releases/tag/v0.1.0-beta.0

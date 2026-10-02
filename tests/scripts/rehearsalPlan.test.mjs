@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,6 +39,25 @@ const createFixture = async () => {
     filename: "20260912000000_create_widget.sql",
     content: "create table public.widget(id bigint primary key);\n",
   };
+  const policySource = `${JSON.stringify({
+    policyVersion: 1,
+    migrationCutoff: "20260912000000",
+    tables: [
+      {
+        name: "widget",
+        sourceRows: "STREAM AND SANITIZE",
+        columns: [
+          {
+            name: "id",
+            action: "KEEP",
+            generated: "NEVER",
+            identity: "NO",
+            foreignKey: null,
+          },
+        ],
+      },
+    ],
+  })}\n`;
   await writeFile(
     join(root, "supabase/migrations", historical.filename),
     historical.content,
@@ -46,7 +66,10 @@ const createFixture = async () => {
     join(root, "infrastructure/rehearsal/supabase/config.toml"),
     'project_id = "fixture-rehearsal"\n[api]\nport = 58321\n[db]\nport = 58322\n[studio]\nport = 58323\n',
   );
-  await writeFile(join(root, "infrastructure/rehearsal/policy.json"), "{}\n");
+  await writeFile(
+    join(root, "infrastructure/rehearsal/policy.json"),
+    policySource,
+  );
   await writeFile(
     join(root, "package.json"),
     JSON.stringify({
@@ -73,7 +96,9 @@ export default defineRehearsalConfig({
     metadata: {
       migrationCutoff: "20260912000000",
       migrationHistorySha256: "a".repeat(64),
-      sanitizationPolicySha256: "b".repeat(64),
+      sanitizationPolicySha256: createHash("sha256")
+        .update(policySource)
+        .digest("hex"),
     },
     expectedTables: ["widget"],
     migrationFiles: [historical],
@@ -123,6 +148,22 @@ describe("Rehearsal plan", () => {
     );
     await expect(buildRehearsalPlan({ projectRoot: root })).rejects.toThrow(
       "diverges from the active baseline",
+    );
+  });
+
+  it("fails closed when the reviewed sanitization policy changes", async () => {
+    const root = await createFixture();
+    const policyPath = join(root, "infrastructure/rehearsal/policy.json");
+    const policy = JSON.parse(
+      await import("node:fs/promises").then(({ readFile }) =>
+        readFile(policyPath, "utf8"),
+      ),
+    );
+    policy.tables[0].columns[0].action = "REPLACE";
+    await writeFile(policyPath, `${JSON.stringify(policy)}\n`);
+
+    await expect(buildRehearsalPlan({ projectRoot: root })).rejects.toThrow(
+      "does not match the reviewed baseline policy checksum",
     );
   });
 });

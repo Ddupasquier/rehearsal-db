@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
   EXCLUDED_VALUE,
   applySanitizationAction,
+  readBoundRuntimeSanitizationPolicy,
   validateSanitizationCoverage,
+  validateRuntimeSanitizationPolicy,
 } from "../../scripts/lib/rehearsal/sanitization_policy.mjs";
 
 const schemaTables = [
@@ -113,5 +116,51 @@ describe("sanitization policy", () => {
     expect(() =>
       applySanitizationAction({ action: "REPLACE", value: "raw" }),
     ).toThrow("project-owned replacement function");
+  });
+
+  it("rejects drafts and accepts fully reviewed runtime metadata", () => {
+    expect(() =>
+      validateRuntimeSanitizationPolicy({
+        policyVersion: 1,
+        draft: true,
+        migrationCutoff: "20261001000000",
+        tables: [],
+      }),
+    ).toThrow("REVIEW REQUIRED draft");
+
+    const reviewed = {
+      policyVersion: 1,
+      migrationCutoff: "20261001000000",
+      tables: [
+        {
+          name: "widgets",
+          sourceRows: "STREAM AND SANITIZE",
+          columns: [
+            {
+              name: "id",
+              action: "KEEP",
+              generated: "NEVER",
+              identity: "YES",
+              foreignKey: null,
+            },
+          ],
+        },
+      ],
+    };
+    expect(validateRuntimeSanitizationPolicy(reviewed)).toMatchObject({
+      policyVersion: 1,
+    });
+
+    const bytes = Buffer.from(`${JSON.stringify(reviewed)}\n`);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    expect(
+      readBoundRuntimeSanitizationPolicy({ bytes, expectedSha256: sha256 }),
+    ).toEqual(reviewed);
+    expect(() =>
+      readBoundRuntimeSanitizationPolicy({
+        bytes,
+        expectedSha256: "0".repeat(64),
+      }),
+    ).toThrow("does not match the reviewed baseline policy checksum");
   });
 });

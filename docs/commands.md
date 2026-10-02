@@ -6,8 +6,13 @@ values or credentials.
 
 | Command                                                      | Mutates local state | Purpose                                                   |
 | ------------------------------------------------------------ | ------------------- | --------------------------------------------------------- |
+| `rehearsal` or `rehearsal guide`                             | No by default       | Open the guided, state-aware interactive home screen.     |
+| `rehearsal setup`                                            | No                  | Preview safe config, local runtime, and ignore files.     |
+| `rehearsal setup --write`                                    | Project files       | Create the previewed first-run scaffolding.               |
 | `rehearsal init`                                             | No                  | Preview safe starter configuration.                       |
 | `rehearsal init --write`                                     | Config only         | Create config without overwriting.                        |
+| `rehearsal baseline prepare --records= --ledger=`            | No                  | Preview a fail-closed policy draft from local shape.      |
+| `rehearsal baseline prepare --records= --ledger= --write`    | Policy only         | Write the draft without exposing row values.              |
 | `rehearsal baseline create --records=<path> --ledger=<path>` | Artifact only       | Activate a baseline from explicit safe local inputs.      |
 | `rehearsal doctor`                                           | No                  | Check dependencies, inputs, and safety barriers.          |
 | `rehearsal explain`                                          | No                  | Print the immutable execution plan.                       |
@@ -24,12 +29,30 @@ values or credentials.
 | `rehearsal stop`                                             | Runtime only        | Stop this project's local services.                       |
 | `rehearsal discard`                                          | Yes, local only     | Remove only this project's disposable runtime and volume. |
 
-`run` requires the digest from the current candidate set. Any added, removed, reordered,
-or edited migration changes the digest and invalidates the confirmation.
+In an interactive terminal, `run` and `migrate` display the candidate files and ask for
+confirmation before touching the runtime. In automation, they require the digest from
+the current candidate set. Any added, removed, reordered, or edited migration changes
+the digest and invalidates either form of confirmation.
 
 `baseline create` never extracts data. The NDJSON and migration-ledger files must already
 exist inside the project and be safe to retain. Add `--assets=<manifest.json>` to include
 bounded local Storage bytes; every manifest `file` must also remain inside the project.
+The guided home screen can ask for these paths so they do not need to be supplied as
+flags.
+
+`baseline prepare` reads only table and column names from the NDJSON records; row values
+are never included in its result. Its generated policy deliberately marks every column
+decision `REVIEW REQUIRED` and cannot be activated until a human completes the metadata
+and removes the `draft` marker. Rehearsal binds the reviewed policy checksum to the
+baseline and rejects later policy changes during planning and restore.
 
 Automation should use `--json` and inspect both exit status and the versioned envelope.
 Exit-code meanings are documented in the root README. Scripts must not parse human text.
+When standard input or output is not an interactive terminal, bare `rehearsal` prints
+help instead of prompting. Use `--plain` to disable decorative terminal styling.
+
+`setup` chooses an available local port block and generates a conservative Supabase
+configuration with hosted access and optional networked services disabled. It does not
+overwrite an existing Rehearsal config, dedicated Supabase config, or concurrently
+changed `.gitignore`. After writing, it includes a Doctor readiness summary. `init`
+remains available for config-only/manual onboarding.

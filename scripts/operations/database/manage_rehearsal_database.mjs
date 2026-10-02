@@ -44,10 +44,12 @@ import {
 } from "../../lib/rehearsal/migration_history.mjs";
 import { loadRehearsalConfig } from "../../lib/rehearsal/configuration.mjs";
 import { readRehearsalServiceEnvironment } from "../../lib/rehearsal/service_environment.mjs";
+import { readBoundRuntimeSanitizationPolicy } from "../../lib/rehearsal/sanitization_policy.mjs";
 import {
   captureLocalPublicSchema,
   compareProductionSchemaDumps,
 } from "../../lib/rehearsal/schema_snapshot.mjs";
+import { formatCount } from "../../lib/rehearsal/human_output.mjs";
 
 const repositoryRoot = process.cwd();
 const loadedConfiguration = await loadRehearsalConfig({
@@ -443,11 +445,15 @@ const configureProjectRuntime = ({ environment, baseline }) => {
 };
 
 const readActive = async () => {
-  const [baseline, paths, manifest] = await Promise.all([
+  const [baseline, paths, policyBytes] = await Promise.all([
     verifyActiveBaseline({ artifactRoot }),
     resolveActiveBaselinePaths({ artifactRoot }),
-    readFile(manifestPath, "utf8").then(JSON.parse),
+    readFile(manifestPath),
   ]);
+  const manifest = readBoundRuntimeSanitizationPolicy({
+    bytes: policyBytes,
+    expectedSha256: baseline.sanitizationPolicySha256,
+  });
   return { baseline, paths, manifest };
 };
 
@@ -496,7 +502,7 @@ const resetRuntime = async () => {
       { mode: 0o600 },
     );
     console.log(
-      `Restored Rehearsal baseline ${active.baseline.generationId}: ${active.baseline.rowCount} rows across ${Object.keys(active.baseline.tableCounts).length} tables.`,
+      `Restored Rehearsal baseline ${active.baseline.generationId}: ${formatCount(active.baseline.rowCount, "row")} across ${formatCount(Object.keys(active.baseline.tableCounts).length, "table")}.`,
     );
     console.log(projectRuntime.message);
     return environment;
@@ -621,7 +627,7 @@ const verifyRuntime = async () => {
     }
   }
   console.log(
-    `Verified Rehearsal runtime ${baseline.generationId}: immutable baseline and migration history are valid with ${migrationComparison.candidates.length} applied candidate migrations. Runtime rows may differ from the baseline until the next reset.`,
+    `Verified Rehearsal runtime ${baseline.generationId}: immutable baseline and migration history are valid with ${formatCount(migrationComparison.candidates.length, "applied candidate migration")}. Runtime rows may differ from the baseline until the next reset.`,
   );
   if (projectVerification) console.log(projectVerification.message);
   return { baseline, candidateReceipt, migrationComparison };
@@ -652,7 +658,7 @@ const migrateRuntime = async () => {
     return receipt;
   }
   console.log(
-    `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ")}`,
+    `${receipt.candidates.length === 1 ? "Candidate migration" : "Candidate migrations"} (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ")}`,
   );
   const confirmation = process.argv
     .find((argument) => argument.startsWith("--confirm-candidates="))
@@ -707,7 +713,7 @@ const migrateRuntime = async () => {
       { mode: 0o600 },
     );
     console.log(
-      `Applied ${receipt.candidates.length} confirmed candidate migrations to the disposable Rehearsal runtime.`,
+      `Applied ${formatCount(receipt.candidates.length, "confirmed candidate migration")} to the disposable Rehearsal runtime.`,
     );
     return receipt;
   } catch (error) {
