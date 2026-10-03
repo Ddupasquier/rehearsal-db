@@ -5,6 +5,72 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.9] - 2026-10-02
+
+### Added
+
+- Primary configurations may declare isolated dependent database targets. Rehearsal
+  validates unique ownership boundaries, combines migration approval, orders lifecycle
+  actions, runs project-owned preparation and proofs, and previews cleanup across the
+  complete stack.
+- A packed-package two-target PostgreSQL fixture proves source-to-read-model preparation,
+  positive and negative assertions, reverse shutdown, and exact cleanup without a
+  project-owned container engine.
+- A separately opted-in, exact-digest PostgreSQL source-access lifecycle with scoped
+  temporary roles/views, deny checks, owner-only credentials, and exact retirement.
+- Bounded coherent baseline refresh with executable privacy policy version 2, stable
+  keyed pseudonyms, atomic activation, capacity limits, and drift/interruption safety.
+- Approved Supabase Storage inventory/transfer with bucket-prefix, size, path, version,
+  and exact-byte controls.
+- Declarative runtime prerequisites and structural checks, plus exact local identity
+  association without application callback patches.
+- Package-owned application startup, local environment mapping, readiness, child-process
+  teardown, and meaningful positive/negative HTTP proof orchestration.
+- An exact-preview `refresh` command that builds a verified replacement first, resets the
+  complete local runtime stack, rolls back on runtime failure, and only then prunes the
+  specifically reviewed old baseline generations.
+
+### Changed
+
+- Shipped source, runtime adapters, repository-only verification, and tests now use a
+  domain-based layout with documented placement rules and contract checks.
+- Generated configs include a commented dependent-target example, and the documentation
+  explains that avoiding server errors is not a sufficient positive-path proof.
+- Generated configs explain the optional standalone policy paths, direct local runtime
+  environment mappings, and application readiness contract.
+- Source, privacy, runtime, identity, onboarding, and security documentation now describe
+  the package-owned declarative workflow and its separate authorization boundaries.
+
+### Fixed
+
+- Supabase restores now install declared schemas and extensions before restoring
+  extension-dependent objects, preserve the original `public` schema privilege baseline,
+  and add declared triggers only after their functions exist.
+- Supabase runtime environments now include a validated loopback-only database URL and
+  standard PostgreSQL variables for package-owned commands.
+- Identity claims can safely replace complete signup defaults, require application role
+  references, remap declared text/JSONB and Storage object paths, and verify token-hook
+  claims while refusing edited or independent local account data.
+- Baselines and restore checks now identify relations by schema and table, default old
+  records to `public`, and restore same-named tables in separate schemas independently.
+- Identity claims can preserve immutable audit authorship while transferring the active
+  account, and retain only the synthetic Auth actor required by that history.
+- Storage path transfer now copies through the local Supabase API, verifies exact bytes,
+  rolls back staged copies on database failure, and removes the old physical objects
+  only after the database commit succeeds.
+- Identity Storage scopes now accept restored objects whose owner is unset, refuse
+  conflicting owners, and verify the destination owner before rewriting application
+  paths.
+- Runtime-policy seeds may explicitly follow a named identity association, so later
+  verification checks the transferred key without recreating an obsolete placeholder
+  role.
+- Failed project proofs always report their exit status and bounded output byte counts
+  without echoing arbitrary project logs.
+- State-changing commands now use a project-wide operation lock and detect replacement
+  of the installed Rehearsal package while an operation is running.
+- Identity claims now refuse to rewrite copied Storage paths when referenced physical
+  objects are missing.
+
 ## [0.1.0-beta.8] - 2026-10-02
 
 ### Fixed
@@ -202,7 +268,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.8...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.9...HEAD
+[0.1.0-beta.9]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.8...v0.1.0-beta.9
 [0.1.0-beta.8]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.7...v0.1.0-beta.8
 [0.1.0-beta.7]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.6...v0.1.0-beta.7
 [0.1.0-beta.6]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.5...v0.1.0-beta.6

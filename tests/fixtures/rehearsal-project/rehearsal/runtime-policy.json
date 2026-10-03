@@ -1,0 +1,22 @@
+{
+  "policyVersion": 1,
+  "prerequisites": {
+    "schemas": ["public"],
+    "extensions": [{ "name": "pg_trgm", "schema": "public" }]
+  },
+  "triggers": [],
+  "localRows": [],
+  "expectations": [
+    {
+      "table": { "schema": "public", "name": "widgets" },
+      "rowLevelSecurity": false,
+      "columns": [
+        { "name": "id", "generated": false, "identity": true },
+        { "name": "name", "generated": false, "identity": false },
+        { "name": "created_at", "generated": false, "identity": false }
+      ],
+      "foreignKeys": [],
+      "policies": []
+    }
+  ]
+}

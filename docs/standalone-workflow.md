@@ -1,0 +1,107 @@
+# Standalone workflow contract
+
+Rehearsal's normal commands remain local-only. `run`, `start`, `reset`,
+`migrate`, `verify`, and `cleanup` never receive source credentials and never
+connect to a hosted database.
+
+The optional preparation workflow is a separate security boundary. It has
+three deliberately separate phases:
+
+1. `source plan` reads declarations and produces a redacted, exact plan.
+2. `source apply` requires the plan digest and source-owner credentials from a
+   named environment variable. It creates only the declared, time-limited
+   reader and export surface.
+3. `refresh` uses that reader in a read-only repeatable-read transaction, builds
+   privately, activates only after verification, resets the local runtime, and applies
+   reviewed retention. `baseline refresh` is the lower-level baseline-only form.
+
+`source retire` has its own preview and digest. It removes only the exact
+reader and export objects Rehearsal recorded. It never searches for similarly
+named roles or removes unrelated grants.
+
+## What belongs in declarations
+
+Projects declare application meaning; Rehearsal executes it. Declarations may
+name:
+
+- approved source relations and columns;
+- whether rows are approved public data or belong to one explicitly approved
+  owner;
+- privacy actions and bounded transformation recipes;
+- licensed or consented Storage buckets and prefixes;
+- schema and extension prerequisites;
+- local identities and reference locations;
+- ordinary application commands and observable proof expectations.
+
+Declarations cannot contain JavaScript callbacks, SQL fragments, passwords,
+tokens, production URLs, or automatic consent decisions. Unknown fields,
+tables, columns, recipes, JSON keys, and target identities fail closed.
+
+## Credential separation
+
+Provisioning, extraction, asset, provider, and local-runtime credentials are
+separate. A declaration contains only the name of an environment variable or
+owner-only secret file. Rehearsal never puts credential values in command-line
+arguments, reports, baselines, receipts, or a launched application.
+
+The current workflow creates and verifies its own temporary PostgreSQL reader. An
+externally provisioned reader is not yet accepted because Rehearsal cannot currently
+prove that reader's complete scope and retirement behavior.
+
+## Snapshot and privacy guarantees
+
+Database schema, migration evidence, and selected rows are read in one
+read-only repeatable-read PostgreSQL transaction. Rehearsal rechecks the source
+identity and migration evidence before commit. Rows stream in bounded batches;
+record bodies never appear in progress or error output.
+
+Storage objects do not share the database transaction guarantee. Their inventory records
+size and version metadata; transfer requires that version, verifies the exact byte count,
+and records a SHA-256 in the immutable baseline. Transfer refuses an object that changes,
+exceeds its declared limit, or falls outside an approved bucket and prefix.
+
+Privacy policy version 2 is executable without project sanitizer code. It
+supports exact keep, exclusion, keyed pseudonyms, constants, and a small set of
+documented derivations. Policies classify every selected field and supported
+nested JSON key. A new or unknown field blocks refresh until the policy is
+reviewed again.
+
+The pseudonym key is an owner-only local secret. It is not stored in the
+baseline or source control. Receipts bind the policy bytes, schema shape,
+source scope, migration evidence, and key fingerprint without storing the key
+or source identifiers.
+
+## Restore, identities, and applications
+
+Restore performs only supported declarative prerequisites. Application schema
+changes remain immutable migration files; configuration is never an arbitrary
+privileged-SQL escape hatch.
+
+Local identities never reuse production sessions, refresh tokens, password
+hashes, provider secrets, or MFA material. An approved provider association is
+performed inside the local runtime and must match the reviewed receipt.
+
+Rehearsal launches ordinary project commands with a minimal environment and
+generated local connection files. It verifies every configured dependency
+before launch, owns only the child process group it starts, and does not claim
+to provide an operating-system firewall.
+
+Proofs require explicit positives and negatives. A process starting, a non-5xx
+response, an empty 200, a 401, or a 404 cannot satisfy a declared positive.
+Reports distinguish engine readiness, dependency readiness, proof completion,
+and provider behavior that was directly observed by a person.
+
+## Failure and upgrade behavior
+
+- Failed, interrupted, changed-policy, low-disk, or drifted refreshes leave the
+  prior active baseline and any edited runtime untouched.
+- Setup and upgrades preview exact file changes and never overwrite a reviewed
+  policy, config, baseline, or local edit silently.
+- Reset, discard, and cleanup operate only on purpose-created Rehearsal
+  resources and retain their existing exact-preview protections.
+- Rehearsal does not make legal, consent, licensing, backup, disaster-recovery,
+  universal-database, or OS-firewall guarantees.
+
+The final acceptance gate uses the exact packed or published artifact in clean
+Supabase and PostgreSQL consumers. Consumer integration code is removed only
+after that replacement is proved and the removal is separately approved.

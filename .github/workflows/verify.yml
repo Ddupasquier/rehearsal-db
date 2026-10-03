@@ -49,3 +49,5 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: docker pull postgres:17-alpine
       - run: npm run test:fixture:postgresql
+      - run: npm run test:fixture:dependent
+      - run: npm run test:fixture:standalone

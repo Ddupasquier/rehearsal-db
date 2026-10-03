@@ -6,6 +6,10 @@
 
 **Candidate digest** — checksum binding the exact candidate filenames and bytes.
 
+**Dependent target** — another isolated local database managed with the primary runtime.
+
+**Combined digest** — one checksum binding candidate or cleanup sets across every target.
+
 **Project-owned** — application-specific policy or code that remains outside the package.
 
 **Represented migration** — historical migration whose exact bytes are bound into the

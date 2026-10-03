@@ -114,6 +114,14 @@ rerun doctor and candidates, then execute with the new digest.
 Run the project proof directly against the generated local environment. Fix the app,
 adapter, fixture expectation, or migration; do not weaken the proof to obtain a pass.
 
+## The local application loads a hosted value from `.env`
+
+Rehearsal removes undeclared hosted credentials from the child process environment, but
+frameworks such as Vite may independently read project `.env` files after the process
+starts. Give the configured `startCommand` or framework test mode an explicit safe local
+override for the affected value. Do not delete or rewrite a developer's normal `.env`
+file as part of a rehearsal.
+
 ## Local authentication fails
 
 Confirm the provider is enabled in the dedicated local Supabase config, the allowlisted
