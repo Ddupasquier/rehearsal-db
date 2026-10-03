@@ -22,6 +22,18 @@ public API. Supporting additional database families, package managers, or operat
 systems is not implied by the 0.x contract.
 
 The PostgreSQL target covers timestamped SQL migrations running in a dedicated local
-`postgres` Docker image. It does not imply support for hosted connection strings,
-existing unmanaged servers, ORM-specific nested migration formats, Supabase Storage, or
-Supabase Auth emulation.
+`postgres` Docker image. Runtime commands reject hosted connection strings and existing
+unmanaged servers. The separately opted-in PostgreSQL preparation boundary may use a
+reviewed, short-lived source reader; this does not make a hosted database a runtime
+target. ORM-specific nested migration formats remain unsupported. Supabase Storage and
+Auth behavior apply only to the Supabase runtime.
+
+A primary config may declare flat dependent PostgreSQL or Supabase targets. Each target
+must have its own complete config, immutable baseline, project ID, ports, environment
+file, and artifact directory. Nested dependency graphs and shared runtime ownership are
+not supported.
+
+Executable privacy policy version 2, source-access policy version 1, runtime policy
+version 1, and identity policy version 1 are strict declarative contracts. Unknown
+fields fail closed. They do not imply support for arbitrary transformations, SQL,
+provider administration, consent decisions, or every PostgreSQL extension.

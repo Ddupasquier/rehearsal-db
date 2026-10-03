@@ -1,6 +1,6 @@
 {
   "name": "@rehearsal-db/core",
-  "version": "0.1.0-beta.8",
+  "version": "0.1.0-beta.9",
   "private": false,
   "description": "Safely rehearse PostgreSQL and Supabase migrations against sanitized, production-shaped data.",
   "repository": {
@@ -21,27 +21,26 @@
     "node": ">=24 <25"
   },
   "bin": {
-    "rehearsal": "scripts/operations/rehearsal/rehearsal_cli.mjs"
+    "rehearsal": "src/cli/rehearsal.mjs"
   },
   "exports": {
     ".": {
-      "types": "./scripts/lib/rehearsal/configuration.d.mts",
-      "import": "./scripts/lib/rehearsal/configuration.mjs"
+      "types": "./src/project/configuration.d.mts",
+      "import": "./src/project/configuration.mjs"
     },
-    "./baseline": "./scripts/lib/rehearsal/baseline_artifact.mjs",
-    "./baseline-builder": "./scripts/lib/rehearsal/baseline_builder.mjs",
-    "./diagnostics": "./scripts/lib/rehearsal/diagnostics.mjs",
-    "./migrations": "./scripts/lib/rehearsal/migration_history.mjs",
-    "./process-environment": "./scripts/lib/rehearsal/process_environment.mjs",
-    "./schema": "./scripts/lib/rehearsal/schema_snapshot.mjs",
-    "./service-environment": "./scripts/lib/rehearsal/service_environment.mjs"
+    "./baseline": "./src/baseline/artifact.mjs",
+    "./baseline-builder": "./src/baseline/builder.mjs",
+    "./diagnostics": "./src/shared/diagnostics.mjs",
+    "./migrations": "./src/runtime/migration_history.mjs",
+    "./process-environment": "./src/shared/process_environment.mjs",
+    "./privacy": "./src/baseline/privacy_engine.mjs",
+    "./schema": "./src/baseline/schema_snapshot.mjs",
+    "./service-environment": "./src/runtime/service_environment.mjs",
+    "./source-access": "./src/source/access.mjs"
   },
   "files": [
-    "scripts/lib/environment/local_supabase.mjs",
-    "scripts/lib/rehearsal",
-    "scripts/lib/runtime",
-    "scripts/operations/database/manage_rehearsal_database.mjs",
-    "scripts/operations/rehearsal/rehearsal_cli.mjs",
+    "src",
+    "scripts/runtime/manage_database.mjs",
     "docs/*.md",
     "README.md",
     "BENCHMARKS.md",
@@ -53,15 +52,18 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "test:unit": "vitest run tests/scripts",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration tests/contracts",
     "test:docs": "vitest run tests/contracts/documentationCommands.test.mjs",
-    "test:fixture": "node scripts/operations/rehearsal/prove_independent_fixture.mjs",
-    "test:fixture:postgresql": "node scripts/operations/rehearsal/prove_postgresql_fixture.mjs",
+    "test:fixture": "node scripts/verification/fixtures/supabase.mjs",
+    "test:fixture:postgresql": "node scripts/verification/fixtures/postgresql.mjs",
+    "test:fixture:dependent": "node scripts/verification/fixtures/dependent.mjs",
+    "test:fixture:standalone": "node scripts/verification/fixtures/standalone.mjs",
     "check": "npm run check:syntax && npm run test && npm run format:check && npm run package:audit",
-    "check:syntax": "find scripts tests -type f -name '*.mjs' -exec node --check {} +",
+    "check:syntax": "find src scripts tests -type f -name '*.mjs' -exec node --check {} +",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "package:audit": "node scripts/operations/rehearsal/audit_package.mjs"
+    "package:audit": "node scripts/verification/audit_package.mjs"
   },
   "keywords": [
     "postgresql",
@@ -72,7 +74,8 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@clack/prompts": "^1.8.1"
+    "@clack/prompts": "^1.8.1",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@lydell/node-pty": "^1.2.0-beta.15",

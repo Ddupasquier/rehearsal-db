@@ -6,13 +6,21 @@ import { describe, expect, it } from "vitest";
 
 const execute = promisify(execFile);
 const root = process.cwd();
-const cli = join(root, "scripts/operations/rehearsal/rehearsal_cli.mjs");
+const cli = join(root, "src/cli/rehearsal.mjs");
 const documentedCommands = [
   "guide",
   "setup",
   "init",
   "baseline prepare",
   "baseline create",
+  "privacy key",
+  "source plan",
+  "source apply --confirm-source-access=",
+  "source retire",
+  "baseline refresh",
+  "refresh",
+  "identity plan --identity=",
+  "identity claim --identity=",
   "doctor",
   "support",
   "explain",
@@ -33,17 +41,19 @@ const documentedCommands = [
 
 describe("documented CLI contract", () => {
   it("keeps the command reference aligned with executable help", async () => {
-    const [{ stdout }, commandReference, fixtureProof] = await Promise.all([
-      execute(process.execPath, [cli, "--help"], { cwd: root }),
-      readFile(join(root, "docs/commands.md"), "utf8"),
-      readFile(
-        join(
-          root,
-          "scripts/operations/rehearsal/prove_independent_fixture.mjs",
+    const [{ stdout }, commandReference, fixtureProof, standaloneFixtureProof] =
+      await Promise.all([
+        execute(process.execPath, [cli, "--help"], { cwd: root }),
+        readFile(join(root, "docs/commands.md"), "utf8"),
+        readFile(
+          join(root, "scripts/verification/fixtures/supabase.mjs"),
+          "utf8",
         ),
-        "utf8",
-      ),
-    ]);
+        readFile(
+          join(root, "scripts/verification/fixtures/standalone.mjs"),
+          "utf8",
+        ),
+      ]);
 
     for (const command of documentedCommands) {
       expect(stdout).toContain(command);
@@ -72,6 +82,8 @@ describe("documented CLI contract", () => {
     ]) {
       expect(fixtureProof).toContain(`\"${command}\"`);
     }
+
+    expect(standaloneFixtureProof).toContain('"refresh"');
   });
 
   it("links every primary guide from the README", async () => {
@@ -90,6 +102,9 @@ describe("documented CLI contract", () => {
       "releasing",
       "glossary",
       "roadmap",
+      "standalone-workflow",
+      "runtime-policies",
+      "architecture",
     ]) {
       expect(readme).toContain(`docs/${guide}.md`);
     }
@@ -131,10 +146,12 @@ describe("documented CLI contract", () => {
   });
 
   it("keeps the beginner journey aligned with the guide labels", async () => {
-    const [gettingStarted, cliSource] = await Promise.all([
+    const [gettingStarted, cliEntrySource, guidedSource] = await Promise.all([
       readFile(join(root, "docs/getting-started.md"), "utf8"),
       readFile(cli, "utf8"),
+      readFile(join(root, "src/cli/guided.mjs"), "utf8"),
     ]);
+    const cliSource = `${cliEntrySource}\n${guidedSource}`;
 
     for (const action of [
       "Set the stage",
@@ -157,12 +174,16 @@ describe("documented CLI contract", () => {
       ...baselineGuide.matchAll(/```json\n([\s\S]*?)\n```/gu),
     ].map(([, source]) => JSON.parse(source));
 
-    expect(documentedJson).toHaveLength(2);
+    expect(documentedJson).toHaveLength(3);
     expect(documentedJson[0]).toMatchObject({
       table: "widgets",
       row: { id: 1 },
     });
-    expect(documentedJson[1][0]).toMatchObject({
+    expect(documentedJson[1]).toMatchObject({
+      schema: "app_api",
+      table: "publication_products",
+    });
+    expect(documentedJson[2][0]).toMatchObject({
       version: "20260101000000",
       name: "create_widgets",
     });
@@ -172,11 +193,8 @@ describe("documented CLI contract", () => {
 
   it("respects user-owned container runtime capacity", async () => {
     const [runtimeSource, cleanupSource, configuration] = await Promise.all([
-      readFile(
-        join(root, "scripts/lib/environment/local_supabase.mjs"),
-        "utf8",
-      ),
-      readFile(join(root, "scripts/lib/rehearsal/cleanup.mjs"), "utf8"),
+      readFile(join(root, "src/targets/supabase_environment.mjs"), "utf8"),
+      readFile(join(root, "src/runtime/cleanup.mjs"), "utf8"),
       readFile(join(root, "docs/configuration.md"), "utf8"),
     ]);
 

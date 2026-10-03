@@ -1,0 +1,88 @@
+import { access, readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const root = process.cwd();
+
+const exists = (path) =>
+  access(path)
+    .then(() => true)
+    .catch((error) => {
+      if (error?.code === "ENOENT") return false;
+      throw error;
+    });
+
+const walk = async (directory) => {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await walk(path)));
+    else files.push(path);
+  }
+  return files;
+};
+
+describe("repository structure", () => {
+  it("keeps production code in named domains and removes the legacy layout", async () => {
+    const expectedDomains = [
+      "application",
+      "baseline",
+      "cli",
+      "identity",
+      "project",
+      "runtime",
+      "shared",
+      "source",
+      "targets",
+    ];
+    const actualDomains = (
+      await readdir(join(root, "src"), {
+        withFileTypes: true,
+      })
+    )
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+
+    expect(actualDomains).toEqual(expectedDomains);
+    await expect(exists(join(root, "scripts/lib"))).resolves.toBe(false);
+    await expect(exists(join(root, "scripts/operations"))).resolves.toBe(false);
+  });
+
+  it("keeps shipped source independent from tests and repository-only scripts", async () => {
+    const sources = (await walk(join(root, "src"))).filter((path) =>
+      path.endsWith(".mjs"),
+    );
+    for (const path of sources) {
+      const content = await readFile(path, "utf8");
+      expect(content).not.toMatch(/(?:^|\/)tests\//u);
+      expect(content).not.toMatch(/scripts\/verification/u);
+    }
+  });
+
+  it("keeps public exports inside shipped source", async () => {
+    const manifest = JSON.parse(
+      await readFile(join(root, "package.json"), "utf8"),
+    );
+    const targets = Object.values(manifest.exports).flatMap((declaration) =>
+      typeof declaration === "string"
+        ? [declaration]
+        : Object.values(declaration),
+    );
+    for (const target of targets) {
+      expect(target).toMatch(/^\.\/src\//u);
+      await expect(exists(join(root, target))).resolves.toBe(true);
+    }
+  });
+
+  it("keeps CLI modules focused enough to review independently", async () => {
+    const modules = (await readdir(join(root, "src/cli")))
+      .filter((file) => file.endsWith(".mjs"))
+      .sort();
+
+    for (const module of modules) {
+      const source = await readFile(join(root, "src/cli", module), "utf8");
+      expect(source.split("\n").length, module).toBeLessThanOrEqual(1_000);
+    }
+  });
+});

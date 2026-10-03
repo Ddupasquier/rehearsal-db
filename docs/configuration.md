@@ -44,17 +44,45 @@ export default defineRehearsalConfig({
     artifactDirectory: ".rehearsal",
     sanitizationPolicy: "infrastructure/rehearsal/sanitization-policy.json",
   },
+  // Optional, separately approved production-shaped preparation.
+  // preparation: {
+  //   sourcePolicy: "infrastructure/rehearsal/source-access-policy.json",
+  //   privacyKey: ".rehearsal/secrets/privacy.key",
+  //   batchRows: 500,
+  //   maximumRows: 1000000,
+  //   maximumBytes: 2147483648,
+  //   diskHeadroomBytes: 67108864,
+  // },
+  // runtimePolicy: "infrastructure/rehearsal/runtime-policy.json",
+  // Optional signup defaults, role/reference transfer, Storage paths, and token checks.
+  // identityPolicy: "infrastructure/rehearsal/identity-policy.json",
   containerRuntime: {
     autoStartColima: true,
   },
   cleanup: {
     retainBaselineGenerations: 2,
   },
+  // Optional. Each dependent database uses another complete Rehearsal config.
+  // dependentTargets: [
+  //   {
+  //     name: "publication-api",
+  //     configPath: "rehearsal.publication.config.mjs",
+  //     prepareCommand: "npm run rehearsal:prepare-publication",
+  //   },
+  // ],
   application: {
     // CHECK: replace these when the detected package scripts are not correct.
     startCommand: "npm run dev:rehearsal",
     proofCommand: "npm run test:rehearsal",
     environmentFile: ".rehearsal/runtime.env",
+    // environmentVariables: { DATABASE_URL: "primary:DATABASE_URL" },
+    readiness: {
+      url: "http://localhost:5175/health",
+      expectedStatus: 200,
+      timeoutSeconds: 30,
+    },
+    // Add at least one real positive and one negative before enabling.
+    // httpProofs: [],
   },
   runtime: {
     target: "supabase",
@@ -86,6 +114,31 @@ All paths resolve inside the consuming project. The artifact directory must be n
 Rehearsal never overwrites this config. To start over, move the existing file somewhere
 safe, run setup again, and compare the two files before deleting either one.
 
+`preparation.privacyKey` must stay inside `.rehearsal`; it is ignored and owner-readable
+only. Source, runtime, and identity policy files are declarations that may be reviewed in
+source control. They must never contain passwords, tokens, production URLs, raw owner
+identifiers, SQL, or executable code.
+
+## Optional source preparation
+
+`preparation` enables the separate `source` and `baseline refresh` commands. It does not
+change ordinary `run`, `reset`, `migrate`, or `verify` behavior.
+
+- `sourcePolicy` declares the hashed target identity, temporary roles, exact export
+  columns, public/approved-owner row scope, migration ledger, and optional Storage scope.
+- `privacyKey` stores the local keyed-pseudonym secret.
+- `batchRows`, `maximumRows`, and `maximumBytes` bound extraction.
+- `diskHeadroomBytes` prevents activation when the copy cannot be built safely.
+
+See [Production source](production-source.md) for complete examples and the exact
+approval sequence.
+
+`runtimePolicy` replaces common restore adapters with reviewed schemas, allowlisted
+extensions, managed triggers, local-only singleton rows, and structural expectations.
+`identityPolicy` declares a hashed verified email, copied placeholder, safe signup
+defaults, required role/reference transfers, Storage path rewrites, and token checks. See
+[Runtime and identity policies](runtime-policies.md).
+
 ## Container runtime and cleanup
 
 ```ts
@@ -102,9 +155,67 @@ is running and `autoStartColima` is `true`, Rehearsal may run `colima start`. It
 the user's Colima CPU, memory, and disk settings and never changes them. Set the field to
 `false` when you prefer to start Docker or Colima yourself.
 
-`retainBaselineGenerations` controls how many immutable baseline generations survive
-`rehearsal cleanup`; it must be at least 1. Runtime deletion and shared-image inspection
-are command choices, not automatic retention settings. See [CLI commands](commands.md).
+`retainBaselineGenerations` controls how many immutable baseline generations survive an
+approved `rehearsal refresh` or `rehearsal cleanup`; it must be at least 1. Refresh shows
+the exact old generations before confirmation and never removes the active baseline
+before its replacement is verified. Runtime deletion outside refresh and shared-image
+inspection remain explicit command choices. See [CLI commands](commands.md).
+
+## Dependent databases
+
+Use `dependentTargets` when one local application needs another database, such as a
+publication or read-model database:
+
+```ts
+dependentTargets: [
+  {
+    name: "publication-api",
+    configPath: "rehearsal.publication.config.mjs",
+    prepareCommand: "npm run rehearsal:prepare-publication",
+  },
+],
+```
+
+The referenced file is an ordinary complete Rehearsal config. Give it its own runtime
+project ID, ports, application environment file, and artifact folder ending in
+`.rehearsal`, for example `infrastructure/rehearsal/publication/.rehearsal`. Create and
+review its baseline separately:
+
+The easiest starting point is to copy the generated primary config, then change the
+project name, migration folder, artifact folder, environment file, runtime project ID,
+ports, and proof command. Keep the same fail-closed safety settings. Omit
+`prepareCommand` when the dependent baseline is already ready to test. Rehearsal never
+copies rows between databases automatically. A dependent Supabase target also needs its
+own local `rehearsalConfig` file with matching dedicated ports. Preparation must be safe
+to rerun because `run`, `reset`, and `migrate` each invoke it after the databases are
+ready.
+
+```bash
+npx rehearsal baseline create \
+  --config=rehearsal.publication.config.mjs \
+  --records=path/to/publication-data.ndjson \
+  --ledger=path/to/publication-ledger.json
+```
+
+The primary `doctor`, `explain`, `candidates`, lifecycle, and cleanup commands then cover
+the whole stack. Rehearsal restores and migrates the primary target first, followed by
+dependents in the listed order. For `run`, `reset`, and `migrate`, it next runs each
+`prepareCommand`. On `run`, it executes each dependent config's
+`application.proofCommand` before the primary proof. `stop` and `discard` run in reverse
+order. Cleanup verifies every target's exact preview before removing any selected
+resource.
+
+Legacy preparation commands receive paths—not credentials—in environment variables:
+`REHEARSAL_PRIMARY_ENV_FILE` and
+`REHEARSAL_DEPENDENT_<UPPERCASE_NAME>_ENV_FILE`. New integrations should prefer an
+already prepared dependent baseline or the package's declarative source/privacy
+workflow. `prepareCommand` remains compatible for existing projects but is ordinary
+project code and must be reviewed. Nested dependencies are rejected.
+
+The dependent proof must include at least one known successful lookup and appropriate
+negative controls, such as unauthorized, malformed, withheld, or missing records. A
+response that merely avoids a server error does not prove that eligible data was
+published or can be found.
 
 ## Supabase service environment
 
@@ -166,20 +277,40 @@ the exactly named container and volume carrying the matching project label.
 Plain PostgreSQL does not restore Supabase Storage assets or synthesize Supabase Auth
 users.
 
-Project-owned runtime adapters remain the place for application-specific setup and
-checks; they do not replace the database driver.
+Declarative runtime policies are preferred for supported schema prerequisites and
+checks. Existing project-owned adapters remain compatible but do not replace the
+database driver.
 
 ## Application proof
 
-`proofCommand` is mandatory and project-owned. It should test restored relationships,
-authentication shape, critical reads, and candidate-migration behavior. A command that
-only checks whether the home page returns 200 is usually too weak.
+`startCommand` is the ordinary application command. When `readiness` is present,
+`rehearsal run` launches it with a minimal environment, waits for the exact local status,
+runs proofs, and stops only that child process group. `environmentVariables` explicitly
+maps generated runtime values such as `primary:DATABASE_URL`; undeclared inherited
+hosted secrets are not passed through.
+
+Your application framework may still load `.env` files from the project directory on
+its own. Rehearsal cannot intercept that file loading. If a local proof could otherwise
+pick up a hosted URL, token, CAPTCHA key, or similar value, set an explicit safe local
+value in the configured `startCommand` or the framework's test-mode configuration.
+Environment filtering is a process boundary, not an operating-system or file-access
+firewall.
+
+Supabase targets write validated loopback-only `DATABASE_URL`, `PGHOST`, `PGPORT`,
+`PGDATABASE`, `PGUSER`, and `PGPASSWORD` values into the ignored runtime environment.
+Package-owned identity commands use that same local connection; an adapter is not
+required to provide it.
+
+`proofCommand` remains an ordinary project test command. Optional `httpProofs` add
+package-owned checks and must include real positive and negative expectations. A 200,
+404, 401, empty result, or non-5xx response is not a positive unless it matches the
+declared status and body assertion.
 
 ## Runtime adapters
 
-Most projects do not need an adapter. Use one only for schema-specific restore setup,
-synthetic local identities, explicit generated environment variables, or post-restore
-invariants. See [adapters](adapters.md).
+Existing adapters remain compatible, but new projects should first use `runtimePolicy`,
+`identityPolicy`, environment mappings, and HTTP proofs. Use an adapter only for a shape
+the documented declarations explicitly reject. See [adapters](adapters.md).
 
 ## Advanced library entry points
 
@@ -191,7 +322,9 @@ may use these explicit subpaths:
 - `@rehearsal-db/core/schema`
 - `@rehearsal-db/core/diagnostics`
 - `@rehearsal-db/core/process-environment`
+- `@rehearsal-db/core/privacy`
 - `@rehearsal-db/core/service-environment`
+- `@rehearsal-db/core/source-access`
 
 These advanced entry points are ESM JavaScript APIs in the first beta. The root
 configuration and sanitization API has TypeScript declarations; the advanced subpaths do

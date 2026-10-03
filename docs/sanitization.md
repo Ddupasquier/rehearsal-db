@@ -1,7 +1,7 @@
 # Sanitization policy
 
-Rehearsal deliberately does not decide what your application may copy. The consuming
-project owns an exhaustive, reviewable policy for its export surface.
+Rehearsal never decides what your application may copy. The project owner reviews an
+exhaustive policy; the package validates and executes the supported recipes.
 
 Every exported field should receive one action:
 
@@ -19,6 +19,10 @@ whether it is an identity column, and its foreign-key target or explicit absence
 draft uses `REVIEW REQUIRED` placeholders and cannot be activated until they are
 replaced and the `draft` marker is removed.
 
+Tables default to the `public` schema. Add `"schema": "app_api"` beside `name`
+for another schema. Schema plus table is the identity, so two schemas may safely contain
+tables with the same name.
+
 In an interactive terminal, the guided **Review the script** action works table by table.
 For larger tables, a human can explicitly apply safe defaults (`REPLACE`, `NEVER`
 generated, `NO` identity, and no foreign key), then review only exceptions. Likely
@@ -28,8 +32,20 @@ labeled as sensitive, every saved field remains classified, and no preset is sil
 applied. The reviewer validates the completed policy and refuses to overwrite a draft
 changed during the session.
 
-The package exports `validateSanitizationCoverage` and
-`applySanitizationAction` as generic primitives:
+Two policy versions exist:
+
+- Version 1 describes data that a project has already made safe. It remains supported
+  for synthetic/local inputs and existing baselines.
+- Version 2 is required by `baseline refresh`. It adds bounded declarative recipes so
+  Rehearsal can sanitize without project callbacks.
+
+Version 2 supports keyed UUID, email, text, and integer pseudonyms; explicit constant
+replacement; bounded date shifting; and exhaustively classified JSON objects. Unknown
+tables, columns, nested keys, formats, recipes, or missing fields fail closed. It never
+evaluates JavaScript or SQL from the policy.
+
+The package still exports `validateSanitizationCoverage` and
+`applySanitizationAction` for existing version 1 preparation tools:
 
 ```ts
 import {
@@ -50,15 +66,15 @@ const safeValue = applySanitizationAction({
 ```
 
 Coverage validation requires a one-to-one table and column match: missing and unknown
-entries both fail. The package supplies the operation contract; the project supplies
-the schema inventory, keys, replacements, and derivation logic.
+entries both fail. New standalone preparation should use the version 2 engine described
+in [Production source](production-source.md).
 
 ## Stable identity
 
 Use keyed, deterministic pseudonyms when relationships must survive across tables.
-Keep the key outside source control and outside the final baseline. The same source ID
+Keep the key under `.rehearsal`, outside source control and the final baseline. The same source ID
 should map consistently within a generation, while the original value cannot be
-recovered from the artifact.
+recovered from the artifact. The manifest records only the key fingerprint.
 
 ## High-risk fields
 

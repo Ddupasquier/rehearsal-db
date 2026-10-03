@@ -1,39 +1,41 @@
 # Next steps
 
-The current Rehearsal beta supports guided Supabase and ordinary PostgreSQL rehearsals.
-The next work should be driven by real project use before adding more database targets.
+Rehearsal supports guided Supabase and ordinary PostgreSQL migration rehearsals. The
+current development track removes the need for consumer-owned Rehearsal engines while
+keeping application meaning and privacy decisions project-owned.
 
-## 1. Complete the first real-project acceptance run
+## Standalone workflow
 
-Update an existing Supabase application to `@rehearsal-db/core@beta` on its own clean
-branch, then prove:
+The implementation sequence is dependency-driven:
 
-- `doctor` reports `READY`;
-- the intended candidate migrations are the only candidates;
-- a complete rehearsal and the application proof pass;
-- verify, reset, stop, and restart behave as expected.
+1. exact temporary source access and retirement;
+2. bounded coherent extraction and executable privacy rules;
+3. approved Storage assets and declarative restore prerequisites;
+4. verified local identity association;
+5. ordinary application launch and meaningful positive/negative proofs;
+6. onboarding, upgrade safety, and exact packaged-artifact acceptance.
 
-Record any confusing instruction or unnecessary manual step. Those findings should guide
-the next usability changes.
+These capabilities stay behind separate review boundaries. Normal runtime commands never
+receive source credentials. Source-side writes, package publication, consumer cleanup,
+and real provider observation each require their own authorization.
 
-## 2. Simplify baseline onboarding
+Track the full breakdown in
+[standalone roadmap issue #38](https://github.com/Ddupasquier/rehearsal-db/issues/38).
 
-Make safe records, migration evidence, and sanitization-policy review easier for a new
-developer. Reduce manual file preparation without weakening review, checksum, or
-local-only safety rules.
+## Acceptance still required
 
-## 3. Validate another ordinary PostgreSQL project
+- Install the exact packed candidate in clean Supabase and PostgreSQL consumers.
+- Exercise two unrelated synthetic schemas, bounded large data, interruption, drift,
+  invalid migrations, identities, images, persistence, reset, and cleanup.
+- Run the released package in the real reporting consumer and record positives and
+  negatives.
+- Directly observe any claimed Google account-picker/callback and unfamiliar-developer
+  onboarding behavior; automation cannot invent that evidence.
+- Remove consumer integration code only after its replacement passes and that deletion
+  is separately approved.
 
-Use a non-Supabase application with real migration history and a synthetic baseline.
-Fix general PostgreSQL problems before adding provider-specific behavior.
+## Later database targets
 
-## 4. Consider PostgreSQL service compatibility
-
-Only after the ordinary PostgreSQL workflow is reliable, evaluate compatibility needs
-for individual PostgreSQL services. Keep rehearsals disposable and local; hosted database
-execution remains outside the current safety model.
-
-## Later
-
-MySQL, MongoDB, and unrelated database families require different migration and restore
-behavior. They remain out of scope until the PostgreSQL experience is proven and stable.
+After the PostgreSQL family is stable in real projects, evaluate individual PostgreSQL
+services. MySQL, MongoDB, and unrelated database families require different migration,
+restore, and safety behavior and remain out of scope.

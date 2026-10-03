@@ -11,6 +11,8 @@ export default {
     artifactDirectory: ".rehearsal",
     sanitizationPolicy: "rehearsal/sanitization-policy.json",
   },
+  runtimePolicy: "rehearsal/runtime-policy.json",
+  identityPolicy: "rehearsal/identity-policy.json",
   application: {
     startCommand: "npm run dev",
     proofCommand: "npm run proof",

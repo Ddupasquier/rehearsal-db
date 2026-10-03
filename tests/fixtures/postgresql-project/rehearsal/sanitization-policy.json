@@ -28,6 +28,34 @@
           "foreignKey": null
         }
       ]
+    },
+    {
+      "schema": "blendcalc_api",
+      "name": "widgets",
+      "sourceRows": "STREAM AND SANITIZE",
+      "columns": [
+        {
+          "name": "id",
+          "action": "KEEP",
+          "generated": "NEVER",
+          "identity": "YES",
+          "foreignKey": null
+        },
+        {
+          "name": "name",
+          "action": "REPLACE",
+          "generated": "NEVER",
+          "identity": "NO",
+          "foreignKey": null
+        },
+        {
+          "name": "created_at",
+          "action": "DERIVE",
+          "generated": "NEVER",
+          "identity": "NO",
+          "foreignKey": null
+        }
+      ]
     }
   ]
 }

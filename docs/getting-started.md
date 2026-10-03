@@ -1,7 +1,7 @@
 # Getting started
 
 This guide sets up Rehearsal in an existing project. It creates a disposable database on
-your computer and never connects to a hosted database.
+your computer. Normal setup and rehearsal commands never connect to a hosted database.
 
 Want to experiment first? Use the [safe hands-on tutorial](tutorial.md).
 
@@ -111,9 +111,19 @@ A successful run:
 1. restores the baseline;
 2. applies only the migrations you approved;
 3. verifies the local database;
-4. runs your application proof.
+4. launches the ordinary application when readiness is configured;
+5. runs the ordinary test command and declared positive/negative HTTP proofs;
+6. stops only the application process it launched.
 
 Your original baseline remains unchanged.
+
+If a source owner later approves a production-shaped copy, use the separate workflow in
+[Optional production-shaped preparation](production-source.md). Do not add source
+credentials to the normal config or runtime environment.
+
+Once temporary source access is ready, `npx rehearsal refresh` previews the safe
+replacement workflow. It means “get a newly verified copy.” By contrast, `reset` means
+“discard local edits and restore the copy I already have.”
 
 ## 6. Test and clean up
 

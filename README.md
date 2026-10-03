@@ -4,8 +4,14 @@ Rehearsal tests PostgreSQL and Supabase migrations on your computer before you r
 anywhere important. It restores safe test data into a disposable local database, applies
 only the migrations you approve, and runs your project's own test command.
 
-Rehearsal never connects to a hosted database. It is a migration-testing tool, not a
-backup system or a production deployment tool.
+Projects with a separate publication or read-model database can declare it as a
+dependent target. Rehearsal then manages the complete isolated runtime stack.
+
+Normal rehearsal commands never connect to a hosted database. An optional, separately
+approved preparation workflow can create a short-lived read-only export surface, stream
+it through a reviewed privacy policy, and retire the access again. It is never part of
+`run`, `reset`, `migrate`, or application launch. Rehearsal is not a backup system or a
+production deployment tool.
 
 > Rehearsal is in public beta. Use it on a branch and keep a working backup of your
 > project.
@@ -52,7 +58,8 @@ Rehearsal itself never downloads a database image during a rehearsal.
 - **Runtime:** the disposable local database where the rehearsal happens.
 
 The baseline may contain synthetic data or properly sanitized production-shaped data.
-Start with synthetic data. Rehearsal does not copy or sanitize production data for you.
+Start with synthetic data. Real source preparation is opt-in and requires separate
+source-owner approval; see [Standalone workflow](docs/standalone-workflow.md).
 
 ## The normal workflow
 
@@ -62,6 +69,11 @@ Start with synthetic data. Rehearsal does not copy or sanitize production data f
 4. Review the exact candidate migration list.
 5. Run the rehearsal and your application proof.
 6. Test the local application, then verify, reset, stop, or discard the runtime.
+
+For an approved production-shaped copy, the optional sequence is `source plan`, `source
+apply`, `refresh`, and `source retire`. `refresh` verifies the replacement before it
+resets the local runtime or removes an old copy. Every source-side or identity change has
+its own exact confirmation digest.
 
 When local disk space gets tight, choose **Clean up disk space** in the guide. Rehearsal
 previews old baseline generations first and keeps runtime or shared-image removal
@@ -85,15 +97,16 @@ loads.
 
 ## Supported today
 
-| Environment                                 | Support                |
-| ------------------------------------------- | ---------------------- |
-| Supabase CLI projects                       | Supported              |
-| Ordinary PostgreSQL in local Docker         | Supported              |
-| macOS and Linux                             | Supported              |
-| WSL                                         | Experimental           |
-| Native Windows                              | Not yet supported      |
-| Hosted database URLs                        | Intentionally rejected |
-| MySQL, MongoDB, and other database families | Not yet supported      |
+| Environment                                      | Support                |
+| ------------------------------------------------ | ---------------------- |
+| Supabase CLI projects                            | Supported              |
+| Ordinary PostgreSQL in local Docker              | Supported              |
+| macOS and Linux                                  | Supported              |
+| WSL                                              | Experimental           |
+| Native Windows                                   | Not yet supported      |
+| Hosted database URLs                             | Intentionally rejected |
+| Optional read-only PostgreSQL source preparation | Explicit opt-in beta   |
+| MySQL, MongoDB, and other database families      | Not yet supported      |
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the exact support contract.
 
@@ -101,6 +114,7 @@ See [COMPATIBILITY.md](COMPATIBILITY.md) for the exact support contract.
 
 Start here:
 
+- [Documentation map](docs/README.md) — find the right guide quickly
 - [Getting started](docs/getting-started.md) — set up your own project
 - [Safe hands-on tutorial](docs/tutorial.md) — try the full flow in a disposable project
 - [Troubleshooting](docs/troubleshooting.md) — fix common setup problems
@@ -115,7 +129,10 @@ Reference:
 - [Security model](docs/security-model.md)
 - [Project adapters](docs/adapters.md)
 - [Production data boundary](docs/production-source.md)
-- [Glossary and architecture](docs/glossary.md)
+- [Standalone workflow and security gates](docs/standalone-workflow.md)
+- [Runtime and local identity policies](docs/runtime-policies.md)
+- [Glossary](docs/glossary.md)
+- [Repository architecture](docs/architecture.md)
 - [Release process](docs/releasing.md)
 
 ## Getting support
@@ -137,6 +154,7 @@ Use Node.js 24, run `npm ci`, then run:
 
 ```bash
 npm run check
+npm run test:fixture:standalone
 npm run test:fixture:postgresql
 npm run test:fixture
 ```

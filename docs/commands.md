@@ -30,7 +30,59 @@ bare `npx rehearsal` prints help instead of waiting for input.
 | `npx rehearsal baseline create --records=<path> --ledger=<path>`  | Create and activate a baseline from safe local inputs. |
 
 Add `--assets=<manifest.json>` to `baseline create` only for approved local Supabase
-Storage files. Baseline commands never extract data or connect to another database.
+Storage files. `baseline create` and `baseline prepare` are local-only.
+
+## Optional source preparation
+
+These commands are separate from ordinary rehearsals. Configure `preparation` only after
+reviewing [the standalone security contract](standalone-workflow.md).
+
+| Command                                                       | What it does                                                         |
+| ------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `npx rehearsal privacy key`                                   | Preview the owner-only pseudonym-key path.                           |
+| `npx rehearsal privacy key --write`                           | Create the key once; refuses to replace an existing key.             |
+| `npx rehearsal source plan`                                   | Preview the exact temporary reader, views, columns, and asset scope. |
+| `npx rehearsal source apply --confirm-source-access=<sha256>` | Create only the reviewed, time-limited source access.                |
+| `npx rehearsal baseline refresh`                              | Replace only the baseline from a reviewed source.                    |
+| `npx rehearsal refresh`                                       | Preview a complete safe refresh of the baseline and local runtime.   |
+| Add `--confirm-refresh=<sha256>`                              | Create the replacement, reset locally, and prune listed old copies.  |
+| `npx rehearsal source retire`                                 | Preview exact reader/view/credential retirement.                     |
+| Add `--confirm-source-retirement=<sha256>`                    | Apply that retirement plan and verify the exact object inventory.    |
+
+Source credentials are read from environment variables named in the reviewed source
+policy. Never paste a connection string into an argument. `baseline refresh` leaves the
+previous active baseline and edited runtime untouched when it fails. It does not reset
+the runtime.
+
+Use `refresh` for the normal end-to-end job. It first previews the exact source receipt,
+configuration receipts, runtime targets, retention rule, and old generations that may be
+removed. After exact confirmation, it builds and verifies a replacement beside the
+current baseline, resets the complete local runtime stack, then removes only the listed
+old generations. If replacement or runtime verification fails, Rehearsal reactivates the
+previous baseline and restores the previous runtime. Source-access retirement remains a
+separate approval.
+
+In short: `refresh` gets a new source copy; `reset` restores the copy you already have;
+`run` tests pending migrations against that copy.
+
+## Local identity association
+
+After an ordinary local Google or email sign-in creates a verified local Auth identity:
+
+```bash
+npx rehearsal identity plan --identity=approved-owner
+npx rehearsal identity claim --identity=approved-owner \
+  --confirm-identity=<sha256>
+```
+
+The first command shows only hashes and declared reference counts. The second updates
+only the reviewed local relational, JSON, Storage-owner, and claim locations in one
+transaction. It rejects hosted database URLs, wrong or unverified people, ambiguity, and
+stale confirmation digests.
+
+If a runtime-policy seed moves with that identity, declare its `identityAssociation` in
+the runtime policy. Later `verify` calls then require the transferred row instead of the
+obsolete placeholder key.
 
 ## Check and inspect
 
@@ -52,7 +104,7 @@ and process exit code, not parse human-facing text.
 
 | Command                                               | What it does                                                        |
 | ----------------------------------------------------- | ------------------------------------------------------------------- |
-| `npx rehearsal run --confirm-candidates=<sha256>`     | Reset, apply the exact candidates, verify, and run the app proof.   |
+| `npx rehearsal run --confirm-candidates=<sha256>`     | Reset, apply exact candidates, launch the app, and run its proofs.  |
 | `npx rehearsal migrate --confirm-candidates=<sha256>` | Apply the exact candidates without resetting existing runtime data. |
 | `npx rehearsal start`                                 | Start an existing verified runtime.                                 |
 | `npx rehearsal verify`                                | Verify the current runtime and receipt.                             |
@@ -91,18 +143,23 @@ belonging to other projects are never included. This follows
 
 ## Common options
 
-| Option                          | Meaning                                                          |
-| ------------------------------- | ---------------------------------------------------------------- |
-| `--json`                        | Return the versioned machine-readable result.                    |
-| `--verbose`                     | Show more safe detail.                                           |
-| `--debug`                       | Show the most diagnostic detail; still review it before sharing. |
-| `--plain`                       | Disable decorative interactive prompts.                          |
-| `--config=<path>`               | Use only this config for planning and every runtime action.      |
-| `--target=supabase\|postgresql` | Choose the setup target.                                         |
-| `--include-runtime`             | Include this project's runtime in a cleanup preview.             |
-| `--include-images`              | Include older unused Supabase images in a cleanup preview.       |
-| `--confirm-cleanup=<digest>`    | Confirm the exact cleanup set printed by the preview.            |
-| `--write`                       | Apply a setup, policy, or cleanup preview.                       |
+| Option                                 | Meaning                                                          |
+| -------------------------------------- | ---------------------------------------------------------------- |
+| `--json`                               | Return the versioned machine-readable result.                    |
+| `--verbose`                            | Show more safe detail.                                           |
+| `--debug`                              | Show the most diagnostic detail; still review it before sharing. |
+| `--plain`                              | Disable decorative interactive prompts.                          |
+| `--config=<path>`                      | Use only this config for planning and every runtime action.      |
+| `--target=supabase\|postgresql`        | Choose the setup target.                                         |
+| `--include-runtime`                    | Include this project's runtime in a cleanup preview.             |
+| `--include-images`                     | Include older unused Supabase images in a cleanup preview.       |
+| `--confirm-cleanup=<digest>`           | Confirm the exact cleanup set printed by the preview.            |
+| `--confirm-source-access=<digest>`     | Confirm one exact temporary source-access plan.                  |
+| `--confirm-source-retirement=<digest>` | Confirm exact source-access retirement.                          |
+| `--confirm-refresh=<digest>`           | Confirm an exact refresh, runtime reset, and old-copy removal.   |
+| `--identity=<name>`                    | Choose one declared local identity association.                  |
+| `--confirm-identity=<digest>`          | Confirm that exact local identity plan.                          |
+| `--write`                              | Apply a setup, policy, or cleanup preview.                       |
 
 Run `npx rehearsal --help` to print the command list available in your installed version.
 
@@ -110,3 +167,8 @@ When a project has more than one config, pass `--config=<path>` on every command
 non-default one. Rehearsal keeps that exact config selected through status, run, reset,
 start, migrate, verify, stop, discard, and cleanup; it will not fall back to
 `rehearsal.config.mjs` during a runtime action.
+
+When the selected config declares `dependentTargets`, the ordinary `doctor`, `explain`,
+`candidates`, `run`, `start`, `migrate`, `reset`, `status`, `verify`, `stop`, `discard`,
+and `cleanup` commands cover the complete runtime stack. Candidate and cleanup changes
+use one combined digest, so automation approves the exact cross-target set.

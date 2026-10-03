@@ -15,6 +15,20 @@ safe row.
 { "table": "widgets", "row": { "id": 1, "name": "Synthetic Widget" } }
 ```
 
+`public` is the default schema. Name another schema explicitly when needed:
+
+```json
+{
+  "schema": "app_api",
+  "table": "publication_products",
+  "row": { "id": 1 }
+}
+```
+
+Use the same optional `schema` on that table in the sanitization policy. Rehearsal keeps
+same-named tables in different schemas separate. An undeclared schema or table is
+rejected.
+
 Use synthetic or reviewed sanitized values. A `.json` array is not NDJSON and will be
 rejected.
 
@@ -67,7 +81,14 @@ npx rehearsal baseline create \
 ```
 
 Add `--assets=rehearsal/assets.json` only when using approved Supabase Storage files.
-Rehearsal validates everything and shows counts before activation. It never extracts data.
+Rehearsal validates everything and shows counts before activation. These commands read
+project-local files only.
+
+The separately enabled `baseline refresh` command can stream a reviewed source through
+privacy policy version 2. It stages a private generation, verifies capacity, counts,
+checksums, source schema, migration evidence, privacy coverage, and drift, then switches
+the active symlink atomically. Failure or interruption removes the staged generation and
+preserves the prior active baseline and edited runtime.
 
 ## Why historical migrations are locked
 
