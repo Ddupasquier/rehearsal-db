@@ -9,6 +9,8 @@ import { chmod, mkdir, open, readFile, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 const IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/u;
+const BINDING_NAME = /^[a-z][a-z0-9-]{0,62}$/u;
+const ENVIRONMENT_KEY = /^[A-Z][A-Z0-9_]*$/u;
 const HEX_64 = /^[a-f0-9]{64}$/u;
 const ACTIONS = new Set([
   "KEEP",
@@ -18,8 +20,16 @@ const ACTIONS = new Set([
   "DERIVE",
 ]);
 const PSEUDONYM_FORMATS = new Set(["uuid", "email", "text", "integer"]);
-const DERIVATION_KINDS = new Set(["date-shift", "json-object"]);
+const DERIVATION_KINDS = new Set([
+  "date-shift",
+  "json-object",
+  "json-array",
+  "approved-owner",
+]);
 const KEY_BYTES = 32;
+const DEFAULT_JSON_MAXIMUM_BYTES = 65_536;
+const DEFAULT_JSON_MAXIMUM_DEPTH = 8;
+const MAXIMUM_POLICY_DEPTH = 16;
 
 const isObject = (value) =>
   value !== null &&
@@ -54,7 +64,37 @@ const positiveInteger = (value, label, maximum = Number.MAX_SAFE_INTEGER) => {
   return value;
 };
 
-const validateRecipe = (action, recipe, label) => {
+const validateNestedDeclaration = (
+  declaration,
+  label,
+  { allowRequired = false, depth = 0 } = {},
+) => {
+  if (!isObject(declaration)) throw new Error(`${label} must be an object.`);
+  knownKeys(
+    declaration,
+    allowRequired ? ["action", "recipe", "required"] : ["action", "recipe"],
+    label,
+  );
+  if (
+    allowRequired &&
+    declaration.required !== undefined &&
+    typeof declaration.required !== "boolean"
+  ) {
+    throw new Error(`${label}.required must be true or false.`);
+  }
+  const action = String(declaration.action ?? "").toUpperCase();
+  if (!ACTIONS.has(action)) throw new Error(`${label}.action is unsupported.`);
+  return Object.freeze({
+    action,
+    recipe: validateRecipe(action, declaration.recipe, label, depth + 1),
+    ...(allowRequired ? { required: declaration.required !== false } : {}),
+  });
+};
+
+const validateRecipe = (action, recipe, label, depth = 0) => {
+  if (depth > MAXIMUM_POLICY_DEPTH) {
+    throw new Error(`${label}.recipe exceeds the supported nesting depth.`);
+  }
   if (action === "KEEP" || action === "EXCLUDE") {
     if (recipe !== undefined && recipe !== null) {
       throw new Error(`${label}.recipe is not allowed for ${action}.`);
@@ -97,55 +137,141 @@ const validateRecipe = (action, recipe, label) => {
     JSON.stringify(recipe.value);
     return Object.freeze({ kind: "constant", value: recipe.value });
   }
-  knownKeys(recipe, ["kind", "days", "fields", "allowNull"], `${label}.recipe`);
+  knownKeys(
+    recipe,
+    [
+      "kind",
+      "days",
+      "fields",
+      "items",
+      "approved",
+      "otherwise",
+      "allowNull",
+      "maximumBytes",
+      "maximumDepth",
+      "maximumItems",
+    ],
+    `${label}.recipe`,
+  );
   if (!DERIVATION_KINDS.has(recipe.kind)) {
     throw new Error(`${label}.recipe.kind is unsupported.`);
   }
   if (recipe.kind === "date-shift") {
     const days = positiveInteger(recipe.days, `${label}.recipe.days`, 3_650);
-    if (recipe.fields !== undefined || recipe.allowNull !== undefined) {
+    if (Object.keys(recipe).some((key) => !["kind", "days"].includes(key))) {
       throw new Error(
         `${label}.recipe contains fields not used by date-shift.`,
       );
     }
     return Object.freeze({ kind: "date-shift", days });
   }
-  if (!isObject(recipe.fields) || Object.keys(recipe.fields).length === 0) {
-    throw new Error(`${label}.recipe.fields must classify JSON object keys.`);
+  if (recipe.kind === "approved-owner") {
+    if (
+      Object.keys(recipe).some(
+        (key) => !["kind", "approved", "otherwise"].includes(key),
+      )
+    ) {
+      throw new Error(
+        `${label}.recipe contains fields not used by approved-owner.`,
+      );
+    }
+    return Object.freeze({
+      kind: "approved-owner",
+      approved: validateNestedDeclaration(
+        recipe.approved,
+        `${label}.recipe.approved`,
+        { depth },
+      ),
+      otherwise: validateNestedDeclaration(
+        recipe.otherwise,
+        `${label}.recipe.otherwise`,
+        { depth },
+      ),
+    });
   }
   if (recipe.allowNull !== undefined && typeof recipe.allowNull !== "boolean") {
     throw new Error(`${label}.recipe.allowNull must be true or false.`);
   }
+  const bounds = Object.freeze({
+    maximumBytes: positiveInteger(
+      recipe.maximumBytes ?? DEFAULT_JSON_MAXIMUM_BYTES,
+      `${label}.recipe.maximumBytes`,
+      16_777_216,
+    ),
+    maximumDepth: positiveInteger(
+      recipe.maximumDepth ?? DEFAULT_JSON_MAXIMUM_DEPTH,
+      `${label}.recipe.maximumDepth`,
+      MAXIMUM_POLICY_DEPTH,
+    ),
+  });
+  if (recipe.kind === "json-array") {
+    if (
+      Object.keys(recipe).some(
+        (key) =>
+          ![
+            "kind",
+            "items",
+            "allowNull",
+            "maximumBytes",
+            "maximumDepth",
+            "maximumItems",
+          ].includes(key),
+      )
+    ) {
+      throw new Error(
+        `${label}.recipe contains fields not used by json-array.`,
+      );
+    }
+    return Object.freeze({
+      kind: "json-array",
+      allowNull: recipe.allowNull === true,
+      ...bounds,
+      maximumItems: positiveInteger(
+        recipe.maximumItems,
+        `${label}.recipe.maximumItems`,
+        10_000,
+      ),
+      items: validateNestedDeclaration(recipe.items, `${label}.recipe.items`, {
+        depth,
+      }),
+    });
+  }
+  if (!isObject(recipe.fields) || Object.keys(recipe.fields).length === 0) {
+    throw new Error(`${label}.recipe.fields must classify JSON object keys.`);
+  }
+  if (
+    Object.keys(recipe).some(
+      (key) =>
+        ![
+          "kind",
+          "fields",
+          "allowNull",
+          "maximumBytes",
+          "maximumDepth",
+        ].includes(key),
+    )
+  ) {
+    throw new Error(`${label}.recipe contains fields not used by json-object.`);
+  }
   const fields = Object.fromEntries(
     Object.entries(recipe.fields).map(([key, declaration]) => {
-      if (!key || !isObject(declaration)) {
+      if (!key) {
         throw new Error(`${label}.recipe.fields contains an invalid key.`);
-      }
-      knownKeys(
-        declaration,
-        ["action", "recipe"],
-        `${label}.recipe.fields.${key}`,
-      );
-      const nestedAction = String(declaration.action ?? "").toUpperCase();
-      if (!ACTIONS.has(nestedAction)) {
-        throw new Error(`${label}.recipe.fields.${key}.action is unsupported.`);
       }
       return [
         key,
-        Object.freeze({
-          action: nestedAction,
-          recipe: validateRecipe(
-            nestedAction,
-            declaration.recipe,
-            `${label}.recipe.fields.${key}`,
-          ),
-        }),
+        validateNestedDeclaration(
+          declaration,
+          `${label}.recipe.fields.${key}`,
+          { allowRequired: true, depth },
+        ),
       ];
     }),
   );
   return Object.freeze({
     kind: "json-object",
     allowNull: recipe.allowNull === true,
+    ...bounds,
     fields: Object.freeze(fields),
   });
 };
@@ -154,7 +280,7 @@ export const validateExecutablePrivacyPolicy = (policy) => {
   if (!isObject(policy)) throw new Error("Privacy policy must be an object.");
   knownKeys(
     policy,
-    ["policyVersion", "draft", "migrationCutoff", "tables"],
+    ["policyVersion", "draft", "migrationCutoff", "bindings", "tables"],
     "policy",
   );
   if (policy.policyVersion !== 2) {
@@ -171,11 +297,41 @@ export const validateExecutablePrivacyPolicy = (policy) => {
   if (!Array.isArray(policy.tables) || policy.tables.length === 0) {
     throw new Error("Privacy policy must classify at least one table.");
   }
+  if (policy.bindings !== undefined && !isObject(policy.bindings)) {
+    throw new Error("policy.bindings must be an object.");
+  }
+  const bindings = Object.fromEntries(
+    Object.entries(policy.bindings ?? {}).map(([name, binding]) => {
+      if (!BINDING_NAME.test(name) || !isObject(binding)) {
+        throw new Error("policy.bindings contains an invalid binding.");
+      }
+      knownKeys(
+        binding,
+        ["environmentVariable", "approvedValueSha256"],
+        `policy.bindings.${name}`,
+      );
+      if (!ENVIRONMENT_KEY.test(binding.environmentVariable ?? "")) {
+        throw new Error(
+          `policy.bindings.${name}.environmentVariable is invalid.`,
+        );
+      }
+      if (!HEX_64.test(binding.approvedValueSha256 ?? "")) {
+        throw new Error(
+          `policy.bindings.${name}.approvedValueSha256 must be a lowercase SHA-256 receipt.`,
+        );
+      }
+      return [name, Object.freeze({ ...binding })];
+    }),
+  );
   const names = new Set();
   const tables = policy.tables.map((table, tableIndex) => {
     const label = `policy.tables[${tableIndex}]`;
     if (!isObject(table)) throw new Error(`${label} must be an object.`);
-    knownKeys(table, ["schema", "name", "sourceRows", "columns"], label);
+    knownKeys(
+      table,
+      ["schema", "name", "sourceRows", "ownerBinding", "columns"],
+      label,
+    );
     const schema = identifier(table.schema ?? "public", `${label}.schema`);
     const name = identifier(table.name, `${label}.name`);
     const key = schema === "public" ? name : `${schema}.${name}`;
@@ -242,16 +398,62 @@ export const validateExecutablePrivacyPolicy = (policy) => {
         recipe: validateRecipe(action, column.recipe, columnLabel),
       });
     });
+    let ownerBinding = null;
+    if (table.ownerBinding !== undefined && table.ownerBinding !== null) {
+      if (!isObject(table.ownerBinding)) {
+        throw new Error(`${label}.ownerBinding must be an object.`);
+      }
+      knownKeys(
+        table.ownerBinding,
+        ["binding", "column"],
+        `${label}.ownerBinding`,
+      );
+      const binding = nonEmpty(
+        table.ownerBinding.binding,
+        `${label}.ownerBinding.binding`,
+      );
+      const column = identifier(
+        table.ownerBinding.column,
+        `${label}.ownerBinding.column`,
+      );
+      if (!Object.hasOwn(bindings, binding)) {
+        throw new Error(`${label}.ownerBinding references an unknown binding.`);
+      }
+      if (!columnNames.has(column)) {
+        throw new Error(`${label}.ownerBinding references an unknown column.`);
+      }
+      const ownerColumn = columns.find((entry) => entry.name === column);
+      if (
+        ownerColumn.action !== "PSEUDONYMIZE" ||
+        ownerColumn.identity !== "YES"
+      ) {
+        throw new Error(
+          `${label}.ownerBinding column must be an explicitly pseudonymized identity.`,
+        );
+      }
+      ownerBinding = Object.freeze({ binding, column });
+    }
+    const usesApprovedOwner = (declaration) =>
+      declaration.recipe?.kind === "approved-owner" ||
+      (declaration.recipe?.kind === "json-object" &&
+        Object.values(declaration.recipe.fields).some(usesApprovedOwner)) ||
+      (declaration.recipe?.kind === "json-array" &&
+        usesApprovedOwner(declaration.recipe.items));
+    if (columns.some(usesApprovedOwner) && !ownerBinding) {
+      throw new Error(`${label} uses approved-owner without ownerBinding.`);
+    }
     return Object.freeze({
       schema,
       name,
       sourceRows: table.sourceRows,
+      ownerBinding,
       columns: Object.freeze(columns),
     });
   });
   return Object.freeze({
     policyVersion: 2,
     migrationCutoff: policy.migrationCutoff,
+    bindings: Object.freeze(bindings),
     tables: Object.freeze(tables),
   });
 };
@@ -283,7 +485,67 @@ const pseudonym = (key, recipe, value) => {
   return token.slice(0, recipe.maxLength);
 };
 
-const executeDeclaration = ({ declaration, value, key, path }) => {
+const assertJsonBounds = (value, recipe, path) => {
+  let bytes = 0;
+  const jsonStringBytes = (string) => {
+    let size = 2;
+    for (let index = 0; index < string.length; index += 1) {
+      const code = string.charCodeAt(index);
+      if (code === 34 || code === 92) size += 2;
+      else if (code < 32) size += [8, 9, 10, 12, 13].includes(code) ? 2 : 6;
+      else if (code >= 0xd800 && code <= 0xdbff) {
+        const next = string.charCodeAt(index + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          size += 4;
+          index += 1;
+        } else size += 6;
+      } else if (code >= 0xdc00 && code <= 0xdfff) size += 6;
+      else if (code <= 0x7f) size += 1;
+      else if (code <= 0x7ff) size += 2;
+      else size += 3;
+    }
+    return size;
+  };
+  const visit = (current, depth) => {
+    if (depth > recipe.maximumDepth) {
+      throw new Error(`${path} exceeds maximumDepth ${recipe.maximumDepth}.`);
+    }
+    if (typeof current === "string") bytes += jsonStringBytes(current);
+    else if (current === null) bytes += 4;
+    else if (typeof current === "number" && !Number.isFinite(current))
+      throw new Error(`${path} contains an unsupported JSON value.`);
+    else if (["number", "boolean"].includes(typeof current))
+      bytes += String(current).length;
+    else if (Array.isArray(current)) {
+      if (
+        recipe.kind === "json-array" &&
+        current.length > recipe.maximumItems
+      ) {
+        throw new Error(`${path} exceeds maximumItems ${recipe.maximumItems}.`);
+      }
+      bytes += 2 + Math.max(0, current.length - 1);
+      for (const item of current) visit(item, depth + 1);
+    } else if (isObject(current)) {
+      bytes += 2 + Math.max(0, Object.keys(current).length - 1);
+      for (const [key, nested] of Object.entries(current)) {
+        bytes += jsonStringBytes(key) + 1;
+        visit(nested, depth + 1);
+      }
+    } else throw new Error(`${path} contains an unsupported JSON value.`);
+    if (bytes > recipe.maximumBytes) {
+      throw new Error(`${path} exceeds maximumBytes ${recipe.maximumBytes}.`);
+    }
+  };
+  visit(value, 1);
+};
+
+const executeDeclaration = ({
+  declaration,
+  value,
+  key,
+  path,
+  ownerApproved,
+}) => {
   if (declaration.action === "KEEP") return value;
   if (declaration.action === "EXCLUDE") return undefined;
   if (declaration.action === "REPLACE")
@@ -300,32 +562,88 @@ const executeDeclaration = ({ declaration, value, key, path }) => {
     date.setUTCDate(date.getUTCDate() + direction * declaration.recipe.days);
     return date.toISOString();
   }
+  if (declaration.recipe.kind === "approved-owner") {
+    if (ownerApproved === undefined) {
+      throw new Error(`${path} has no reviewed owner condition.`);
+    }
+    return executeDeclaration({
+      declaration: ownerApproved
+        ? declaration.recipe.approved
+        : declaration.recipe.otherwise,
+      value,
+      key,
+      path,
+      ownerApproved,
+    });
+  }
   if (value === null && declaration.recipe.allowNull) return null;
+  assertJsonBounds(value, declaration.recipe, path);
+  if (declaration.recipe.kind === "json-array") {
+    if (!Array.isArray(value)) throw new Error(`${path} must be a JSON array.`);
+    return value.flatMap((item, index) => {
+      const transformed = executeDeclaration({
+        declaration: declaration.recipe.items,
+        value: item,
+        key,
+        path: `${path}[${index}]`,
+        ownerApproved,
+      });
+      return transformed === undefined ? [] : [transformed];
+    });
+  }
   if (!isObject(value)) throw new Error(`${path} must be a JSON object.`);
   const actual = Object.keys(value).sort();
-  const expected = Object.keys(declaration.recipe.fields).sort();
-  if (actual.join("\0") !== expected.join("\0")) {
+  const expected = Object.keys(declaration.recipe.fields);
+  if (actual.some((field) => !expected.includes(field))) {
     throw new Error(`${path} contains an unclassified JSON key.`);
   }
+  const missing = expected.filter(
+    (field) =>
+      declaration.recipe.fields[field].required && !Object.hasOwn(value, field),
+  );
+  if (missing.length) throw new Error(`${path} is missing required JSON keys.`);
   return Object.fromEntries(
     Object.entries(declaration.recipe.fields).flatMap(([field, nested]) => {
+      if (!Object.hasOwn(value, field)) return [];
       const transformed = executeDeclaration({
         declaration: nested,
         value: value[field],
         key,
         path: `${path}.${field}`,
+        ownerApproved,
       });
       return transformed === undefined ? [] : [[field, transformed]];
     }),
   );
 };
 
-export const createPrivacyEngine = ({ policy, key }) => {
+export const createPrivacyEngine = ({
+  policy,
+  key,
+  environment = process.env,
+}) => {
   const normalized = validateExecutablePrivacyPolicy(policy);
   const secret = Buffer.isBuffer(key) ? key : Buffer.from(key ?? "");
   if (secret.length < KEY_BYTES) {
     throw new Error(`Privacy key must contain at least ${KEY_BYTES} bytes.`);
   }
+  const bindingValues = new Map(
+    Object.entries(normalized.bindings).map(([name, binding]) => {
+      const value = environment[binding.environmentVariable];
+      if (typeof value !== "string" || !value) {
+        throw new Error(
+          `Privacy binding ${name} requires ${binding.environmentVariable}.`,
+        );
+      }
+      const receipt = createHash("sha256").update(value).digest("hex");
+      if (receipt !== binding.approvedValueSha256) {
+        throw new Error(
+          `Privacy binding ${name} does not match its review receipt.`,
+        );
+      }
+      return [name, value];
+    }),
+  );
   const tables = new Map(
     normalized.tables.map((table) => [
       table.schema === "public" ? table.name : `${table.schema}.${table.name}`,
@@ -357,6 +675,15 @@ export const createPrivacyEngine = ({ policy, key }) => {
           `Source table ${relation} contains an unclassified or missing column.`,
         );
       }
+      let ownerApproved;
+      if (table.ownerBinding) {
+        const owner = record.row[table.ownerBinding.column];
+        if (!["string", "number"].includes(typeof owner) || owner === "") {
+          throw new Error(`${relation} has an invalid owner binding value.`);
+        }
+        ownerApproved =
+          String(owner) === bindingValues.get(table.ownerBinding.binding);
+      }
       const row = Object.fromEntries(
         table.columns.flatMap((column) => {
           const transformed = executeDeclaration({
@@ -364,6 +691,7 @@ export const createPrivacyEngine = ({ policy, key }) => {
             value: record.row[column.name],
             key: secret,
             path: `${relation}.${column.name}`,
+            ownerApproved,
           });
           return transformed === undefined ? [] : [[column.name, transformed]];
         }),

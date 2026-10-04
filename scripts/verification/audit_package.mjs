@@ -58,6 +58,7 @@ for (const repositoryOnly of [
   "scripts/verification/fixtures/postgresql.mjs",
   "scripts/verification/fixtures/dependent.mjs",
   "scripts/verification/fixtures/standalone.mjs",
+  "scripts/verification/fixtures/privacy.mjs",
 ]) {
   if (paths.includes(repositoryOnly)) {
     throw new Error(`Package includes repository-only file ${repositoryOnly}.`);

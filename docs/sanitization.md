@@ -40,9 +40,110 @@ Two policy versions exist:
   Rehearsal can sanitize without project callbacks.
 
 Version 2 supports keyed UUID, email, text, and integer pseudonyms; explicit constant
-replacement; bounded date shifting; and exhaustively classified JSON objects. Unknown
-tables, columns, nested keys, formats, recipes, or missing fields fail closed. It never
-evaluates JavaScript or SQL from the policy.
+replacement; bounded date shifting; approved-owner conditionals; exhaustively classified
+JSON objects; and bounded JSON arrays. Unknown tables, columns, nested keys, formats,
+recipes, or missing required fields fail closed. It never evaluates JavaScript or SQL
+from the policy.
+
+## Approved-owner values
+
+Keep the raw approved owner outside the policy and baseline. The policy stores only its
+environment-variable name and SHA-256 receipt:
+
+```json
+{
+  "bindings": {
+    "approved-owner": {
+      "environmentVariable": "REHEARSAL_APPROVED_OWNER_ID",
+      "approvedValueSha256": "<lowercase sha256 of the exact owner value>"
+    }
+  },
+  "tables": [
+    {
+      "name": "profiles",
+      "sourceRows": "STREAM AND SANITIZE",
+      "ownerBinding": { "binding": "approved-owner", "column": "user_id" },
+      "columns": [
+        {
+          "name": "user_id",
+          "action": "PSEUDONYMIZE",
+          "recipe": { "format": "uuid", "namespace": "account-id" },
+          "generated": "NEVER",
+          "identity": "YES",
+          "foreignKey": null
+        },
+        {
+          "name": "display_name",
+          "action": "DERIVE",
+          "recipe": {
+            "kind": "approved-owner",
+            "approved": { "action": "KEEP" },
+            "otherwise": {
+              "action": "REPLACE",
+              "recipe": { "kind": "constant", "value": "Synthetic account" }
+            }
+          },
+          "generated": "NEVER",
+          "identity": "NO",
+          "foreignKey": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+Generate the receipt without putting the owner value in shell history:
+
+```sh
+node -e 'const {createHash}=require("node:crypto"); process.stdout.write(createHash("sha256").update(process.env.REHEARSAL_APPROVED_OWNER_ID).digest("hex")+"\n")'
+```
+
+Every conditional table names its owner column. Missing bindings, hash mismatches,
+missing owner columns, null/unsupported owner values, and conditionals without an owner
+binding are refused. The owner column must be marked `identity: "YES"` and use
+`PSEUDONYMIZE`, preventing a conditional policy from retaining raw account IDs. Other
+owners take the declared `otherwise` path; every other identity-bearing field still
+needs its own pseudonymization declaration. Supply the binding only to the local
+server-side Rehearsal process; do not put it in the policy, baseline, or tracked files.
+
+## Structured JSON
+
+`json-object` fields are required by default. Set `"required": false` on an explicitly
+optional field. Unknown keys remain errors. `json-array` declares one item recipe and a
+required `maximumItems`. Both recipes accept `maximumDepth`, `maximumBytes`, and
+`allowNull`; defaults are 8 levels, 65,536 bytes, and no null container. Bounds are
+checked before producing the transformed structure. Nested objects and arrays repeat
+the same declarations, and every nested identity uses an explicit pseudonym recipe.
+
+```json
+{
+  "action": "DERIVE",
+  "recipe": {
+    "kind": "json-array",
+    "maximumItems": 25,
+    "maximumDepth": 4,
+    "maximumBytes": 8192,
+    "items": {
+      "action": "DERIVE",
+      "recipe": {
+        "kind": "json-object",
+        "fields": {
+          "actor_id": {
+            "action": "PSEUDONYMIZE",
+            "recipe": { "format": "uuid", "namespace": "account-id" }
+          },
+          "note": {
+            "action": "REPLACE",
+            "required": false,
+            "recipe": { "kind": "constant", "value": "Synthetic note" }
+          }
+        }
+      }
+    }
+  }
+}
+```
 
 The package still exports `validateSanitizationCoverage` and
 `applySanitizationAction` for existing version 1 preparation tools:

@@ -7,6 +7,9 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ### Added
 
+- Privacy policy version 2 now supports hashed approved-owner bindings, conditional
+  approved/other-owner transformations, bounded JSON arrays, nested recipes, and
+  explicitly optional object fields without consumer sanitizer callbacks.
 - Local npm installs now create a validated, commented project-root
   `rehearsal.config.mjs`, dedicated local runtime configuration, and additive safe ignore
   entries when exactly one consumer application can be proven. Guided setup remains the
