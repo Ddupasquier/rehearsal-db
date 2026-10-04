@@ -44,6 +44,7 @@ describe("local identity claim", () => {
       name: "approved-owner",
       environment: { REHEARSAL_APPROVED_OWNER_EMAIL: email },
     });
+    expect(JSON.stringify(plan)).not.toContain(email);
     expect(JSON.stringify(plan.review)).not.toContain(email);
     expect(plan.digest).toMatch(/^[a-f0-9]{64}$/u);
     expect(plan.review.claimsSha256).toMatch(/^[a-f0-9]{64}$/u);
@@ -89,6 +90,180 @@ describe("local identity claim", () => {
       queries.some(({ sql }) => sql.includes("update storage.objects")),
     ).toBe(true);
     expect(queries.at(-1).sql).toContain("commit");
+  });
+
+  it("matches a reviewed GitHub subject without serializing or querying the raw subject", async () => {
+    const subject = "github-account-847291";
+    const subjectPolicy = structuredClone(policy);
+    const identity = subjectPolicy.identities[0];
+    delete identity.provider;
+    delete identity.emailEnvironmentVariable;
+    delete identity.approvedEmailSha256;
+    identity.matcher = {
+      type: "provider-subject",
+      provider: "github",
+      subjectEnvironmentVariable: "REHEARSAL_APPROVED_OWNER_SUBJECT",
+      approvedSubjectSha256: createHash("sha256").update(subject).digest("hex"),
+    };
+    identity.assets = [];
+    const plan = createIdentityClaimPlan({
+      policy: subjectPolicy,
+      name: "approved-owner",
+      environment: { REHEARSAL_APPROVED_OWNER_SUBJECT: subject },
+    });
+    expect(plan.review.matcher).toEqual(identity.matcher);
+    expect(JSON.stringify(plan)).not.toContain(subject);
+    const queries = [];
+    const client = {
+      async connect() {},
+      async end() {},
+      async query(sql, parameters = []) {
+        queries.push({ sql, parameters });
+        if (sql.includes("i.provider_id::text")) {
+          return {
+            rows: [
+              {
+                id: "22222222-2222-4222-8222-222222222222",
+                provider: "github",
+                provider_id: subject,
+                subject,
+              },
+            ],
+          };
+        }
+        if (sql.includes("from rehearsal_internal.identity_claims")) {
+          return { rows: [{ present: true }] };
+        }
+        if (sql.includes("from auth.users where id")) {
+          return { rows: [{ present: true }] };
+        }
+        if (sql.includes("from auth.identities where user_id")) {
+          return { rows: [] };
+        }
+        if (sql.includes("count(*)::integer as count")) {
+          return { rows: [{ count: 1 }] };
+        }
+        return { rows: [] };
+      },
+    };
+    const result = await applyIdentityClaim({
+      plan,
+      confirmation: plan.digest,
+      connectionString: "postgresql://local:local@127.0.0.1:55432/postgres",
+      clientFactory: async () => client,
+    });
+    expect(result).toMatchObject({ claimed: true, provider: "github" });
+    expect(
+      queries.every(({ parameters }) => !parameters.includes(subject)),
+    ).toBe(true);
+  });
+
+  it("supports reviewed email provider allowlists and rejects unsupported matcher declarations", () => {
+    const allowlistPolicy = structuredClone(policy);
+    const identity = allowlistPolicy.identities[0];
+    identity.matcher = {
+      type: "verified-email",
+      providers: ["google", "github"],
+      emailEnvironmentVariable: identity.emailEnvironmentVariable,
+      approvedEmailSha256: identity.approvedEmailSha256,
+    };
+    delete identity.provider;
+    delete identity.emailEnvironmentVariable;
+    delete identity.approvedEmailSha256;
+    const plan = createIdentityClaimPlan({
+      policy: allowlistPolicy,
+      name: "approved-owner",
+      environment: { REHEARSAL_APPROVED_OWNER_EMAIL: email },
+    });
+    expect(plan.review.matcher.providers).toEqual(["google", "github"]);
+
+    const unsupportedProvider = structuredClone(allowlistPolicy);
+    unsupportedProvider.identities[0].matcher.providers = ["custom-saml"];
+    expect(() => validateIdentityPolicy(unsupportedProvider)).toThrow(
+      "provider",
+    );
+    const unsupportedMatcher = structuredClone(allowlistPolicy);
+    unsupportedMatcher.identities[0].matcher = { type: "verified-phone" };
+    expect(() => validateIdentityPolicy(unsupportedMatcher)).toThrow(
+      "type is unsupported",
+    );
+    const mixedSyntax = structuredClone(allowlistPolicy);
+    mixedSyntax.identities[0].provider = "google";
+    expect(() => validateIdentityPolicy(mixedSyntax)).toThrow(
+      "cannot combine matcher",
+    );
+  });
+
+  it("refuses zero, duplicate, and conflicting provider-subject matches", async () => {
+    const subject = "github-account-847291";
+    const subjectPolicy = structuredClone(policy);
+    const identity = subjectPolicy.identities[0];
+    delete identity.provider;
+    delete identity.emailEnvironmentVariable;
+    delete identity.approvedEmailSha256;
+    identity.matcher = {
+      type: "provider-subject",
+      provider: "github",
+      subjectEnvironmentVariable: "REHEARSAL_APPROVED_OWNER_SUBJECT",
+      approvedSubjectSha256: createHash("sha256").update(subject).digest("hex"),
+    };
+    const plan = createIdentityClaimPlan({
+      policy: subjectPolicy,
+      name: "approved-owner",
+      environment: { REHEARSAL_APPROVED_OWNER_SUBJECT: subject },
+    });
+    const applyWithRows = (rows) =>
+      applyIdentityClaim({
+        plan,
+        confirmation: plan.digest,
+        connectionString: "postgresql://local:local@localhost:55432/postgres",
+        clientFactory: async () => ({
+          async connect() {},
+          async end() {},
+          async query(sql) {
+            return sql.includes("i.provider_id::text")
+              ? { rows }
+              : { rows: [] };
+          },
+        }),
+      });
+    await expect(applyWithRows([])).rejects.toThrow("No verified");
+    await expect(
+      applyWithRows([
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          provider: "github",
+          provider_id: subject,
+          subject,
+        },
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          provider: "github",
+          provider_id: subject,
+          subject,
+        },
+      ]),
+    ).rejects.toThrow("More than one");
+    await expect(
+      applyWithRows([
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          provider: "github",
+          provider_id: subject,
+          subject: "different-subject",
+        },
+      ]),
+    ).rejects.toThrow("conflicting stable subjects");
+    await expect(
+      applyWithRows([
+        {
+          id: "22222222-2222-4222-8222-222222222222",
+          provider: "google",
+          provider_id: subject,
+          subject,
+        },
+      ]),
+    ).rejects.toThrow("provider is invalid");
   });
 
   it("replaces only a complete signup default and remaps roles and Storage paths", async () => {

@@ -566,8 +566,13 @@ export const renderIdentityPlan = ({ mode, plan }) =>
   [
     `LOCAL IDENTITY — ${mode.toUpperCase()}`,
     `Identity: ${plan.review.name}`,
-    `Provider: ${plan.review.provider}`,
-    `Approved email receipt: ${plan.review.approvedEmailSha256}`,
+    `Matcher: ${plan.review.matcher.type}`,
+    plan.review.matcher.type === "verified-email"
+      ? `Providers: ${plan.review.matcher.providers.join(", ")}`
+      : `Provider: ${plan.review.matcher.provider}`,
+    plan.review.matcher.type === "verified-email"
+      ? `Approved email receipt: ${plan.review.matcher.approvedEmailSha256}`
+      : `Approved subject receipt: ${plan.review.matcher.approvedSubjectSha256}`,
     `Relational references: ${plan.review.references.length}`,
     `Nested JSON references: ${plan.review.jsonReferences.length}`,
     `Signup defaults: ${plan.review.signupDefaults.length}`,

@@ -54,7 +54,8 @@ export default defineRehearsalConfig({
   //   diskHeadroomBytes: 67108864,
   // },
   // runtimePolicy: "infrastructure/rehearsal/runtime-policy.json",
-  // Optional signup defaults, role/reference transfer, Storage paths, and token checks.
+  // Optional copied-account association. The JSON stores reviewed matcher hashes only;
+  // raw emails/subjects and provider credentials stay in ignored environment files.
   // identityPolicy: "infrastructure/rehearsal/identity-policy.json",
   containerRuntime: {
     autoStartColima: true,
@@ -135,8 +136,11 @@ approval sequence.
 
 `runtimePolicy` replaces common restore adapters with reviewed schemas, allowlisted
 extensions, managed triggers, local-only singleton rows, and structural expectations.
-`identityPolicy` declares a hashed verified email, copied placeholder, safe signup
-defaults, required role/reference transfers, Storage path rewrites, and token checks. See
+`identityPolicy` declares a hashed verified-email or provider-subject matcher, copied
+placeholder, safe signup defaults, required role/reference transfers, Storage path
+rewrites, and token checks. Provider credentials stay in the local Supabase runtime
+environment; association values stay in named environment variables and only their
+SHA-256 receipts are tracked. See
 [Runtime and identity policies](runtime-policies.md).
 
 ## Container runtime and cleanup
