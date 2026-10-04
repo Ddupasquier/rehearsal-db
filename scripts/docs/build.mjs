@@ -150,6 +150,9 @@ const renderHero = () => `<section class="hero">
       <a class="button primary" href="${hrefFor("getting-started")}">Get started ${icon("arrow")}</a>
       <a class="button secondary" href="${hrefFor("tutorial")}">Try the tutorial</a>
     </div>
+    <a class="download-count" href="${site.package}" target="_blank" rel="noreferrer">
+      <img src="${site.downloadsBadge}" alt="Monthly downloads of @rehearsal-db/core from npm" />
+    </a>
     <div class="hero-proof" aria-label="Rehearsal guarantees">
       <span>✓ Local only</span><span>✓ Exact approvals</span><span>✓ Your real tests</span>
     </div>
