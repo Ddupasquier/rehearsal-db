@@ -1,29 +1,38 @@
-# Documentation map
+# Rehearsal documentation
+
+Welcome. You do not need to read this documentation from top to bottom. Choose what you
+want to accomplish and follow that path.
 
 ## Start here
 
-- [Getting started](getting-started.md)
-- [Hands-on tutorial](tutorial.md)
-- [Troubleshooting](troubleshooting.md)
+| Your goal                           | Best next page                        |
+| ----------------------------------- | ------------------------------------- |
+| Add Rehearsal to a project          | [Getting started](getting-started.md) |
+| Try it in a disposable project      | [Hands-on tutorial](tutorial.md)      |
+| Fix a setup or runtime problem      | [Troubleshooting](troubleshooting.md) |
+| Browse the friendlier web-docs home | [Documentation home](index.md)        |
 
-## Understand the safety model
+## Work safely
 
-- [Baselines](baselines.md)
-- [Sanitization](sanitization.md)
-- [Production source boundary](production-source.md)
-- [Security model](security-model.md)
+- [Baselines](baselines.md) — the verified starting copy
+- [Sanitization](sanitization.md) — what may enter that copy
+- [Production-shaped preparation](production-source.md) — the optional source boundary
+- [Security model](security-model.md) — the independent safety barriers
+- [Standalone workflow](standalone-workflow.md) — the complete declarative contract
 
-## Configure Rehearsal
+## Look something up
 
+- [CLI commands](commands.md)
 - [Configuration](configuration.md)
-- [Commands](commands.md)
-- [Runtime policies](runtime-policies.md)
+- [Runtime and identity policies](runtime-policies.md)
 - [Database adapters](adapters.md)
-- [Standalone PostgreSQL workflow](standalone-workflow.md)
+- [Glossary](glossary.md)
 
-## Maintain the project
+## Follow the project
 
+- [Roadmap](roadmap.md)
 - [Repository architecture](architecture.md)
 - [Release process](releasing.md)
-- [Roadmap](roadmap.md)
-- [Glossary](glossary.md)
+
+To preview the styled documentation locally, run `npm run docs:preview`, then open the
+address it prints.

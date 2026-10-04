@@ -6,5 +6,5 @@ node_modules/
 !.env.example
 coverage/
 test-results/
+.docs-site/
 .DS_Store
-

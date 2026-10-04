@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 520" role="img" aria-labelledby="title description">
+  <title id="title">A database change prepared for rehearsal</title>
+  <desc id="description">A safe database copy waits on a lit stage, surrounded by reviewed migration and passing test cards.</desc>
+  <defs>
+    <linearGradient id="backdrop" x1="54" y1="34" x2="566" y2="486" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#263A47"/>
+      <stop offset="1" stop-color="#111C23"/>
+    </linearGradient>
+    <linearGradient id="floor" x1="310" y1="240" x2="310" y2="486" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6AD8AC" stop-opacity=".24"/>
+      <stop offset="1" stop-color="#6AD8AC" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="mark-navy" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3D5563"/>
+      <stop offset="1" stop-color="#17242D"/>
+    </linearGradient>
+    <linearGradient id="mark-mint" x1="67" y1="43" x2="102" y2="92" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#73DFB3"/>
+      <stop offset="1" stop-color="#3AB07F"/>
+    </linearGradient>
+    <radialGradient id="spotlight" cx="0" cy="0" r="1" gradientTransform="translate(310 178) rotate(90) scale(255 225)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B9F4DB" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#B9F4DB" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="card-shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="16" stdDeviation="16" flood-color="#071015" flood-opacity=".38"/>
+    </filter>
+    <filter id="mark-shadow" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="18" stdDeviation="14" flood-color="#071015" flood-opacity=".52"/>
+    </filter>
+    <clipPath id="left-half">
+      <rect x="10" y="8" width="54" height="112"/>
+    </clipPath>
+  </defs>
+  <rect x="24" y="24" width="572" height="472" rx="42" fill="url(#backdrop)"/>
+  <rect x="25.5" y="25.5" width="569" height="469" rx="40.5" fill="none" stroke="#7EDDB7" stroke-opacity=".23" stroke-width="3"/>
+  <path d="M114 469 256 214h108l142 255H114Z" fill="url(#floor)"/>
+  <ellipse cx="310" cy="455" rx="205" ry="29" fill="#061016" opacity=".48"/>
+  <ellipse cx="310" cy="441" rx="139" ry="18" fill="#5ED1A3" opacity=".18"/>
+  <ellipse cx="310" cy="258" rx="225" ry="226" fill="url(#spotlight)"/>
+  <g opacity=".3" fill="none" stroke="#79DDB8" stroke-width="2">
+    <path d="M90 430h440M119 382h382M145 336h330"/>
+    <path d="m104 466 154-252M516 466 362 214"/>
+  </g>
+  <g transform="translate(54 92) rotate(-5 80 52)" filter="url(#card-shadow)">
+    <rect width="160" height="104" rx="20" fill="#F6FBF9"/>
+    <circle cx="25" cy="25" r="7" fill="#57C99A"/>
+    <path d="M43 25h83M23 51h110M23 72h72" stroke="#9AAEB5" stroke-width="7" stroke-linecap="round"/>
+    <path d="m119 74 7 7 15-17" fill="none" stroke="#39A978" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g transform="translate(426 305) rotate(6 67 48)" filter="url(#card-shadow)">
+    <rect width="134" height="96" rx="20" fill="#F6FBF9"/>
+    <circle cx="31" cy="48" r="17" fill="#DDF6EA"/>
+    <path d="m22 48 7 7 13-16" fill="none" stroke="#35A777" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M59 39h49M59 56h34" stroke="#8FA5AE" stroke-width="7" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(179 118) scale(2.05)" filter="url(#mark-shadow)">
+    <g clip-path="url(#left-half)">
+      <path d="M16 31c0-10.5 21.5-19 48-19s48 8.5 48 19v65c0 10.5-21.5 19-48 19s-48-8.5-48-19V31Z" fill="url(#mark-navy)"/>
+      <ellipse cx="64" cy="31" rx="48" ry="19" fill="#425B69"/>
+      <path d="M16 49c0 10.5 21.5 19 48 19s48-8.5 48-19M16 72c0 10.5 21.5 19 48 19s48-8.5 48-19M16 95c0 10.5 21.5 19 48 19s48-8.5 48-19" fill="none" stroke="#AFC0C7" stroke-opacity=".6" stroke-width="1.4"/>
+    </g>
+    <path d="M64 12c26.5 0 48 8.5 48 19v65c0 10.5-21.5 19-48 19" fill="#F4FBF8" fill-opacity=".96" stroke="#A9C4B8" stroke-width="3" stroke-linecap="round" stroke-dasharray="7 5"/>
+    <path d="M64 68c26.5 0 48-8.5 48-19M64 91c26.5 0 48-8.5 48-19M64 114c26.5 0 48-8.5 48-19" fill="none" stroke="#A9C4B8" stroke-width="3" stroke-linecap="round" stroke-dasharray="7 5"/>
+    <path d="M64 13v102" stroke="#64D3A6" stroke-width="2" stroke-linecap="round" opacity=".8"/>
+    <path d="m69 48 31 20-31 20V48Z" fill="url(#mark-mint)" stroke="#278D66" stroke-width="1.5" stroke-linejoin="round"/>
+  </g>
+  <g fill="#77DDB7">
+    <circle cx="82" cy="258" r="6"/>
+    <circle cx="528" cy="143" r="5"/>
+    <circle cx="484" cy="237" r="3"/>
+  </g>
+  <g fill="none" stroke="#77DDB7" stroke-width="3" stroke-linecap="round" opacity=".75">
+    <path d="M87 234v-15M79.5 226.5h15"/>
+    <path d="M530 177v-19M520.5 167.5h19"/>
+  </g>
+</svg>

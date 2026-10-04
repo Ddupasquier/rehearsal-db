@@ -119,7 +119,7 @@ See [COMPATIBILITY.md](COMPATIBILITY.md) for the exact support contract.
 
 Start here:
 
-- [Documentation map](docs/README.md) — find the right guide quickly
+- [Documentation home](docs/index.md) — choose the shortest path for your goal
 - [Getting started](docs/getting-started.md) — set up your own project
 - [Safe hands-on tutorial](docs/tutorial.md) — try the full flow in a disposable project
 - [Troubleshooting](docs/troubleshooting.md) — fix common setup problems
@@ -166,3 +166,9 @@ npm run test:fixture
 
 The fixture commands install the packed package into clean synthetic projects. They do
 not connect to hosted services. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full rules.
+
+Preview the styled documentation site locally with:
+
+```bash
+npm run docs:preview
+```
