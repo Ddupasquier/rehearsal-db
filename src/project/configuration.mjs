@@ -61,6 +61,7 @@ const POSTGRES_IMAGE_PATTERN = /^postgres:\d+(?:\.\d+)?-alpine$/u;
 const SAFE_COMMAND_PATTERN = /^[^\n\r\0]+$/u;
 const ENVIRONMENT_KEY_PATTERN = /^[A-Z][A-Z0-9_]*$/u;
 const ENVIRONMENT_REFERENCE_PATTERN = /^[a-z0-9][a-z0-9-]*:[A-Z][A-Z0-9_]*$/u;
+const SUPPORTED_SUPABASE_OAUTH_PROVIDERS = new Set(["github", "google"]);
 
 const isPlainObject = (value) =>
   value !== null &&
@@ -251,6 +252,7 @@ const normalizeConfig = (input) => {
         "migrationDirectory",
         "rehearsalConfig",
         "runtimeWorkdir",
+        "authentication",
         "serviceEnvironmentFile",
         "serviceEnvironmentVariables",
       ],
@@ -437,8 +439,123 @@ const normalizeConfig = (input) => {
   if (!Array.isArray(commands)) {
     throw new Error("config.verification.commands must be an array.");
   }
-  const serviceEnvironmentVariables =
-    supabase?.serviceEnvironmentVariables ?? [];
+  const authentication =
+    supabase?.authentication === undefined
+      ? null
+      : assertPlainObject(
+          supabase.authentication,
+          "config.supabase.authentication",
+        );
+  let normalizedAuthentication = null;
+  if (authentication) {
+    assertKnownKeys(
+      authentication,
+      ["enableLocalSignup", "environmentFile", "providers"],
+      "config.supabase.authentication",
+    );
+    if (authentication.enableLocalSignup !== true) {
+      throw new Error(
+        "config.supabase.authentication.enableLocalSignup must be true to create the disposable local identity used by an OAuth sign-in.",
+      );
+    }
+    if (
+      supabase.serviceEnvironmentFile !== undefined ||
+      supabase.serviceEnvironmentVariables !== undefined
+    ) {
+      throw new Error(
+        "config.supabase.authentication cannot be combined with the legacy serviceEnvironmentFile or serviceEnvironmentVariables fields.",
+      );
+    }
+    if (safety.authenticationProviders !== undefined) {
+      throw new Error(
+        "config.safety.authenticationProviders is derived from config.supabase.authentication and must be omitted.",
+      );
+    }
+    if (
+      !Array.isArray(authentication.providers) ||
+      authentication.providers.length === 0
+    ) {
+      throw new Error(
+        "config.supabase.authentication.providers must be a non-empty array.",
+      );
+    }
+    const providers = authentication.providers.map((entry, index) => {
+      const path = `config.supabase.authentication.providers[${index}]`;
+      const value = assertPlainObject(entry, path);
+      assertKnownKeys(
+        value,
+        [
+          "name",
+          "clientIdEnvironmentVariable",
+          "clientSecretEnvironmentVariable",
+          "skipNonceCheck",
+          "emailOptional",
+        ],
+        path,
+      );
+      const name = assertNonEmptyString(value.name, `${path}.name`);
+      if (!SUPPORTED_SUPABASE_OAUTH_PROVIDERS.has(name)) {
+        throw new Error(
+          `${path}.name must be one of: ${[...SUPPORTED_SUPABASE_OAUTH_PROVIDERS].join(", ")}.`,
+        );
+      }
+      const environmentVariable = (key) => {
+        const variable = assertNonEmptyString(value[key], `${path}.${key}`);
+        if (!ENVIRONMENT_KEY_PATTERN.test(variable)) {
+          throw new Error(
+            `${path}.${key} must be a safe environment variable name.`,
+          );
+        }
+        return variable;
+      };
+      const optionalBoolean = (key) => {
+        if (value[key] === undefined) return false;
+        if (typeof value[key] !== "boolean") {
+          throw new Error(`${path}.${key} must be a boolean.`);
+        }
+        return value[key];
+      };
+      return Object.freeze({
+        name,
+        clientIdEnvironmentVariable: environmentVariable(
+          "clientIdEnvironmentVariable",
+        ),
+        clientSecretEnvironmentVariable: environmentVariable(
+          "clientSecretEnvironmentVariable",
+        ),
+        skipNonceCheck: optionalBoolean("skipNonceCheck"),
+        emailOptional: optionalBoolean("emailOptional"),
+      });
+    });
+    if (new Set(providers.map(({ name }) => name)).size !== providers.length) {
+      throw new Error(
+        "config.supabase.authentication.providers must not contain duplicate providers.",
+      );
+    }
+    const credentialVariables = providers.flatMap((provider) => [
+      provider.clientIdEnvironmentVariable,
+      provider.clientSecretEnvironmentVariable,
+    ]);
+    if (new Set(credentialVariables).size !== credentialVariables.length) {
+      throw new Error(
+        "config.supabase.authentication provider environment variables must be unique.",
+      );
+    }
+    normalizedAuthentication = Object.freeze({
+      enableLocalSignup: true,
+      environmentFile: assertRelativePath(
+        authentication.environmentFile,
+        "config.supabase.authentication.environmentFile",
+      ),
+      providers: Object.freeze(providers),
+    });
+  }
+  const serviceEnvironmentVariables = normalizedAuthentication
+    ? normalizedAuthentication.providers.flatMap((provider) => [
+        provider.clientIdEnvironmentVariable,
+        provider.clientSecretEnvironmentVariable,
+      ])
+    : (supabase?.serviceEnvironmentVariables ?? []);
   if (!Array.isArray(serviceEnvironmentVariables)) {
     throw new Error(
       "config.supabase.serviceEnvironmentVariables must be an array.",
@@ -460,19 +577,23 @@ const normalizeConfig = (input) => {
     );
   }
   if (
-    Boolean(supabase?.serviceEnvironmentFile) !==
-    Boolean(normalizedServiceEnvironmentVariables.length)
+    Boolean(
+      normalizedAuthentication?.environmentFile ??
+      supabase?.serviceEnvironmentFile,
+    ) !== Boolean(normalizedServiceEnvironmentVariables.length)
   ) {
     throw new Error(
       "config.supabase.serviceEnvironmentFile and serviceEnvironmentVariables must be configured together.",
     );
   }
-  const authenticationProviders = safety.authenticationProviders
-    ? assertStringArray(
-        safety.authenticationProviders,
-        "config.safety.authenticationProviders",
-      )
-    : [];
+  const authenticationProviders = normalizedAuthentication
+    ? normalizedAuthentication.providers.map(({ name }) => name)
+    : safety.authenticationProviders
+      ? assertStringArray(
+          safety.authenticationProviders,
+          "config.safety.authenticationProviders",
+        )
+      : [];
   if (runtimeTarget === "postgresql" && authenticationProviders.length > 0) {
     throw new Error(
       "config.safety.authenticationProviders is available only for the Supabase target.",
@@ -500,12 +621,15 @@ const normalizeConfig = (input) => {
             supabase.runtimeWorkdir,
             "config.supabase.runtimeWorkdir",
           ),
-          serviceEnvironmentFile: supabase.serviceEnvironmentFile
-            ? assertRelativePath(
-                supabase.serviceEnvironmentFile,
-                "config.supabase.serviceEnvironmentFile",
-              )
-            : null,
+          authentication: normalizedAuthentication,
+          serviceEnvironmentFile: normalizedAuthentication
+            ? normalizedAuthentication.environmentFile
+            : supabase.serviceEnvironmentFile
+              ? assertRelativePath(
+                  supabase.serviceEnvironmentFile,
+                  "config.supabase.serviceEnvironmentFile",
+                )
+              : null,
           serviceEnvironmentVariables: Object.freeze(
             normalizedServiceEnvironmentVariables,
           ),
@@ -1005,9 +1129,21 @@ export default defineRehearsalConfig({
 		rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml",
 		runtimeWorkdir: ".rehearsal/runtime",
 
-		// Optional local-only identity-provider credentials. Enable both keys together.
-		// serviceEnvironmentFile: ".env.rehearsal-service.local",
-		// serviceEnvironmentVariables: ["LOCAL_IDP_CLIENT_ID", "LOCAL_IDP_SECRET"],
+		// Optional local OAuth connection. Secrets stay in the ignored owner-only file.
+		// Register http://127.0.0.1:${ports.api}/auth/v1/callback with the provider.
+		// authentication: {
+		// 	enableLocalSignup: true,
+		// 	environmentFile: ".env.rehearsal-service.local",
+		// 	providers: [
+		// 		{
+		// 			name: "google",
+		// 			clientIdEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_ID",
+		// 			clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_SECRET",
+		// 			skipNonceCheck: false,
+		// 			emailOptional: false,
+		// 		},
+		// 	],
+		// },
 	},
 
 	// Immutable local baseline files. Rehearsal never reads production on your behalf.

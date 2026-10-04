@@ -59,6 +59,11 @@ docker pull postgres:17-alpine
 
 Rehearsal itself never downloads a database image during a rehearsal.
 
+For local Google or GitHub sign-in, the generated config includes a commented
+`supabase.authentication` example. It names an ignored owner-only credential file;
+Rehearsal generates the provider block and local callback inside the disposable runtime.
+See [Supabase authentication](docs/configuration.md#supabase-authentication).
+
 ## Three terms you will see
 
 - **Baseline:** a locked, safe starting copy of your schema and test data.

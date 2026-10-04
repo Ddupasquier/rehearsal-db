@@ -12,6 +12,10 @@ import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 import { verifyActiveBaseline } from "../baseline/artifact.mjs";
 import {
+  applySupabaseAuthenticationProviders,
+  inspectSupabaseAuthenticationProviderTransition,
+} from "../identity/provider_configuration.mjs";
+import {
   inspectDetectedProject,
   loadRehearsalConfig,
 } from "../project/configuration.mjs";
@@ -233,6 +237,9 @@ export const buildRehearsalPlan = async (options = {}) => {
       hostedAccess: config.safety.hostedAccess,
       outboundNetwork: config.safety.outboundNetwork,
       authenticationProviders: config.safety.authenticationProviders,
+      authenticationCallback: config.supabase?.authentication
+        ? `http://127.0.0.1:${config.runtime.ports.api}/auth/v1/callback`
+        : null,
       barriers: [
         "versioned configuration accepts loopback hosts only",
         `runtime uses a dedicated local ${config.runtime.target === "supabase" ? "Supabase workdir" : "PostgreSQL container and volume"} and project id`,
@@ -459,6 +466,32 @@ export const runRehearsalDoctor = async (options = {}) => {
       remediation:
         "Correct the missing project path in the Rehearsal configuration.",
     },
+    ...(config.supabase?.authentication
+      ? [
+          {
+            id: "authentication-runtime-config",
+            label: "Local authentication configuration",
+            run: async () => {
+              const source = await readFile(paths.rehearsalConfig, "utf8");
+              const transition =
+                inspectSupabaseAuthenticationProviderTransition({
+                  source,
+                  authentication: config.supabase.authentication,
+                });
+              applySupabaseAuthenticationProviders({
+                source,
+                authentication: config.supabase.authentication,
+                apiPort: config.runtime.ports.api,
+              });
+              return transition.replacedProviders.length
+                ? `compatible legacy ${transition.replacedProviders.join(", ")} provider configuration will be replaced only in the disposable runtime copy`
+                : "declarative provider configuration can be generated without changing the tracked template";
+            },
+            remediation:
+              "Review the named provider section and make skipNonceCheck or emailOptional match explicitly in config.supabase.authentication; otherwise keep the documented manual provider configuration.",
+          },
+        ]
+      : []),
     {
       id: "sanitization-policy",
       label: "Reviewed sanitization policy",

@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -125,6 +132,34 @@ describe("Rehearsal plan", () => {
     expect(first.migrations.representedCount).toBe(1);
     expect(first.migrations.candidateCount).toBe(0);
     expect(first.guarantee).toBe("No production resources will be contacted.");
+  });
+
+  it("reports the exact generated local OAuth callback", async () => {
+    const root = await createFixture();
+    const configPath = join(root, "rehearsal.config.mjs");
+    const source = await readFile(configPath, "utf8");
+    await writeFile(
+      configPath,
+      source.replace(
+        'runtimeWorkdir: ".rehearsal/runtime"',
+        `runtimeWorkdir: ".rehearsal/runtime", authentication: {
+          enableLocalSignup: true,
+          environmentFile: ".env.rehearsal-service.local",
+          providers: [{
+            name: "github",
+            clientIdEnvironmentVariable: "REHEARSAL_GITHUB_CLIENT_ID",
+            clientSecretEnvironmentVariable: "REHEARSAL_GITHUB_CLIENT_SECRET",
+          }],
+        }`,
+      ),
+    );
+
+    const plan = await buildRehearsalPlan({ projectRoot: root });
+
+    expect(plan.environment.authenticationProviders).toEqual(["github"]);
+    expect(plan.environment.authenticationCallback).toBe(
+      "http://127.0.0.1:58321/auth/v1/callback",
+    );
   });
 
   it("classifies only exact suffix files as candidates", async () => {

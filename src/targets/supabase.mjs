@@ -44,6 +44,7 @@ import {
 } from "../runtime/migration_history.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import { readRehearsalServiceEnvironment } from "../runtime/service_environment.mjs";
+import { applySupabaseAuthenticationProviders } from "../identity/provider_configuration.mjs";
 import { readBoundRuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
 import {
   captureLocalPublicSchema,
@@ -315,7 +316,16 @@ const prepareRuntimeWorkdir = async ({ baseline, paths }) => {
     recursive: true,
     mode: 0o700,
   });
-  await cp(configTemplatePath, join(runtimeSupabaseDirectory, "config.toml"));
+  const configTemplate = await readFile(configTemplatePath, "utf8");
+  await writeFile(
+    join(runtimeSupabaseDirectory, "config.toml"),
+    applySupabaseAuthenticationProviders({
+      source: configTemplate,
+      authentication: config.supabase.authentication,
+      apiPort: config.runtime.ports.api,
+    }),
+    { mode: 0o600 },
+  );
   for (const filename of Object.keys(baseline.migrations).sort()) {
     await cp(
       join(paths.migrationsDirectory, filename),

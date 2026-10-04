@@ -8,6 +8,17 @@ export interface RehearsalConfig {
     migrationDirectory: string;
     rehearsalConfig: string;
     runtimeWorkdir: string;
+    authentication?: {
+      enableLocalSignup: true;
+      environmentFile: string;
+      providers: Array<{
+        name: "google" | "github";
+        clientIdEnvironmentVariable: string;
+        clientSecretEnvironmentVariable: string;
+        skipNonceCheck?: boolean;
+        emailOptional?: boolean;
+      }>;
+    };
     serviceEnvironmentFile?: string;
     serviceEnvironmentVariables?: string[];
   };

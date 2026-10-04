@@ -55,6 +55,44 @@ const prepareFixtureRuntimeIdentity = async ({ cwd }) => {
     }
     await writeFile(path, source);
   }
+  const legacyTemplate = await readFile(localConfigPath, "utf8");
+  await writeFile(
+    localConfigPath,
+    `${legacyTemplate.trimEnd()}
+
+[auth.external.google]
+enabled = true
+client_id = "env(LEGACY_GOOGLE_CLIENT_ID)"
+secret = "env(LEGACY_GOOGLE_SECRET)"
+redirect_uri = "http://127.0.0.1:54321/auth/v1/callback"
+skip_nonce_check = false
+email_optional = false
+`,
+  );
+  const configSource = await readFile(configPath, "utf8");
+  await writeFile(
+    configPath,
+    configSource.replace(
+      'runtimeWorkdir: ".rehearsal/runtime",',
+      `runtimeWorkdir: ".rehearsal/runtime",
+    authentication: {
+      enableLocalSignup: true,
+      environmentFile: ".env.rehearsal-service.local",
+      providers: [{
+        name: "google",
+        clientIdEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_ID",
+        clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_SECRET",
+        skipNonceCheck: true,
+        emailOptional: false,
+      }],
+    },`,
+    ),
+  );
+  await writeFile(
+    join(cwd, ".env.rehearsal-service.local"),
+    "REHEARSAL_GOOGLE_CLIENT_ID=fixture-client-id\nREHEARSAL_GOOGLE_CLIENT_SECRET=fixture-client-secret\n",
+    { mode: 0o600 },
+  );
 };
 
 const findContainer = ({ cwd }) => {
@@ -429,6 +467,40 @@ const main = async () => {
       args: ["reset", "--json"],
       label: "format-1 prerequisite reset",
     });
+    const runtimeAuthConfig = await readFile(
+      join(runtimeWorkdir, "supabase/config.toml"),
+      "utf8",
+    );
+    if (
+      !runtimeAuthConfig.includes("[auth.external.google]") ||
+      !runtimeAuthConfig.includes("enable_signup = true") ||
+      !runtimeAuthConfig.includes(
+        'client_id = "env(REHEARSAL_GOOGLE_CLIENT_ID)"',
+      ) ||
+      !runtimeAuthConfig.includes(
+        `redirect_uri = "http://127.0.0.1:${
+          new URL(
+            readLocalSupabaseEnvironment({ cwd, workdir: runtimeWorkdir })
+              .apiUrl,
+          ).port
+        }/auth/v1/callback"`,
+      ) ||
+      !runtimeAuthConfig.includes("skip_nonce_check = true") ||
+      runtimeAuthConfig.includes("fixture-client-secret")
+    ) {
+      throw new Error(
+        "The installed package did not generate the declared local OAuth provider safely.",
+      );
+    }
+    if (
+      runtimeAuthConfig.includes("LEGACY_GOOGLE_CLIENT_ID") ||
+      runtimeAuthConfig.match(/\[auth\.external\.google\]/gu)?.length !== 1
+    ) {
+      throw new Error(
+        "The installed package did not replace the compatible legacy provider only in the generated runtime.",
+      );
+    }
+    commandsProven.push("declarative local OAuth provider");
     promoteActiveBaselineWithSchemaSnapshot({ cwd });
     executeCliOrThrow({
       cwd,

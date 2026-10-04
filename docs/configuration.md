@@ -42,9 +42,21 @@ export default defineRehearsalConfig({
     rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml",
     runtimeWorkdir: ".rehearsal/runtime",
 
-    // Optional; configure both keys together.
-    // serviceEnvironmentFile: ".env.rehearsal-service.local",
-    // serviceEnvironmentVariables: ["LOCAL_IDP_CLIENT_ID", "LOCAL_IDP_SECRET"],
+    // Optional local OAuth connection. Secrets stay in the ignored owner-only file.
+    // Register http://127.0.0.1:58321/auth/v1/callback with the provider.
+    // authentication: {
+    //   enableLocalSignup: true,
+    //   environmentFile: ".env.rehearsal-service.local",
+    //   providers: [
+    //     {
+    //       name: "google",
+    //       clientIdEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_ID",
+    //       clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_SECRET",
+    //       skipNonceCheck: false,
+    //       emailOptional: false,
+    //     },
+    //   ],
+    // },
   },
   baseline: {
     artifactDirectory: ".rehearsal",
@@ -124,7 +136,8 @@ safe, run setup again, and compare the two files before deleting either one.
 After upgrading, run `npx rehearsal init` to print the current release's generated
 template beside the path of your existing config. This comparison is read-only; adding a
 new optional key remains your decision. `npx rehearsal init --write` still refuses to
-replace an existing config.
+replace an existing config. Rehearsal lists important optional settings that are
+available but not enabled before printing the template, so they are easier to find.
 
 ### Workspaces and custom paths
 
@@ -247,19 +260,72 @@ negative controls, such as unauthorized, malformed, withheld, or missing records
 response that merely avoids a server error does not prove that eligible data was
 published or can be found.
 
-## Supabase service environment
+## Supabase authentication
 
-Some local identity providers need a client ID and secret. Configure both fields or
-neither:
+Rehearsal can configure a Google or GitHub OAuth connection in its disposable local
+Supabase runtime. Declare the provider and the names of its credential variables:
 
 ```ts
-serviceEnvironmentFile: ".env.rehearsal-service.local",
-serviceEnvironmentVariables: ["LOCAL_IDP_CLIENT_ID", "LOCAL_IDP_SECRET"],
+authentication: {
+  enableLocalSignup: true,
+  environmentFile: ".env.rehearsal-service.local",
+  providers: [
+    {
+      name: "google",
+      clientIdEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_ID",
+      clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_SECRET",
+      skipNonceCheck: false,
+      emailOptional: false,
+    },
+  ],
+},
 ```
 
-The file must be ignored, owner-readable only, and contain only the exact allowlisted
-names. These credentials may authorize an identity handshake, but the callback must
-terminate at local Auth. They do not grant hosted database access.
+Create the ignored file, add the values, then restrict it to your account:
+
+```dotenv
+REHEARSAL_GOOGLE_CLIENT_ID=your-local-oauth-client-id
+REHEARSAL_GOOGLE_CLIENT_SECRET=your-local-oauth-client-secret
+```
+
+```bash
+chmod 600 .env.rehearsal-service.local
+```
+
+Register `http://127.0.0.1:<apiPort>/auth/v1/callback` with the provider, using the
+`runtime.apiPort` value from this config. `rehearsal explain` also prints the exact URL.
+Rehearsal writes that callback and `env(...)` references into the disposable runtime; it
+never copies credential values into tracked configuration. Use `name: "github"` and
+distinct GitHub variable names for GitHub. Duplicate providers, reused variable names,
+unsupported providers, extra keys, and a template that already owns the same provider
+are refused. This follows Supabase's documented
+[`env()` configuration pattern](https://supabase.com/docs/guides/local-development/managing-config).
+
+`enableLocalSignup: true` explicitly acknowledges that disposable local Auth may create
+the temporary user returned by OAuth. Rehearsal changes the generated runtime copy only;
+the tracked Supabase template and every hosted project remain unchanged.
+
+The older `serviceEnvironmentFile`, `serviceEnvironmentVariables`, and
+`safety.authenticationProviders` fields remain compatible for projects that manually
+own their Supabase provider TOML. Do not combine those fields with the declarative
+`authentication` block.
+
+To migrate a manual Google or GitHub setup, replace those three legacy config fields
+with the `authentication` block together. The tracked Supabase template may keep its
+existing provider section: Rehearsal replaces a compatible legacy section only in the
+generated disposable runtime copy. The section may contain `enabled`, `client_id`,
+`secret`, `redirect_uri`, `skip_nonce_check`, and `email_optional`. The latter two must
+match the explicit `skipNonceCheck` and `emailOptional` declarations, which default to
+`false`. Keep them false unless the provider integration has a reviewed need; Supabase
+warns in its [CLI configuration reference](https://supabase.com/docs/guides/local-development/cli/config#auth.external.provider.skip_nonce_check)
+that skipping nonce validation reduces replay protection. Unknown settings,
+duplicate sections, nested provider tables, or mismatched options fail
+`rehearsal doctor` before reset. Rehearsal never edits the tracked template during this
+transition.
+
+Provider connection and copied-account association are separate. This block lets the
+ordinary application sign-in reach local Auth. An optional `identityPolicy` decides
+whether that verified local identity may claim a reviewed copied account.
 
 ## Safety fields
 

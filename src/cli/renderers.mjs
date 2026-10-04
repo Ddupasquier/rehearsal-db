@@ -14,6 +14,16 @@ export const renderPlan = (plan, verbosity) => {
       ...plan.targets.flatMap((target) => [
         `${target.name} — ${target.plan.config.project}`,
         `  ✓ ${target.plan.environment.kind}`,
+        ...(target.plan.environment.authenticationProviders.length
+          ? [
+              `  ✓ External identity providers ${target.plan.environment.authenticationProviders.join(", ")}`,
+              ...(target.plan.environment.authenticationCallback
+                ? [
+                    `  → Register callback ${target.plan.environment.authenticationCallback}`,
+                  ]
+                : []),
+            ]
+          : []),
         `  ✓ baseline ${target.plan.baseline.generationId}`,
         `  ✓ ${formatCount(target.plan.baseline.tableCount, "table")}; ${formatCount(target.plan.baseline.rowCount, "row")}`,
         ...(target.plan.migrations.candidates.length
@@ -69,6 +79,11 @@ export const renderPlan = (plan, verbosity) => {
     ...(plan.environment.authenticationProviders.length
       ? [
           `  ✓ External identity providers ${plan.environment.authenticationProviders.join(", ")}`,
+          ...(plan.environment.authenticationCallback
+            ? [
+                `  → Register callback ${plan.environment.authenticationCallback}`,
+              ]
+            : []),
         ]
       : []),
     "",
@@ -194,6 +209,15 @@ export const renderInit = (result) =>
     `Detected package manager: ${result.detected.packageManager}`,
     `Detected Supabase config: ${result.detected.hasSupabaseConfig ? "yes" : "no"}`,
     `Detected migrations: ${result.detected.hasMigrations ? "yes" : "no"}`,
+    ...(result.availableOptions?.length
+      ? [
+          "",
+          "AVAILABLE BUT NOT ENABLED",
+          ...result.availableOptions.map(
+            (option) => `  → ${option.path}: ${option.summary}`,
+          ),
+        ]
+      : []),
     ...(result.source ? ["", result.source] : []),
     result.nextAction,
   ].join("\n");

@@ -128,10 +128,148 @@ describe("Rehearsal configuration", () => {
     ]);
     expect(loaded.config.supabase.serviceEnvironmentFile).toBeNull();
     expect(loaded.config.supabase.serviceEnvironmentVariables).toEqual([]);
+    expect(loaded.config.supabase.authentication).toBeNull();
     expect(loaded.config.containerRuntime).toEqual({ autoStartColima: true });
     expect(loaded.config.cleanup).toEqual({ retainBaselineGenerations: 2 });
     expect(loaded.config.preparation).toBeNull();
     expect(loaded.config.dependentTargets).toEqual([]);
+  });
+
+  it("loads declarative local OAuth providers and derives their credential allowlist", async () => {
+    const root = await makeProject();
+    await writeFile(
+      join(root, "rehearsal.config.mjs"),
+      configSource().replace(
+        'runtimeWorkdir: ".rehearsal/runtime",',
+        `runtimeWorkdir: ".rehearsal/runtime",
+        authentication: {
+          enableLocalSignup: true,
+          environmentFile: ".env.rehearsal-service.local",
+          providers: [
+            {
+              name: "google",
+              clientIdEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_ID",
+              clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_SECRET",
+              skipNonceCheck: true,
+              emailOptional: false,
+            },
+            {
+              name: "github",
+              clientIdEnvironmentVariable: "REHEARSAL_GITHUB_CLIENT_ID",
+              clientSecretEnvironmentVariable: "REHEARSAL_GITHUB_CLIENT_SECRET",
+            },
+          ],
+        },`,
+      ),
+    );
+
+    const loaded = await loadRehearsalConfig({ projectRoot: root });
+
+    expect(loaded.config.supabase.authentication.providers).toHaveLength(2);
+    expect(loaded.config.supabase.authentication.providers[0]).toMatchObject({
+      skipNonceCheck: true,
+      emailOptional: false,
+    });
+    expect(loaded.config.supabase.authentication.providers[1]).toMatchObject({
+      skipNonceCheck: false,
+      emailOptional: false,
+    });
+    expect(loaded.config.supabase.serviceEnvironmentVariables).toEqual([
+      "REHEARSAL_GOOGLE_CLIENT_ID",
+      "REHEARSAL_GOOGLE_CLIENT_SECRET",
+      "REHEARSAL_GITHUB_CLIENT_ID",
+      "REHEARSAL_GITHUB_CLIENT_SECRET",
+    ]);
+    expect(loaded.config.safety.authenticationProviders).toEqual([
+      "google",
+      "github",
+    ]);
+    expect(loaded.paths.serviceEnvironment).toBe(
+      join(root, ".env.rehearsal-service.local"),
+    );
+  });
+
+  it("refuses unsupported, duplicate, ambiguous, or unsafe OAuth declarations", async () => {
+    const authentication = `authentication: {
+      enableLocalSignup: true,
+      environmentFile: ".env.rehearsal-service.local",
+      providers: [{
+        name: "google",
+        clientIdEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_ID",
+        clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_SECRET",
+      }],
+    },`;
+    for (const [name, current, replacement, expected] of [
+      [
+        "unsupported",
+        'name: "google"',
+        'name: "gitlab"',
+        "must be one of: github, google",
+      ],
+      [
+        "unsafe-variable",
+        'clientIdEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_ID"',
+        'clientIdEnvironmentVariable: "bad-key"',
+        "safe environment variable name",
+      ],
+      [
+        "duplicate-variable",
+        'clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_SECRET"',
+        'clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_ID"',
+        "environment variables must be unique",
+      ],
+      [
+        "invalid-provider-option",
+        'name: "google"',
+        'name: "google", skipNonceCheck: "yes"',
+        "skipNonceCheck must be a boolean",
+      ],
+    ]) {
+      const root = await makeProject();
+      const path = join(root, `${name}.config.mjs`);
+      await writeFile(
+        path,
+        configSource().replace(
+          'runtimeWorkdir: ".rehearsal/runtime",',
+          `runtimeWorkdir: ".rehearsal/runtime", ${authentication.replace(current, replacement)}`,
+        ),
+      );
+      await expect(
+        loadRehearsalConfig({ projectRoot: root, configPath: path }),
+      ).rejects.toThrow(expected);
+    }
+
+    const root = await makeProject();
+    const path = join(root, "ambiguous.config.mjs");
+    await writeFile(
+      path,
+      configSource().replace(
+        'runtimeWorkdir: ".rehearsal/runtime",',
+        `runtimeWorkdir: ".rehearsal/runtime", ${authentication} serviceEnvironmentFile: ".env.legacy", serviceEnvironmentVariables: ["LEGACY_KEY"],`,
+      ),
+    );
+    await expect(
+      loadRehearsalConfig({ projectRoot: root, configPath: path }),
+    ).rejects.toThrow("cannot be combined with the legacy");
+
+    const missingSignupRoot = await makeProject();
+    const missingSignupPath = join(
+      missingSignupRoot,
+      "missing-signup.config.mjs",
+    );
+    await writeFile(
+      missingSignupPath,
+      configSource().replace(
+        'runtimeWorkdir: ".rehearsal/runtime",',
+        `runtimeWorkdir: ".rehearsal/runtime", ${authentication.replace("enableLocalSignup: true,", "")}`,
+      ),
+    );
+    await expect(
+      loadRehearsalConfig({
+        projectRoot: missingSignupRoot,
+        configPath: missingSignupPath,
+      }),
+    ).rejects.toThrow("enableLocalSignup must be true");
   });
 
   it("validates project-declared dependent runtime references", async () => {
@@ -347,8 +485,10 @@ describe("Rehearsal configuration", () => {
     expect(source).toContain('configPath: "rehearsal.publication.config.mjs"');
     expect(source).toContain("Generated from this project by `npx rehearsal`");
     expect(source).toContain("CHECK: commands detected from package.json");
+    expect(source).toContain("authentication:");
+    expect(source).toContain("enableLocalSignup: true");
     expect(source).toContain(
-      '// serviceEnvironmentFile: ".env.rehearsal-service.local"',
+      'clientSecretEnvironmentVariable: "REHEARSAL_GOOGLE_CLIENT_SECRET"',
     );
     expect(source).toContain("docs/configuration.md");
     expect(source).not.toContain("project-ref");
@@ -356,6 +496,10 @@ describe("Rehearsal configuration", () => {
 
   it("keeps init non-mutating until --write and never overwrites config", async () => {
     const root = await makeProject();
+    await writeFile(
+      join(root, "supabase/config.toml"),
+      'project_id = "fixture-project"\n[db]\nmajor_version = 17\n',
+    );
     const destination = join(root, "rehearsal.config.mjs");
     const preview = JSON.parse(
       (
@@ -400,6 +544,21 @@ describe("Rehearsal configuration", () => {
     );
     expect(currentTemplate.data.mode).toBe("current-template");
     expect(currentTemplate.data.source).toContain("containerRuntime:");
+    expect(currentTemplate.data.source).toContain("authentication:");
+    expect(currentTemplate.data.availableOptions).toEqual([
+      {
+        path: "supabase.authentication",
+        summary:
+          "Configure local Google or GitHub sign-in with credentials kept outside tracked files.",
+      },
+    ]);
+    const currentTemplateText = await execute(
+      process.execPath,
+      [cliPath, "init", "--plain"],
+      { cwd: root },
+    );
+    expect(currentTemplateText.stdout).toContain("AVAILABLE BUT NOT ENABLED");
+    expect(currentTemplateText.stdout).toContain("supabase.authentication");
     expect(await readFile(destination, "utf8")).toBe(
       writtenSource.replace(
         '"@rehearsal-db/core"',
@@ -411,6 +570,43 @@ describe("Rehearsal configuration", () => {
         cwd: root,
       }),
     ).rejects.toMatchObject({ code: 2 });
+  });
+
+  it("makes the declarative authentication replacement discoverable from a legacy config", async () => {
+    const root = await makeProject();
+    await writeFile(
+      join(root, "supabase/config.toml"),
+      'project_id = "fixture-project"\n[db]\nmajor_version = 17\n',
+    );
+    await writeFile(
+      join(root, "rehearsal.config.mjs"),
+      configSource()
+        .replace(
+          'runtimeWorkdir: ".rehearsal/runtime",',
+          'runtimeWorkdir: ".rehearsal/runtime", serviceEnvironmentFile: ".env.rehearsal-service.local", serviceEnvironmentVariables: ["LEGACY_GOOGLE_CLIENT_ID", "LEGACY_GOOGLE_SECRET"],',
+        )
+        .replace(
+          'safety: { hostedAccess: "disabled", outboundNetwork: "deny" },',
+          'safety: { hostedAccess: "disabled", outboundNetwork: "deny", authenticationProviders: ["google"] },',
+        ),
+    );
+
+    const result = JSON.parse(
+      (
+        await execute(process.execPath, [cliPath, "init", "--json"], {
+          cwd: root,
+        })
+      ).stdout,
+    );
+
+    expect(result.data.mode).toBe("current-template");
+    expect(result.data.availableOptions).toEqual([
+      {
+        path: "supabase.authentication",
+        summary:
+          "A declarative Google/GitHub replacement is available; replace the legacy provider fields together after review.",
+      },
+    ]);
   });
 
   it("provides discoverable help without requiring a project configuration", async () => {

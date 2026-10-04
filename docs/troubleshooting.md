@@ -146,9 +146,20 @@ changes.
 
 ## Local authentication fails
 
-Confirm the provider is enabled in the dedicated local Supabase config, the allowlisted
-service environment file exists with owner-only permissions, and the provider callback
-is the local Auth callback. Do not paste provider secrets into config or terminal output.
+For Google or GitHub, confirm `supabase.authentication` is declared in
+`rehearsal.config.mjs`, its ignored environment file exists with `chmod 600`, and the
+provider has the printed local Auth callback registered. Rehearsal generates the
+disposable Supabase provider block.
+
+When migrating from the legacy service environment fields, replace those fields together
+with `supabase.authentication` and rerun `rehearsal doctor`. A compatible Google or
+GitHub provider section may remain in the tracked template: Rehearsal supersedes it only
+inside the generated runtime copy. Doctor refuses unknown provider settings, duplicate
+or nested provider sections, and nonce or optional-email settings that do not match the
+new declaration. Keep both options false unless there is a reviewed provider-specific
+need; skipping nonce validation reduces replay protection. Otherwise keep using the
+documented legacy configuration.
+Never paste provider secrets into tracked config or terminal output.
 
 If `identity plan` refuses the matcher, read the message literally:
 

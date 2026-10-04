@@ -34,8 +34,9 @@ Storage files. `baseline create` and `baseline prepare` are local-only.
 
 `setup --write` is idempotent: supported existing config files and completed runtime
 files remain unchanged, while missing safe ignore entries may be appended. On upgrades,
-`init` prints the installed release's template for comparison; `init --write` never
-replaces an existing config.
+`init` first lists important optional settings that are available but not enabled, then
+prints the installed release's template for comparison. `init --write` never replaces an
+existing config.
 
 ## Optional source preparation
 
