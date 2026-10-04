@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -76,6 +77,167 @@ afterEach(async () => {
 });
 
 describe("executable privacy engine", () => {
+  it("preserves only a reviewed owner and sanitizes bounded structured arrays", () => {
+    const owner = "11111111-1111-4111-8111-111111111111";
+    const policyWithOwner = {
+      policyVersion: 2,
+      migrationCutoff: "20260101000000",
+      bindings: {
+        "approved-owner": {
+          environmentVariable: "REHEARSAL_APPROVED_OWNER_ID",
+          approvedValueSha256: createHash("sha256").update(owner).digest("hex"),
+        },
+      },
+      tables: [
+        {
+          name: "profiles",
+          sourceRows: "STREAM AND SANITIZE",
+          ownerBinding: { binding: "approved-owner", column: "user_id" },
+          columns: [
+            {
+              name: "user_id",
+              action: "PSEUDONYMIZE",
+              recipe: { format: "uuid", namespace: "account-id" },
+              generated: "NEVER",
+              identity: "YES",
+              foreignKey: null,
+            },
+            {
+              name: "display_name",
+              action: "DERIVE",
+              recipe: {
+                kind: "approved-owner",
+                approved: { action: "KEEP" },
+                otherwise: {
+                  action: "REPLACE",
+                  recipe: { kind: "constant", value: "Synthetic account" },
+                },
+              },
+              generated: "NEVER",
+              identity: "NO",
+              foreignKey: null,
+            },
+            {
+              name: "payload",
+              action: "DERIVE",
+              recipe: {
+                kind: "json-array",
+                maximumItems: 2,
+                maximumDepth: 4,
+                maximumBytes: 512,
+                items: {
+                  action: "DERIVE",
+                  recipe: {
+                    kind: "json-object",
+                    fields: {
+                      actor_id: {
+                        action: "PSEUDONYMIZE",
+                        recipe: { format: "uuid", namespace: "account-id" },
+                      },
+                      notes: {
+                        action: "REPLACE",
+                        required: false,
+                        recipe: { kind: "constant", value: "Synthetic note" },
+                      },
+                    },
+                  },
+                },
+              },
+              generated: "NEVER",
+              identity: "NO",
+              foreignKey: null,
+            },
+          ],
+        },
+      ],
+    };
+    const engine = createPrivacyEngine({
+      policy: policyWithOwner,
+      key: Buffer.alloc(32, 7),
+      environment: { REHEARSAL_APPROVED_OWNER_ID: owner },
+    });
+    const make = (userId, displayName, payload) =>
+      engine.sanitize({
+        table: "profiles",
+        row: { user_id: userId, display_name: displayName, payload },
+      });
+    const approved = make(owner, "Approved owner", [
+      { actor_id: owner, notes: "secret-canary" },
+      { actor_id: owner },
+    ]);
+    const other = make(
+      "22222222-2222-4222-8222-222222222222",
+      "Other private name",
+      [],
+    );
+
+    expect(approved.row.display_name).toBe("Approved owner");
+    expect(other.row.display_name).toBe("Synthetic account");
+    expect(approved.row.payload[0]).toEqual({
+      actor_id: approved.row.user_id,
+      notes: "Synthetic note",
+    });
+    expect(approved.row.payload[1]).toEqual({ actor_id: approved.row.user_id });
+    const rotated = createPrivacyEngine({
+      policy: policyWithOwner,
+      key: Buffer.alloc(32, 8),
+      environment: { REHEARSAL_APPROVED_OWNER_ID: owner },
+    }).sanitize({
+      table: "profiles",
+      row: {
+        user_id: owner,
+        display_name: "Approved owner",
+        payload: [{ actor_id: owner }],
+      },
+    });
+    expect(rotated.row.user_id).not.toBe(approved.row.user_id);
+    expect(JSON.stringify(approved)).not.toContain("secret-canary");
+    expect(() =>
+      make(owner, "A", [
+        { actor_id: owner },
+        { actor_id: owner },
+        { actor_id: owner },
+      ]),
+    ).toThrow("maximumItems");
+    expect(() =>
+      make(owner, "A", [{ actor_id: owner, unknown: true }]),
+    ).toThrow("unclassified JSON key");
+    expect(() => make(owner, "A", [{}])).toThrow("missing required JSON keys");
+    expect(() =>
+      make(owner, "A", [{ actor_id: { nested: { too: { deep: owner } } } }]),
+    ).toThrow("maximumDepth");
+    expect(() => make(owner, "A", [{ actor_id: "x".repeat(600) }])).toThrow(
+      "maximumBytes",
+    );
+    expect(() => make(owner, "A", null)).toThrow("must be a JSON array");
+    expect(() =>
+      createPrivacyEngine({
+        policy: policyWithOwner,
+        key: Buffer.alloc(32, 7),
+        environment: { REHEARSAL_APPROVED_OWNER_ID: "wrong" },
+      }),
+    ).toThrow("does not match its review receipt");
+    expect(() =>
+      validateExecutablePrivacyPolicy({
+        ...policyWithOwner,
+        tables: [
+          {
+            ...policyWithOwner.tables[0],
+            columns: policyWithOwner.tables[0].columns.map((entry) =>
+              entry.name === "user_id"
+                ? {
+                    ...entry,
+                    action: "REPLACE",
+                    recipe: { kind: "constant", value: "synthetic-owner" },
+                  }
+                : entry,
+            ),
+          },
+        ],
+      }),
+    ).toThrow("explicitly pseudonymized identity");
+  });
+
   it("produces stable, shape-valid pseudonyms and removes excluded nested values", () => {
     const engine = createPrivacyEngine({ policy, key: Buffer.alloc(32, 7) });
     const source = {

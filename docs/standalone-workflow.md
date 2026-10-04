@@ -28,6 +28,8 @@ name:
 - whether rows are approved public data or belong to one explicitly approved
   owner;
 - privacy actions and bounded transformation recipes;
+- hashed server-side owner bindings and explicit approved/other-owner branches;
+- bounded nested JSON objects and arrays with required/optional fields;
 - licensed or consented Storage buckets and prefixes;
 - schema and extension prerequisites;
 - local identities and reference locations;

@@ -63,6 +63,7 @@
     "test:fixture:postgresql": "node scripts/verification/fixtures/postgresql.mjs",
     "test:fixture:dependent": "node scripts/verification/fixtures/dependent.mjs",
     "test:fixture:standalone": "node scripts/verification/fixtures/standalone.mjs",
+    "test:fixture:privacy": "node scripts/verification/fixtures/privacy.mjs",
     "check": "npm run check:syntax && npm run test && npm run docs:build && npm run format:check && npm run package:audit",
     "check:syntax": "find src scripts tests -type f -name '*.mjs' -exec node --check {} +",
     "format": "prettier --write .",
