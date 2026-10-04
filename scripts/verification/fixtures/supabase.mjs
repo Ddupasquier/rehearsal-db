@@ -65,7 +65,7 @@ enabled = true
 client_id = "env(LEGACY_GOOGLE_CLIENT_ID)"
 secret = "env(LEGACY_GOOGLE_SECRET)"
 redirect_uri = "http://127.0.0.1:54321/auth/v1/callback"
-skip_nonce_check = false
+skip_nonce_check = true
 email_optional = false
 `,
   );
