@@ -237,11 +237,18 @@ describe("guided Rehearsal setup", () => {
     await expect(
       stat(join(root, "rehearsal.config.mjs")),
     ).resolves.toBeDefined();
-    await expect(
-      execute(process.execPath, [cliPath, "setup", "--write", "--json"], {
-        cwd: root,
-      }),
-    ).rejects.toMatchObject({ code: 2 });
+    const repeated = JSON.parse(
+      (
+        await execute(
+          process.execPath,
+          [cliPath, "setup", "--write", "--json"],
+          { cwd: root },
+        )
+      ).stdout,
+    );
+    expect(
+      repeated.data.files.every(({ action }) => action === "unchanged"),
+    ).toBe(true);
   });
 
   it("summarizes expected first-run gaps without repeated file errors", async () => {

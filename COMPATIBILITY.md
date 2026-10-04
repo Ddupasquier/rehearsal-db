@@ -21,6 +21,15 @@ The first stable `1.0.0` requires external beta evidence, a support policy, and 
 public API. Supporting additional database families, package managers, or operating
 systems is not implied by the 0.x contract.
 
+The npm install hook may create project scaffolding only when it proves one application
+root. Ordinary npm application installs are covered. A workspace is automatic only when
+one declaring consumer is already visible in its manifest or lockfile; npm can save a
+new `--workspace` declaration after dependency hooks run, so a first workspace install
+may use the guided fallback. pnpm and Yarn install layouts are not yet an
+automatic-generation contract. Run `npx rehearsal` from the application directory for
+all skipped cases. Global, cache, temporary `npx`, and ambiguous multi-application
+workspace installs do not receive files.
+
 The PostgreSQL target covers timestamped SQL migrations running in a dedicated local
 `postgres` Docker image. Runtime commands reject hosted connection strings and existing
 unmanaged servers. The separately opted-in PostgreSQL preparation boundary may use a

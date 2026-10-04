@@ -23,7 +23,7 @@ bare `npx rehearsal` prints help instead of waiting for input.
 | `npx rehearsal setup --target=supabase`                           | Preview Supabase setup files.                          |
 | `npx rehearsal setup --target=postgresql`                         | Preview PostgreSQL setup files.                        |
 | Add `--write` to either setup command                             | Create the previewed files without overwriting.        |
-| `npx rehearsal init`                                              | Preview only `rehearsal.config.mjs`.                   |
+| `npx rehearsal init`                                              | Preview the current config template without writing.   |
 | `npx rehearsal init --write`                                      | Create only `rehearsal.config.mjs`.                    |
 | `npx rehearsal baseline prepare --records=<path> --ledger=<path>` | Preview a sanitization-policy draft.                   |
 | Add `--write` to `baseline prepare`                               | Write the draft for human review.                      |
@@ -31,6 +31,11 @@ bare `npx rehearsal` prints help instead of waiting for input.
 
 Add `--assets=<manifest.json>` to `baseline create` only for approved local Supabase
 Storage files. `baseline create` and `baseline prepare` are local-only.
+
+`setup --write` is idempotent: supported existing config files and completed runtime
+files remain unchanged, while missing safe ignore entries may be appended. On upgrades,
+`init` prints the installed release's template for comparison; `init --write` never
+replaces an existing config.
 
 ## Optional source preparation
 

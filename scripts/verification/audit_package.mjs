@@ -42,6 +42,7 @@ for (const required of [
   "README.md",
   "package.json",
   "src/cli/rehearsal.mjs",
+  "scripts/install/create_root_config.mjs",
   "scripts/runtime/manage_database.mjs",
   "src/targets/target.mjs",
   "src/targets/supabase.mjs",

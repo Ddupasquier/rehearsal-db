@@ -37,11 +37,15 @@ npm install --save-dev @rehearsal-db/core@beta
 npx rehearsal
 ```
 
-The first run detects your project and offers to create a commented
-`rehearsal.config.mjs` with the project name, migration paths, commands, ports, and safe
-defaults already filled in. Choose **Set the stage**, select Supabase or PostgreSQL,
-review the preview, and confirm the files it will create. Existing files are never
-overwritten.
+For an ordinary npm application install, Rehearsal safely creates a commented
+`rehearsal.config.mjs` in the project root, adds only its local-artifact entries to
+`.gitignore`, and prepares the isolated local runtime configuration. It detects the
+project name, database target, migration paths, commands, and free ports. Review lines
+marked `CHECK`, then open the guide. Existing files are never overwritten.
+
+If install scripts are disabled or the workspace root is ambiguous, installation makes
+no guess. Run `npx rehearsal` inside the application and choose **Set the stage** for the
+same previewed setup.
 
 For PostgreSQL, download the reviewed local image once before running the guide:
 
@@ -64,7 +68,8 @@ source-owner approval; see [Standalone workflow](docs/standalone-workflow.md).
 ## The normal workflow
 
 1. Run `npx rehearsal`.
-2. Let the guide create the local-only configuration.
+2. Review the generated local-only configuration, or let the guide create it when the
+   install hook safely skipped it.
 3. Review the sanitization policy and create the baseline.
 4. Review the exact candidate migration list.
 5. Run the rehearsal and your application proof.

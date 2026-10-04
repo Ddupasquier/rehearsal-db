@@ -1,15 +1,21 @@
 # Configuration reference
 
-Most users should let the guide create this file:
+An ordinary npm application install creates this file in the application root when the
+root can be identified safely:
 
 ```bash
-npx rehearsal
+npm install --save-dev @rehearsal-db/core@beta
 ```
 
-The first run uses your chosen database type and detects the project name, migration
-folder, package-manager commands, and free local ports. After you approve the setup
-preview, it creates a commented `rehearsal.config.mjs` with those values filled in.
-Installation itself does not use a `postinstall` script or silently modify the project.
+The install hook detects the database type, project name, migration folder,
+package-manager commands, and free local ports. It also creates the dedicated local
+runtime config and appends the two Rehearsal local-artifact entries to `.gitignore`.
+Existing configs and existing ignore content are never rewritten.
+
+When lifecycle scripts are disabled or the application root is not provable, run
+`npx rehearsal` inside the application. The guide provides the same setup with a preview
+and confirmation. Automatic root generation is tested with npm. pnpm and Yarn users
+should use this guided fallback because their lifecycle and workspace layouts vary.
 
 Review lines marked `CHECK`, especially the application proof command. Optional settings
 are present as commented examples, and secrets never belong in this file. Rehearsal will
@@ -114,6 +120,26 @@ All paths resolve inside the consuming project. The artifact directory must be n
 
 Rehearsal never overwrites this config. To start over, move the existing file somewhere
 safe, run setup again, and compare the two files before deleting either one.
+
+After upgrading, run `npx rehearsal init` to print the current release's generated
+template beside the path of your existing config. This comparison is read-only; adding a
+new optional key remains your decision. `npx rehearsal init --write` still refuses to
+replace an existing config.
+
+### Workspaces and custom paths
+
+For an npm workspace, automatic creation proceeds only when exactly one application
+package already declares `@rehearsal-db/core` in the manifest or lockfile visible to the
+install hook. npm can save a new `--workspace` dependency after that hook runs, so a
+first workspace install may safely skip creation. If several applications declare it,
+Rehearsal also refuses to choose. Run `npx rehearsal` inside each intended application.
+Global installs, package caches, temporary `npx` installs, and Rehearsal's own source
+checkout never receive project files.
+
+Supported existing config paths—including
+`infrastructure/rehearsal/rehearsal.config.mjs`—are preserved, and a second root config
+is not created. Use `--config=<project-relative-path>` for other explicit paths when
+running commands.
 
 `preparation.privacyKey` must stay inside `.rehearsal`; it is ignored and owner-readable
 only. Source, runtime, and identity policy files are declarations that may be reviewed in

@@ -3,6 +3,10 @@ import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import {
+  renderDetectedConfig,
+  renderDetectedPostgresqlConfig,
+} from "../../src/project/configuration.mjs";
 
 const execute = promisify(execFile);
 const root = process.cwd();
@@ -41,6 +45,46 @@ const documentedCommands = [
 ];
 
 describe("documented CLI contract", () => {
+  it("keeps generated configuration sections represented in the reference", async () => {
+    const detected = {
+      projectName: "contract-app",
+      packageManager: "npm",
+      postgresqlMigrationDirectory: "database/migrations",
+      applicationCommand: "npm run dev",
+      verificationCommand: "npm test",
+    };
+    const generated = [
+      renderDetectedConfig(detected),
+      renderDetectedPostgresqlConfig(detected),
+    ];
+    const reference = await readFile(
+      join(root, "docs/configuration.md"),
+      "utf8",
+    );
+
+    for (const section of [
+      "schemaVersion:",
+      "project:",
+      "baseline:",
+      "preparation:",
+      "runtimePolicy:",
+      "identityPolicy:",
+      "containerRuntime:",
+      "cleanup:",
+      "dependentTargets:",
+      "application:",
+      "runtime:",
+      "safety:",
+    ]) {
+      expect(generated.every((source) => source.includes(section))).toBe(true);
+      expect(reference).toContain(section);
+    }
+    expect(generated[0]).toContain("supabase:");
+    expect(generated[1]).toContain("postgresql:");
+    expect(reference).toContain("supabase:");
+    expect(reference).toContain("postgresql:");
+  });
+
   it("keeps the command reference aligned with executable help", async () => {
     const [
       { stdout },

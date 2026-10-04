@@ -38,14 +38,19 @@ npm install --save-dev @rehearsal-db/core@beta
 npx rehearsal
 ```
 
-Choose **Set the stage**, then choose Supabase or PostgreSQL. Rehearsal previews every file
-before asking to create it. It will not replace an existing file.
-
-Review the generated `rehearsal.config.mjs`, especially:
+With npm, a normal application install creates `rehearsal.config.mjs`, the dedicated
+local runtime config, and the required `.gitignore` entries when Rehearsal can prove the
+application root. It never replaces an existing file. Review the generated config,
+especially:
 
 - the migration directory;
 - the application start and proof commands;
 - the local ports.
+
+If lifecycle scripts were disabled, a global/cache install was used, or a workspace has
+more than one possible application, no project files are created automatically. Run
+`npx rehearsal` inside the intended application, choose **Set the stage**, select
+Supabase or PostgreSQL, and approve the same safe setup preview.
 
 The proof command should check behavior changed by the migration. A test that only checks
 whether the home page loads is usually too weak.
@@ -160,6 +165,10 @@ npx rehearsal run --confirm-candidates=PASTE_DIGEST_HERE
 
 Replace `postgresql` with `supabase` when needed. See [CLI commands](commands.md) for the
 complete reference and [Troubleshooting](troubleshooting.md) when a check fails.
+
+Running setup again is safe: existing configuration and runtime files are reported as
+unchanged. Rehearsal only adds missing ignore entries. It never refreshes an existing
+config during an upgrade.
 
 ## Files Rehearsal creates
 

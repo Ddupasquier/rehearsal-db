@@ -7,9 +7,19 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ### Added
 
+- Local npm installs now create a validated, commented project-root
+  `rehearsal.config.mjs`, dedicated local runtime configuration, and additive safe ignore
+  entries when exactly one consumer application can be proven. Guided setup remains the
+  tested recovery path when lifecycle scripts are disabled or a workspace is ambiguous.
 - Copied-account association accepts explicit verified-email provider allowlists and
   hashed provider-subject matchers for supported Supabase identities. Google, GitHub,
   and email sign-in now share one review-and-confirm claim workflow.
+
+### Changed
+
+- Setup is idempotent, supported custom config paths are preserved, `.gitignore` updates
+  use an exclusive lock and atomic replacement, and `rehearsal init` shows the current
+  release template without replacing an existing config.
 
 ### Fixed
 
