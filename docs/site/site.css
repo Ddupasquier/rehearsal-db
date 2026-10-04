@@ -836,11 +836,37 @@ h3:hover .heading-anchor,
   width: 17px;
 }
 
+.download-count {
+  display: block;
+  width: fit-content;
+  margin-top: 22px;
+  border-radius: 4px;
+  line-height: 0;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.download-count:hover {
+  box-shadow: 0 8px 22px rgb(35 118 83 / 18%);
+  transform: translateY(-1px);
+}
+
+.download-count:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 54%, transparent);
+  outline-offset: 4px;
+}
+
+.download-count img {
+  display: block;
+  height: 28px;
+}
+
 .hero-proof {
   display: flex;
   flex-wrap: wrap;
   gap: 17px;
-  margin-top: 20px;
+  margin-top: 17px;
   color: var(--ink-faint);
   font-size: 11px;
   font-weight: 700;

@@ -1,5 +1,9 @@
 # Rehearsal
 
+[![Monthly npm downloads](https://img.shields.io/npm/dm/%40rehearsal-db%2Fcore?style=flat-square&logo=npm&logoColor=white&label=npm%20downloads&labelColor=1c2a34&color=287b5c)](https://www.npmjs.com/package/@rehearsal-db/core)
+
+[Read the documentation](https://ddupasquier.github.io/rehearsal-db/) · [View on npm](https://www.npmjs.com/package/@rehearsal-db/core) · [Report a problem](https://github.com/Ddupasquier/rehearsal-db/issues)
+
 Rehearsal tests PostgreSQL and Supabase migrations on your computer before you run them
 anywhere important. It restores safe test data into a disposable local database, applies
 only the migrations you approve, and runs your project's own test command.

@@ -4,6 +4,9 @@ export const site = Object.freeze({
   name: "Rehearsal",
   description:
     "Friendly, safety-first documentation for local PostgreSQL and Supabase migration rehearsals.",
+  package: "https://www.npmjs.com/package/@rehearsal-db/core",
+  downloadsBadge:
+    "https://img.shields.io/npm/dm/%40rehearsal-db%2Fcore?style=for-the-badge&logo=npm&logoColor=white&label=npm%20downloads&labelColor=1c2a34&color=287b5c",
   repository: "https://github.com/Ddupasquier/rehearsal-db",
   version: packageMetadata.version.replace(/^0\.1\.0-/u, ""),
 });
