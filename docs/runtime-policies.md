@@ -157,8 +157,10 @@ graph without an application callback patch:
 
 Authentication has three separate parts:
 
-1. The local Supabase configuration enables Google, GitHub, or email sign-in and reads
-   any provider credentials from the environment.
+1. `config.supabase.authentication` can enable a Google or GitHub connection in local
+   Supabase and reads its credentials from the ignored owner-only environment file.
+   Existing projects may still own that local provider TOML manually. Email sign-in does
+   not use an OAuth credential declaration.
 2. The application completes the ordinary sign-in and receives a normal Supabase
    session. Rehearsal does not intercept the callback.
 3. The identity policy matches that verified local identity and transfers only the

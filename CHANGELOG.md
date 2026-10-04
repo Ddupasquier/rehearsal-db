@@ -5,6 +5,41 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.12] - 2026-10-04
+
+### Added
+
+- Supabase projects can declaratively configure local Google or GitHub OAuth in
+  `rehearsal.config.mjs`. Rehearsal derives the credential allowlist, injects only the
+  ignored owner-only environment values, and generates the exact loopback callback in
+  the disposable runtime without tracking secrets. Local signup requires an explicit
+  acknowledgment and is enabled only in that generated runtime copy.
+- Branded, responsive documentation is now hosted on GitHub Pages with searchable
+  navigation, light and dark themes, and automatic deployment from `main`.
+- The documentation home page and packaged README show the live monthly npm download
+  count and link directly to the npm package.
+- Packed-package onboarding acceptance now proves both fresh root-config creation and a
+  real beta.11 upgrade that preserves the user's existing configuration byte for byte.
+
+### Changed
+
+- The packaged README now links prominently to the hosted documentation, npm package,
+  and issue tracker. Package homepage metadata also points to the hosted documentation.
+- GitHub Pages publishing uses the current Node.js 24 action generations without legacy
+  runtime warnings.
+- `rehearsal init` now calls out important optional settings that are available but not
+  enabled before showing the current installed-release template.
+
+### Fixed
+
+- Existing Google or GitHub provider sections can transition to declarative ownership
+  without editing the tracked Supabase template. Rehearsal replaces only a compatible
+  section in the disposable runtime copy, while `doctor` refuses ambiguous or
+  safety-weakening provider settings before reset.
+- Multi-target plain-text plans now print each declarative OAuth callback, and `init`
+  advertises the declarative replacement even when a project still uses legacy provider
+  fields.
+
 ## [0.1.0-beta.11] - 2026-10-03
 
 ### Added
@@ -314,7 +349,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.11...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.12...HEAD
+[0.1.0-beta.12]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.11...v0.1.0-beta.12
 [0.1.0-beta.11]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.10...v0.1.0-beta.11
 [0.1.0-beta.10]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.9...v0.1.0-beta.10
 [0.1.0-beta.9]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.8...v0.1.0-beta.9

@@ -55,6 +55,13 @@ Supabase or PostgreSQL, and approve the same safe setup preview.
 The proof command should check behavior changed by the migration. A test that only checks
 whether the home page loads is usually too weak.
 
+If the sandbox needs Google or GitHub sign-in, uncomment
+`supabase.authentication` in `rehearsal.config.mjs`. Add the named credentials to
+`.env.rehearsal-service.local`, run `chmod 600 .env.rehearsal-service.local`, and
+register the local callback printed in the config. See
+[Supabase authentication](configuration.md#supabase-authentication). Rehearsal keeps the
+values out of tracked files and generates the disposable provider configuration for you.
+
 ## 3. Prepare safe baseline inputs
 
 A **baseline** is the locked starting point restored before each rehearsal. Start with a
@@ -168,7 +175,9 @@ complete reference and [Troubleshooting](troubleshooting.md) when a check fails.
 
 Running setup again is safe: existing configuration and runtime files are reported as
 unchanged. Rehearsal only adds missing ignore entries. It never refreshes an existing
-config during an upgrade.
+config during an upgrade. After upgrading, run `npx rehearsal init` to see important
+optional settings you have not enabled and compare your file with the installed
+release's current template.
 
 ## Files Rehearsal creates
 

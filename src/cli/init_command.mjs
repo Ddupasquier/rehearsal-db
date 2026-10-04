@@ -49,11 +49,27 @@ export const runRehearsalInit = async ({ projectRoot, flags }) => {
           applicationUrl: loaded.config.runtime.applicationUrl,
           databasePort: loaded.config.runtime.ports.database,
         });
+    const usesLegacyAuthentication = Boolean(
+      loaded.config.supabase?.serviceEnvironmentFile ||
+      loaded.config.safety.authenticationProviders.length,
+    );
+    const availableOptions =
+      loaded.config.supabase && !loaded.config.supabase.authentication
+        ? [
+            {
+              path: "supabase.authentication",
+              summary: usesLegacyAuthentication
+                ? "A declarative Google/GitHub replacement is available; replace the legacy provider fields together after review."
+                : "Configure local Google or GitHub sign-in with credentials kept outside tracked files.",
+            },
+          ]
+        : [];
     return {
       mode: "current-template",
       destination: relative(projectRoot, existingPath),
       detected,
       source,
+      availableOptions,
       nextAction:
         "Your existing configuration was not changed. Compare it with this installed-release template to discover new optional keys.",
     };
@@ -70,6 +86,7 @@ export const runRehearsalInit = async ({ projectRoot, flags }) => {
     destination: relative(projectRoot, destination),
     detected,
     source,
+    availableOptions: [],
     nextAction: flags.write
       ? "Review the generated safety settings and run rehearsal doctor."
       : "Review this preview, then rerun rehearsal init --write to create it.",
