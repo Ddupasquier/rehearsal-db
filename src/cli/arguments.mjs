@@ -24,6 +24,7 @@ export const parseArguments = (arguments_) => {
     identityName: undefined,
     runtimeTopology: undefined,
     targetConfirmations: undefined,
+    exitGuidedSession: false,
   };
   const positionals = [];
   for (const argument of arguments_) {
@@ -90,6 +91,7 @@ export const resetGuidedFlags = (flags) => {
     identityName: undefined,
     runtimeTopology: undefined,
     targetConfirmations: undefined,
+    exitGuidedSession: false,
     setupPlan: undefined,
     preparationPlan: undefined,
     cleanupPlan: undefined,
@@ -111,6 +113,7 @@ export const commandMutatesProject = ({ command, flags, guided }) => {
   return [
     "baseline create",
     "baseline refresh",
+    "open",
     "start",
     "migrate",
     "reset",

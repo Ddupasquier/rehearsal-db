@@ -4,9 +4,15 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import * as prompts from "@clack/prompts";
-import { summarizeProjectCommandFailure } from "../application/session.mjs";
+import {
+  holdApplicationSession,
+  startApplicationSession,
+  summarizeProjectCommandFailure,
+} from "../application/session.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import { buildRehearsalPlan, runRehearsalDoctor } from "../runtime/plan.mjs";
 import {
@@ -470,6 +476,70 @@ export const createRuntimeCommands = ({
     return { applicationProof, dependentProofs };
   };
 
+  const openRuntimeApplication = async ({
+    flags,
+    planOptions,
+    onReady = () => undefined,
+  }) => {
+    const topology = await loadRuntimeTopology(planOptions);
+    const application = topology.primary.config.application;
+    if (!application.readiness) {
+      throw new Error(
+        "rehearsal open requires config.application.readiness so it can confirm the local application is usable.",
+      );
+    }
+    const runtimeReceipts = await Promise.all(
+      topology.targets.map((target) =>
+        access(join(target.paths.runtimeWorkdir, "baseline.json"))
+          .then(() => true)
+          .catch((error) => {
+            if (error?.code === "ENOENT") return false;
+            throw error;
+          }),
+      ),
+    );
+    if (runtimeReceipts.some((present) => !present)) {
+      throw new Error(
+        "rehearsal open requires an existing verified runtime. Run rehearsal run first.",
+      );
+    }
+    flags.runtimeTopology = topology;
+    const started = await runRuntimeStack({
+      command: "start",
+      flags,
+      planOptions,
+    });
+    const verified = await runRuntimeStack({
+      command: "verify",
+      flags,
+      planOptions,
+    });
+    const preparations = prepareDependentTargets({
+      topology,
+      environment: topologyCommandEnvironment(topology),
+    });
+    const session = await startApplicationSession({
+      command: application.startCommand,
+      cwd: topology.projectRoot,
+      files: topologyEnvironmentFiles(topology),
+      mappings: application.environmentVariables,
+      readiness: application.readiness,
+    });
+    const closed = await holdApplicationSession({ session, onReady });
+    return {
+      action: "open",
+      started: started.runtime,
+      verified: verified.runtime,
+      preparations,
+      application: {
+        command: application.startCommand,
+        readiness: session.ready,
+        stoppedBy: closed.signal,
+        diagnostics: closed.diagnostics,
+      },
+    };
+  };
+
   const prepareCandidateConfirmation = async ({
     command,
     flags,
@@ -544,6 +614,7 @@ export const createRuntimeCommands = ({
   };
 
   return {
+    openRuntimeApplication,
     prepareCandidateConfirmation,
     prepareDependentTargets,
     proveRuntimeStack,

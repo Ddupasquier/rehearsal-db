@@ -26,6 +26,7 @@ const documentedCommands = [
   "explain",
   "run --dry-run",
   "run --confirm-candidates=",
+  "open",
   "candidates",
   "inspect baseline",
   "inspect migrations",
@@ -41,19 +42,28 @@ const documentedCommands = [
 
 describe("documented CLI contract", () => {
   it("keeps the command reference aligned with executable help", async () => {
-    const [{ stdout }, commandReference, fixtureProof, standaloneFixtureProof] =
-      await Promise.all([
-        execute(process.execPath, [cli, "--help"], { cwd: root }),
-        readFile(join(root, "docs/commands.md"), "utf8"),
-        readFile(
-          join(root, "scripts/verification/fixtures/supabase.mjs"),
-          "utf8",
-        ),
-        readFile(
-          join(root, "scripts/verification/fixtures/standalone.mjs"),
-          "utf8",
-        ),
-      ]);
+    const [
+      { stdout },
+      commandReference,
+      fixtureProof,
+      standaloneFixtureProof,
+      postgresqlFixtureProof,
+    ] = await Promise.all([
+      execute(process.execPath, [cli, "--help"], { cwd: root }),
+      readFile(join(root, "docs/commands.md"), "utf8"),
+      readFile(
+        join(root, "scripts/verification/fixtures/supabase.mjs"),
+        "utf8",
+      ),
+      readFile(
+        join(root, "scripts/verification/fixtures/standalone.mjs"),
+        "utf8",
+      ),
+      readFile(
+        join(root, "scripts/verification/fixtures/postgresql.mjs"),
+        "utf8",
+      ),
+    ]);
 
     for (const command of documentedCommands) {
       expect(stdout).toContain(command);
@@ -84,6 +94,7 @@ describe("documented CLI contract", () => {
     }
 
     expect(standaloneFixtureProof).toContain('"refresh"');
+    expect(postgresqlFixtureProof).toContain('["open", "--plain"]');
   });
 
   it("links every primary guide from the README", async () => {
@@ -159,6 +170,7 @@ describe("documented CLI contract", () => {
       "Review the script",
       "Create the baseline",
       "Run a rehearsal",
+      "Open the sandbox app",
     ]) {
       expect(gettingStarted).toContain(action);
       expect(cliSource).toContain(action);

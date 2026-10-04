@@ -600,6 +600,8 @@ describe("guided terminal journey", () => {
 
   it("keeps every action visible in the completed styled menu", async () => {
     const root = await makeCompleteProject();
+    await mkdir(join(root, ".rehearsal/runtime"), { recursive: true });
+    await writeFile(join(root, ".rehearsal/runtime/baseline.json"), "{}\n");
     const output = String(
       await runInPty({
         cwd: root,
@@ -613,6 +615,7 @@ describe("guided terminal journey", () => {
       .replace(/\u001B\[[0-?]*[ -/]*[@-~]/gu, "");
 
     expect(output).toContain("Get help");
+    expect(output).toContain("Open the sandbox app");
     expect(output).toContain("Clean up disk space");
     expect(output).toContain("Show all commands");
     expect(output).toContain("Exit");

@@ -152,8 +152,9 @@ graph without an application callback patch:
 }
 ```
 
-The email stays in an environment variable; only its reviewed hash is committed. After
-ordinary local sign-in creates the account, preview and confirm the association:
+The email stays in an environment variable; only its reviewed hash is committed. Run
+`rehearsal open`, complete the ordinary local Google sign-in, and stop the app with
+`Ctrl+C`. Then preview and confirm the association:
 
 ```bash
 npx rehearsal identity plan --identity=approved-owner
@@ -179,9 +180,10 @@ or unrelated local application data rolls back the entire claim.
 verifies the destination bytes, updates the declared database paths, and then removes
 the old objects. A database failure removes the new copies and leaves the originals
 usable. Restored objects may begin with either the placeholder owner or no owner;
-another owner is refused. `pathReferences` updates matching text or JSONB pointers. A configured
-`tokenHook` must return the declared claim subset before commit. The browser must then
+another owner is refused. `pathReferences` updates matching text or JSONB pointers. A
+configured `tokenHook` must return the declared claim subset before commit. The browser must then
 refresh its session or sign in again because Rehearsal cannot rewrite an issued JWT.
+Run `rehearsal open` again for that fresh-session check; runtime data is preserved.
 
 The transaction does not import production passwords, sessions, refresh tokens,
 cookies, MFA secrets, or provider credentials. Local MFA and authorization rules remain

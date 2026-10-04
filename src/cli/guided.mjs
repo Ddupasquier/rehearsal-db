@@ -388,6 +388,11 @@ const guidedOptions = (state, hasLastDetails) => {
   }
   if (state.node.supported && state.runtime) {
     options.push({
+      label: "Open the sandbox app",
+      hint: "Keep it running for hands-on testing",
+      command: "open",
+    });
+    options.push({
       label: "Manage the local runtime",
       hint: "Status, verification, and cleanup",
       command: "manage-runtime",

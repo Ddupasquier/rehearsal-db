@@ -10,6 +10,7 @@ import {
 
 const ENV_KEY = /^[A-Z][A-Z0-9_]*$/u;
 const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
+const SESSION_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGTSTP"];
 
 const parseCommand = (source) => {
   if (typeof source !== "string" || !source.trim())
@@ -102,21 +103,42 @@ export const buildApplicationEnvironment = async ({ files, mappings }) => {
 const boundedAppend = (current, chunk) =>
   `${current}${chunk}`.slice(-MAX_DIAGNOSTIC_BYTES);
 
+const childHasExited = (child) =>
+  child.exitCode !== null || child.signalCode !== null;
+
+const waitForChildExit = (child) => {
+  if (childHasExited(child)) {
+    return Promise.resolve({
+      status: child.exitCode,
+      signal: child.signalCode,
+    });
+  }
+  return new Promise((resolve) => {
+    child.once("exit", (status, signal) => resolve({ status, signal }));
+  });
+};
+
 export const summarizeProjectCommandFailure = ({
   error,
   status,
+  signal,
   stdout = "",
   stderr = "",
+  stdoutByteCount,
+  stderrByteCount,
 }) => {
-  const stdoutBytes = Buffer.byteLength(String(stdout));
-  const stderrBytes = Buffer.byteLength(String(stderr));
+  const stdoutBytes = stdoutByteCount ?? Buffer.byteLength(String(stdout));
+  const stderrBytes = stderrByteCount ?? Buffer.byteLength(String(stderr));
   if (error) {
     const code = /^[A-Z0-9_]+$/u.test(error.code ?? "")
       ? ` (${error.code})`
       : "";
     return `command could not start${code}; output withheld`;
   }
-  return `exit ${Number.isInteger(status) ? status : "unknown"}; stdout ${stdoutBytes} bytes; stderr ${stderrBytes} bytes; output withheld`;
+  const outcome = signal
+    ? `signal ${signal}`
+    : `exit ${Number.isInteger(status) ? status : "unknown"}`;
+  return `${outcome}; stdout ${stdoutBytes} bytes; stderr ${stderrBytes} bytes; output withheld`;
 };
 
 const waitForReadiness = async ({ readiness, fetchImplementation, child }) => {
@@ -127,7 +149,7 @@ const waitForReadiness = async ({ readiness, fetchImplementation, child }) => {
   const deadline = Date.now() + (readiness.timeoutSeconds ?? 30) * 1_000;
   let lastStatus = null;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null || child.signalCode !== null)
+    if (childHasExited(child))
       throw new Error("Application exited before becoming ready.");
     try {
       const response = await fetchImplementation(readiness.url, {
@@ -148,8 +170,8 @@ const waitForReadiness = async ({ readiness, fetchImplementation, child }) => {
 };
 
 const stopOwnedChild = async (child) => {
-  const exited = () => child.exitCode !== null || child.signalCode !== null;
-  if (exited()) return;
+  if (childHasExited(child)) return;
+  const exit = waitForChildExit(child);
   const kill = (signal) => {
     try {
       if (process.platform === "win32") child.kill(signal);
@@ -160,12 +182,12 @@ const stopOwnedChild = async (child) => {
   };
   kill("SIGTERM");
   await Promise.race([
-    new Promise((resolve) => child.once("exit", resolve)),
+    exit,
     new Promise((resolve) => setTimeout(resolve, 5_000)),
   ]);
-  if (!exited()) {
+  if (!childHasExited(child)) {
     kill("SIGKILL");
-    await new Promise((resolve) => child.once("exit", resolve));
+    await exit;
   }
 };
 
@@ -178,6 +200,7 @@ export const startApplicationSession = async ({
   inheritedEnvironment = process.env,
   spawnImplementation = spawn,
   fetchImplementation = fetch,
+  signalTarget = process,
 }) => {
   const mapped = await buildApplicationEnvironment({ files, mappings });
   const [program, ...args] = parseCommand(command);
@@ -202,16 +225,31 @@ export const startApplicationSession = async ({
     child.once("spawn", resolve);
     child.once("error", reject);
   });
+  let interruptStartup;
+  const interruption = new Promise((_, reject) => {
+    interruptStartup = (signal) =>
+      reject(new Error(`Application startup was interrupted by ${signal}.`));
+  });
+  const startupHandlers = new Map(
+    SESSION_SIGNALS.map((signal) => [signal, () => interruptStartup(signal)]),
+  );
+  for (const [signal, handler] of startupHandlers) {
+    signalTarget.prependListener(signal, handler);
+  }
   try {
-    const ready = await waitForReadiness({
-      readiness,
-      fetchImplementation,
-      child,
-    });
+    const ready = await Promise.race([
+      waitForReadiness({
+        readiness,
+        fetchImplementation,
+        child,
+      }),
+      interruption,
+    ]);
     return Object.freeze({
       pid: child.pid,
       ready,
       stop: () => stopOwnedChild(child),
+      wait: () => waitForChildExit(child),
       diagnostics: () => ({
         stdoutBytes: Buffer.byteLength(stdout),
         stderrBytes: Buffer.byteLength(stderr),
@@ -220,6 +258,90 @@ export const startApplicationSession = async ({
   } catch (error) {
     await stopOwnedChild(child);
     throw error;
+  } finally {
+    for (const [signal, handler] of startupHandlers) {
+      signalTarget.removeListener(signal, handler);
+    }
+  }
+};
+
+/**
+ * Keep a ready application session attached until the user interrupts it.
+ * The child process group is always stopped before this function returns.
+ */
+export const holdApplicationSession = async ({
+  session,
+  signalTarget = process,
+  input = process.stdin,
+  onReady = () => undefined,
+}) => {
+  if (
+    !session ||
+    typeof session.wait !== "function" ||
+    typeof session.stop !== "function"
+  ) {
+    throw new Error("A started application session is required.");
+  }
+  let finishInterruption;
+  const interruption = new Promise((resolve) => {
+    finishInterruption = resolve;
+  });
+  const handlers = new Map(
+    SESSION_SIGNALS.map((signal) => [
+      signal,
+      () => finishInterruption({ kind: "interrupted", signal }),
+    ]),
+  );
+  for (const [signal, handler] of handlers) {
+    signalTarget.prependListener(signal, handler);
+  }
+  const onInput = (chunk) => {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    if (bytes.includes(0x03)) {
+      finishInterruption({ kind: "interrupted", signal: "SIGINT" });
+    } else if (bytes.includes(0x1a)) {
+      finishInterruption({ kind: "interrupted", signal: "SIGTSTP" });
+    }
+  };
+  if (input?.isTTY) input.prependListener("data", onInput);
+  try {
+    onReady(session.ready);
+    const outcome = await Promise.race([
+      interruption,
+      session.wait().then((exit) => ({ kind: "exited", ...exit })),
+    ]);
+    if (outcome.kind === "exited") {
+      const diagnostics = session.diagnostics?.() ?? {};
+      throw new Error(
+        `Application exited before the sandbox was closed (${summarizeProjectCommandFailure(
+          {
+            status: outcome.status,
+            signal: outcome.signal,
+            stdoutByteCount: diagnostics.stdoutBytes ?? 0,
+            stderrByteCount: diagnostics.stderrBytes ?? 0,
+          },
+        )}).`,
+      );
+    }
+    return Object.freeze({
+      signal: outcome.signal,
+      diagnostics: session.diagnostics?.() ?? {
+        stdoutBytes: 0,
+        stderrBytes: 0,
+      },
+    });
+  } finally {
+    try {
+      // npm can forward the terminal's SIGINT after the CLI receives it.
+      // Keep our handlers installed until the owned process group is fully
+      // stopped so a duplicate signal cannot terminate Rehearsal mid-cleanup.
+      await session.stop();
+    } finally {
+      for (const [signal, handler] of handlers) {
+        signalTarget.removeListener(signal, handler);
+      }
+      if (input?.isTTY) input.removeListener("data", onInput);
+    }
   }
 };
 

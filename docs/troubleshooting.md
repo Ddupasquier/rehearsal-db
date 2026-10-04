@@ -122,6 +122,14 @@ starts. Give the configured `startCommand` or framework test mode an explicit sa
 override for the affected value. Do not delete or rewrite a developer's normal `.env`
 file as part of a rehearsal.
 
+## `rehearsal open` cannot start the app
+
+`open` requires `application.readiness` in `rehearsal.config.mjs`. Confirm that its URL
+uses `localhost`, `127.0.0.1`, or `::1`, matches the app's sandbox port, and returns the
+configured status after startup. Rehearsal leaves the verified database runtime running
+when application startup fails, so retrying does not discard local database or Storage
+changes.
+
 ## Local authentication fails
 
 Confirm the provider is enabled in the dedicated local Supabase config, the allowlisted

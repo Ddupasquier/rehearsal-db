@@ -56,6 +56,7 @@ describe("CLI arguments", () => {
 
     expect(commandMutatesProject({ command: "doctor", flags })).toBe(false);
     expect(commandMutatesProject({ command: "run", flags })).toBe(true);
+    expect(commandMutatesProject({ command: "open", flags })).toBe(true);
     expect(
       commandMutatesProject({
         command: "run",
