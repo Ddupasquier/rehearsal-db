@@ -10,7 +10,7 @@
   "bugs": {
     "url": "https://github.com/Ddupasquier/rehearsal-db/issues"
   },
-  "homepage": "https://github.com/Ddupasquier/rehearsal-db#readme",
+  "homepage": "https://ddupasquier.github.io/rehearsal-db/",
   "publishConfig": {
     "access": "public",
     "tag": "beta",

@@ -32,44 +32,44 @@
 
 :root {
   color-scheme: light;
-  --ink: #241d3d;
-  --ink-soft: #5f5875;
-  --ink-faint: #7e7890;
-  --canvas: #fbfaf7;
+  --ink: #1c2a34;
+  --ink-soft: #4e626d;
+  --ink-faint: #62747c;
+  --canvas: #f7fbf9;
   --canvas-raised: #ffffff;
-  --canvas-tint: #f4f0ff;
-  --canvas-warm: #fff7e2;
-  --line: #e4dfec;
-  --line-strong: #d5cde4;
-  --violet: #6c4ff8;
-  --violet-dark: #4e34d7;
-  --violet-soft: #ebe6ff;
-  --coral: #ef6254;
-  --gold: #f2b830;
-  --code: #211a3d;
+  --canvas-tint: #eaf7f1;
+  --line: #d8e6df;
+  --line-strong: #c2d6cc;
+  --brand: #287b5c;
+  --brand-strong: #1d6146;
+  --brand-soft: #ddf3e8;
+  --brand-button: #237653;
+  --brand-button-hover: #195d41;
+  --accent: #269fab;
+  --code: #17242d;
   --header-height: 68px;
   --sidebar-width: 274px;
   --content-width: 760px;
-  --shadow: 0 18px 52px rgb(54 37 101 / 10%);
+  --shadow: 0 18px 52px rgb(23 36 45 / 10%);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --ink: #f5f1ff;
-  --ink-soft: #c4bdd8;
-  --ink-faint: #938ba8;
-  --canvas: #151126;
-  --canvas-raised: #1d1832;
-  --canvas-tint: #251d46;
-  --canvas-warm: #312718;
-  --line: #342d4a;
-  --line-strong: #4a4164;
-  --violet: #9a84ff;
-  --violet-dark: #b7a7ff;
-  --violet-soft: #302653;
-  --coral: #ff8377;
-  --gold: #ffd166;
-  --code: #0f0c1d;
+  --ink: #f1f8f5;
+  --ink-soft: #b9cbc3;
+  --ink-faint: #8da49b;
+  --canvas: #0f191f;
+  --canvas-raised: #17262d;
+  --canvas-tint: #1a332b;
+  --line: #2a4142;
+  --line-strong: #3a5955;
+  --brand: #6bd6aa;
+  --brand-strong: #91e5c4;
+  --brand-soft: #193d32;
+  --brand-button: #287b5c;
+  --brand-button-hover: #206447;
+  --accent: #62d0d6;
+  --code: #091217;
   --shadow: 0 24px 68px rgb(0 0 0 / 25%);
 }
 
@@ -85,13 +85,27 @@ html {
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 83% 12%, rgb(108 79 248 / 6%), transparent 28rem),
+    radial-gradient(
+      circle at 83% 12%,
+      color-mix(in srgb, var(--brand) 10%, transparent),
+      transparent 28rem
+    ),
+    radial-gradient(
+      circle at 62% 24%,
+      color-mix(in srgb, var(--accent) 5%, transparent),
+      transparent 22rem
+    ),
     var(--canvas);
   color: var(--ink);
   font-family: "DM Sans Rehearsal", ui-sans-serif, system-ui, sans-serif;
   font-size: 16px;
   line-height: 1.68;
   text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--brand-soft);
+  color: var(--ink);
 }
 
 a {
@@ -190,7 +204,7 @@ a {
 }
 
 .top-nav a:hover {
-  color: var(--violet);
+  color: var(--brand);
 }
 
 .header-actions {
@@ -248,7 +262,7 @@ a {
 .icon-button:hover,
 .search-button:hover {
   border-color: var(--line-strong);
-  color: var(--violet);
+  color: var(--brand);
 }
 
 .menu-button {
@@ -282,7 +296,7 @@ a {
 .sidebar-group > p,
 .eyebrow,
 .breadcrumb {
-  color: var(--violet);
+  color: var(--brand);
   font-size: 11px;
   font-weight: 850;
   letter-spacing: 0.13em;
@@ -325,8 +339,8 @@ a {
 }
 
 .sidebar-group a.active {
-  background: var(--violet-soft);
-  color: var(--violet-dark);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
   font-weight: 760;
 }
 
@@ -337,7 +351,7 @@ a {
   width: 4px;
   height: 20px;
   border-radius: 3px;
-  background: var(--violet);
+  background: var(--brand);
   content: "";
   transform: translateY(-50%);
 }
@@ -356,7 +370,7 @@ a {
 }
 
 .sidebar-support span {
-  color: var(--violet);
+  color: var(--brand);
   font-size: 14px;
   font-weight: 700;
 }
@@ -376,7 +390,7 @@ a {
 }
 
 .breadcrumb a {
-  color: var(--violet);
+  color: var(--brand);
   text-decoration: none;
 }
 
@@ -440,7 +454,7 @@ a {
   width: 54px;
   height: 3px;
   border-radius: 3px;
-  background: linear-gradient(90deg, var(--violet), var(--coral));
+  background: linear-gradient(90deg, var(--brand), var(--accent));
   content: "";
 }
 
@@ -453,7 +467,7 @@ a {
 
 .heading-anchor {
   margin-left: 8px;
-  color: var(--violet);
+  color: var(--brand);
   font-family: "DM Sans Rehearsal", sans-serif;
   font-size: 0.62em;
   font-weight: 600;
@@ -483,9 +497,9 @@ h3:hover .heading-anchor,
 }
 
 .prose a:not(.pager):not(.button) {
-  color: var(--violet-dark);
+  color: var(--brand-strong);
   font-weight: 650;
-  text-decoration-color: color-mix(in srgb, var(--violet) 35%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--brand) 35%, transparent);
   text-decoration-thickness: 1.5px;
   text-underline-offset: 3px;
 }
@@ -512,17 +526,17 @@ h3:hover .heading-anchor,
 }
 
 .prose li::marker {
-  color: var(--violet);
+  color: var(--brand);
   font-weight: 800;
 }
 
 .prose blockquote {
   margin: 30px 0;
   padding: 18px 22px;
-  border: 1px solid color-mix(in srgb, var(--gold) 45%, var(--line));
-  border-left: 5px solid var(--gold);
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-left: 5px solid var(--accent);
   border-radius: 4px 15px 15px 4px;
-  background: var(--canvas-warm);
+  background: var(--canvas-tint);
 }
 
 .prose blockquote > :last-child {
@@ -534,7 +548,7 @@ h3:hover .heading-anchor,
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--canvas-tint);
-  color: var(--violet-dark);
+  color: var(--brand-strong);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.86em;
 }
@@ -543,10 +557,10 @@ h3:hover .heading-anchor,
   position: relative;
   margin: 25px 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--violet) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, transparent);
   border-radius: 17px;
   background: var(--code);
-  box-shadow: 0 15px 36px rgb(25 15 64 / 12%);
+  box-shadow: 0 15px 36px rgb(10 27 33 / 14%);
 }
 
 .code-frame::before {
@@ -567,7 +581,7 @@ h3:hover .heading-anchor,
 }
 
 .code-frame code {
-  color: #eeeaff;
+  color: #eaf7f1;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
   line-height: 1.72;
@@ -578,7 +592,7 @@ h3:hover .heading-anchor,
   position: absolute;
   z-index: 1;
   top: 7px;
-  color: #aaa2c2;
+  color: #9fb8ae;
   font-size: 10px;
   font-weight: 750;
   letter-spacing: 0.08em;
@@ -669,7 +683,7 @@ h3:hover .heading-anchor,
 
 .page-outline a:hover,
 .page-outline a.active {
-  color: var(--violet);
+  color: var(--brand);
 }
 
 .page-pager {
@@ -695,7 +709,7 @@ h3:hover .heading-anchor,
 }
 
 .pager:hover {
-  border-color: var(--violet);
+  border-color: var(--brand);
   transform: translateY(-2px);
 }
 
@@ -759,7 +773,7 @@ h3:hover .heading-anchor,
   width: 22px;
   height: 3px;
   border-radius: 3px;
-  background: var(--coral);
+  background: var(--accent);
 }
 
 .hero h1 {
@@ -771,7 +785,7 @@ h3:hover .heading-anchor,
 }
 
 .hero h1 em {
-  color: var(--violet);
+  color: var(--brand);
   font-weight: 550;
 }
 
@@ -803,13 +817,13 @@ h3:hover .heading-anchor,
 }
 
 .button.primary {
-  background: var(--violet);
+  background: var(--brand-button);
   color: #ffffff;
-  box-shadow: 0 12px 28px rgb(108 79 248 / 26%);
+  box-shadow: 0 12px 28px rgb(35 118 83 / 26%);
 }
 
 .button.primary:hover {
-  background: var(--violet-dark);
+  background: var(--brand-button-hover);
 }
 
 .button.secondary {
@@ -880,8 +894,8 @@ h3:hover .heading-anchor,
   height: 31px;
   place-items: center;
   border-radius: 9px;
-  background: var(--violet-soft);
-  color: var(--violet);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: 11px;
   font-weight: 800;
 }
@@ -939,11 +953,11 @@ h3:hover .heading-anchor,
   border-radius: 18px;
   background: var(--canvas-raised);
   color: var(--ink);
-  box-shadow: 0 35px 100px rgb(20 12 50 / 32%);
+  box-shadow: 0 35px 100px rgb(6 20 26 / 34%);
 }
 
 .search-dialog::backdrop {
-  background: rgb(20 14 43 / 45%);
+  background: rgb(10 25 30 / 48%);
   backdrop-filter: blur(7px);
 }
 
@@ -997,7 +1011,7 @@ h3:hover .heading-anchor,
 
 .search-results a:hover,
 .search-results a:focus {
-  background: var(--violet-soft);
+  background: var(--brand-soft);
   outline: 0;
 }
 
@@ -1058,7 +1072,7 @@ h3:hover .heading-anchor,
     z-index: 60;
     top: 0;
     padding-top: 28px;
-    box-shadow: 22px 0 60px rgb(20 12 50 / 18%);
+    box-shadow: 22px 0 60px rgb(8 25 30 / 20%);
     transform: translateX(-105%);
     transition: transform 0.2s ease;
   }
@@ -1078,7 +1092,7 @@ h3:hover .heading-anchor,
     position: fixed;
     z-index: 55;
     inset: 0;
-    background: rgb(20 14 43 / 38%);
+    background: rgb(10 25 30 / 42%);
     backdrop-filter: blur(4px);
   }
 
