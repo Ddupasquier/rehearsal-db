@@ -193,7 +193,7 @@ const renderPage = ({ page, content, headings }) => {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="${escapeHtml(page.description)}" />
-  <meta name="theme-color" content="#6c4ff8" />
+  <meta name="theme-color" content="#1c2a34" />
   <title>${home ? site.name : `${page.title} · ${site.name}`}</title>
   <link rel="icon" href="${base}assets/logo-mark.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="${base}assets/site.css" />
