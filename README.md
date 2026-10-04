@@ -68,7 +68,12 @@ source-owner approval; see [Standalone workflow](docs/standalone-workflow.md).
 3. Review the sanitization policy and create the baseline.
 4. Review the exact candidate migration list.
 5. Run the rehearsal and your application proof.
-6. Test the local application, then verify, reset, stop, or discard the runtime.
+6. Choose **Open the sandbox app** for hands-on testing, then verify, reset, stop, or
+   discard the runtime.
+
+`npx rehearsal open` starts and verifies the existing local runtime, keeps the configured
+app available until you press `Ctrl+C`, and preserves database and Storage changes for
+the next session.
 
 For an approved production-shaped copy, the optional sequence is `source plan`, `source
 apply`, `refresh`, and `source retire`. `refresh` verifies the replacement before it

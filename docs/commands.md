@@ -67,13 +67,29 @@ In short: `refresh` gets a new source copy; `reset` restores the copy you alread
 
 ## Local identity association
 
-After an ordinary local Google or email sign-in creates a verified local Auth identity:
+For a reviewed Google identity, use this sequence:
+
+1. Run a successful rehearsal, then start the persistent app:
+
+   ```bash
+   npx rehearsal open
+   ```
+
+2. Open the printed local URL and complete the normal Google sign-in. Press `Ctrl+C`
+   after the callback returns. This closes only the app; the databases and Storage stay
+   running with their current data.
+
+3. Preview and confirm the reviewed association:
 
 ```bash
 npx rehearsal identity plan --identity=approved-owner
 npx rehearsal identity claim --identity=approved-owner \
   --confirm-identity=<sha256>
 ```
+
+4. Run `npx rehearsal open` again. Sign out and sign in again so the browser receives a
+   fresh session, then check the copied account. Rehearsal does not bypass application
+   role checks, account blocks, RLS, or MFA.
 
 The first command shows only hashes and declared reference counts. The second updates
 only the reviewed local relational, JSON, Storage-owner, and claim locations in one
@@ -100,11 +116,12 @@ obsolete placeholder key.
 State-reporting commands accept `--json` for scripts. Scripts should use the JSON fields
 and process exit code, not parse human-facing text.
 
-## Run and manage the local database
+## Run and manage the local sandbox
 
 | Command                                               | What it does                                                        |
 | ----------------------------------------------------- | ------------------------------------------------------------------- |
 | `npx rehearsal run --confirm-candidates=<sha256>`     | Reset, apply exact candidates, launch the app, and run its proofs.  |
+| `npx rehearsal open`                                  | Start, verify, and keep the configured application open.            |
 | `npx rehearsal migrate --confirm-candidates=<sha256>` | Apply the exact candidates without resetting existing runtime data. |
 | `npx rehearsal start`                                 | Start an existing verified runtime.                                 |
 | `npx rehearsal verify`                                | Verify the current runtime and receipt.                             |
@@ -116,6 +133,13 @@ and process exit code, not parse human-facing text.
 In a terminal, the guide displays candidate filenames and asks for confirmation. In a
 script, copy the digest from `candidates` into `--confirm-candidates`. Adding, removing,
 reordering, or editing a migration changes that digest.
+
+`open` does not reset the runtime or apply migrations. It starts and verifies every
+configured database target, runs dependent preparation commands, and launches
+`application.startCommand` with the declared local environment mappings. It waits for
+`application.readiness`, then stays attached until `Ctrl+C` or `Ctrl+Z`. On exit it stops
+only the application process group it launched. Use `stop` separately when you also want
+to stop the databases; a later `open` preserves their database and Storage changes.
 
 ## Clean up disk space
 

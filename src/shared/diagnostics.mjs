@@ -5,9 +5,10 @@
  */
 
 import { createHash } from "node:crypto";
+import packageManifest from "../../package.json" with { type: "json" };
 
 export const REHEARSAL_RESULT_VERSION = 1;
-export const REHEARSAL_VERSION = "0.1.0-beta.9";
+export const REHEARSAL_VERSION = packageManifest.version;
 
 export const REHEARSAL_EXIT_CODES = Object.freeze({
   success: 0,

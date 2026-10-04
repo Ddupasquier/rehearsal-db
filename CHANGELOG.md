@@ -5,6 +5,26 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.10] - 2026-10-03
+
+### Added
+
+- `rehearsal open` starts and verifies the configured runtime stack, launches the normal
+  application with declared local environment mappings, and keeps it available for
+  hands-on testing until interrupted.
+- The guide now offers **Open the sandbox app** after a runtime exists.
+
+### Changed
+
+- Persistent application sessions stop only their owned application process group on
+  `Ctrl+C`, `Ctrl+Z`, terminal close, or termination. The database and Storage runtime
+  stay running with local changes preserved across later sessions.
+
+### Fixed
+
+- `rehearsal open` keeps interruption handling active throughout application teardown,
+  so an npm-forwarded `Ctrl+C` cannot terminate the CLI early or orphan the app.
+
 ## [0.1.0-beta.9] - 2026-10-02
 
 ### Added
@@ -268,7 +288,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.9...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.10...HEAD
+[0.1.0-beta.10]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.9...v0.1.0-beta.10
 [0.1.0-beta.9]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.8...v0.1.0-beta.9
 [0.1.0-beta.8]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.7...v0.1.0-beta.8
 [0.1.0-beta.7]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.6...v0.1.0-beta.7

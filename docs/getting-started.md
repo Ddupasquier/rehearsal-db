@@ -125,7 +125,17 @@ Once temporary source access is ready, `npx rehearsal refresh` previews the safe
 replacement workflow. It means “get a newly verified copy.” By contrast, `reset` means
 “discard local edits and restore the copy I already have.”
 
-## 6. Test and clean up
+## 6. Use the sandbox and clean up
+
+Choose **Open the sandbox app**, or run:
+
+```bash
+npx rehearsal open
+```
+
+Open the local URL printed by Rehearsal. The app stays available for hands-on testing
+until you press `Ctrl+C`. Only the app stops; your local database and Storage changes are
+kept. Run `npx rehearsal open` again to continue where you left off.
 
 Use the guide for normal runtime tasks:
 

@@ -123,6 +123,7 @@ const managerPath = join(packageRoot, "scripts/runtime/manage_database.mjs");
 let lastGuidedDetails;
 
 const {
+  openRuntimeApplication,
   prepareCandidateConfirmation,
   prepareDependentTargets,
   proveRuntimeStack,
@@ -373,6 +374,7 @@ Commands:
   explain                    Show the immutable execution plan
   run --dry-run              Alias the exact explain plan without mutations
   run --confirm-candidates=  Execute reset, migration, and verification locally
+  open                       Start the runtime and keep the application open
   candidates                 Show the exact pending migration digest
   inspect baseline           Show verified baseline provenance
   inspect migrations         Classify represented, applied, and candidate migrations
@@ -639,6 +641,54 @@ const executeCommand = async ({ command, flags, planOptions, guided }) => {
     emit({ command, data, flags, render: renderCandidates });
     return;
   }
+  if (command === "open") {
+    if (flags.dryRun) {
+      throw new Error("--dry-run is supported only by rehearsal run.");
+    }
+    const data = await openRuntimeApplication({
+      flags,
+      planOptions,
+      onReady: (ready) => {
+        const lines = [
+          `Application: ${ready.url}`,
+          "The verified database runtime stays running and keeps your local changes.",
+          guided
+            ? "Press Ctrl+C to close the app and return here, or Ctrl+Z to exit Rehearsal."
+            : "Press Ctrl+C or Ctrl+Z to close the app. Rehearsal will leave the database runtime running.",
+        ];
+        if (useStyledPrompts(flags)) {
+          prompts.note(lines.join("\n"), "SANDBOX READY");
+        } else if (!flags.json) {
+          console.log(["", "SANDBOX READY", ...lines, ""].join("\n"));
+        }
+      },
+    });
+    if (guided && data.application.stoppedBy === "SIGTSTP") {
+      flags.exitGuidedSession = true;
+    }
+    if (guided) {
+      lastGuidedDetails = [
+        data.started.output,
+        data.verified.output,
+        ...data.preparations.map((preparation) => preparation.output),
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+    emit({
+      command,
+      data,
+      flags,
+      render: (result) =>
+        [
+          "SANDBOX APP CLOSED",
+          `Application stopped after ${result.application.stoppedBy}.`,
+          "The database runtime and its local database and Storage changes were preserved.",
+          "Run rehearsal open to return, rehearsal verify to check it, or rehearsal stop to stop the databases.",
+        ].join("\n"),
+    });
+    return;
+  }
   if (
     [
       "run",
@@ -764,11 +814,11 @@ const executeCommand = async ({ command, flags, planOptions, guided }) => {
       render: (value) => {
         const runtimeResult = value.runtime ?? value;
         const nextAction = {
-          run: "Next: exercise the local application, then run rehearsal verify.",
+          run: "Next: run rehearsal open for hands-on testing, then rehearsal verify.",
           start:
-            "Next: exercise the local application or run rehearsal status.",
+            "Next: run rehearsal open for hands-on testing or rehearsal status.",
           migrate: "Next: run rehearsal verify to prove the current runtime.",
-          reset: "Next: run rehearsal verify or continue testing locally.",
+          reset: "Next: run rehearsal open or rehearsal verify.",
           status: "Next: run rehearsal verify, reset, stop, or discard.",
           stop: "Next: run rehearsal start when you want to resume.",
           discard:
@@ -871,9 +921,11 @@ const main = async () => {
       );
     }
     flags.guided = true;
-    const removeGuidedExitShortcut = installGuidedExitShortcut(flags, {
-      beforeExit: () => operation?.releaseSync(),
-    });
+    const installExitShortcut = () =>
+      installGuidedExitShortcut(flags, {
+        beforeExit: () => operation?.releaseSync(),
+      });
+    let removeGuidedExitShortcut = installExitShortcut();
     if (useStyledPrompts(flags)) {
       prompts.intro("REHEARSAL · Safe local migration testing");
     }
@@ -883,15 +935,27 @@ const main = async () => {
         const selected = await runGuidedHome({ flags, planOptions });
         if (!selected) break;
         if (selected === "home") continue;
-        await executeCommand({
-          command: selected,
-          flags,
-          planOptions,
-          guided: true,
-        });
+        const opensApplication = selected === "open";
+        if (opensApplication) {
+          removeGuidedExitShortcut();
+          removeGuidedExitShortcut = null;
+        }
+        try {
+          await executeCommand({
+            command: selected,
+            flags,
+            planOptions,
+            guided: true,
+          });
+        } finally {
+          if (opensApplication) {
+            removeGuidedExitShortcut = installExitShortcut();
+          }
+        }
+        if (flags.exitGuidedSession) break;
       }
     } finally {
-      removeGuidedExitShortcut();
+      removeGuidedExitShortcut?.();
     }
     if (useStyledPrompts(flags)) {
       prompts.outro("See you at the next rehearsal.");

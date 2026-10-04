@@ -1058,6 +1058,7 @@ export default defineRehearsalConfig({
 		environmentFile: ".rehearsal/runtime.env",
 		// Map generated local runtime values directly into the normal app command.
 		// environmentVariables: { DATABASE_URL: "primary:DATABASE_URL" },
+		// Required by \`rehearsal open\`; use a route that responds only when the app is ready.
 		readiness: { url: ${JSON.stringify(applicationUrl)}, expectedStatus: 200, timeoutSeconds: 30 },
 		// Add at least one real positive and one negative before enabling HTTP proofs.
 		// httpProofs: [],
@@ -1165,6 +1166,7 @@ export default defineRehearsalConfig({
 		environmentFile: ".rehearsal/runtime.env",
 		// Map generated local runtime values directly into the normal app command.
 		// environmentVariables: { DATABASE_URL: "primary:DATABASE_URL" },
+		// Required by \`rehearsal open\`; use a route that responds only when the app is ready.
 		readiness: { url: ${JSON.stringify(applicationUrl)}, expectedStatus: 200, timeoutSeconds: 30 },
 		// Add at least one real positive and one negative before enabling HTTP proofs.
 		// httpProofs: [],

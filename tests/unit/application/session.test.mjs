@@ -1,10 +1,12 @@
 import { createServer } from "node:http";
+import { EventEmitter } from "node:events";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildApplicationEnvironment,
+  holdApplicationSession,
   runHttpProofs,
   startApplicationSession,
   summarizeProjectCommandFailure,
@@ -81,6 +83,120 @@ createServer((_request, response) => { response.end("ready"); })
     });
     expect(session.ready.status).toBe(200);
     await session.stop();
+  });
+
+  it("holds a ready session until interruption and then stops only its child", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-application-"));
+    roots.push(root);
+    const port = await availablePort();
+    const environmentPath = join(root, "runtime.env");
+    await writeFile(environmentPath, `APP_PORT=${port}\n`, { mode: 0o600 });
+    await writeFile(
+      join(root, "server.mjs"),
+      `import { createServer } from "node:http";
+import { writeFileSync } from "node:fs";
+const server = createServer((_request, response) => response.end("ready"));
+process.on("SIGTERM", () => server.close(() => {
+  writeFileSync("stopped.txt", "yes");
+  process.exit(0);
+}));
+server.listen(Number(process.env.PORT), "127.0.0.1");
+`,
+    );
+    const session = await startApplicationSession({
+      command: "node server.mjs",
+      cwd: root,
+      files: { primary: environmentPath },
+      mappings: { PORT: "primary:APP_PORT" },
+      readiness: {
+        url: `http://127.0.0.1:${port}`,
+        expectedStatus: 200,
+        timeoutSeconds: 5,
+      },
+    });
+    const signals = new EventEmitter();
+    const held = holdApplicationSession({
+      session,
+      signalTarget: signals,
+      input: null,
+    });
+    signals.emit("SIGINT");
+    await expect(held).resolves.toMatchObject({ signal: "SIGINT" });
+    expect(await readFile(join(root, "stopped.txt"), "utf8")).toBe("yes");
+    await expect(
+      fetch(`http://127.0.0.1:${port}`, {
+        signal: AbortSignal.timeout(500),
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("keeps interruption handlers active until application shutdown completes", async () => {
+    const signals = new EventEmitter();
+    let finishStop;
+    const stopPending = new Promise((resolve) => {
+      finishStop = resolve;
+    });
+    const session = {
+      ready: { url: "http://127.0.0.1:5175", status: 200 },
+      wait: () => new Promise(() => undefined),
+      stop: vi.fn(async () => stopPending),
+      diagnostics: () => ({ stdoutBytes: 0, stderrBytes: 0 }),
+    };
+
+    const held = holdApplicationSession({
+      session,
+      signalTarget: signals,
+      input: null,
+    });
+    signals.emit("SIGINT");
+    await vi.waitFor(() => expect(session.stop).toHaveBeenCalledOnce());
+
+    expect(signals.listenerCount("SIGINT")).toBe(1);
+    expect(() => signals.emit("SIGINT")).not.toThrow();
+
+    finishStop();
+    await expect(held).resolves.toMatchObject({ signal: "SIGINT" });
+    expect(signals.listenerCount("SIGINT")).toBe(0);
+  });
+
+  it("reports an application that exits during an open session without leaking output", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-application-"));
+    roots.push(root);
+    const port = await availablePort();
+    const environmentPath = join(root, "runtime.env");
+    await writeFile(environmentPath, `APP_PORT=${port}\n`, { mode: 0o600 });
+    await writeFile(
+      join(root, "server.mjs"),
+      `import { createServer } from "node:http";
+const server = createServer((_request, response) => response.end("ready"));
+server.listen(Number(process.env.PORT), "127.0.0.1", () => {
+  setTimeout(() => {
+    console.error("private application output");
+    process.exit(7);
+  }, 600);
+});
+`,
+    );
+    const session = await startApplicationSession({
+      command: "node server.mjs",
+      cwd: root,
+      files: { primary: environmentPath },
+      mappings: { PORT: "primary:APP_PORT" },
+      readiness: {
+        url: `http://127.0.0.1:${port}`,
+        expectedStatus: 200,
+        timeoutSeconds: 5,
+      },
+    });
+    const result = holdApplicationSession({
+      session,
+      signalTarget: new EventEmitter(),
+      input: null,
+    });
+    await expect(result).rejects.toThrow(
+      "Application exited before the sandbox was closed (exit 7;",
+    );
+    await expect(result).rejects.not.toThrow("private application output");
   });
 
   it("requires meaningful positive and negative HTTP results", async () => {
@@ -229,5 +345,39 @@ setInterval(() => {}, 1000);
       }),
     ).rejects.toThrow("timed out");
     expect(await readFile(join(root, "stopped.txt"), "utf8")).toBe("yes");
+  });
+
+  it("stops the owned child when application startup is interrupted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-application-"));
+    roots.push(root);
+    const port = await availablePort();
+    const environmentPath = join(root, "runtime.env");
+    await writeFile(environmentPath, "LOCAL_VALUE=ready\n", { mode: 0o600 });
+    await writeFile(
+      join(root, "wait.mjs"),
+      `import { writeFileSync } from "node:fs";
+process.on("SIGTERM", () => { writeFileSync("interrupted.txt", "yes"); process.exit(0); });
+setInterval(() => {}, 1000);
+`,
+    );
+    const signals = new EventEmitter();
+    const starting = startApplicationSession({
+      command: "node wait.mjs",
+      cwd: root,
+      files: { primary: environmentPath },
+      mappings: {},
+      readiness: {
+        url: `http://127.0.0.1:${port}`,
+        expectedStatus: 200,
+        timeoutSeconds: 5,
+      },
+      signalTarget: signals,
+    });
+    setTimeout(() => signals.emit("SIGINT"), 100);
+    await expect(starting).rejects.toThrow(
+      "Application startup was interrupted by SIGINT",
+    );
+    expect(await readFile(join(root, "interrupted.txt"), "utf8")).toBe("yes");
+    expect(signals.listenerCount("SIGINT")).toBe(0);
   });
 });

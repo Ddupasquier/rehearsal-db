@@ -281,7 +281,7 @@ Declarative runtime policies are preferred for supported schema prerequisites an
 checks. Existing project-owned adapters remain compatible but do not replace the
 database driver.
 
-## Application proof
+## Application proof and hands-on sessions
 
 `startCommand` is the ordinary application command. When `readiness` is present,
 `rehearsal run` launches it with a minimal environment, waits for the exact local status,
@@ -305,6 +305,15 @@ required to provide it.
 package-owned checks and must include real positive and negative expectations. A 200,
 404, 401, empty result, or non-5xx response is not a positive unless it matches the
 declared status and body assertion.
+
+After a successful rehearsal, `rehearsal open` uses the same `startCommand`, readiness
+check, and environment mappings for a hands-on session. It starts and verifies every
+configured database target but does not reset them. The app remains available until
+`Ctrl+C` or `Ctrl+Z`; Rehearsal then stops only its application process group. Database
+and Storage changes remain for the next `open`, `verify`, or `start` command.
+
+`application.readiness` is required for `open`. Point it at a route that returns the
+configured status only when the local app is ready. Keep the URL on a loopback host.
 
 ## Runtime adapters
 
