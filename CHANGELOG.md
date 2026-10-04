@@ -5,6 +5,17 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Added
+
+- Copied-account association accepts explicit verified-email provider allowlists and
+  hashed provider-subject matchers for supported Supabase identities. Google, GitHub,
+  and email sign-in now share one review-and-confirm claim workflow.
+
+### Fixed
+
+- Identity plan JSON no longer serializes the raw approved email or provider subject;
+  only the environment-variable name and reviewed SHA-256 receipt leave the process.
+
 ## [0.1.0-beta.10] - 2026-10-03
 
 ### Added

@@ -136,6 +136,17 @@ Confirm the provider is enabled in the dedicated local Supabase config, the allo
 service environment file exists with owner-only permissions, and the provider callback
 is the local Auth callback. Do not paste provider secrets into config or terminal output.
 
+If `identity plan` refuses the matcher, read the message literally:
+
+- **Provider or matcher type is unsupported:** use only the combinations documented in
+  [Runtime and identity policies](runtime-policies.md).
+- **No verified identity matches:** complete an ordinary local sign-in, confirm the
+  correct environment value is present, then run the plan again.
+- **More than one identity matches:** narrow the provider allowlist or use a hashed
+  provider-subject matcher. Rehearsal will not guess between accounts.
+- **Provider subject conflicts:** the local Auth identity disagrees with itself; remove
+  and recreate that disposable local sign-in instead of forcing a claim.
+
 ## Runtime changes disappeared
 
 `reset` deliberately restores the immutable baseline. `stop` should preserve Docker

@@ -12,6 +12,12 @@ const UUID =
   /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu;
 const SHA256 = /^[a-f0-9]{64}$/u;
 const ENVIRONMENT_KEY = /^[A-Z][A-Z0-9_]*$/u;
+const SUPPORTED_IDENTITY_PROVIDERS = Object.freeze([
+  "email",
+  "github",
+  "google",
+]);
+const identityPlanValues = new WeakMap();
 
 const isObject = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -78,6 +84,114 @@ const defaultMatcher = (value, label) => {
   return Object.freeze({ kind: "exact", value: jsonValue(value, label) });
 };
 
+const provider = (value, label, { subject = false } = {}) => {
+  if (!SUPPORTED_IDENTITY_PROVIDERS.includes(value)) {
+    throw new Error(`${label} is unsupported.`);
+  }
+  if (subject && value === "email") {
+    throw new Error(
+      `${label} cannot use email with a provider-subject matcher.`,
+    );
+  }
+  return value;
+};
+
+const normalizeIdentityMatcher = (entry, label) => {
+  const legacyKeys = [
+    "provider",
+    "emailEnvironmentVariable",
+    "approvedEmailSha256",
+  ];
+  const hasLegacyMatcher = legacyKeys.some((key) => entry[key] !== undefined);
+  if (entry.matcher !== undefined && hasLegacyMatcher) {
+    throw new Error(
+      `${label} cannot combine matcher with legacy provider and email fields.`,
+    );
+  }
+  if (entry.matcher === undefined) {
+    const legacyProvider = provider(entry.provider, `${label}.provider`);
+    if (!ENVIRONMENT_KEY.test(entry.emailEnvironmentVariable ?? "")) {
+      throw new Error(`${label}.emailEnvironmentVariable is invalid.`);
+    }
+    if (!SHA256.test(entry.approvedEmailSha256 ?? "")) {
+      throw new Error(`${label}.approvedEmailSha256 must be a SHA-256.`);
+    }
+    return Object.freeze({
+      type: "verified-email",
+      providers: Object.freeze([legacyProvider]),
+      emailEnvironmentVariable: entry.emailEnvironmentVariable,
+      approvedEmailSha256: entry.approvedEmailSha256,
+    });
+  }
+  if (!isObject(entry.matcher)) {
+    throw new Error(`${label}.matcher must be an object.`);
+  }
+  const matcherLabel = `${label}.matcher`;
+  if (entry.matcher.type === "verified-email") {
+    keys(
+      entry.matcher,
+      ["type", "providers", "emailEnvironmentVariable", "approvedEmailSha256"],
+      matcherLabel,
+    );
+    if (
+      !Array.isArray(entry.matcher.providers) ||
+      entry.matcher.providers.length === 0
+    ) {
+      throw new Error(`${matcherLabel}.providers must not be empty.`);
+    }
+    const providers = entry.matcher.providers.map((value, index) =>
+      provider(value, `${matcherLabel}.providers[${index}]`),
+    );
+    if (new Set(providers).size !== providers.length) {
+      throw new Error(`${matcherLabel}.providers must not contain duplicates.`);
+    }
+    if (!ENVIRONMENT_KEY.test(entry.matcher.emailEnvironmentVariable ?? "")) {
+      throw new Error(`${matcherLabel}.emailEnvironmentVariable is invalid.`);
+    }
+    if (!SHA256.test(entry.matcher.approvedEmailSha256 ?? "")) {
+      throw new Error(`${matcherLabel}.approvedEmailSha256 must be a SHA-256.`);
+    }
+    return Object.freeze({
+      type: "verified-email",
+      providers: Object.freeze(providers),
+      emailEnvironmentVariable: entry.matcher.emailEnvironmentVariable,
+      approvedEmailSha256: entry.matcher.approvedEmailSha256,
+    });
+  }
+  if (entry.matcher.type === "provider-subject") {
+    keys(
+      entry.matcher,
+      [
+        "type",
+        "provider",
+        "subjectEnvironmentVariable",
+        "approvedSubjectSha256",
+      ],
+      matcherLabel,
+    );
+    const subjectProvider = provider(
+      entry.matcher.provider,
+      `${matcherLabel}.provider`,
+      { subject: true },
+    );
+    if (!ENVIRONMENT_KEY.test(entry.matcher.subjectEnvironmentVariable ?? "")) {
+      throw new Error(`${matcherLabel}.subjectEnvironmentVariable is invalid.`);
+    }
+    if (!SHA256.test(entry.matcher.approvedSubjectSha256 ?? "")) {
+      throw new Error(
+        `${matcherLabel}.approvedSubjectSha256 must be a SHA-256.`,
+      );
+    }
+    return Object.freeze({
+      type: "provider-subject",
+      provider: subjectProvider,
+      subjectEnvironmentVariable: entry.matcher.subjectEnvironmentVariable,
+      approvedSubjectSha256: entry.matcher.approvedSubjectSha256,
+    });
+  }
+  throw new Error(`${matcherLabel}.type is unsupported.`);
+};
+
 export const validateIdentityPolicy = (policy) => {
   if (
     !isObject(policy) ||
@@ -100,6 +214,7 @@ export const validateIdentityPolicy = (policy) => {
       if (
         ![
           "name",
+          "matcher",
           "provider",
           "emailEnvironmentVariable",
           "approvedEmailSha256",
@@ -121,14 +236,7 @@ export const validateIdentityPolicy = (policy) => {
     const name = entry.name;
     if (names.has(name)) throw new Error(`Identity policy duplicates ${name}.`);
     names.add(name);
-    if (!["google", "email"].includes(entry.provider))
-      throw new Error(`${label}.provider is unsupported.`);
-    if (!ENVIRONMENT_KEY.test(entry.emailEnvironmentVariable ?? "")) {
-      throw new Error(`${label}.emailEnvironmentVariable is invalid.`);
-    }
-    if (!SHA256.test(entry.approvedEmailSha256 ?? "")) {
-      throw new Error(`${label}.approvedEmailSha256 must be a SHA-256.`);
-    }
+    const matcher = normalizeIdentityMatcher(entry, label);
     if (!UUID.test(entry.placeholderUserId ?? ""))
       throw new Error(`${label}.placeholderUserId is invalid.`);
     const references = (entry.references ?? []).map(
@@ -341,9 +449,7 @@ export const validateIdentityPolicy = (policy) => {
     }
     return Object.freeze({
       name,
-      provider: entry.provider,
-      emailEnvironmentVariable: entry.emailEnvironmentVariable,
-      approvedEmailSha256: entry.approvedEmailSha256,
+      matcher,
       placeholderUserId: entry.placeholderUserId.toLowerCase(),
       references: Object.freeze(references),
       jsonReferences: Object.freeze(jsonReferences),
@@ -368,20 +474,32 @@ export const createIdentityClaimPlan = ({
   const normalized = validateIdentityPolicy(policy);
   const identity = normalized.identities.find((entry) => entry.name === name);
   if (!identity) throw new Error(`Identity policy does not declare ${name}.`);
-  const email = environment[identity.emailEnvironmentVariable]
-    ?.trim()
-    .toLowerCase();
-  if (!email || hash(email) !== identity.approvedEmailSha256) {
+  const matcher = identity.matcher;
+  const environmentVariable =
+    matcher.type === "verified-email"
+      ? matcher.emailEnvironmentVariable
+      : matcher.subjectEnvironmentVariable;
+  const rawValue = environment[environmentVariable];
+  const matchValue =
+    matcher.type === "verified-email"
+      ? rawValue?.trim().toLowerCase()
+      : rawValue?.trim();
+  const approvedSha256 =
+    matcher.type === "verified-email"
+      ? matcher.approvedEmailSha256
+      : matcher.approvedSubjectSha256;
+  if (!matchValue || hash(matchValue) !== approvedSha256) {
     throw new Error(
-      "Local identity email does not match the reviewed receipt.",
+      matcher.type === "verified-email"
+        ? "Local identity email does not match the reviewed receipt."
+        : "Local identity provider subject does not match the reviewed receipt.",
     );
   }
   const review = {
-    planVersion: 2,
+    planVersion: 3,
     operation: "claim-local-identity",
     name: identity.name,
-    provider: identity.provider,
-    approvedEmailSha256: identity.approvedEmailSha256,
+    matcher,
     placeholderUserId: identity.placeholderUserId,
     references: identity.references,
     jsonReferences: identity.jsonReferences,
@@ -404,12 +522,13 @@ export const createIdentityClaimPlan = ({
         }
       : null,
   };
-  return Object.freeze({
+  const plan = {
     identity,
-    email,
     review: Object.freeze(review),
     digest: hash(canonical(review)),
-  });
+  };
+  identityPlanValues.set(plan, matchValue);
+  return Object.freeze(plan);
 };
 
 const inspectDeclaredDefault = ({ row, declaration }) => {
@@ -492,6 +611,84 @@ const countIdentityRows = async ({ client, reference, userId }) => {
   return count;
 };
 
+const findVerifiedLocalIdentity = async ({ client, plan, matchValue }) => {
+  const matcher = plan.identity.matcher;
+  if (matcher.type === "verified-email") {
+    const match = await client.query(
+      `select u.id::text, i.provider
+       from auth.users u
+       join auth.identities i on i.user_id = u.id
+       where lower(coalesce(i.identity_data->>'email', u.email)) = $1
+         and i.provider = any($2::text[])
+         and (
+           coalesce((i.identity_data->>'email_verified')::boolean, false)
+           or u.email_confirmed_at is not null
+         )
+       for update of u`,
+      [matchValue, matcher.providers],
+    );
+    if (match.rows.length !== 1) {
+      throw new Error(
+        match.rows.length === 0
+          ? "No verified local identity matches the reviewed email and provider allowlist."
+          : "More than one verified local identity matches the reviewed email and provider allowlist.",
+      );
+    }
+    const matchedProvider =
+      match.rows[0].provider ??
+      (matcher.providers.length === 1 ? matcher.providers[0] : null);
+    if (!matcher.providers.includes(matchedProvider)) {
+      throw new Error("Matched local identity provider is invalid.");
+    }
+    return { id: match.rows[0].id, provider: matchedProvider };
+  }
+  const candidates = await client.query(
+    `select u.id::text,
+            i.provider,
+            i.provider_id::text,
+            i.identity_data->>'sub' as subject
+     from auth.users u
+     join auth.identities i on i.user_id = u.id
+     where i.provider = $1
+       and (
+         coalesce((i.identity_data->>'email_verified')::boolean, false)
+         or u.email_confirmed_at is not null
+       )
+     for update of u`,
+    [matcher.provider],
+  );
+  const matches = [];
+  for (const candidate of candidates.rows) {
+    const subjects = [candidate.provider_id, candidate.subject]
+      .filter((value) => typeof value === "string" && value.trim())
+      .map((value) => value.trim());
+    const uniqueSubjects = [...new Set(subjects)];
+    if (
+      uniqueSubjects.some(
+        (subject) => hash(subject) === matcher.approvedSubjectSha256,
+      )
+    ) {
+      if (uniqueSubjects.length !== 1) {
+        throw new Error(
+          "The matched local provider identity has conflicting stable subjects.",
+        );
+      }
+      matches.push({ id: candidate.id, provider: candidate.provider });
+    }
+  }
+  if (matches.length !== 1) {
+    throw new Error(
+      matches.length === 0
+        ? "No verified local identity matches the reviewed provider subject."
+        : "More than one verified local identity matches the reviewed provider subject.",
+    );
+  }
+  if (matches[0].provider !== matcher.provider) {
+    throw new Error("Matched local identity provider is invalid.");
+  }
+  return matches[0];
+};
+
 export const applyIdentityClaim = async ({
   plan,
   confirmation,
@@ -502,6 +699,12 @@ export const applyIdentityClaim = async ({
   if (confirmation !== plan.digest) {
     throw new Error(
       `Identity claim confirmation does not match. Expected ${plan.digest}.`,
+    );
+  }
+  const matchValue = identityPlanValues.get(plan);
+  if (!matchValue) {
+    throw new Error(
+      "Identity claim plans must be created from the reviewed local matcher environment.",
     );
   }
   const target = new URL(connectionString);
@@ -525,27 +728,12 @@ export const applyIdentityClaim = async ({
   let storageObjectsTransferred = 0;
   try {
     await client.query("begin");
-    const match = await client.query(
-      `select u.id::text
-       from auth.users u
-       join auth.identities i on i.user_id = u.id
-       where lower(coalesce(i.identity_data->>'email', u.email)) = $1
-         and i.provider = $2
-         and (
-           coalesce((i.identity_data->>'email_verified')::boolean, false)
-           or u.email_confirmed_at is not null
-         )
-       for update of u`,
-      [plan.email, plan.identity.provider],
-    );
-    if (match.rows.length !== 1) {
-      throw new Error(
-        match.rows.length === 0
-          ? "No single verified local provider identity matches the reviewed email."
-          : "More than one local provider identity matches the reviewed email.",
-      );
-    }
-    const localUserId = match.rows[0].id;
+    const localIdentity = await findVerifiedLocalIdentity({
+      client,
+      plan,
+      matchValue,
+    });
+    const localUserId = localIdentity.id;
     if (!UUID.test(localUserId))
       throw new Error("Matched local identity is invalid.");
     const placeholderUser = await client.query(
@@ -932,7 +1120,7 @@ export const applyIdentityClaim = async ({
     }
     return {
       name: plan.identity.name,
-      provider: plan.identity.provider,
+      provider: localIdentity.provider,
       claimed: true,
       removedSignupDefaults,
       tokenHookVerified,

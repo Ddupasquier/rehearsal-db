@@ -636,6 +636,14 @@ where bucket_id = 'fixture-assets'
         environment: identityEnvironment,
       }).stdout,
     ).data.plan;
+    if (
+      JSON.stringify(identityPlan).includes(approvedEmail) ||
+      identityPlan.review?.matcher?.type !== "verified-email"
+    ) {
+      throw new Error(
+        "The installed legacy email policy exposed or misclassified its matcher value.",
+      );
+    }
     const identityClaim = JSON.parse(
       executeCliOrThrow({
         cwd,

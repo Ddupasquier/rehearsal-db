@@ -67,7 +67,7 @@ In short: `refresh` gets a new source copy; `reset` restores the copy you alread
 
 ## Local identity association
 
-For a reviewed Google identity, use this sequence:
+For a reviewed Google, GitHub, or email identity, use this sequence:
 
 1. Run a successful rehearsal, then start the persistent app:
 
@@ -75,9 +75,10 @@ For a reviewed Google identity, use this sequence:
    npx rehearsal open
    ```
 
-2. Open the printed local URL and complete the normal Google sign-in. Press `Ctrl+C`
+2. Open the printed local URL and complete the normal provider sign-in. Press `Ctrl+C`
    after the callback returns. This closes only the app; the databases and Storage stay
-   running with their current data.
+   running with their current data. Provider setup and credentials belong to the local
+   Supabase runtime, not the identity policy.
 
 3. Preview and confirm the reviewed association:
 

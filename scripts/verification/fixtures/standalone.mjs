@@ -111,6 +111,7 @@ create table auth.users (
 create table auth.identities (
   user_id uuid not null,
   provider text not null,
+  provider_id text,
   identity_data jsonb not null
 );
 create schema storage;
@@ -433,6 +434,7 @@ process.on("SIGTERM", () => server.close());
       )}\n`,
     );
     const approvedEmail = "owner@example.com";
+    const approvedSubject = "github-account-847291";
     await writeFile(
       join(cwd, "rehearsal/identity-policy.json"),
       `${JSON.stringify(
@@ -441,11 +443,14 @@ process.on("SIGTERM", () => server.close());
           identities: [
             {
               name: "approved-owner",
-              provider: "google",
-              emailEnvironmentVariable: "REHEARSAL_APPROVED_OWNER_EMAIL",
-              approvedEmailSha256: createHash("sha256")
-                .update(approvedEmail)
-                .digest("hex"),
+              matcher: {
+                type: "provider-subject",
+                provider: "github",
+                subjectEnvironmentVariable: "REHEARSAL_APPROVED_OWNER_SUBJECT",
+                approvedSubjectSha256: createHash("sha256")
+                  .update(approvedSubject)
+                  .digest("hex"),
+              },
               placeholderUserId: "11111111-1111-4111-8111-111111111111",
               references: [
                 {
@@ -742,9 +747,9 @@ process.on("SIGTERM", () => server.close());
       {
         cwd,
         input: `insert into auth.users (id, email, email_confirmed_at)
-values ('22222222-2222-4222-8222-222222222222', '${approvedEmail}', now());
-insert into auth.identities (user_id, provider, identity_data)
-values ('22222222-2222-4222-8222-222222222222', 'google', '{"email":"${approvedEmail}","email_verified":true}');
+values ('22222222-2222-4222-8222-222222222222', '${approvedEmail}', null);
+insert into auth.identities (user_id, provider, provider_id, identity_data)
+values ('22222222-2222-4222-8222-222222222222', 'github', '${approvedSubject}', '{"sub":"${approvedSubject}","email":"${approvedEmail}","email_verified":false}');
 insert into public.profiles (id, display_name, avatar_path)
 values
   ('11111111-1111-4111-8111-111111111111', 'Synthetic owner', '11111111-1111-4111-8111-111111111111/avatar.webp'),
@@ -757,7 +762,7 @@ values ('11111111-1111-4111-8111-111111111111', 'avatars', '11111111-1111-4111-8
       },
     );
     const identityEnvironment = {
-      REHEARSAL_APPROVED_OWNER_EMAIL: approvedEmail,
+      REHEARSAL_APPROVED_OWNER_SUBJECT: approvedSubject,
     };
     const identityPlan = JSON.parse(
       executeCliOrThrow({
@@ -767,6 +772,15 @@ values ('11111111-1111-4111-8111-111111111111', 'avatars', '11111111-1111-4111-8
         environment: identityEnvironment,
       }).stdout,
     ).data.plan;
+    if (
+      JSON.stringify(identityPlan).includes(approvedSubject) ||
+      identityPlan.review?.matcher?.type !== "provider-subject" ||
+      identityPlan.review?.matcher?.provider !== "github"
+    ) {
+      throw new Error(
+        "The installed identity plan exposed or misclassified the reviewed provider subject.",
+      );
+    }
     const wrongIdentity = executeCli({
       cwd,
       args: [
@@ -783,9 +797,8 @@ values ('11111111-1111-4111-8111-111111111111', 'avatars', '11111111-1111-4111-8
         "A wrong identity digest unexpectedly changed the runtime.",
       );
     }
-    executeCliOrThrow({
+    const unverifiedIdentity = executeCli({
       cwd,
-      label: "identity claim",
       args: [
         "identity",
         "claim",
@@ -795,6 +808,56 @@ values ('11111111-1111-4111-8111-111111111111', 'avatars', '11111111-1111-4111-8
       ],
       environment: identityEnvironment,
     });
+    const unverifiedOutput = `${unverifiedIdentity.stdout}\n${unverifiedIdentity.stderr}`;
+    if (
+      unverifiedIdentity.status === 0 ||
+      !unverifiedOutput.includes("No verified local identity")
+    ) {
+      throw new Error(
+        "An unverified provider subject was not refused before account transfer.",
+      );
+    }
+    run(
+      "docker",
+      [
+        "exec",
+        "--interactive",
+        runtimeContainer,
+        "psql",
+        "--username",
+        "postgres",
+        "--dbname",
+        "postgres",
+        "--set",
+        "ON_ERROR_STOP=1",
+      ],
+      {
+        cwd,
+        input: `update auth.users
+set email_confirmed_at = now()
+where id = '22222222-2222-4222-8222-222222222222';
+`,
+      },
+    );
+    const claimedIdentity = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        label: "identity claim",
+        args: [
+          "identity",
+          "claim",
+          "--identity=approved-owner",
+          `--confirm-identity=${identityPlan.digest}`,
+          "--json",
+        ],
+        environment: identityEnvironment,
+      }).stdout,
+    );
+    if (claimedIdentity.data?.result?.provider !== "github") {
+      throw new Error(
+        "The installed identity claim did not record the matched GitHub provider.",
+      );
+    }
     const repeatedIdentity = JSON.parse(
       executeCliOrThrow({
         cwd,

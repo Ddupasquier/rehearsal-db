@@ -1028,7 +1028,8 @@ export default defineRehearsalConfig({
 	// },
 	// Optional reviewed schemas/extensions/triggers/local-only rows.
 	// runtimePolicy: "infrastructure/rehearsal/runtime-policy.json",
-	// Optional signup defaults, role/reference transfer, Storage paths, and token checks.
+	// Optional copied-account association. The JSON stores only reviewed matcher hashes;
+	// raw emails/subjects and provider credentials stay in ignored environment files.
 	// identityPolicy: "infrastructure/rehearsal/identity-policy.json",
 
 	// Reuse any running Docker-compatible engine; start Colima only when needed.
@@ -1136,7 +1137,8 @@ export default defineRehearsalConfig({
 	// },
 	// Optional reviewed schemas/extensions/triggers/local-only rows.
 	// runtimePolicy: "infrastructure/rehearsal/runtime-policy.json",
-	// Optional signup defaults, role/reference transfer, Storage paths, and token checks.
+	// Optional copied-account association. The JSON stores only reviewed matcher hashes;
+	// raw emails/subjects and provider credentials stay in ignored environment files.
 	// identityPolicy: "infrastructure/rehearsal/identity-policy.json",
 
 	// Reuse any running Docker-compatible engine; start Colima only when needed.

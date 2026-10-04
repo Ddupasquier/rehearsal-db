@@ -77,9 +77,12 @@ graph without an application callback patch:
   "identities": [
     {
       "name": "approved-owner",
-      "provider": "google",
-      "emailEnvironmentVariable": "REHEARSAL_APPROVED_OWNER_EMAIL",
-      "approvedEmailSha256": "<sha256 of the lowercase approved email>",
+      "matcher": {
+        "type": "verified-email",
+        "providers": ["google"],
+        "emailEnvironmentVariable": "REHEARSAL_APPROVED_OWNER_EMAIL",
+        "approvedEmailSha256": "<sha256 of the lowercase approved email>"
+      },
       "placeholderUserId": "11111111-1111-4111-8111-111111111111",
       "references": [
         {
@@ -152,9 +155,18 @@ graph without an application callback patch:
 }
 ```
 
+Authentication has three separate parts:
+
+1. The local Supabase configuration enables Google, GitHub, or email sign-in and reads
+   any provider credentials from the environment.
+2. The application completes the ordinary sign-in and receives a normal Supabase
+   session. Rehearsal does not intercept the callback.
+3. The identity policy matches that verified local identity and transfers only the
+   reviewed copied-account graph.
+
 The email stays in an environment variable; only its reviewed hash is committed. Run
-`rehearsal open`, complete the ordinary local Google sign-in, and stop the app with
-`Ctrl+C`. Then preview and confirm the association:
+`rehearsal open`, complete the ordinary local sign-in, and stop the app with `Ctrl+C`.
+Then preview and confirm the association:
 
 ```bash
 npx rehearsal identity plan --identity=approved-owner
@@ -165,6 +177,50 @@ npx rehearsal identity claim --identity=approved-owner \
 Rehearsal requires exactly one verified matching local provider identity. Every
 `required` reference must exist after transfer. Declare application role tables as
 references; `claims` alone is not a replacement for a database-backed token hook.
+
+### Supported identity matchers
+
+Rehearsal currently supports the Supabase provider values `email`, `google`, and
+`github`. Other provider names fail closed until their Auth representation has package
+coverage. Two matcher types are supported:
+
+- `verified-email` accepts one or more supported providers. It lowercases the email from
+  the named environment variable and compares its SHA-256 receipt before querying Auth.
+- `provider-subject` accepts one OAuth provider (`google` or `github`). It compares the
+  reviewed SHA-256 to Supabase's stable provider ID/subject without placing the raw
+  subject in the policy, baseline, command output, SQL parameters, or receipt.
+
+Google by verified email:
+
+```json
+"matcher": {
+  "type": "verified-email",
+  "providers": ["google"],
+  "emailEnvironmentVariable": "REHEARSAL_APPROVED_OWNER_EMAIL",
+  "approvedEmailSha256": "<sha256 of the lowercase email>"
+}
+```
+
+Supabase email/password or magic-link sign-in uses the same matcher with
+`"providers": ["email"]`. An account intentionally allowed to use either ordinary
+email or Google can declare `"providers": ["email", "google"]`; the claim still refuses
+zero or multiple matching identities.
+
+GitHub by stable provider subject:
+
+```json
+"matcher": {
+  "type": "provider-subject",
+  "provider": "github",
+  "subjectEnvironmentVariable": "REHEARSAL_APPROVED_OWNER_SUBJECT",
+  "approvedSubjectSha256": "<sha256 of the exact GitHub subject>"
+}
+```
+
+Set the raw value only in the local shell or an ignored environment file. Existing
+policies using the older top-level `provider`, `emailEnvironmentVariable`, and
+`approvedEmailSha256` fields remain accepted as a single-provider verified-email
+matcher. New policies should use the explicit `matcher` object.
 
 References use `"strategy": "transfer"` by default. Use `"preserve-audit"` only for
 immutable historical authorship, such as a completed review. Rehearsal leaves that row
@@ -184,6 +240,10 @@ another owner is refused. `pathReferences` updates matching text or JSONB pointe
 configured `tokenHook` must return the declared claim subset before commit. The browser must then
 refresh its session or sign in again because Rehearsal cannot rewrite an issued JWT.
 Run `rehearsal open` again for that fresh-session check; runtime data is preserved.
+
+After a claim, sign out and sign in again (or otherwise force a full token refresh) before
+judging application roles. This preserves normal RLS, account blocks, role checks, and
+MFA; identity association is not an authentication bypass.
 
 The transaction does not import production passwords, sessions, refresh tokens,
 cookies, MFA secrets, or provider credentials. Local MFA and authorization rules remain
