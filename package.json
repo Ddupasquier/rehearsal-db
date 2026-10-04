@@ -40,6 +40,7 @@
   },
   "files": [
     "src",
+    "scripts/install/create_root_config.mjs",
     "scripts/runtime/manage_database.mjs",
     "docs/*.md",
     "README.md",
@@ -51,6 +52,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "postinstall": "node scripts/install/create_root_config.mjs",
     "docs:build": "node scripts/docs/build.mjs",
     "docs:preview": "node scripts/docs/serve.mjs",
     "test": "vitest run",

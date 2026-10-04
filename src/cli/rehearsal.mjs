@@ -6,7 +6,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { performance } from "node:perf_hooks";
 import { parseEnv } from "node:util";
@@ -18,12 +18,7 @@ import {
   renderHumanError,
   serializeRehearsalError,
 } from "../shared/diagnostics.mjs";
-import {
-  inspectDetectedProject,
-  findRehearsalConfigPath,
-  loadRehearsalConfig,
-  renderDetectedConfig,
-} from "../project/configuration.mjs";
+import { loadRehearsalConfig } from "../project/configuration.mjs";
 import {
   inspectRehearsalBaseline,
   inspectRehearsalMigrations,
@@ -113,6 +108,7 @@ import {
   renderSourceRetirement,
   renderSupportReport,
 } from "./renderers.mjs";
+import { runRehearsalInit } from "./init_command.mjs";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const projectRoot = process.cwd();
@@ -148,54 +144,13 @@ const emit = ({ command, data, flags, render, status = "success" }) => {
   else console.log(render(data, flags.verbosity));
 };
 
-const runInit = async ({ flags }) => {
-  const detected = await inspectDetectedProject({ projectRoot });
-  const source = renderDetectedConfig(detected);
-  const destination = join(projectRoot, "rehearsal.config.mjs");
-  let existingPath = null;
-  try {
-    existingPath = await findRehearsalConfigPath({ projectRoot });
-  } catch (error) {
-    if (
-      !String(error?.message ?? error).startsWith("No Rehearsal configuration")
-    ) {
-      throw error;
-    }
-  }
-  if (existingPath) {
-    if (flags.write) {
-      throw new Error(
-        `A Rehearsal configuration already exists at ${relative(projectRoot, existingPath)}; Rehearsal will not overwrite it.`,
-      );
-    }
-    return {
-      mode: "existing",
-      destination: relative(projectRoot, existingPath),
-      detected,
-      source: "",
-      nextAction:
-        "Review the existing configuration, then run rehearsal doctor.",
-    };
-  }
-  if (flags.write)
-    await writeFile(destination, source, { flag: "wx", mode: 0o600 });
-  return {
-    mode: flags.write ? "written" : "preview",
-    destination: relative(projectRoot, destination),
-    detected,
-    source,
-    nextAction: flags.write
-      ? "Review the generated safety settings and run rehearsal doctor."
-      : "Review this preview, then rerun rehearsal init --write to create it.",
-  };
-};
-
 const runSetup = async ({ flags, planOptions }) => {
   const plan =
     flags.setupPlan ??
     (await planRehearsalSetup({
       projectRoot,
-      target: flags.target ?? "supabase",
+      configPath: planOptions.configPath,
+      target: flags.target,
     }));
   if (flags.write) await applyRehearsalSetup(plan);
   const result = summarizeRehearsalSetup(plan, {
@@ -417,7 +372,7 @@ const executeCommand = async ({ command, flags, planOptions, guided }) => {
     return;
   }
   if (command === "init") {
-    const data = await runInit({ flags });
+    const data = await runRehearsalInit({ projectRoot, flags });
     emit({ command, data, flags, render: renderInit });
     return;
   }

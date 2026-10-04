@@ -3,11 +3,22 @@
  * contacting hosted services or overwriting project-owned files.
  */
 
+import { randomUUID } from "node:crypto";
 import { createConnection, createServer } from "node:net";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
 import {
+  access,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import {
+  findRehearsalConfigPath,
   inspectDetectedProject,
+  loadRehearsalConfig,
   renderDetectedConfig,
   renderDetectedPostgresqlConfig,
 } from "./configuration.mjs";
@@ -178,7 +189,7 @@ enabled = false
 enabled = false
 `;
 
-const appendGitignoreEntries = (source) => {
+export const appendRehearsalGitignoreEntries = (source) => {
   const original = source ?? "";
   const lines = new Set(
     original
@@ -200,6 +211,75 @@ const appendGitignoreEntries = (source) => {
   return `${prefix}${separator}# Rehearsal local artifacts\n${missing.join("\n")}\n`;
 };
 
+const findExistingConfigPath = async ({ projectRoot, configPath }) => {
+  try {
+    return await findRehearsalConfigPath({ projectRoot, configPath });
+  } catch (error) {
+    if (
+      String(error?.message ?? error).startsWith("No Rehearsal configuration")
+    ) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const deriveSupabasePorts = (runtimePorts) => ({
+  shadow: runtimePorts.database - 2,
+  api: runtimePorts.api,
+  database: runtimePorts.database,
+  studio: runtimePorts.studio,
+  smtp: runtimePorts.database + 2,
+  pooler: runtimePorts.database + 7,
+});
+
+const applyGitignoreChange = async (file) => {
+  if (file.action === "unchanged") return;
+  if (file.action === "create") {
+    await writeFile(file.absolutePath, file.content, {
+      flag: "wx",
+      mode: file.mode,
+    });
+    return;
+  }
+
+  const lockPath = `${file.absolutePath}.rehearsal.lock`;
+  let lock;
+  let temporaryPath;
+  try {
+    lock = await open(lockPath, "wx", 0o600);
+    const current = await readOptionalFile(file.absolutePath);
+    if (current !== file.originalContent) {
+      throw new Error(
+        ".gitignore changed after the setup preview; rerun rehearsal setup before writing.",
+      );
+    }
+    temporaryPath = join(
+      dirname(file.absolutePath),
+      `.${basename(file.absolutePath)}.rehearsal-${process.pid}-${randomUUID()}.tmp`,
+    );
+    await writeFile(temporaryPath, file.content, {
+      flag: "wx",
+      mode: file.mode,
+    });
+    await rename(temporaryPath, file.absolutePath);
+    temporaryPath = null;
+  } catch (error) {
+    if (error?.code === "EEXIST" && !lock) {
+      throw new Error(
+        "Another Rehearsal process is updating .gitignore; rerun setup after it finishes.",
+      );
+    }
+    throw error;
+  } finally {
+    if (temporaryPath) await rm(temporaryPath, { force: true });
+    if (lock) {
+      await lock.close();
+      await rm(lockPath, { force: true });
+    }
+  }
+};
+
 const assertCreateTargetAvailable = async (file) => {
   if (file.action === "create" && (await pathExists(file.absolutePath))) {
     throw new Error(
@@ -210,41 +290,63 @@ const assertCreateTargetAvailable = async (file) => {
 
 export const planRehearsalSetup = async ({
   projectRoot = process.cwd(),
+  configPath,
   isPortAvailable,
-  target = "supabase",
+  target,
 } = {}) => {
   const root = resolve(projectRoot);
-  const runtimeTarget = resolveRuntimeTarget(target).id;
   const detected = await inspectDetectedProject({ projectRoot: root });
-  const ports = await findAvailableRehearsalPorts({
-    ...(isPortAvailable ? { isAvailable: isPortAvailable } : {}),
+  const existingConfigPath = await findExistingConfigPath({
+    projectRoot: root,
+    configPath,
   });
-  const applicationUrl = "http://localhost:5175";
-  const projectId = `${detected.projectName}-rehearsal`;
+  const existing = existingConfigPath
+    ? await loadRehearsalConfig({ projectRoot: root, configPath })
+    : null;
+  const requestedTarget = resolveRuntimeTarget(
+    target ?? existing?.config.runtime.target ?? "supabase",
+  ).id;
+  const runtimeTarget = existing?.config.runtime.target ?? requestedTarget;
+  if (existing && target && runtimeTarget !== requestedTarget) {
+    throw new Error(
+      `The existing Rehearsal configuration targets ${runtimeTarget}; setup will not replace it with ${requestedTarget}.`,
+    );
+  }
+  const ports = existing
+    ? runtimeTarget === "supabase"
+      ? deriveSupabasePorts(existing.config.runtime.ports)
+      : { database: existing.config.runtime.ports.database }
+    : await findAvailableRehearsalPorts({
+        ...(isPortAvailable ? { isAvailable: isPortAvailable } : {}),
+      });
+  const applicationUrl =
+    existing?.config.runtime.applicationUrl ?? "http://localhost:5175";
+  const projectId =
+    existing?.config.runtime.projectId ?? `${detected.projectName}-rehearsal`;
   const sourceSupabaseConfig =
     runtimeTarget === "supabase"
       ? await readOptionalFile(join(root, "supabase/config.toml"))
       : null;
   const originalGitignore = await readOptionalFile(join(root, GITIGNORE_PATH));
-  const nextGitignore = appendGitignoreEntries(originalGitignore);
-  for (const path of [
-    CONFIG_PATH,
-    ...(runtimeTarget === "supabase" ? [LOCAL_SUPABASE_CONFIG_PATH] : []),
-  ]) {
-    if (await pathExists(join(root, path))) {
-      throw new Error(
-        `Rehearsal setup will not overwrite the existing file at ${path}.`,
-      );
-    }
-  }
+  const nextGitignore = appendRehearsalGitignoreEntries(originalGitignore);
+  const rehearsalConfigPath = existing?.paths.rehearsalConfig;
+  const localSupabasePath = rehearsalConfigPath
+    ? relative(root, rehearsalConfigPath)
+    : LOCAL_SUPABASE_CONFIG_PATH;
+  const localSupabaseExists = rehearsalConfigPath
+    ? await pathExists(rehearsalConfigPath)
+    : false;
   const files = [
     {
-      path: CONFIG_PATH,
-      absolutePath: join(root, CONFIG_PATH),
-      action: "create",
+      path: existingConfigPath
+        ? relative(root, existingConfigPath)
+        : CONFIG_PATH,
+      absolutePath: existingConfigPath ?? join(root, CONFIG_PATH),
+      action: existingConfigPath ? "unchanged" : "create",
       mode: 0o600,
-      content:
-        runtimeTarget === "supabase"
+      content: existingConfigPath
+        ? null
+        : runtimeTarget === "supabase"
           ? renderDetectedConfig(detected, {
               applicationUrl,
               ports,
@@ -257,17 +359,20 @@ export const planRehearsalSetup = async ({
     ...(runtimeTarget === "supabase"
       ? [
           {
-            path: LOCAL_SUPABASE_CONFIG_PATH,
-            absolutePath: join(root, LOCAL_SUPABASE_CONFIG_PATH),
-            action: "create",
+            path: localSupabasePath,
+            absolutePath:
+              rehearsalConfigPath ?? join(root, LOCAL_SUPABASE_CONFIG_PATH),
+            action: localSupabaseExists ? "unchanged" : "create",
             mode: 0o600,
-            content: renderSafeLocalSupabaseConfig({
-              projectId,
-              applicationUrl,
-              ports,
-              databaseMajorVersion:
-                databaseMajorVersionFrom(sourceSupabaseConfig),
-            }),
+            content: localSupabaseExists
+              ? null
+              : renderSafeLocalSupabaseConfig({
+                  projectId,
+                  applicationUrl,
+                  ports,
+                  databaseMajorVersion:
+                    databaseMajorVersionFrom(sourceSupabaseConfig),
+                }),
           },
         ]
       : []),
@@ -293,6 +398,11 @@ export const planRehearsalSetup = async ({
     applicationUrl,
     detected,
     ports: runtimeTarget === "supabase" ? ports : { database: ports.database },
+    requiresAvailablePorts: files.some(
+      (file) =>
+        file.action === "create" &&
+        [CONFIG_PATH, localSupabasePath].includes(file.path),
+    ),
     isPortAvailable: isPortAvailable ?? isRehearsalPortAvailable,
     files,
     safety: [
@@ -314,14 +424,16 @@ export const planRehearsalSetup = async ({
 
 export const applyRehearsalSetup = async (plan) => {
   assertSupportedRehearsalNodeRuntime();
-  const unavailablePorts = (
-    await Promise.all(
-      Object.values(plan.ports).map(async (port) => ({
-        port,
-        available: await plan.isPortAvailable(port),
-      })),
-    )
-  ).filter(({ available }) => !available);
+  const unavailablePorts = plan.requiresAvailablePorts
+    ? (
+        await Promise.all(
+          Object.values(plan.ports).map(async (port) => ({
+            port,
+            available: await plan.isPortAvailable(port),
+          })),
+        )
+      ).filter(({ available }) => !available)
+    : [];
   if (unavailablePorts.length) {
     throw new Error(
       `Rehearsal setup ports became occupied after the preview (${unavailablePorts.map(({ port }) => port).join(", ")}); rerun setup to choose another local port block.`,
@@ -329,16 +441,9 @@ export const applyRehearsalSetup = async (plan) => {
   }
   for (const file of plan.files) await assertCreateTargetAvailable(file);
   const gitignore = plan.files.find((file) => file.path === GITIGNORE_PATH);
-  if (gitignore?.action === "update") {
-    const current = await readOptionalFile(gitignore.absolutePath);
-    if (current !== gitignore.originalContent) {
-      throw new Error(
-        ".gitignore changed after the setup preview; rerun rehearsal setup before writing.",
-      );
-    }
-  }
+  if (gitignore) await applyGitignoreChange(gitignore);
   for (const file of plan.files.filter(
-    (entry) => entry.action !== "unchanged",
+    (entry) => entry.action !== "unchanged" && entry.path !== GITIGNORE_PATH,
   )) {
     await mkdir(dirname(file.absolutePath), { recursive: true, mode: 0o700 });
     await writeFile(file.absolutePath, file.content, {

@@ -391,6 +391,21 @@ describe("Rehearsal configuration", () => {
     ).resolves.toMatchObject({
       config: { project: { name: "fixture-project" } },
     });
+    const currentTemplate = JSON.parse(
+      (
+        await execute(process.execPath, [cliPath, "init", "--json"], {
+          cwd: root,
+        })
+      ).stdout,
+    );
+    expect(currentTemplate.data.mode).toBe("current-template");
+    expect(currentTemplate.data.source).toContain("containerRuntime:");
+    expect(await readFile(destination, "utf8")).toBe(
+      writtenSource.replace(
+        '"@rehearsal-db/core"',
+        JSON.stringify(configurationModuleUrl),
+      ),
+    );
     await expect(
       execute(process.execPath, [cliPath, "init", "--write", "--json"], {
         cwd: root,

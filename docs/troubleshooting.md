@@ -20,6 +20,20 @@ npx rehearsal --help
 
 Do not use `sudo` or require a global install.
 
+## Installation did not create `rehearsal.config.mjs`
+
+Rehearsal intentionally skips automatic creation when install scripts are disabled, the
+install is global or temporary, or more than one workspace application could own the
+config. From the intended application directory, run:
+
+```bash
+npx rehearsal
+```
+
+Choose **Set the stage** and approve the preview. For pnpm and Yarn, use this guided path;
+automatic root generation is currently tested with npm. An existing supported config is
+kept in place, including `infrastructure/rehearsal/rehearsal.config.mjs`.
+
 ## Setup says Node.js 24 is required
 
 Rehearsal intentionally supports one maintained Node.js major in its first beta. Switch
