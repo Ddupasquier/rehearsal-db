@@ -51,6 +51,8 @@
     "LICENSE"
   ],
   "scripts": {
+    "docs:build": "node scripts/docs/build.mjs",
+    "docs:preview": "node scripts/docs/serve.mjs",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration tests/contracts",
@@ -59,7 +61,7 @@
     "test:fixture:postgresql": "node scripts/verification/fixtures/postgresql.mjs",
     "test:fixture:dependent": "node scripts/verification/fixtures/dependent.mjs",
     "test:fixture:standalone": "node scripts/verification/fixtures/standalone.mjs",
-    "check": "npm run check:syntax && npm run test && npm run format:check && npm run package:audit",
+    "check": "npm run check:syntax && npm run test && npm run docs:build && npm run format:check && npm run package:audit",
     "check:syntax": "find src scripts tests -type f -name '*.mjs' -exec node --check {} +",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -78,7 +80,10 @@
     "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource-variable/fraunces": "^5.3.0",
     "@lydell/node-pty": "^1.2.0-beta.15",
+    "marked": "^18.0.14",
     "prettier": "^3.9.6",
     "vitest": "^5.0.2"
   }
