@@ -1,6 +1,6 @@
 {
   "name": "@rehearsal-db/core",
-  "version": "0.1.0-beta.10",
+  "version": "0.1.0-beta.11",
   "private": false,
   "description": "Safely rehearse PostgreSQL and Supabase migrations against sanitized, production-shaped data.",
   "repository": {
