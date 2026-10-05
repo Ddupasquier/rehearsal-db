@@ -180,6 +180,29 @@ config during an upgrade. After upgrading, run `npx rehearsal init` to see impor
 optional settings you have not enabled and compare your file with the installed
 release's current template.
 
+### If setup or an upgrade is interrupted
+
+Do not delete `.rehearsal/` or your existing config. Start with:
+
+```bash
+npx rehearsal doctor
+npx rehearsal init
+```
+
+Use the reported problem to choose the smallest recovery:
+
+| Problem                             | Safe recovery                                                                                                                                                              |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A generated runtime file is missing | Run `npx rehearsal setup --write`. Existing files stay unchanged; only missing files are created.                                                                          |
+| A port is already in use            | Stop the conflicting local process or choose new dedicated ports, then rerun setup.                                                                                        |
+| The config is malformed             | Move it to a backup name, run `npx rehearsal setup --write`, then copy reviewed choices into the new file.                                                                 |
+| OAuth credentials are missing       | Create the ignored file named by `supabase.authentication.environmentFile`, add only the declared keys, and run `chmod 600` on it. Ambient shell credentials are not used. |
+| An npm upgrade fails                | Keep the existing config, baseline, and lockfile. Restore dependencies with your package manager, then run `npx rehearsal init` before retrying.                           |
+| Docker storage is low               | Run `npx rehearsal cleanup` for an exact preview. Rehearsal never performs a global Docker prune or silently removes volumes.                                              |
+
+`setup --write` and package installation never replace a config. If an existing file is
+invalid, Rehearsal fails closed and leaves it available for comparison.
+
 ## Files Rehearsal creates
 
 - `rehearsal.config.mjs` — reviewed project configuration

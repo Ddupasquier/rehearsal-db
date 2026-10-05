@@ -29,8 +29,9 @@ Track the full breakdown in
   invalid migrations, identities, images, persistence, reset, and cleanup.
 - Run the released package in the real reporting consumer and record positives and
   negatives.
-- Directly observe any claimed Google account-picker/callback and unfamiliar-developer
-  onboarding behavior; automation cannot invent that evidence.
+- Directly observe any claimed Google account-picker/callback. Record
+  unfamiliar-developer onboarding behavior when a tester is available; automation cannot
+  invent either kind of human evidence.
 - Remove consumer integration code only after its replacement passes and that deletion
   is separately approved.
 

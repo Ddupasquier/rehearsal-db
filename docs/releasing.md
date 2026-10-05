@@ -32,9 +32,11 @@ publication must change and prove the workflow before narrowing that permission.
 1. Start from protected `main` on a dedicated ticketed release branch.
 2. Verify the exact version, changelog, compatibility notes, and packed file list.
 3. Run unit and contract tests, formatting, package-content and secret audits,
-   dependency audit, clean tarball installation, and the installed Docker fixture.
-4. Have a developer unfamiliar with the implementing project follow the clean-project
-   onboarding. Correct and retest the first confusing, missing, or wrong instruction.
+   dependency audit, packed onboarding, clean tarball installation, and the installed
+   Docker fixtures.
+4. When an unfamiliar developer is available, have them follow clean-project onboarding.
+   Correct and retest the first confusing, missing, or wrong instruction. Record when
+   this human observation was unavailable; automated checks must not impersonate it.
 5. Change `private` to `false` only in the reviewed release change.
 6. Record the exact tarball filename, SHA-1, SHA-256, allowlisted files, unpacked size,
    executable, declared runtime dependency inventory, and dependency audit result.
