@@ -22,6 +22,10 @@ import {
 import { createCandidateMigrationReceipt } from "./restore.mjs";
 import { readMigrationFileInventory } from "./migration_history.mjs";
 import { REHEARSAL_VERSION } from "../shared/diagnostics.mjs";
+import {
+  inspectRehearsalNodeRuntime,
+  REHEARSAL_NODE_LABEL,
+} from "../shared/node_runtime.mjs";
 import { readRehearsalServiceEnvironment } from "./service_environment.mjs";
 import {
   readBoundRuntimeSanitizationPolicy,
@@ -357,17 +361,17 @@ export const runRehearsalDoctor = async (options = {}) => {
     };
   }
   const { config, paths, projectRoot } = loaded;
-  const nodeMajor = Number(process.versions.node.split(".")[0]);
+  const nodeRuntime = inspectRehearsalNodeRuntime();
   const checkDefinitions = [
     {
       id: "node",
       label: "Node.js compatibility",
       run: async () => {
-        if (nodeMajor !== 24)
+        if (!nodeRuntime.supported)
           throw new Error(`Node ${process.versions.node} is unsupported.`);
         return `Node ${process.versions.node}`;
       },
-      remediation: "Use Node.js 24.",
+      remediation: `Use ${REHEARSAL_NODE_LABEL}. Node.js 24 LTS is recommended.`,
     },
     {
       id: "operating-system",

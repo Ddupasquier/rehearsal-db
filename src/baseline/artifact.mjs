@@ -372,12 +372,35 @@ export const createAndActivateBaseline = async ({
     }
     return manifest;
   } catch (error) {
+    let cleanupFailure;
     if (dataHandle) await dataHandle.close().catch(() => undefined);
-    await chmod(buildDirectory, 0o700).catch(() => undefined);
-    await rm(buildDirectory, { recursive: true, force: true });
+    await makeArtifactTreeWritable(buildDirectory).catch(() => undefined);
+    await rm(buildDirectory, { recursive: true, force: true }).catch(
+      (cleanupError) => {
+        cleanupFailure = cleanupError;
+      },
+    );
     if (finalCreated) {
-      await chmod(finalDirectory, 0o700).catch(() => undefined);
-      await rm(finalDirectory, { recursive: true, force: true });
+      await makeArtifactTreeWritable(finalDirectory).catch(() => undefined);
+      await rm(finalDirectory, { recursive: true, force: true }).catch(
+        (cleanupError) => {
+          cleanupFailure ??= cleanupError;
+        },
+      );
+    }
+    if (
+      cleanupFailure &&
+      error &&
+      (typeof error === "object" || typeof error === "function")
+    ) {
+      try {
+        Object.defineProperty(error, "cleanupError", {
+          value: cleanupFailure,
+          enumerable: false,
+        });
+      } catch {
+        // Preserve the preparation failure even when its Error is immutable.
+      }
     }
     throw error;
   }

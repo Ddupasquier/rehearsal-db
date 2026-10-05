@@ -24,6 +24,7 @@ import {
   validateExecutablePrivacyPolicy,
 } from "../baseline/privacy_engine.mjs";
 import {
+  sourceAccessPolicyFingerprint,
   sourceTargetFingerprint,
   validateSourceAccessPolicy,
 } from "./access.mjs";
@@ -45,6 +46,15 @@ const quoteIdentifier = (value) => {
 
 const canonicalJson = (value) => `${JSON.stringify(value, null, "\t")}\n`;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const parseEstimateValue = (value) => {
+  if (
+    (typeof value !== "string" && typeof value !== "number") ||
+    (typeof value === "string" && !/^(?:0|[1-9]\d*)$/u.test(value))
+  ) {
+    return Number.NaN;
+  }
+  return Number(value);
+};
 
 const normalizeLimits = (limits = {}) => {
   const normalized = { ...DEFAULT_LIMITS, ...limits };
@@ -132,10 +142,20 @@ const estimateExport = async (client, policy) => {
               coalesce(sum(pg_column_size(export_row)), 0)::bigint as bytes
        from ${quoteIdentifier(policy.exportSchema)}.${quoteIdentifier(relation.view)} export_row`,
     );
-    const tableRows = Number(result.rows[0].rows);
-    const tableBytes = Number(result.rows[0].bytes);
-    if (!Number.isSafeInteger(tableRows) || !Number.isSafeInteger(tableBytes)) {
-      throw new Error("Source export estimate exceeds safe numeric limits.");
+    const estimate = result.rows?.[0];
+    const tableRows = parseEstimateValue(estimate?.rows);
+    const tableBytes = parseEstimateValue(estimate?.bytes);
+    if (
+      !Number.isSafeInteger(tableRows) ||
+      !Number.isSafeInteger(tableBytes) ||
+      tableRows < 0 ||
+      tableBytes < 0 ||
+      !Number.isSafeInteger(rows + tableRows) ||
+      !Number.isSafeInteger(bytes + tableBytes)
+    ) {
+      throw new Error(
+        "Source export estimate is missing, negative, or exceeds safe numeric limits.",
+      );
     }
     rows += tableRows;
     bytes += tableBytes;
@@ -238,6 +258,14 @@ const streamSanitizedRecords = async function* ({
         const batch = await client.query(
           `fetch forward ${limits.batchRows} from ${quoteIdentifier(cursor)}`,
         );
+        if (
+          !Array.isArray(batch?.rows) ||
+          batch.rows.length > limits.batchRows
+        ) {
+          throw new Error(
+            "Source reader returned a malformed or oversized cursor batch.",
+          );
+        }
         if (batch.rows.length === 0) break;
         for (const row of batch.rows) {
           const sanitized = privacyEngine.sanitize({
@@ -295,6 +323,7 @@ export const refreshPostgresqlBaseline = async ({
     );
   }
   const expectedReceiptShape = {
+    accessMode: sourcePolicy.reader.mode,
     exportSchema: sourcePolicy.exportSchema,
     views: sourcePolicy.relations.map((relation) => relation.view).sort(),
     relations: sourcePolicy.relations.map((relation) => ({
@@ -303,19 +332,25 @@ export const refreshPostgresqlBaseline = async ({
     })),
     migrationLedger: sourcePolicy.migrationLedger,
     readerRole: sourcePolicy.reader.role,
-    ownerRole: sourcePolicy.reader.ownerRole,
+    ownerRole: sourcePolicy.reader.ownerRole ?? null,
   };
   const actualReceiptShape = {
+    accessMode: sourceAccessReceipt?.accessMode ?? "managed",
     exportSchema: sourceAccessReceipt?.exportSchema,
     views: [...(sourceAccessReceipt?.views ?? [])].sort(),
     relations: sourceAccessReceipt?.relations,
     migrationLedger: sourceAccessReceipt?.migrationLedger,
     readerRole: sourceAccessReceipt?.readerRole,
-    ownerRole: sourceAccessReceipt?.ownerRole,
+    ownerRole: sourceAccessReceipt?.ownerRole ?? null,
   };
+  const policyFingerprint = sourceAccessPolicyFingerprint(sourcePolicy);
   if (
     sourceAccessReceipt?.targetFingerprint !== sourcePolicy.targetFingerprint ||
     !/^[a-f0-9]{64}$/u.test(sourceAccessReceipt?.planDigest ?? "") ||
+    (sourcePolicy.reader.mode === "external" &&
+      sourceAccessReceipt?.policyFingerprint !== policyFingerprint) ||
+    (sourceAccessReceipt?.policyFingerprint !== undefined &&
+      sourceAccessReceipt.policyFingerprint !== policyFingerprint) ||
     new Date(sourceAccessReceipt.expiresAt).valueOf() <= Date.now() ||
     JSON.stringify(actualReceiptShape) !== JSON.stringify(expectedReceiptShape)
   ) {
@@ -388,6 +423,7 @@ export const refreshPostgresqlBaseline = async ({
           canonicalJson({
             targetFingerprint: sourceAccessReceipt.targetFingerprint,
             planDigest: sourceAccessReceipt.planDigest,
+            policyFingerprint: sourceAccessReceipt.policyFingerprint ?? null,
             expiresAt: sourceAccessReceipt.expiresAt,
           }),
         ),

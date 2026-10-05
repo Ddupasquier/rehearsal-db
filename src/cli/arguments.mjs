@@ -4,6 +4,7 @@ export const parseArguments = (arguments_) => {
   const flags = {
     json: false,
     help: false,
+    version: false,
     verbosity: "normal",
     dryRun: false,
     write: false,
@@ -30,6 +31,8 @@ export const parseArguments = (arguments_) => {
   for (const argument of arguments_) {
     if (argument === "--json") flags.json = true;
     else if (argument === "--help" || argument === "-h") flags.help = true;
+    else if (argument === "--version" || argument === "-V")
+      flags.version = true;
     else if (argument === "--verbose") flags.verbosity = "verbose";
     else if (argument === "--debug") flags.verbosity = "debug";
     else if (argument === "--dry-run") flags.dryRun = true;

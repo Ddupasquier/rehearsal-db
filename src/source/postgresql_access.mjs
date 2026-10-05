@@ -6,10 +6,10 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmod,
+  link,
   mkdir,
   open,
   readFile,
-  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
@@ -18,8 +18,10 @@ import pg from "pg";
 import {
   assertSourceAccessConfirmation,
   createSourceRetirementPlan,
+  sourceAccessPolicyFingerprint,
   sourceTargetFingerprint,
 } from "./access.mjs";
+import { verifyExternalPostgresqlReader } from "./external_reader.mjs";
 
 const { Client } = pg;
 const IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/u;
@@ -180,21 +182,7 @@ const runDenyChecks = async (client, plan) => {
   }
 };
 
-export const applyPostgresqlSourceAccess = async ({
-  plan,
-  confirmation,
-  projectRoot = process.cwd(),
-  environment = process.env,
-  clientFactory,
-  now = new Date(),
-}) => {
-  assertSourceAccessConfirmation(plan, confirmation);
-  const administratorConnectionString =
-    environment[plan.policy.administratorEnvironmentVariable];
-  if (!administratorConnectionString) {
-    throw new Error(`Missing ${plan.policy.administratorEnvironmentVariable}.`);
-  }
-  assertTarget(plan, administratorConnectionString);
+const assertApprovedOwnerScopes = (plan, environment) => {
   for (const relation of plan.policy.relations) {
     if (relation.rowScope.kind !== "approved-owner") continue;
     const value = environment[relation.rowScope.valueEnvironmentVariable];
@@ -209,6 +197,110 @@ export const applyPostgresqlSourceAccess = async ({
       );
     }
   }
+};
+
+const buildSourceAccessReceipt = ({ plan, expiresAt }) => ({
+  receiptVersion: 1,
+  accessMode: plan.policy.reader.mode,
+  policyFingerprint: sourceAccessPolicyFingerprint(plan.policy),
+  targetFingerprint: plan.policy.targetFingerprint,
+  planDigest: plan.digest,
+  exportSchema: plan.policy.exportSchema,
+  views: plan.policy.relations.map((relation) => relation.view).sort(),
+  relations: plan.policy.relations.map((relation) => ({
+    ...relation.source,
+    columns: relation.columns,
+  })),
+  migrationLedger: plan.policy.migrationLedger,
+  readerRole: plan.policy.reader.role,
+  ...(plan.policy.reader.mode === "managed"
+    ? { ownerRole: plan.policy.reader.ownerRole }
+    : {}),
+  expiresAt,
+});
+
+const activateExternalPostgresqlSourceAccess = async ({
+  plan,
+  projectRoot,
+  environment,
+  clientFactory,
+  now,
+}) => {
+  const connectionString =
+    environment[plan.policy.reader.connectionEnvironmentVariable];
+  if (!connectionString) {
+    throw new Error(
+      `Missing ${plan.policy.reader.connectionEnvironmentVariable}.`,
+    );
+  }
+  assertTarget(plan, connectionString);
+  assertApprovedOwnerScopes(plan, environment);
+  const verified = await verifyExternalPostgresqlReader({
+    plan,
+    connectionString,
+    clientFactory,
+    now,
+  });
+  const credentialPath = ensureOwnedPath(
+    projectRoot,
+    plan.policy.reader.credentialFile,
+  );
+  const receiptPath = ensureOwnedPath(
+    projectRoot,
+    ".rehearsal/source-access-receipt.json",
+  );
+  const temporaryCredentialPath = `${credentialPath}.building-${process.pid}`;
+  const receipt = buildSourceAccessReceipt({
+    plan,
+    expiresAt: verified.expiresAt,
+  });
+  let receiptWritten = false;
+  try {
+    await writeExclusiveSecret(
+      temporaryCredentialPath,
+      `REHEARSAL_SOURCE_DATABASE_URL=${connectionString}\n`,
+    );
+    await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    receiptWritten = true;
+    await chmod(receiptPath, 0o600);
+    await link(temporaryCredentialPath, credentialPath);
+    await rm(temporaryCredentialPath, { force: true });
+  } catch (error) {
+    await rm(temporaryCredentialPath, { force: true });
+    if (receiptWritten) await rm(receiptPath, { force: true });
+    throw error;
+  }
+  return { receipt, credentialPath, receiptPath };
+};
+
+export const applyPostgresqlSourceAccess = async ({
+  plan,
+  confirmation,
+  projectRoot = process.cwd(),
+  environment = process.env,
+  clientFactory,
+  now = new Date(),
+}) => {
+  assertSourceAccessConfirmation(plan, confirmation);
+  if (plan.policy.reader.mode === "external") {
+    return activateExternalPostgresqlSourceAccess({
+      plan,
+      projectRoot,
+      environment,
+      clientFactory,
+      now,
+    });
+  }
+  const administratorConnectionString =
+    environment[plan.policy.administratorEnvironmentVariable];
+  if (!administratorConnectionString) {
+    throw new Error(`Missing ${plan.policy.administratorEnvironmentVariable}.`);
+  }
+  assertTarget(plan, administratorConnectionString);
+  assertApprovedOwnerScopes(plan, environment);
   const password = randomBytes(32).toString("base64url");
   const expiresAt = new Date(
     now.valueOf() + plan.policy.reader.validForMinutes * 60_000,
@@ -227,13 +319,28 @@ export const applyPostgresqlSourceAccess = async ({
     plan.policy.reader.role,
     password,
   );
-  await writeExclusiveSecret(
-    temporaryCredentialPath,
-    `REHEARSAL_SOURCE_DATABASE_URL=${readerUrl}\n`,
-  );
-  const client = await connection(administratorConnectionString, clientFactory);
-  let committed = false;
+  let receiptReserved = false;
+  let credentialLinked = false;
   try {
+    await writeExclusiveSecret(
+      temporaryCredentialPath,
+      `REHEARSAL_SOURCE_DATABASE_URL=${readerUrl}\n`,
+    );
+    const receiptReservation = await open(receiptPath, "wx", 0o600);
+    receiptReserved = true;
+    await receiptReservation.close();
+    await link(temporaryCredentialPath, credentialPath);
+    credentialLinked = true;
+    await rm(temporaryCredentialPath, { force: true });
+  } catch (error) {
+    await rm(temporaryCredentialPath, { force: true });
+    if (credentialLinked) await rm(credentialPath, { force: true });
+    if (receiptReserved) await rm(receiptPath, { force: true });
+    throw error;
+  }
+  let client;
+  try {
+    client = await connection(administratorConnectionString, clientFactory);
     await client.query("begin");
     await client.query(
       "select pg_advisory_xact_lock(hashtext('rehearsal-source-access'))",
@@ -318,32 +425,19 @@ export const applyPostgresqlSourceAccess = async ({
     );
     await runDenyChecks(client, plan);
     await client.query("commit");
-    committed = true;
   } catch (error) {
-    await client.query("rollback").catch(() => undefined);
+    await client?.query("rollback").catch(() => undefined);
+    await Promise.all([
+      rm(credentialPath, { force: true }),
+      rm(receiptPath, { force: true }),
+    ]);
     throw error;
   } finally {
-    await client.end?.();
-    if (!committed) await rm(temporaryCredentialPath, { force: true });
+    await client?.end?.();
   }
-  await rename(temporaryCredentialPath, credentialPath);
-  const receipt = {
-    receiptVersion: 1,
-    targetFingerprint: plan.policy.targetFingerprint,
-    planDigest: plan.digest,
-    exportSchema: plan.policy.exportSchema,
-    views: plan.policy.relations.map((relation) => relation.view).sort(),
-    relations: plan.policy.relations.map((relation) => ({
-      ...relation.source,
-      columns: relation.columns,
-    })),
-    migrationLedger: plan.policy.migrationLedger,
-    readerRole: plan.policy.reader.role,
-    ownerRole: plan.policy.reader.ownerRole,
-    expiresAt,
-  };
+  const receipt = buildSourceAccessReceipt({ plan, expiresAt });
   await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, {
-    flag: "wx",
+    flag: "w",
     mode: 0o600,
   });
   await chmod(receiptPath, 0o600);
@@ -379,6 +473,13 @@ export const retirePostgresqlSourceAccess = async ({
     throw new Error(
       `Source retirement confirmation does not match. Expected ${plan.digest}.`,
     );
+  }
+  if (plan.review.accessMode === "external") {
+    await Promise.all([
+      rm(ensureOwnedPath(projectRoot, credentialFile), { force: true }),
+      rm(plan.receiptPath, { force: true }),
+    ]);
+    return { retired: true, providerResourcesPreserved: true };
   }
   const administratorConnectionString =
     environment[administratorEnvironmentVariable];

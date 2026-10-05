@@ -50,6 +50,13 @@ const positiveInteger = (value, label) => {
 const canonicalJson = (value) => `${JSON.stringify(value, null, "\t")}\n`;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
+export const externalViewDefinitionFingerprint = (definition) => {
+  if (typeof definition !== "string" || !definition.trim()) {
+    throw new Error("External view definition must be a non-empty string.");
+  }
+  return sha256(definition.trim());
+};
+
 export const sourceTargetFingerprint = (connectionString) => {
   let target;
   try {
@@ -95,24 +102,74 @@ export const validateSourceAccessPolicy = (policy) => {
     throw new Error("Source access policy must use accessVersion 1.");
   }
   fingerprint(policy.targetFingerprint, "sourcePolicy.targetFingerprint");
-  envKey(
-    policy.administratorEnvironmentVariable,
-    "sourcePolicy.administratorEnvironmentVariable",
-  );
   if (!isObject(policy.reader))
     throw new Error("sourcePolicy.reader must be an object.");
+  const readerMode = policy.reader.mode ?? "managed";
+  if (!["managed", "external"].includes(readerMode)) {
+    throw new Error("sourcePolicy.reader.mode must be managed or external.");
+  }
   knownKeys(
     policy.reader,
-    ["role", "ownerRole", "credentialFile", "validForMinutes"],
+    readerMode === "managed"
+      ? ["mode", "role", "ownerRole", "credentialFile", "validForMinutes"]
+      : [
+          "mode",
+          "role",
+          "connectionEnvironmentVariable",
+          "credentialFile",
+          "maximumValidForMinutes",
+        ],
     "sourcePolicy.reader",
   );
+  let administratorEnvironmentVariable;
+  if (readerMode === "managed") {
+    administratorEnvironmentVariable = envKey(
+      policy.administratorEnvironmentVariable,
+      "sourcePolicy.administratorEnvironmentVariable",
+    );
+  } else if (policy.administratorEnvironmentVariable !== undefined) {
+    throw new Error(
+      "sourcePolicy.administratorEnvironmentVariable is not allowed for an external reader.",
+    );
+  }
   const role = identifier(policy.reader.role, "sourcePolicy.reader.role");
-  const ownerRole = identifier(
-    policy.reader.ownerRole,
-    "sourcePolicy.reader.ownerRole",
-  );
-  if (role === ownerRole)
-    throw new Error("Source reader and owner roles must differ.");
+  let ownerRole;
+  let validForMinutes;
+  let connectionEnvironmentVariable;
+  let maximumValidForMinutes;
+  if (readerMode === "managed") {
+    ownerRole = identifier(
+      policy.reader.ownerRole,
+      "sourcePolicy.reader.ownerRole",
+    );
+    if (role === ownerRole)
+      throw new Error("Source reader and owner roles must differ.");
+    if (
+      !Number.isSafeInteger(policy.reader.validForMinutes) ||
+      policy.reader.validForMinutes < 5 ||
+      policy.reader.validForMinutes > 240
+    ) {
+      throw new Error(
+        "sourcePolicy.reader.validForMinutes must be from 5 through 240.",
+      );
+    }
+    validForMinutes = policy.reader.validForMinutes;
+  } else {
+    connectionEnvironmentVariable = envKey(
+      policy.reader.connectionEnvironmentVariable,
+      "sourcePolicy.reader.connectionEnvironmentVariable",
+    );
+    if (
+      !Number.isSafeInteger(policy.reader.maximumValidForMinutes) ||
+      policy.reader.maximumValidForMinutes < 5 ||
+      policy.reader.maximumValidForMinutes > 240
+    ) {
+      throw new Error(
+        "sourcePolicy.reader.maximumValidForMinutes must be from 5 through 240.",
+      );
+    }
+    maximumValidForMinutes = policy.reader.maximumValidForMinutes;
+  }
   if (
     typeof policy.reader.credentialFile !== "string" ||
     !policy.reader.credentialFile.startsWith(".rehearsal/") ||
@@ -120,15 +177,6 @@ export const validateSourceAccessPolicy = (policy) => {
   ) {
     throw new Error(
       "sourcePolicy.reader.credentialFile must stay under .rehearsal/.",
-    );
-  }
-  if (
-    !Number.isSafeInteger(policy.reader.validForMinutes) ||
-    policy.reader.validForMinutes < 5 ||
-    policy.reader.validForMinutes > 240
-  ) {
-    throw new Error(
-      "sourcePolicy.reader.validForMinutes must be from 5 through 240.",
     );
   }
   const exportSchema = identifier(
@@ -185,6 +233,7 @@ export const validateSourceAccessPolicy = (policy) => {
         "columns",
         "orderBy",
         "rowScope",
+        "viewDefinitionSha256",
       ],
       label,
     );
@@ -235,6 +284,17 @@ export const validateSourceAccessPolicy = (policy) => {
       throw new Error(`${label}.orderBy must name unique exported columns.`);
     }
     const orderBy = Object.freeze([...relation.orderBy]);
+    let viewDefinitionSha256;
+    if (readerMode === "external") {
+      viewDefinitionSha256 = fingerprint(
+        relation.viewDefinitionSha256,
+        `${label}.viewDefinitionSha256`,
+      );
+    } else if (relation.viewDefinitionSha256 !== undefined) {
+      throw new Error(
+        `${label}.viewDefinitionSha256 is supported only for an external reader.`,
+      );
+    }
     if (!isObject(relation.rowScope))
       throw new Error(`${label}.rowScope must be an object.`);
     knownKeys(
@@ -282,6 +342,7 @@ export const validateSourceAccessPolicy = (policy) => {
       columns,
       orderBy,
       rowScope,
+      ...(viewDefinitionSha256 ? { viewDefinitionSha256 } : {}),
     });
   });
   const assets = policy.assets ?? [];
@@ -290,29 +351,79 @@ export const validateSourceAccessPolicy = (policy) => {
   const normalizedAssets = assets.map((asset, index) => {
     const label = `sourcePolicy.assets[${index}]`;
     if (!isObject(asset)) throw new Error(`${label} must be an object.`);
-    knownKeys(asset, ["bucket", "prefix", "rights"], label);
+    knownKeys(
+      asset,
+      [
+        "bucket",
+        "prefix",
+        "prefixEnvironmentVariable",
+        "rights",
+        "pathMapping",
+      ],
+      label,
+    );
     if (!/^[a-z0-9][a-z0-9.-]{0,99}$/u.test(asset.bucket ?? "")) {
       throw new Error(`${label}.bucket is invalid.`);
     }
-    const prefixParts =
-      typeof asset.prefix === "string"
-        ? asset.prefix.replace(/\/$/u, "").split("/")
-        : [];
-    if (
-      typeof asset.prefix !== "string" ||
-      !asset.prefix ||
-      asset.prefix.startsWith("/") ||
-      prefixParts.some((part) => !part || part === "." || part === "..")
-    ) {
-      throw new Error(`${label}.prefix is unsafe.`);
+    const hasFixedPrefix = asset.prefix !== undefined;
+    const hasPrivatePrefix = asset.prefixEnvironmentVariable !== undefined;
+    if (hasFixedPrefix === hasPrivatePrefix) {
+      throw new Error(
+        `${label} must declare exactly one of prefix or prefixEnvironmentVariable.`,
+      );
+    }
+    if (hasFixedPrefix) {
+      const prefixParts =
+        typeof asset.prefix === "string"
+          ? asset.prefix.replace(/\/$/u, "").split("/")
+          : [];
+      if (
+        typeof asset.prefix !== "string" ||
+        !asset.prefix ||
+        asset.prefix.startsWith("/") ||
+        prefixParts.some((part) => !part || part === "." || part === "..")
+      ) {
+        throw new Error(`${label}.prefix is unsafe.`);
+      }
+    } else {
+      envKey(
+        asset.prefixEnvironmentVariable,
+        `${label}.prefixEnvironmentVariable`,
+      );
     }
     if (!["approved-public", "approved-owner"].includes(asset.rights)) {
       throw new Error(`${label}.rights must be explicitly approved.`);
     }
+    if (
+      asset.pathMapping !== undefined &&
+      !/^[a-z][a-z0-9-]{0,62}$/u.test(asset.pathMapping)
+    ) {
+      throw new Error(`${label}.pathMapping is invalid.`);
+    }
+    if (hasPrivatePrefix && asset.rights !== "approved-owner") {
+      throw new Error(
+        `${label}.prefixEnvironmentVariable requires approved-owner rights.`,
+      );
+    }
+    if (hasPrivatePrefix && asset.pathMapping === undefined) {
+      throw new Error(
+        `${label}.prefixEnvironmentVariable requires pathMapping.`,
+      );
+    }
+    if (hasFixedPrefix && asset.pathMapping !== undefined) {
+      throw new Error(
+        `${label}.pathMapping requires prefixEnvironmentVariable so the raw identity stays out of tracked policy.`,
+      );
+    }
     return Object.freeze({
       bucket: asset.bucket,
-      prefix: asset.prefix,
+      ...(hasFixedPrefix
+        ? { prefix: asset.prefix }
+        : { prefixEnvironmentVariable: asset.prefixEnvironmentVariable }),
       rights: asset.rights,
+      ...(asset.pathMapping === undefined
+        ? {}
+        : { pathMapping: asset.pathMapping }),
     });
   });
   let assetReader = null;
@@ -368,12 +479,16 @@ export const validateSourceAccessPolicy = (policy) => {
   return Object.freeze({
     accessVersion: 1,
     targetFingerprint: policy.targetFingerprint,
-    administratorEnvironmentVariable: policy.administratorEnvironmentVariable,
+    ...(administratorEnvironmentVariable
+      ? { administratorEnvironmentVariable }
+      : {}),
     reader: Object.freeze({
+      mode: readerMode,
       role,
-      ownerRole,
       credentialFile: policy.reader.credentialFile,
-      validForMinutes: policy.reader.validForMinutes,
+      ...(readerMode === "managed"
+        ? { ownerRole, validForMinutes }
+        : { connectionEnvironmentVariable, maximumValidForMinutes }),
     }),
     exportSchema,
     migrationLedger,
@@ -389,10 +504,18 @@ export const createSourceAccessPlan = ({
 }) => {
   const normalized = validateSourceAccessPolicy(policy);
   const sourceCredential =
-    environment[normalized.administratorEnvironmentVariable];
+    environment[
+      normalized.reader.mode === "managed"
+        ? normalized.administratorEnvironmentVariable
+        : normalized.reader.connectionEnvironmentVariable
+    ];
   if (!sourceCredential) {
     throw new Error(
-      `Source preparation requires ${normalized.administratorEnvironmentVariable}; the value is read from the environment and never printed.`,
+      `Source preparation requires ${
+        normalized.reader.mode === "managed"
+          ? normalized.administratorEnvironmentVariable
+          : normalized.reader.connectionEnvironmentVariable
+      }; the value is read from the environment and never printed.`,
     );
   }
   const actualTarget = sourceTargetFingerprint(sourceCredential);
@@ -409,6 +532,16 @@ export const createSourceAccessPlan = ({
         const value = environment[key];
         if (!value) throw new Error(`Source preparation requires ${key}.`);
         return [relation.view, sha256(value)];
+      }),
+  );
+  const assetPrefixReceipts = Object.fromEntries(
+    normalized.assets
+      .filter((asset) => asset.prefixEnvironmentVariable)
+      .map((asset) => {
+        const key = asset.prefixEnvironmentVariable;
+        const value = environment[key];
+        if (!value) throw new Error(`Source preparation requires ${key}.`);
+        return [`${asset.bucket}:${asset.pathMapping}`, sha256(value)];
       }),
   );
   if (normalized.assetReader) {
@@ -435,10 +568,21 @@ export const createSourceAccessPlan = ({
     targetFingerprint: normalized.targetFingerprint,
     exportSchema: normalized.exportSchema,
     reader: {
+      mode: normalized.reader.mode,
       role: normalized.reader.role,
-      ownerRole: normalized.reader.ownerRole,
-      validForMinutes: normalized.reader.validForMinutes,
       credentialFile: normalized.reader.credentialFile,
+      ...(normalized.reader.mode === "managed"
+        ? {
+            ownerRole: normalized.reader.ownerRole,
+            validForMinutes: normalized.reader.validForMinutes,
+            sourceChanges: true,
+          }
+        : {
+            connectionEnvironmentVariable:
+              normalized.reader.connectionEnvironmentVariable,
+            maximumValidForMinutes: normalized.reader.maximumValidForMinutes,
+            sourceChanges: false,
+          }),
     },
     relations: normalized.relations.map((relation) => ({
       source: relation.source,
@@ -446,6 +590,9 @@ export const createSourceAccessPlan = ({
       targetTable: relation.targetTable,
       columns: relation.columns,
       orderBy: relation.orderBy,
+      ...(relation.viewDefinitionSha256
+        ? { viewDefinitionSha256: relation.viewDefinitionSha256 }
+        : {}),
       rowScope: {
         kind: relation.rowScope.kind,
         ...(relation.rowScope.kind === "approved-owner"
@@ -456,7 +603,15 @@ export const createSourceAccessPlan = ({
           : {}),
       },
     })),
-    assets: normalized.assets,
+    assets: normalized.assets.map((asset) =>
+      asset.prefixEnvironmentVariable
+        ? {
+            ...asset,
+            prefixValueSha256:
+              assetPrefixReceipts[`${asset.bucket}:${asset.pathMapping}`],
+          }
+        : asset,
+    ),
     assetReader: normalized.assetReader
       ? {
           endpointFingerprint: normalized.assetReader.endpointFingerprint,
@@ -465,13 +620,23 @@ export const createSourceAccessPlan = ({
           maximumTotalBytes: normalized.assetReader.maximumTotalBytes,
         }
       : null,
-    denyChecks: [
-      "raw relation reads",
-      "writes",
-      "role creation and escalation",
-      "network functions",
-      "unrelated private assets",
-    ],
+    denyChecks:
+      normalized.reader.mode === "managed"
+        ? [
+            "raw relation reads",
+            "writes",
+            "role creation and escalation",
+            "network functions",
+            "unrelated private assets",
+          ]
+        : [
+            "all non-system readable columns match the approved views and migration ledger",
+            "no relation, column, schema, or database writes",
+            "no inherited roles or privileged role attributes",
+            "no executable non-system security-definer functions",
+            "database-enforced credential expiration",
+            "unrelated private assets",
+          ],
   };
   return Object.freeze({
     policy: normalized,
@@ -479,6 +644,9 @@ export const createSourceAccessPlan = ({
     digest: sha256(canonicalJson(review)),
   });
 };
+
+export const sourceAccessPolicyFingerprint = (policy) =>
+  sha256(canonicalJson(validateSourceAccessPolicy(policy)));
 
 export const assetEndpointFingerprint = (value) => {
   let endpoint;
@@ -525,6 +693,10 @@ export const createSourceRetirementPlan = ({
   if (!Array.isArray(receipt.views) || !Array.isArray(receipt.relations)) {
     throw new Error("Source access receipt object inventory is invalid.");
   }
+  const accessMode = receipt.accessMode ?? "managed";
+  if (!["managed", "external"].includes(accessMode)) {
+    throw new Error("Source access receipt mode is invalid.");
+  }
   const relations = receipt.relations.map((relation, index) => {
     if (!isObject(relation))
       throw new Error(`receipt.relations[${index}] is invalid.`);
@@ -560,6 +732,7 @@ export const createSourceRetirementPlan = ({
   const review = {
     planVersion: 1,
     operation: "retire-source-access",
+    accessMode,
     targetFingerprint: target,
     preparationDigest: fingerprint(receipt.planDigest, "receipt.planDigest"),
     exportSchema: identifier(receipt.exportSchema, "receipt.exportSchema"),
@@ -569,7 +742,9 @@ export const createSourceRetirementPlan = ({
     relations,
     migrationLedger: ledger,
     readerRole: identifier(receipt.readerRole, "receipt.readerRole"),
-    ownerRole: identifier(receipt.ownerRole, "receipt.ownerRole"),
+    ...(accessMode === "managed"
+      ? { ownerRole: identifier(receipt.ownerRole, "receipt.ownerRole") }
+      : {}),
   };
   return Object.freeze({
     review: Object.freeze(review),

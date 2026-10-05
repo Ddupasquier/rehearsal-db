@@ -123,6 +123,43 @@ describe("Rehearsal baseline artifacts", () => {
     expect(await listIncompleteBaselineBuilds({ artifactRoot })).toEqual([]);
   });
 
+  it("preserves the asset error and removes read-only staging after transfer failure", async () => {
+    const artifactRoot = await createArtifactRoot();
+    await createAndActivateBaseline({
+      artifactRoot,
+      generationId: "20260912T120000Z-131313131313",
+      metadata,
+      records: [],
+    });
+    const before = await readlink(join(artifactRoot, "current"));
+    async function* failingAssets() {
+      yield {
+        bucket: "avatars",
+        objectPath: "safe/first.webp",
+        content: Buffer.from("safe fixture"),
+      };
+      throw new Error("Synthetic Storage response was HTTP 503.");
+    }
+
+    await expect(
+      createAndActivateBaseline({
+        artifactRoot,
+        generationId: "20260912T120100Z-141414141414",
+        metadata,
+        records: [],
+        migrationFiles: [
+          {
+            filename: "20260911223000_baseline.sql",
+            content: "create table public.example(id bigint);\n",
+          },
+        ],
+        assets: failingAssets(),
+      }),
+    ).rejects.toThrow("Storage response was HTTP 503");
+    expect(await readlink(join(artifactRoot, "current"))).toBe(before);
+    expect(await listIncompleteBaselineBuilds({ artifactRoot })).toEqual([]);
+  });
+
   it("prunes only obsolete immutable generations and retains the active fallback", async () => {
     const artifactRoot = await createArtifactRoot();
     for (const generationId of [

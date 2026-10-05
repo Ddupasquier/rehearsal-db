@@ -507,7 +507,10 @@ export const renderSourceAccessPlan = (plan) =>
     "SOURCE ACCESS — PREVIEW",
     "",
     `Target fingerprint: ${plan.review.targetFingerprint}`,
-    `Temporary reader: ${plan.review.reader.role} (${plan.review.reader.validForMinutes} minutes)`,
+    plan.review.reader.mode === "managed"
+      ? `Managed temporary reader: ${plan.review.reader.role} (${plan.review.reader.validForMinutes} minutes)`
+      : `Externally managed reader: ${plan.review.reader.role} (maximum ${plan.review.reader.maximumValidForMinutes} minutes remaining)`,
+    `Source changes by Rehearsal: ${plan.review.reader.sourceChanges ? "export views and temporary roles" : "none"}`,
     `Export schema: ${plan.review.exportSchema}`,
     ...plan.review.relations.map(
       (relation) =>
@@ -516,7 +519,10 @@ export const renderSourceAccessPlan = (plan) =>
     ...(plan.review.assets.length
       ? plan.review.assets.map(
           (asset) =>
-            `  → Storage ${asset.bucket}/${asset.prefix} (${asset.rights})`,
+            `  → Storage ${asset.bucket}/${
+              asset.prefix ??
+              `[private prefix from ${asset.prefixEnvironmentVariable}]`
+            } (${asset.rights})`,
         )
       : ["  ○ No source assets declared"]),
     "",
@@ -574,7 +580,12 @@ export const renderSourceRetirement = ({ mode, plan }) =>
     `Target fingerprint: ${plan.review.targetFingerprint}`,
     `Reader: ${plan.review.readerRole}`,
     `Export schema: ${plan.review.exportSchema}`,
-    ...plan.review.views.map((view) => `  → remove view ${view}`),
+    ...(plan.review.accessMode === "managed"
+      ? plan.review.views.map((view) => `  → remove view ${view}`)
+      : [
+          "  → remove only Rehearsal's local credential and receipt",
+          "  ✓ preserve the provider-owned reader and export views",
+        ]),
     "",
     ...(mode === "preview"
       ? [
@@ -582,7 +593,9 @@ export const renderSourceRetirement = ({ mode, plan }) =>
           `Exact confirmation: --confirm-source-retirement=${plan.digest}`,
         ]
       : [
-          "The exact reader, export views, and local credential files were retired.",
+          plan.review.accessMode === "managed"
+            ? "The exact reader, export views, and local credential files were retired."
+            : "Rehearsal's local credential and receipt were removed. Provider-owned database resources were preserved.",
         ]),
   ].join("\n");
 

@@ -31,6 +31,7 @@ import {
 } from "../baseline/policy_review.mjs";
 import { formatCount } from "../shared/human_output.mjs";
 import { redactDiagnosticValue } from "../shared/diagnostics.mjs";
+import { REHEARSAL_NODE_LABEL } from "../shared/node_runtime.mjs";
 import {
   renderBaselineInputInspection,
   renderBaselinePreparation,
@@ -336,7 +337,7 @@ const guidedOptions = (state, hasLastDetails) => {
   const options = [];
   if (!state.node.supported) {
     options.push({
-      label: "Show Node.js 24 setup instructions",
+      label: "Show supported Node.js versions",
       hint: "Required before Rehearsal can change this project",
       command: "node-help",
     });
@@ -427,7 +428,7 @@ const showGuidedStatus = ({ state, options, flags }) => {
   const marker = (complete) =>
     complete ? terminalStyle(flags, "32", "✓") : terminalStyle(flags, "2", "○");
   const statusLines = [
-    `${marker(state.node.supported)} Node.js ${state.node.version}${state.node.supported ? "" : " (Node.js 24 required)"}`,
+    `${marker(state.node.supported)} Node.js ${state.node.version}${state.node.supported ? "" : ` (${REHEARSAL_NODE_LABEL} required)`}`,
     `${marker(state.target === "supabase" ? state.detected.hasSupabaseConfig : state.detected.hasPostgresqlMigrations)} ${state.target === "supabase" ? "Supabase" : "PostgreSQL"} project detected`,
     `${marker(state.target === "supabase" ? state.detected.hasMigrations : state.detected.hasPostgresqlMigrations)} Migration history detected`,
     `${marker(state.config === "valid")} Rehearsal configuration${state.config === "invalid" ? " needs attention" : ""}`,
@@ -685,12 +686,13 @@ export const createGuidedHome =
       console.log(
         [
           "",
-          terminalStyle(flags, "1", "NODE.JS 24 REQUIRED"),
+          terminalStyle(flags, "1", "SUPPORTED NODE.JS REQUIRED"),
           `This shell is using Node.js ${state.node.version}. Rehearsal has not changed your project.`,
+          `Supported releases: ${REHEARSAL_NODE_LABEL}.`,
           "",
-          "With nvm:",
-          "  nvm install 24",
-          "  nvm use 24",
+          "Recommended with nvm:",
+          "  nvm install --lts",
+          "  nvm use --lts",
           "",
           "Then reinstall Rehearsal in your scratch project and run npx rehearsal again.",
         ].join("\n"),

@@ -34,14 +34,15 @@ Choose **Set the stage** and approve the preview. For pnpm and Yarn, use this gu
 automatic root generation is currently tested with npm. An existing supported config is
 kept in place, including `infrastructure/rehearsal/rehearsal.config.mjs`.
 
-## Setup says Node.js 24 is required
+## Setup says this Node.js version is unsupported
 
-Rehearsal intentionally supports one maintained Node.js major in its first beta. Switch
-the current shell before installing or running it. With nvm:
+Rehearsal supports the maintained Node.js 22, 24, and 26 release lines. Node.js 20 and
+odd-numbered releases are end-of-life. Switch the current shell before installing or
+running Rehearsal. The latest LTS is the recommended default:
 
 ```bash
-nvm install 24
-nvm use 24
+nvm install --lts
+nvm use --lts
 node --version
 ```
 
@@ -52,6 +53,12 @@ writes setup files.
 
 Start Docker Desktop or Colima, confirm `docker info`, then rerun `rehearsal doctor`.
 Restarting the computer is rarely necessary.
+
+When a container stays in `starting` or becomes `unhealthy`, Rehearsal reports a runtime
+dependency failure rather than a migration failure. The safe diagnostic includes Docker
+CPU, memory, and container counts; Colima also includes available VM memory when it can
+be read. Stop unrelated local stacks or increase the engine's resources before retrying.
+Rehearsal never changes engine settings or bypasses service health checks.
 
 ## Docker or Colima is out of disk space
 

@@ -5,6 +5,46 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Added
+
+- Runtime and CI compatibility now cover maintained Node.js 22, 24, and 26 releases;
+  Node.js 24 LTS remains the recommended default and release-build runtime.
+- Source access policies can use an externally provisioned, database-expiring
+  PostgreSQL reader without administrator credentials. Rehearsal binds canonical export
+  view definitions, verifies the complete approved read surface and deny controls, and
+  never changes or retires provider-owned source objects.
+- `rehearsal --version`, its conventional `-V` alias, and `rehearsal version` now
+  report the installed package version without requiring project configuration.
+- Privacy policy version 2 can use one reviewed identity-aware path mapping for both
+  database references and physical Storage destinations. Owner prefixes stay in the
+  environment, review plans retain only their hashes, and unsafe or mismatched paths
+  fail closed.
+- Related timestamps can share a named deterministic date-shift group, preserving their
+  ordering and duration without consumer callbacks.
+- The baseline verification corpus now exercises two unrelated target schemas, a
+  10,003-row packed-package stream, concurrent row/schema/ledger changes, malformed and
+  truncated results, connection loss, low disk, interruption, and deterministic
+  fixed-key output.
+
+### Fixed
+
+- Baseline preparation now rejects missing, negative, overflowing, malformed, or
+  oversized PostgreSQL estimate and cursor results before activation. Every preparation
+  failure preserves the active baseline, removes private staging, and leaves an edited
+  runtime untouched.
+- Approved-owner UUID columns are no longer confused with PostgreSQL sequence-backed
+  identities. Restore checks the actual local schema before resetting a sequence, while
+  genuine numeric identity columns retain correct next-value behavior.
+- A failed Storage transfer now recursively restores write permission only within its
+  owned staging tree, removes that incomplete generation, and preserves the original
+  safe preparation error instead of replacing it with a cleanup error.
+- Storage preparation now records a canonical media type from reviewed object metadata,
+  removing response-only parameters such as a text charset that local bucket MIME
+  allowlists reject during restore.
+- Container startup and health failures are now classified as runtime dependency
+  failures and include safe Docker/Colima capacity context instead of being mislabeled
+  as migration verification failures.
+
 ## [0.1.0-beta.12] - 2026-10-04
 
 ### Added

@@ -43,17 +43,17 @@ existing config.
 These commands are separate from ordinary rehearsals. Configure `preparation` only after
 reviewing [the standalone security contract](standalone-workflow.md).
 
-| Command                                                       | What it does                                                         |
-| ------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `npx rehearsal privacy key`                                   | Preview the owner-only pseudonym-key path.                           |
-| `npx rehearsal privacy key --write`                           | Create the key once; refuses to replace an existing key.             |
-| `npx rehearsal source plan`                                   | Preview the exact temporary reader, views, columns, and asset scope. |
-| `npx rehearsal source apply --confirm-source-access=<sha256>` | Create only the reviewed, time-limited source access.                |
-| `npx rehearsal baseline refresh`                              | Replace only the baseline from a reviewed source.                    |
-| `npx rehearsal refresh`                                       | Preview a complete safe refresh of the baseline and local runtime.   |
-| Add `--confirm-refresh=<sha256>`                              | Create the replacement, reset locally, and prune listed old copies.  |
-| `npx rehearsal source retire`                                 | Preview exact reader/view/credential retirement.                     |
-| Add `--confirm-source-retirement=<sha256>`                    | Apply that retirement plan and verify the exact object inventory.    |
+| Command                                                       | What it does                                                            |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `npx rehearsal privacy key`                                   | Preview the owner-only pseudonym-key path.                              |
+| `npx rehearsal privacy key --write`                           | Create the key once; refuses to replace an existing key.                |
+| `npx rehearsal source plan`                                   | Preview the exact temporary reader, views, columns, and asset scope.    |
+| `npx rehearsal source apply --confirm-source-access=<sha256>` | Create managed access, or verify external access without source writes. |
+| `npx rehearsal baseline refresh`                              | Replace only the baseline from a reviewed source.                       |
+| `npx rehearsal refresh`                                       | Preview a complete safe refresh of the baseline and local runtime.      |
+| Add `--confirm-refresh=<sha256>`                              | Create the replacement, reset locally, and prune listed old copies.     |
+| `npx rehearsal source retire`                                 | Preview managed retirement or external local-secret cleanup.            |
+| Add `--confirm-source-retirement=<sha256>`                    | Apply that retirement plan and verify the exact object inventory.       |
 
 Source credentials are read from environment variables named in the reviewed source
 policy. Never paste a connection string into an argument. `baseline refresh` leaves the
@@ -176,6 +176,8 @@ belonging to other projects are never included. This follows
 
 | Option                                 | Meaning                                                          |
 | -------------------------------------- | ---------------------------------------------------------------- |
+| `--help`, `-h`                         | Show the installed command reference.                            |
+| `--version`, `-V`                      | Print the installed package version and exit.                    |
 | `--json`                               | Return the versioned machine-readable result.                    |
 | `--verbose`                            | Show more safe detail.                                           |
 | `--debug`                              | Show the most diagnostic detail; still review it before sharing. |
@@ -193,6 +195,8 @@ belonging to other projects are never included. This follows
 | `--write`                              | Apply a setup, policy, or cleanup preview.                       |
 
 Run `npx rehearsal --help` to print the command list available in your installed version.
+Run `npx rehearsal --version` to print only its version number. Add `--json` when a
+script also needs the package name.
 
 When a project has more than one config, pass `--config=<path>` on every command for the
 non-default one. Rehearsal keeps that exact config selected through status, run, reset,

@@ -26,6 +26,9 @@ runtime.
 - successful receipts written only after verification.
 - separate exact-digest approval for source setup, source retirement, and identity claim;
 - short-lived source readers limited to reviewed views/columns and deny checks;
+- externally provisioned readers require canonical view-definition receipts,
+  `security_barrier`, independent ownership, an exact non-system readable-column surface,
+  no write or role-escalation paths, and database-enforced expiration;
 - bounded read-only extraction with no raw dump or row-value logging;
 - exhaustive privacy policy version 2 with an owner-only local pseudonym key;
 - application children receive only explicit local mappings and stay in an owned process
@@ -38,6 +41,11 @@ runtime.
 No single environment variable or config edit can redirect runtime commands to
 production. Optional source preparation is a separate boundary and never provides a
 hosted execution mode.
+
+External source mode verifies access but does not own it. Rehearsal makes no source-side
+changes and removes only its local credential and receipt. The provider owns early
+revocation and the database enforces the reviewed short expiration; Rehearsal never
+reports local cleanup as proof that a provider-owned role was deleted.
 
 ## Identity providers
 

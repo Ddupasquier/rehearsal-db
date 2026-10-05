@@ -9,7 +9,7 @@ The fixture is data-safe and deterministic. Its files are copied into a disposab
 directory by tests; they are never linked to a hosted Supabase project.
 
 From the package repository, an unfamiliar developer can run the complete documented
-proof with Node.js 24 and Docker:
+proof with Node.js 22, 24, or 26 and Docker:
 
 ```bash
 npm run test:fixture

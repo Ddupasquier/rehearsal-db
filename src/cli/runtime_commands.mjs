@@ -211,6 +211,82 @@ const projectCommandEnvironment = (additional = {}) => ({
   ...additional,
 });
 
+const RUNTIME_STARTUP_FAILURE_PATTERN =
+  /container\b.*\b(?:is not ready|starting|unhealthy)|health(?:check)?\b.*\b(?:failed|starting|unhealthy)|out of memory|\boom\b|no space left|resource temporarily unavailable/iu;
+
+export const classifyManagerFailure = ({
+  action,
+  output,
+  inferredCategory,
+}) => {
+  if (RUNTIME_STARTUP_FAILURE_PATTERN.test(output)) {
+    return "runtime_dependency_failure";
+  }
+  if (
+    action === "migrate" ||
+    (action === "run" &&
+      /migrateRuntime|candidate migration|migration up/iu.test(output))
+  ) {
+    return "migration_candidate_failure";
+  }
+  return inferredCategory;
+};
+
+export const parseDockerCapacity = (output) => {
+  const [cpuText, memoryText, runningText, totalText] = output
+    .trim()
+    .split(/\s+/u);
+  const values = [cpuText, memoryText, runningText, totalText].map(Number);
+  if (!values.every(Number.isFinite)) return null;
+  const [cpus, memoryBytes, runningContainers, containers] = values;
+  return { cpus, memoryBytes, runningContainers, containers };
+};
+
+export const parseColimaMemory = (output) => {
+  const line = output
+    .split("\n")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith("Mem:"));
+  if (!line) return null;
+  const columns = line.split(/\s+/u);
+  const totalBytes = Number(columns[1]);
+  const availableBytes = Number(columns[6]);
+  if (![totalBytes, availableBytes].every(Number.isFinite)) return null;
+  return { totalBytes, availableBytes };
+};
+
+const diagnosticCommand = (command, args) =>
+  spawnSync(command, args, {
+    encoding: "utf8",
+    env: projectCommandEnvironment(),
+    stdio: ["ignore", "pipe", "ignore"],
+    timeout: 5_000,
+  });
+
+const inspectContainerCapacity = () => {
+  const docker = diagnosticCommand("docker", [
+    "info",
+    "--format",
+    "{{.NCPU}} {{.MemTotal}} {{.ContainersRunning}} {{.Containers}}",
+  ]);
+  const capacity =
+    docker.status === 0 ? parseDockerCapacity(docker.stdout) : null;
+  if (!capacity) return undefined;
+
+  const context = diagnosticCommand("docker", ["context", "show"]);
+  if (context.status !== 0 || context.stdout.trim() !== "colima") {
+    return { engine: "docker-compatible", ...capacity };
+  }
+  const memory = diagnosticCommand("colima", ["ssh", "--", "free", "-b"]);
+  return {
+    engine: "colima",
+    ...capacity,
+    ...(memory.status === 0
+      ? { runtimeMemory: parseColimaMemory(memory.stdout) ?? undefined }
+      : {}),
+  };
+};
+
 export const topologyCommandEnvironment = (topology) =>
   Object.fromEntries(
     topology.targets.map((target) => [
@@ -344,14 +420,15 @@ export const createRuntimeCommands = ({
       const inferred = normalizeRehearsalError(
         new Error(completeOutput || `Rehearsal ${action} failed.`),
       );
-      const category =
-        action === "migrate" ||
-        (action === "run" &&
-          /migrateRuntime|candidate migration|migration up/iu.test(
-            completeOutput,
-          ))
-          ? "migration_candidate_failure"
-          : inferred.category;
+      const category = classifyManagerFailure({
+        action,
+        output: completeOutput,
+        inferredCategory: inferred.category,
+      });
+      const startupFailure = category === "runtime_dependency_failure";
+      const engineCapacity = startupFailure
+        ? inspectContainerCapacity()
+        : undefined;
       const conciseOutput = completeOutput
         .replaceAll(String.fromCodePoint(27), "")
         .split("\n")
@@ -366,10 +443,16 @@ export const createRuntimeCommands = ({
         message: `The local Rehearsal ${action} operation did not complete.`,
         expected: "the isolated runtime operation to finish and verify",
         actual: conciseOutput || `exit ${result.status}`,
-        context: { action },
+        context: { action, ...(engineCapacity ? { engineCapacity } : {}) },
         refused: "The runtime was not reported as trusted.",
         suggestions: [
           "Review the concise failure above, then rerun rehearsal doctor before retrying.",
+          ...(startupFailure
+            ? [
+                "Stop unrelated local stacks or increase Docker/Colima capacity, then retry. Rehearsal will not change engine settings or bypass service health checks.",
+                "Run docker stats --no-stream to identify active containers using the shared engine.",
+              ]
+            : []),
           "Use --debug only when the safe diagnostic detail is needed.",
         ],
         cause: new Error(completeOutput || `exit ${result.status}`),

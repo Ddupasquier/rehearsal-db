@@ -140,6 +140,59 @@ describe("Rehearsal runtime restore", () => {
     ).toThrow("table counts do not match");
   });
 
+  it("uses the actual schema to guard UUID and numeric sequence resets", () => {
+    const suffix = buildRestoreSqlSuffix({
+      manifest: {
+        tables: [
+          {
+            name: "profiles",
+            sourceRows: "STREAM AND SANITIZE",
+            ownerBinding: {
+              binding: "approved-owner",
+              column: "user_id",
+            },
+            columns: [
+              {
+                name: "user_id",
+                action: "PSEUDONYMIZE",
+                generated: "NEVER",
+                identity: "YES",
+                foreignKey: null,
+              },
+            ],
+          },
+          {
+            name: "widgets",
+            sourceRows: "STREAM AND SANITIZE",
+            columns: [
+              {
+                name: "id",
+                action: "KEEP",
+                generated: "NEVER",
+                identity: "YES",
+                foreignKey: null,
+              },
+            ],
+          },
+        ],
+      },
+      tableCounts: { profiles: 1, widgets: 1 },
+      restoreSupabaseAuth: false,
+    });
+
+    expect(suffix).toContain(
+      "pg_get_serial_sequence('public.profiles', 'user_id')",
+    );
+    expect(suffix).toContain("pg_get_serial_sequence('public.widgets', 'id')");
+    expect(suffix).toContain("if sequence_name is not null then");
+    expect(suffix).toContain(
+      `execute 'select max("id")::bigint, exists(select 1 from "public"."widgets") from "public"."widgets"'`,
+    );
+    expect(suffix).toContain(
+      `execute 'select max("user_id")::bigint, exists(select 1 from "public"."profiles") from "public"."profiles"'`,
+    );
+  });
+
   it("accepts only an exact immutable baseline prefix", () => {
     const baselineManifest = {
       migrations: {
