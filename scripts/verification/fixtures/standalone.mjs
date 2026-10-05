@@ -472,7 +472,7 @@ process.on("SIGTERM", () => server.close());
                   action: "PSEUDONYMIZE",
                   recipe: { format: "uuid", namespace: "account-id" },
                   generated: "NEVER",
-                  identity: "NO",
+                  identity: "YES",
                   foreignKey: null,
                 },
                 {
@@ -1535,7 +1535,7 @@ where id = '22222222-2222-4222-8222-222222222222';
           externalProviderResourcesPreserved: true,
           streamedRows: 10_003,
           unrelatedTargetSchemasVerified: 2,
-          approvedOwnerUuidRestoreVerified: true,
+          legacyApprovedOwnerUuidRestoreVerified: true,
           numericIdentitySequenceVerified: true,
           failedAssetCleanupVerified: true,
           refreshAndReplaceVerified: true,

@@ -140,7 +140,7 @@ describe("Rehearsal runtime restore", () => {
     ).toThrow("table counts do not match");
   });
 
-  it("resets genuine SQL identities without treating UUID identities as sequences", () => {
+  it("uses the actual schema to guard UUID and numeric sequence resets", () => {
     const suffix = buildRestoreSqlSuffix({
       manifest: {
         tables: [
@@ -156,7 +156,7 @@ describe("Rehearsal runtime restore", () => {
                 name: "user_id",
                 action: "PSEUDONYMIZE",
                 generated: "NEVER",
-                identity: "NO",
+                identity: "YES",
                 foreignKey: null,
               },
             ],
@@ -180,13 +180,17 @@ describe("Rehearsal runtime restore", () => {
       restoreSupabaseAuth: false,
     });
 
-    expect(suffix).not.toContain("pg_get_serial_sequence('public.profiles'");
+    expect(suffix).toContain(
+      "pg_get_serial_sequence('public.profiles', 'user_id')",
+    );
     expect(suffix).toContain("pg_get_serial_sequence('public.widgets', 'id')");
     expect(suffix).toContain("if sequence_name is not null then");
     expect(suffix).toContain(
       `execute 'select max("id")::bigint, exists(select 1 from "public"."widgets") from "public"."widgets"'`,
     );
-    expect(suffix).not.toContain('max("user_id")');
+    expect(suffix).toContain(
+      `execute 'select max("user_id")::bigint, exists(select 1 from "public"."profiles") from "public"."profiles"'`,
+    );
   });
 
   it("accepts only an exact immutable baseline prefix", () => {
