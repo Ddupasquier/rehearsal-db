@@ -57,13 +57,21 @@ afterEach(async () => {
 });
 
 describe("guided Rehearsal setup", () => {
-  it("recognizes the maintained Node.js major and explains unsupported shells", () => {
-    expect(inspectRehearsalNodeRuntime("24.3.0")).toMatchObject({
-      major: 24,
-      supported: true,
-    });
+  it("recognizes maintained Node.js release lines and explains unsupported shells", () => {
+    for (const major of [22, 24, 26]) {
+      expect(inspectRehearsalNodeRuntime(`${major}.3.0`)).toMatchObject({
+        major,
+        supported: true,
+      });
+    }
+    for (const major of [20, 21, 23, 25, 27]) {
+      expect(inspectRehearsalNodeRuntime(`${major}.19.1`)).toMatchObject({
+        major,
+        supported: false,
+      });
+    }
     expect(() => assertSupportedRehearsalNodeRuntime("20.19.1")).toThrow(
-      "nvm install 24 && nvm use 24",
+      "nvm install --lts && nvm use --lts",
     );
   });
 

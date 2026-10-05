@@ -14,6 +14,7 @@ describe("CLI arguments", () => {
       "--confirm-identity=digest",
       "--config=rehearsal.config.mjs",
       "--json",
+      "--version",
     ]);
 
     expect(positionals).toEqual(["identity", "claim"]);
@@ -22,7 +23,12 @@ describe("CLI arguments", () => {
       identityConfirmation: "digest",
       configPath: "rehearsal.config.mjs",
       json: true,
+      version: true,
     });
+  });
+
+  it("accepts the conventional short version flag", () => {
+    expect(parseArguments(["-V"]).flags.version).toBe(true);
   });
 
   it("rejects unknown long options", () => {

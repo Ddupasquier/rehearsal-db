@@ -69,6 +69,7 @@ export const streamApprovedSupabaseAssets = async function* ({
   maximumObjects = 10_000,
   maximumObjectBytes = 50 * 1024 * 1024,
   maximumTotalBytes = 2 * 1024 * 1024 * 1024,
+  pathMapper,
 }) {
   const endpoint = safeBaseUrl(baseUrl);
   if (typeof token !== "string" || token.length < 16) {
@@ -156,9 +157,23 @@ export const streamApprovedSupabaseAssets = async function* ({
             );
           }
         }
+        if (declaration.pathMapping && typeof pathMapper !== "function") {
+          throw new Error(
+            "Storage path mapping requires the package-owned privacy mapper.",
+          );
+        }
+        const objectPath = declaration.pathMapping
+          ? safePath(
+              pathMapper({
+                mapping: declaration.pathMapping,
+                value: name,
+              }),
+              "Mapped Storage object path",
+            )
+          : name;
         yield {
           bucket: declaration.bucket,
-          objectPath: name,
+          objectPath,
           contentType:
             download.headers.get("content-type") ??
             object.metadata?.mimetype ??

@@ -132,6 +132,11 @@ create table public.app_role_assignments (
   role text not null
 );
 create table public.events (id bigint primary key, payload jsonb not null);
+create schema audit;
+create table audit.entries (
+  id bigint primary key,
+  message text not null
+);
 create function public.custom_access_token_hook(event jsonb)
 returns jsonb
 language sql
@@ -206,6 +211,8 @@ insert into supabase_migrations.schema_migrations (version, name, statements)
 values ('20260101000000', 'create_widgets', array[$rehearsal$${baselineMigration}$rehearsal$]);
 insert into public.widgets (id, name, created_at, owner_id)
 overriding system value values (41, 'private-source-canary', '2026-01-01T00:00:00Z', '11111111-1111-4111-8111-111111111111');
+insert into audit.entries (id, message)
+values (7, 'private-audit-canary');
 `,
       },
     );
@@ -221,9 +228,9 @@ overriding system value values (41, 'private-source-canary', '2026-01-01T00:00:0
           `  preparation: {
     sourcePolicy: "rehearsal/source-access-policy.json",
     privacyKey: ".rehearsal/secrets/privacy.key",
-    batchRows: 1,
-    maximumRows: 10,
-    maximumBytes: 1048576,
+    batchRows: 257,
+    maximumRows: 20000,
+    maximumBytes: 33554432,
     diskHeadroomBytes: 1048576,
   },
   cleanup: { retainBaselineGenerations: 1 },
@@ -292,7 +299,7 @@ process.on("SIGTERM", () => server.close());
       join(cwd, "proof.mjs"),
       (await readFile(join(cwd, "proof.mjs"), "utf8")).replace(
         "select count(*) = 1 and exists",
-        "select count(*) = 2 and exists (select 1 from public.widgets where id = 99 and name = 'Local fixture row') and exists",
+        "select count(*) >= 2 and exists (select 1 from public.widgets where id = 99 and name = 'Local fixture row') and exists",
       ),
     );
     await writeFile(
@@ -303,6 +310,7 @@ process.on("SIGTERM", () => server.close());
           targetFingerprint: sourceTargetFingerprint(sourceAdminUrl),
           administratorEnvironmentVariable: "REHEARSAL_SOURCE_ADMIN_URL",
           reader: {
+            mode: "managed",
             role: `rehearsal_reader_${process.pid}`,
             ownerRole: `rehearsal_owner_${process.pid}`,
             credentialFile: ".rehearsal/secrets/source-reader.env",
@@ -322,6 +330,15 @@ process.on("SIGTERM", () => server.close());
               view: "widgets",
               targetTable: "widgets",
               columns: ["id", "name", "created_at", "owner_id"],
+              orderBy: ["id"],
+              rowScope: { kind: "approved-public" },
+            },
+            {
+              source: { schema: "audit", table: "entries" },
+              view: "audit_entries",
+              targetSchema: "audit",
+              targetTable: "entries",
+              columns: ["id", "message"],
               orderBy: ["id"],
               rowScope: { kind: "approved-public" },
             },
@@ -369,6 +386,28 @@ process.on("SIGTERM", () => server.close());
                 {
                   name: "owner_id",
                   action: "KEEP",
+                  generated: "NEVER",
+                  identity: "NO",
+                  foreignKey: null,
+                },
+              ],
+            },
+            {
+              schema: "audit",
+              name: "entries",
+              sourceRows: "STREAM AND SANITIZE",
+              columns: [
+                {
+                  name: "id",
+                  action: "KEEP",
+                  generated: "NEVER",
+                  identity: "NO",
+                  foreignKey: null,
+                },
+                {
+                  name: "message",
+                  action: "REPLACE",
+                  recipe: { kind: "constant", value: "Safe audit event" },
                   generated: "NEVER",
                   identity: "NO",
                   foreignKey: null,
@@ -586,8 +625,8 @@ process.on("SIGTERM", () => server.close());
         args: ["baseline", "refresh", "--json"],
       }).stdout,
     ).data;
-    if (refreshed.manifest?.rowCount !== 1) {
-      throw new Error("Standalone refresh did not stream the expected row.");
+    if (refreshed.manifest?.rowCount !== 2) {
+      throw new Error("Standalone refresh did not stream both source schemas.");
     }
     const dataFile = await readFile(
       join(
@@ -600,7 +639,9 @@ process.on("SIGTERM", () => server.close());
     );
     if (
       !dataFile.includes("Standalone safe widget") ||
-      dataFile.includes("private-source-canary")
+      !dataFile.includes("Safe audit event") ||
+      dataFile.includes("private-source-canary") ||
+      dataFile.includes("private-audit-canary")
     ) {
       throw new Error("Standalone privacy transformation did not fail closed.");
     }
@@ -679,6 +720,278 @@ process.on("SIGTERM", () => server.close());
       ],
       environment: sourceEnvironment,
     });
+
+    run(
+      "docker",
+      [
+        "exec",
+        "--interactive",
+        sourceName,
+        "psql",
+        "--host",
+        "127.0.0.1",
+        "--username",
+        "postgres",
+        "--set",
+        "ON_ERROR_STOP=1",
+      ],
+      {
+        cwd,
+        input: `insert into public.widgets (id, name, created_at, owner_id)
+overriding system value
+select generated_id,
+       'private-source-row-' || generated_id,
+       '2026-01-01T00:00:00Z'::timestamptz + (generated_id || ' seconds')::interval,
+       '11111111-1111-4111-8111-111111111111'::uuid
+from generate_series(1000, 10999) generated_id;
+`,
+      },
+    );
+
+    const externalReader = `provided_reader_${process.pid}`;
+    const externalOwner = `provided_owner_${process.pid}`;
+    const externalSchema = `provided_export_${process.pid}`;
+    const externalPassword = "synthetic-external-reader-password";
+    const externalExpiresAt = new Date(Date.now() + 20 * 60_000).toISOString();
+    run(
+      "docker",
+      [
+        "exec",
+        "--interactive",
+        sourceName,
+        "psql",
+        "--host",
+        "127.0.0.1",
+        "--username",
+        "postgres",
+        "--set",
+        "ON_ERROR_STOP=1",
+      ],
+      {
+        cwd,
+        input: `create role ${externalOwner}
+nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+create role ${externalReader}
+login password '${externalPassword}' valid until '${externalExpiresAt}'
+noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+create schema ${externalSchema} authorization ${externalOwner};
+revoke all on schema ${externalSchema} from public;
+grant usage on schema public to ${externalOwner};
+grant usage on schema audit to ${externalOwner};
+grant select (id, name, created_at, owner_id) on public.widgets to ${externalOwner};
+grant select (id, message) on audit.entries to ${externalOwner};
+set role ${externalOwner};
+create view ${externalSchema}.widgets with (security_barrier = true) as
+select id, name, created_at, owner_id from public.widgets;
+create view ${externalSchema}.audit_entries with (security_barrier = true) as
+select id, message from audit.entries;
+reset role;
+revoke all on ${externalSchema}.widgets from public;
+revoke all on ${externalSchema}.audit_entries from public;
+grant usage on schema ${externalSchema} to ${externalReader};
+grant select on ${externalSchema}.widgets to ${externalReader};
+grant select on ${externalSchema}.audit_entries to ${externalReader};
+grant usage on schema supabase_migrations to ${externalReader};
+grant select (version, name, statements)
+on supabase_migrations.schema_migrations to ${externalReader};
+`,
+      },
+    );
+    const canonicalViewDefinition = run(
+      "docker",
+      [
+        "exec",
+        sourceName,
+        "psql",
+        "--quiet",
+        "--no-align",
+        "--tuples-only",
+        "--username",
+        "postgres",
+        "--dbname",
+        "postgres",
+        "--command",
+        `select pg_get_viewdef('${externalSchema}.widgets'::regclass, false)`,
+      ],
+      { cwd },
+    ).trim();
+    const externalViewFingerprint = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `import { externalViewDefinitionFingerprint } from "@rehearsal-db/core/source-access";
+process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIEW_DEFINITION));`,
+      ],
+      {
+        cwd,
+        environment: {
+          REHEARSAL_VIEW_DEFINITION: canonicalViewDefinition,
+        },
+      },
+    );
+    const canonicalAuditViewDefinition = run(
+      "docker",
+      [
+        "exec",
+        sourceName,
+        "psql",
+        "--quiet",
+        "--no-align",
+        "--tuples-only",
+        "--username",
+        "postgres",
+        "--dbname",
+        "postgres",
+        "--command",
+        `select pg_get_viewdef('${externalSchema}.audit_entries'::regclass, false)`,
+      ],
+      { cwd },
+    ).trim();
+    const externalAuditViewFingerprint = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `import { externalViewDefinitionFingerprint } from "@rehearsal-db/core/source-access";
+process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIEW_DEFINITION));`,
+      ],
+      {
+        cwd,
+        environment: {
+          REHEARSAL_VIEW_DEFINITION: canonicalAuditViewDefinition,
+        },
+      },
+    );
+    const externalReaderUrl = `postgresql://${externalReader}:${externalPassword}@127.0.0.1:${sourcePort}/postgres`;
+    await writeFile(
+      join(cwd, "rehearsal/source-access-policy.json"),
+      `${JSON.stringify(
+        {
+          accessVersion: 1,
+          targetFingerprint: sourceTargetFingerprint(externalReaderUrl),
+          reader: {
+            mode: "external",
+            role: externalReader,
+            connectionEnvironmentVariable: "REHEARSAL_SOURCE_READER_URL",
+            credentialFile: ".rehearsal/secrets/source-reader.env",
+            maximumValidForMinutes: 30,
+          },
+          exportSchema: externalSchema,
+          migrationLedger: {
+            schema: "supabase_migrations",
+            table: "schema_migrations",
+            versionColumn: "version",
+            nameColumn: "name",
+            statementsColumn: "statements",
+          },
+          relations: [
+            {
+              source: { schema: "public", table: "widgets" },
+              view: "widgets",
+              targetTable: "widgets",
+              columns: ["id", "name", "created_at", "owner_id"],
+              orderBy: ["id"],
+              rowScope: { kind: "approved-public" },
+              viewDefinitionSha256: externalViewFingerprint,
+            },
+            {
+              source: { schema: "audit", table: "entries" },
+              view: "audit_entries",
+              targetSchema: "audit",
+              targetTable: "entries",
+              columns: ["id", "message"],
+              orderBy: ["id"],
+              rowScope: { kind: "approved-public" },
+              viewDefinitionSha256: externalAuditViewFingerprint,
+            },
+          ],
+          assets: [],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const externalEnvironment = {
+      REHEARSAL_SOURCE_READER_URL: externalReaderUrl,
+    };
+    const externalPlan = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        label: "external source plan",
+        args: ["source", "plan", "--json"],
+        environment: externalEnvironment,
+      }).stdout,
+    ).data;
+    if (externalPlan.review?.reader?.sourceChanges !== false) {
+      throw new Error("External source plan claimed source-side changes.");
+    }
+    executeCliOrThrow({
+      cwd,
+      label: "external source verification",
+      args: [
+        "source",
+        "apply",
+        `--confirm-source-access=${externalPlan.digest}`,
+        "--json",
+      ],
+      environment: externalEnvironment,
+    });
+    const externalRefresh = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        label: "external baseline refresh",
+        args: ["baseline", "refresh", "--json"],
+      }).stdout,
+    ).data;
+    if (externalRefresh.manifest?.rowCount !== 10_002) {
+      throw new Error(
+        "External reader did not stream the expected 10,002 rows across two schemas.",
+      );
+    }
+    const externalRetirement = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        label: "external source retirement preview",
+        args: ["source", "retire", "--json"],
+      }).stdout,
+    ).data.plan;
+    executeCliOrThrow({
+      cwd,
+      label: "external local source retirement",
+      args: [
+        "source",
+        "retire",
+        `--confirm-source-retirement=${externalRetirement.digest}`,
+        "--json",
+      ],
+    });
+    const providerResourcesPreserved = run(
+      "docker",
+      [
+        "exec",
+        sourceName,
+        "psql",
+        "--quiet",
+        "--no-align",
+        "--tuples-only",
+        "--username",
+        "postgres",
+        "--dbname",
+        "postgres",
+        "--command",
+        `select exists(select 1 from pg_roles where rolname = '${externalReader}')
+          and exists(select 1 from pg_roles where rolname = '${externalOwner}')
+          and to_regclass('${externalSchema}.widgets') is not null
+          and to_regclass('${externalSchema}.audit_entries') is not null`,
+      ],
+      { cwd },
+    ).trim();
+    if (providerResourcesPreserved !== "t") {
+      throw new Error(
+        "External retirement changed provider-owned source objects.",
+      );
+    }
 
     const doctor = JSON.parse(
       executeCliOrThrow({ cwd, label: "doctor", args: ["doctor", "--json"] })
@@ -917,6 +1230,10 @@ where id = '22222222-2222-4222-8222-222222222222';
           fixture: "standalone-source-to-local-postgresql",
           installedPackage: `${packed.name}@${packed.version}`,
           sourceAccessRetired: true,
+          externalReaderVerified: true,
+          externalProviderResourcesPreserved: true,
+          streamedRows: 10_002,
+          unrelatedTargetSchemasVerified: 2,
           refreshAndReplaceVerified: true,
           rawCanaryExcluded: true,
           runtimePolicyVerified: true,

@@ -3,7 +3,8 @@
 This tutorial runs a complete PostgreSQL rehearsal in a temporary fictional project. It
 does not use your application, production data, or a hosted database.
 
-Allow about five minutes. You need Node.js 24 and a running Docker-compatible engine.
+Allow about five minutes. You need Node.js 22, 24, or 26 and a running
+Docker-compatible engine. Node.js 24 LTS is recommended.
 
 ## 1. Prepare Rehearsal
 

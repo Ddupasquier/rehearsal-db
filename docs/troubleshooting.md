@@ -34,14 +34,15 @@ Choose **Set the stage** and approve the preview. For pnpm and Yarn, use this gu
 automatic root generation is currently tested with npm. An existing supported config is
 kept in place, including `infrastructure/rehearsal/rehearsal.config.mjs`.
 
-## Setup says Node.js 24 is required
+## Setup says this Node.js version is unsupported
 
-Rehearsal intentionally supports one maintained Node.js major in its first beta. Switch
-the current shell before installing or running it. With nvm:
+Rehearsal supports the maintained Node.js 22, 24, and 26 release lines. Node.js 20 and
+odd-numbered releases are end-of-life. Switch the current shell before installing or
+running Rehearsal. The latest LTS is the recommended default:
 
 ```bash
-nvm install 24
-nvm use 24
+nvm install --lts
+nvm use --lts
 node --version
 ```
 

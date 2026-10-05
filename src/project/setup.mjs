@@ -23,6 +23,11 @@ import {
   renderDetectedPostgresqlConfig,
 } from "./configuration.mjs";
 import { resolveRuntimeTarget } from "../targets/target.mjs";
+export {
+  assertSupportedRehearsalNodeRuntime,
+  inspectRehearsalNodeRuntime,
+} from "../shared/node_runtime.mjs";
+import { assertSupportedRehearsalNodeRuntime } from "../shared/node_runtime.mjs";
 
 const CONFIG_PATH = "rehearsal.config.mjs";
 const LOCAL_SUPABASE_CONFIG_PATH =
@@ -80,29 +85,6 @@ const canBindToPort = (port) =>
 export const isRehearsalPortAvailable = async (port) => {
   if (await canConnectToPort(port)) return false;
   return canBindToPort(port);
-};
-
-export const inspectRehearsalNodeRuntime = (
-  version = process.versions.node,
-) => {
-  const major = Number.parseInt(String(version).split(".")[0], 10);
-  return {
-    version: String(version),
-    major,
-    supported: major === 24,
-  };
-};
-
-export const assertSupportedRehearsalNodeRuntime = (
-  version = process.versions.node,
-) => {
-  const runtime = inspectRehearsalNodeRuntime(version);
-  if (!runtime.supported) {
-    throw new Error(
-      `Rehearsal setup requires Node.js 24; this shell is using Node.js ${runtime.version}. Switch to Node.js 24, then rerun setup. With nvm: nvm install 24 && nvm use 24.`,
-    );
-  }
-  return runtime;
 };
 
 export const findAvailableRehearsalPorts = async ({

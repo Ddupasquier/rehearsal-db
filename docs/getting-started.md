@@ -7,7 +7,8 @@ Want to experiment first? Use the [safe hands-on tutorial](tutorial.md).
 
 ## 1. Check the required tools
 
-You need Node.js 24, npm, and a running Docker-compatible engine:
+You need Node.js 22, 24, or 26, npm, and a running Docker-compatible engine. Node.js 24
+LTS is the recommended default:
 
 ```bash
 node --version
@@ -15,8 +16,8 @@ npm --version
 docker info
 ```
 
-`node --version` must begin with `v24`. If `docker info` fails, start Docker Desktop,
-Colima, or your usual Docker engine.
+`node --version` must begin with `v22`, `v24`, or `v26`. If `docker info` fails, start
+Docker Desktop, Colima, or your usual Docker engine.
 
 Choose the extra requirement for your project:
 

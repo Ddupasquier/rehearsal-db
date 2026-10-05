@@ -5,6 +5,7 @@ import {
   assetEndpointFingerprint,
   createSourceAccessPlan,
   createSourceRetirementPlan,
+  externalViewDefinitionFingerprint,
   sourceTargetFingerprint,
   validateSourceAccessPolicy,
 } from "../../../src/source/access.mjs";
@@ -63,7 +64,12 @@ const policy = {
     maximumTotalBytes: 10485760,
   },
   assets: [
-    { bucket: "public-images", prefix: "licensed/", rights: "approved-public" },
+    {
+      bucket: "public-images",
+      prefixEnvironmentVariable: "REHEARSAL_APPROVED_OWNER_ID",
+      rights: "approved-owner",
+      pathMapping: "owner-storage",
+    },
   ],
 };
 
@@ -72,6 +78,10 @@ describe("source access boundary", () => {
     const normalized = validateSourceAccessPolicy(policy);
     expect(normalized.relations[0].targetSchema).toBe("public");
     expect(normalized.relations[1].targetSchema).toBe("blendcalc_api");
+    expect(normalized.assets[0].pathMapping).toBe("owner-storage");
+    expect(normalized.assets[0].prefixEnvironmentVariable).toBe(
+      "REHEARSAL_APPROVED_OWNER_ID",
+    );
     const plan = createSourceAccessPlan({
       policy,
       environment: {
@@ -88,6 +98,9 @@ describe("source access boundary", () => {
     );
     expect(JSON.stringify(plan.review)).not.toContain("administrator:secret");
     expect(JSON.stringify(plan.review)).not.toContain("private-owner-123");
+    expect(plan.review.assets[0].prefixValueSha256).toBe(
+      createHash("sha256").update("private-owner-123").digest("hex"),
+    );
     expect(() => assertSourceAccessConfirmation(plan, "wrong")).toThrow(
       "does not match this exact plan",
     );
@@ -127,6 +140,76 @@ describe("source access boundary", () => {
     expect(() =>
       validateSourceAccessPolicy({ ...policy, sql: "select *" }),
     ).toThrow("unknown");
+    expect(() =>
+      validateSourceAccessPolicy({
+        ...policy,
+        assets: [{ ...policy.assets[0], pathMapping: "Not Valid" }],
+      }),
+    ).toThrow("pathMapping");
+    expect(() =>
+      validateSourceAccessPolicy({
+        ...policy,
+        assets: [
+          {
+            ...policy.assets[0],
+            prefix: "private-owner-123/",
+            prefixEnvironmentVariable: undefined,
+          },
+        ],
+      }),
+    ).toThrow("requires prefixEnvironmentVariable");
+  });
+
+  it("plans an externally provisioned reader without administrator access", () => {
+    const externalUrl =
+      "postgresql://provided_reader:private-password@127.0.0.1:55432/source_fixture";
+    const externalPolicy = {
+      ...policy,
+      targetFingerprint: sourceTargetFingerprint(externalUrl),
+      administratorEnvironmentVariable: undefined,
+      reader: {
+        mode: "external",
+        role: "provided_reader",
+        connectionEnvironmentVariable: "REHEARSAL_SOURCE_READER_URL",
+        credentialFile: ".rehearsal/secrets/source-reader.env",
+        maximumValidForMinutes: 30,
+      },
+      relations: policy.relations.map((relation) => ({
+        ...relation,
+        viewDefinitionSha256: externalViewDefinitionFingerprint(
+          `select ${relation.columns.join(", ")} from ${relation.source.schema}.${relation.source.table}`,
+        ),
+      })),
+    };
+    const plan = createSourceAccessPlan({
+      policy: externalPolicy,
+      environment: {
+        REHEARSAL_SOURCE_READER_URL: externalUrl,
+        REHEARSAL_APPROVED_OWNER_ID: "private-owner-123",
+        REHEARSAL_SOURCE_STORAGE_URL: "https://storage.example.invalid",
+        REHEARSAL_SOURCE_STORAGE_TOKEN: "scoped-token",
+      },
+    });
+
+    expect(plan.review.reader).toMatchObject({
+      mode: "external",
+      role: "provided_reader",
+      maximumValidForMinutes: 30,
+      sourceChanges: false,
+    });
+    expect(JSON.stringify(plan.review)).not.toContain("private-password");
+    expect(() =>
+      validateSourceAccessPolicy({
+        ...externalPolicy,
+        administratorEnvironmentVariable: "REHEARSAL_SOURCE_ADMIN_URL",
+      }),
+    ).toThrow("not allowed for an external reader");
+    expect(() =>
+      validateSourceAccessPolicy({
+        ...externalPolicy,
+        reader: { ...externalPolicy.reader, maximumValidForMinutes: 241 },
+      }),
+    ).toThrow("5 through 240");
   });
 
   it("builds retirement from the exact recorded objects only", () => {

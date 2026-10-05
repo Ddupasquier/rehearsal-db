@@ -22,6 +22,7 @@ const ACTIONS = new Set([
 const PSEUDONYM_FORMATS = new Set(["uuid", "email", "text", "integer"]);
 const DERIVATION_KINDS = new Set([
   "date-shift",
+  "path-map",
   "json-object",
   "json-array",
   "approved-owner",
@@ -29,6 +30,8 @@ const DERIVATION_KINDS = new Set([
 const KEY_BYTES = 32;
 const DEFAULT_JSON_MAXIMUM_BYTES = 65_536;
 const DEFAULT_JSON_MAXIMUM_DEPTH = 8;
+const DEFAULT_PATH_MAXIMUM_BYTES = 2_048;
+const DEFAULT_PATH_MAXIMUM_SEGMENTS = 32;
 const MAXIMUM_POLICY_DEPTH = 16;
 
 const isObject = (value) =>
@@ -142,6 +145,8 @@ const validateRecipe = (action, recipe, label, depth = 0) => {
     [
       "kind",
       "days",
+      "group",
+      "mapping",
       "fields",
       "items",
       "approved",
@@ -158,12 +163,32 @@ const validateRecipe = (action, recipe, label, depth = 0) => {
   }
   if (recipe.kind === "date-shift") {
     const days = positiveInteger(recipe.days, `${label}.recipe.days`, 3_650);
-    if (Object.keys(recipe).some((key) => !["kind", "days"].includes(key))) {
+    if (
+      Object.keys(recipe).some(
+        (key) => !["kind", "days", "group"].includes(key),
+      )
+    ) {
       throw new Error(
         `${label}.recipe contains fields not used by date-shift.`,
       );
     }
-    return Object.freeze({ kind: "date-shift", days });
+    if (recipe.group !== undefined && !BINDING_NAME.test(recipe.group)) {
+      throw new Error(`${label}.recipe.group is invalid.`);
+    }
+    return Object.freeze({
+      kind: "date-shift",
+      days,
+      ...(recipe.group === undefined ? {} : { group: recipe.group }),
+    });
+  }
+  if (recipe.kind === "path-map") {
+    if (Object.keys(recipe).some((key) => !["kind", "mapping"].includes(key))) {
+      throw new Error(`${label}.recipe contains fields not used by path-map.`);
+    }
+    if (!BINDING_NAME.test(recipe.mapping ?? "")) {
+      throw new Error(`${label}.recipe.mapping is invalid.`);
+    }
+    return Object.freeze({ kind: "path-map", mapping: recipe.mapping });
   }
   if (recipe.kind === "approved-owner") {
     if (
@@ -280,7 +305,14 @@ export const validateExecutablePrivacyPolicy = (policy) => {
   if (!isObject(policy)) throw new Error("Privacy policy must be an object.");
   knownKeys(
     policy,
-    ["policyVersion", "draft", "migrationCutoff", "bindings", "tables"],
+    [
+      "policyVersion",
+      "draft",
+      "migrationCutoff",
+      "bindings",
+      "pathMappings",
+      "tables",
+    ],
     "policy",
   );
   if (policy.policyVersion !== 2) {
@@ -321,6 +353,60 @@ export const validateExecutablePrivacyPolicy = (policy) => {
         );
       }
       return [name, Object.freeze({ ...binding })];
+    }),
+  );
+  if (policy.pathMappings !== undefined && !isObject(policy.pathMappings)) {
+    throw new Error("policy.pathMappings must be an object.");
+  }
+  const pathMappings = Object.fromEntries(
+    Object.entries(policy.pathMappings ?? {}).map(([name, mapping]) => {
+      const label = `policy.pathMappings.${name}`;
+      if (!BINDING_NAME.test(name) || !isObject(mapping)) {
+        throw new Error("policy.pathMappings contains an invalid mapping.");
+      }
+      knownKeys(
+        mapping,
+        [
+          "binding",
+          "format",
+          "namespace",
+          "maxLength",
+          "maximumBytes",
+          "maximumSegments",
+        ],
+        label,
+      );
+      if (!Object.hasOwn(bindings, mapping.binding ?? "")) {
+        throw new Error(`${label}.binding references an unknown binding.`);
+      }
+      if (!["uuid", "text"].includes(mapping.format)) {
+        throw new Error(`${label}.format must be uuid or text.`);
+      }
+      const normalized = {
+        binding: mapping.binding,
+        format: mapping.format,
+        namespace: nonEmpty(mapping.namespace, `${label}.namespace`),
+        maximumBytes: positiveInteger(
+          mapping.maximumBytes ?? DEFAULT_PATH_MAXIMUM_BYTES,
+          `${label}.maximumBytes`,
+          16_384,
+        ),
+        maximumSegments: positiveInteger(
+          mapping.maximumSegments ?? DEFAULT_PATH_MAXIMUM_SEGMENTS,
+          `${label}.maximumSegments`,
+          256,
+        ),
+      };
+      if (mapping.format === "text") {
+        normalized.maxLength = positiveInteger(
+          mapping.maxLength,
+          `${label}.maxLength`,
+          1_024,
+        );
+      } else if (mapping.maxLength !== undefined) {
+        throw new Error(`${label}.maxLength is supported only for text.`);
+      }
+      return [name, Object.freeze(normalized)];
     }),
   );
   const names = new Set();
@@ -442,6 +528,31 @@ export const validateExecutablePrivacyPolicy = (policy) => {
     if (columns.some(usesApprovedOwner) && !ownerBinding) {
       throw new Error(`${label} uses approved-owner without ownerBinding.`);
     }
+    const visitRecipes = (declaration, visit) => {
+      visit(declaration.recipe);
+      if (declaration.recipe?.kind === "approved-owner") {
+        visitRecipes(declaration.recipe.approved, visit);
+        visitRecipes(declaration.recipe.otherwise, visit);
+      } else if (declaration.recipe?.kind === "json-object") {
+        Object.values(declaration.recipe.fields).forEach((nested) =>
+          visitRecipes(nested, visit),
+        );
+      } else if (declaration.recipe?.kind === "json-array") {
+        visitRecipes(declaration.recipe.items, visit);
+      }
+    };
+    for (const column of columns) {
+      visitRecipes(column, (recipe) => {
+        if (
+          recipe?.kind === "path-map" &&
+          !Object.hasOwn(pathMappings, recipe.mapping)
+        ) {
+          throw new Error(
+            `${label} references unknown path mapping ${recipe.mapping}.`,
+          );
+        }
+      });
+    }
     return Object.freeze({
       schema,
       name,
@@ -450,10 +561,33 @@ export const validateExecutablePrivacyPolicy = (policy) => {
       columns: Object.freeze(columns),
     });
   });
+  const dateShiftGroups = new Map();
+  const visitDateShiftGroups = (declaration) => {
+    const recipe = declaration.recipe;
+    if (recipe?.kind === "date-shift" && recipe.group) {
+      const existing = dateShiftGroups.get(recipe.group);
+      if (existing !== undefined && existing !== recipe.days) {
+        throw new Error(
+          `Privacy date-shift group ${recipe.group} must use one days value.`,
+        );
+      }
+      dateShiftGroups.set(recipe.group, recipe.days);
+    }
+    if (recipe?.kind === "approved-owner") {
+      visitDateShiftGroups(recipe.approved);
+      visitDateShiftGroups(recipe.otherwise);
+    } else if (recipe?.kind === "json-object") {
+      Object.values(recipe.fields).forEach(visitDateShiftGroups);
+    } else if (recipe?.kind === "json-array") {
+      visitDateShiftGroups(recipe.items);
+    }
+  };
+  tables.forEach((table) => table.columns.forEach(visitDateShiftGroups));
   return Object.freeze({
     policyVersion: 2,
     migrationCutoff: policy.migrationCutoff,
     bindings: Object.freeze(bindings),
+    pathMappings: Object.freeze(pathMappings),
     tables: Object.freeze(tables),
   });
 };
@@ -483,6 +617,47 @@ const pseudonym = (key, recipe, value) => {
   }
   const token = `rehearsal_${bytes.toString("hex")}`;
   return token.slice(0, recipe.maxLength);
+};
+
+const remapPath = ({ key, mapping, bindingValue, value, label }) => {
+  if (typeof value !== "string") {
+    throw new Error(`${label} must be a Storage-style path string.`);
+  }
+  if (Buffer.byteLength(value) > mapping.maximumBytes) {
+    throw new Error(`${label} exceeds its reviewed byte limit.`);
+  }
+  const segments = value.split("/");
+  if (
+    !value ||
+    value.startsWith("/") ||
+    value.endsWith("/") ||
+    segments.length > mapping.maximumSegments ||
+    segments.some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    throw new Error(`${label} is not a safe bounded Storage path.`);
+  }
+  if (
+    typeof bindingValue !== "string" ||
+    !bindingValue ||
+    bindingValue.includes("/") ||
+    bindingValue === "." ||
+    bindingValue === ".."
+  ) {
+    throw new Error(`${label} has an invalid reviewed identity binding.`);
+  }
+  if (segments[0] !== bindingValue) {
+    throw new Error(
+      `${label} does not begin with its exact reviewed identity.`,
+    );
+  }
+  const destination = [
+    String(pseudonym(key, mapping, bindingValue)),
+    ...segments.slice(1),
+  ].join("/");
+  if (Buffer.byteLength(destination) > mapping.maximumBytes) {
+    throw new Error(`${label} destination exceeds its reviewed byte limit.`);
+  }
+  return destination;
 };
 
 const assertJsonBounds = (value, recipe, path) => {
@@ -545,6 +720,8 @@ const executeDeclaration = ({
   key,
   path,
   ownerApproved,
+  pathMappings,
+  bindingValues,
 }) => {
   if (declaration.action === "KEEP") return value;
   if (declaration.action === "EXCLUDE") return undefined;
@@ -558,9 +735,25 @@ const executeDeclaration = ({
     const date = new Date(value);
     if (!Number.isFinite(date.valueOf()))
       throw new Error(`${path} is not a valid date.`);
-    const direction = digest(key, path, value)[0] % 2 === 0 ? -1 : 1;
+    const direction = declaration.recipe.group
+      ? digest(key, "date-shift-group", declaration.recipe.group)[0] % 2 === 0
+        ? -1
+        : 1
+      : digest(key, path, value)[0] % 2 === 0
+        ? -1
+        : 1;
     date.setUTCDate(date.getUTCDate() + direction * declaration.recipe.days);
     return date.toISOString();
+  }
+  if (declaration.recipe.kind === "path-map") {
+    const mapping = pathMappings[declaration.recipe.mapping];
+    return remapPath({
+      key,
+      mapping,
+      bindingValue: bindingValues.get(mapping.binding),
+      value,
+      label: path,
+    });
   }
   if (declaration.recipe.kind === "approved-owner") {
     if (ownerApproved === undefined) {
@@ -574,6 +767,8 @@ const executeDeclaration = ({
       key,
       path,
       ownerApproved,
+      pathMappings,
+      bindingValues,
     });
   }
   if (value === null && declaration.recipe.allowNull) return null;
@@ -587,6 +782,8 @@ const executeDeclaration = ({
         key,
         path: `${path}[${index}]`,
         ownerApproved,
+        pathMappings,
+        bindingValues,
       });
       return transformed === undefined ? [] : [transformed];
     });
@@ -611,6 +808,8 @@ const executeDeclaration = ({
         key,
         path: `${path}.${field}`,
         ownerApproved,
+        pathMappings,
+        bindingValues,
       });
       return transformed === undefined ? [] : [[field, transformed]];
     }),
@@ -652,6 +851,19 @@ export const createPrivacyEngine = ({
   );
   return Object.freeze({
     keyFingerprint: createHash("sha256").update(secret).digest("hex"),
+    remapPath({ mapping: mappingName, value }) {
+      const mapping = normalized.pathMappings[mappingName];
+      if (!mapping) {
+        throw new Error(`Privacy path mapping ${mappingName} is not declared.`);
+      }
+      return remapPath({
+        key: secret,
+        mapping,
+        bindingValue: bindingValues.get(mapping.binding),
+        value,
+        label: `Privacy path mapping ${mappingName}`,
+      });
+    },
     sanitize(record) {
       if (
         !isObject(record) ||
@@ -692,6 +904,8 @@ export const createPrivacyEngine = ({
             key: secret,
             path: `${relation}.${column.name}`,
             ownerApproved,
+            pathMappings: normalized.pathMappings,
+            bindingValues,
           });
           return transformed === undefined ? [] : [[column.name, transformed]];
         }),

@@ -12,6 +12,7 @@ const execute = promisify(execFile);
 const root = process.cwd();
 const cli = join(root, "src/cli/rehearsal.mjs");
 const documentedCommands = [
+  "version",
   "guide",
   "setup",
   "init",

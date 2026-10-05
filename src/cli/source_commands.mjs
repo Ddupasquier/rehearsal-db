@@ -13,7 +13,10 @@ import {
   pruneBaselineGenerations,
   verifyActiveBaseline,
 } from "../baseline/artifact.mjs";
-import { readPrivacyKey } from "../baseline/privacy_engine.mjs";
+import {
+  createPrivacyEngine,
+  readPrivacyKey,
+} from "../baseline/privacy_engine.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import {
   createSourceAccessPlan,
@@ -21,6 +24,7 @@ import {
 } from "../source/access.mjs";
 import { streamApprovedSupabaseAssets } from "../source/asset_transfer.mjs";
 import { refreshPostgresqlBaseline } from "../source/baseline.mjs";
+import { resolvePrivacyMappedAssets } from "../source/privacy_paths.mjs";
 import {
   applyPostgresqlSourceAccess,
   planPostgresqlSourceAccessRetirement,
@@ -114,6 +118,15 @@ export const runSourceBaselineRefresh = async ({ planOptions }) => {
       join(loaded.projectRoot, sourcePolicy.reader.credentialFile),
     ),
   ]);
+  const privacyPolicy = JSON.parse(privacyPolicyBytes.toString("utf8"));
+  const assetPrivacyEngine = createPrivacyEngine({
+    policy: privacyPolicy,
+    key: privacyKey,
+  });
+  const assetDeclarations = resolvePrivacyMappedAssets({
+    sourcePolicy,
+    privacyPolicy,
+  });
   return refreshPostgresqlBaseline({
     connectionString,
     sourcePolicy,
@@ -133,10 +146,12 @@ export const runSourceBaselineRefresh = async ({ planOptions }) => {
           baseUrl:
             process.env[sourcePolicy.assetReader.baseUrlEnvironmentVariable],
           token: process.env[sourcePolicy.assetReader.tokenEnvironmentVariable],
-          declarations: sourcePolicy.assets,
+          declarations: assetDeclarations,
           maximumObjects: sourcePolicy.assetReader.maximumObjects,
           maximumObjectBytes: sourcePolicy.assetReader.maximumObjectBytes,
           maximumTotalBytes: sourcePolicy.assetReader.maximumTotalBytes,
+          pathMapper: ({ mapping, value }) =>
+            assetPrivacyEngine.remapPath({ mapping, value }),
         })
       : [],
   });
@@ -244,9 +259,15 @@ export const buildRefreshWorkflowPlan = async (planOptions) => {
 };
 
 export const createRefreshWorkflow =
-  ({ runRuntimeStack, prepareDependentTargets, topologyCommandEnvironment }) =>
+  ({
+    runRuntimeStack,
+    prepareDependentTargets,
+    topologyCommandEnvironment,
+    buildPlan = buildRefreshWorkflowPlan,
+    refreshBaseline = runSourceBaselineRefresh,
+  }) =>
   async ({ flags, planOptions }) => {
-    const context = await buildRefreshWorkflowPlan(planOptions);
+    const context = await buildPlan(planOptions);
     if (!flags.refreshConfirmation) {
       return { mode: "preview", plan: context.plan };
     }
@@ -259,7 +280,7 @@ export const createRefreshWorkflow =
     let runtime;
     let preparations = [];
     try {
-      refreshed = await runSourceBaselineRefresh({ planOptions });
+      refreshed = await refreshBaseline({ planOptions });
       const stack = await runRuntimeStack({
         command: "reset",
         flags,

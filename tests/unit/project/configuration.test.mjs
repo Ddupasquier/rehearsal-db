@@ -618,6 +618,23 @@ describe("Rehearsal configuration", () => {
     expect(stdout).toContain("candidates");
   });
 
+  it("prints the installed version without requiring project configuration", async () => {
+    const root = await makeProject();
+    const packageManifest = JSON.parse(
+      await readFile(join(process.cwd(), "package.json"), "utf8"),
+    );
+    const [{ stdout }, { stdout: jsonOutput }] = await Promise.all([
+      execute(process.execPath, [cliPath, "--version"], { cwd: root }),
+      execute(process.execPath, [cliPath, "version", "--json"], { cwd: root }),
+    ]);
+
+    expect(stdout.trim()).toBe(packageManifest.version);
+    expect(JSON.parse(jsonOutput)).toEqual({
+      name: packageManifest.name,
+      version: packageManifest.version,
+    });
+  });
+
   it("guides an unconfigured project through doctor without crashing", async () => {
     const root = await makeProject();
     let result;

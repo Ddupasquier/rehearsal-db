@@ -8,16 +8,18 @@ The optional preparation workflow is a separate security boundary. It has
 three deliberately separate phases:
 
 1. `source plan` reads declarations and produces a redacted, exact plan.
-2. `source apply` requires the plan digest and source-owner credentials from a
-   named environment variable. It creates only the declared, time-limited
-   reader and export surface.
+2. `source apply` requires the plan digest. Managed mode uses source-owner credentials
+   from a named environment variable and creates only the declared, time-limited reader
+   and export surface. External mode verifies an already restricted reader without an
+   administrator credential or source-side writes.
 3. `refresh` uses that reader in a read-only repeatable-read transaction, builds
    privately, activates only after verification, resets the local runtime, and applies
    reviewed retention. `baseline refresh` is the lower-level baseline-only form.
 
-`source retire` has its own preview and digest. It removes only the exact
-reader and export objects Rehearsal recorded. It never searches for similarly
-named roles or removes unrelated grants.
+`source retire` has its own preview and digest. Managed mode removes only the exact
+reader and export objects Rehearsal recorded. External mode removes only local Rehearsal
+credentials and receipts, preserving provider-owned objects. It never searches for
+similarly named roles or removes unrelated grants.
 
 ## What belongs in declarations
 
@@ -46,9 +48,12 @@ separate. A declaration contains only the name of an environment variable or
 owner-only secret file. Rehearsal never puts credential values in command-line
 arguments, reports, baselines, receipts, or a launched application.
 
-The current workflow creates and verifies its own temporary PostgreSQL reader. An
-externally provisioned reader is not yet accepted because Rehearsal cannot currently
-prove that reader's complete scope and retirement behavior.
+The default managed workflow creates and verifies its own temporary PostgreSQL reader.
+External mode accepts a provider-managed reader only when its complete non-system
+readable-column surface exactly matches the reviewed export views and migration ledger.
+It also verifies canonical view-definition fingerprints, `security_barrier`, ownership,
+write denial, role isolation, security-definer denial, and a short database-enforced
+expiration. Rehearsal never claims ownership or revocation of provider-managed objects.
 
 ## Snapshot and privacy guarantees
 
@@ -56,6 +61,12 @@ Database schema, migration evidence, and selected rows are read in one
 read-only repeatable-read PostgreSQL transaction. Rehearsal rechecks the source
 identity and migration evidence before commit. Rows stream in bounded batches;
 record bodies never appear in progress or error output.
+
+The snapshot boundary is deliberate: row commits made after extraction starts are left
+for the next baseline, while concurrent schema or migration-ledger changes block the
+current activation. Invalid estimates, malformed batches, connection loss, interruption,
+and disk or configured-limit failures remove private staging and preserve the previously
+active baseline.
 
 Storage objects do not share the database transaction guarantee. Their inventory records
 size and version metadata; transfer requires that version, verifies the exact byte count,

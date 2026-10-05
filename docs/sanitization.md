@@ -40,10 +40,10 @@ Two policy versions exist:
   Rehearsal can sanitize without project callbacks.
 
 Version 2 supports keyed UUID, email, text, and integer pseudonyms; explicit constant
-replacement; bounded date shifting; approved-owner conditionals; exhaustively classified
-JSON objects; and bounded JSON arrays. Unknown tables, columns, nested keys, formats,
-recipes, or missing required fields fail closed. It never evaluates JavaScript or SQL
-from the policy.
+replacement; bounded and grouped date shifting; identity-aware path mapping;
+approved-owner conditionals; exhaustively classified JSON objects; and bounded JSON
+arrays. Unknown tables, columns, nested keys, formats, recipes, or missing required
+fields fail closed. It never evaluates JavaScript or SQL from the policy.
 
 ## Approved-owner values
 
@@ -106,6 +106,68 @@ binding are refused. The owner column must be marked `identity: "YES"` and use
 owners take the declared `otherwise` path; every other identity-bearing field still
 needs its own pseudonymization declaration. Supply the binding only to the local
 server-side Rehearsal process; do not put it in the policy, baseline, or tracked files.
+
+## Identity-aware Storage paths
+
+Use one named mapping when a database column and a physical Storage object both begin
+with the approved owner's ID. Rehearsal pseudonymizes only that first segment and keeps
+the remaining path unchanged:
+
+```json
+{
+  "pathMappings": {
+    "owner-storage": {
+      "binding": "approved-owner",
+      "format": "uuid",
+      "namespace": "account-id",
+      "maximumBytes": 512,
+      "maximumSegments": 8
+    }
+  },
+  "tables": [
+    {
+      "name": "profiles",
+      "sourceRows": "STREAM AND SANITIZE",
+      "columns": [
+        {
+          "name": "avatar_path",
+          "action": "DERIVE",
+          "recipe": { "kind": "path-map", "mapping": "owner-storage" },
+          "generated": "NEVER",
+          "identity": "NO",
+          "foreignKey": null
+        }
+      ]
+    }
+  ]
+}
+```
+
+The source policy uses the same mapping name and names the binding's environment
+variable as `prefixEnvironmentVariable`; it never contains the raw owner ID. During
+`rehearsal refresh`, the package uses the mapping for both database values and physical
+object destinations. A missing mapping, a different environment variable, a path whose
+first segment is not the exact reviewed owner, traversal, or a size/segment limit breach
+stops the refresh.
+
+## Related dates
+
+Give related timestamps the same `group` and `days` value to shift them by one stable
+offset. This preserves their order and duration:
+
+```json
+{
+  "name": "starts_at",
+  "action": "DERIVE",
+  "recipe": { "kind": "date-shift", "days": 30, "group": "event-window" },
+  "generated": "NEVER",
+  "identity": "NO",
+  "foreignKey": null
+}
+```
+
+Apply the same recipe to `ends_at`. Rehearsal refuses a group that declares conflicting
+`days` values. Leave out `group` when a date should shift independently.
 
 ## Structured JSON
 

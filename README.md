@@ -22,7 +22,7 @@ production deployment tool.
 
 ## What you need
 
-- Node.js 24 and npm
+- Node.js 22, 24, or 26 and npm (Node.js 24 LTS recommended)
 - Docker Desktop, Colima, or another Docker-compatible engine
 - timestamped `.sql` migration files
 - a project test command that can prove the migrated application works
@@ -169,7 +169,7 @@ problems belong in the private process described in [SECURITY.md](SECURITY.md).
 
 ## For contributors
 
-Use Node.js 24, run `npm ci`, then run:
+Use a supported Node.js release (22, 24, or 26), run `npm ci`, then run:
 
 ```bash
 npm run check

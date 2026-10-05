@@ -15,6 +15,7 @@ import * as prompts from "@clack/prompts";
 import {
   createRehearsalResult,
   normalizeRehearsalError,
+  REHEARSAL_VERSION,
   renderHumanError,
   serializeRehearsalError,
 } from "../shared/diagnostics.mjs";
@@ -311,6 +312,7 @@ const loadIdentityClaimPlan = async ({ flags, planOptions }) => {
 const usage = () => `Usage: rehearsal <command> [options]
 
 Commands:
+  version                     Print the installed Rehearsal version
   guide                       Open the interactive, state-aware home screen
   setup [--target=] [--write] Preview or create safe first-run scaffolding
   init [--write]              Preview or explicitly write safe starter config
@@ -343,7 +345,8 @@ Commands:
                              Preview or apply conservative disk cleanup
   verify                     Verify the current local Rehearsal runtime
 
-Options: --json --verbose --debug --plain --config=<path> --target=supabase|postgresql
+Options: --help, -h --version, -V --json --verbose --debug --plain
+         --config=<path> --target=supabase|postgresql
          --confirm-source-access=<digest> --confirm-source-retirement=<digest>
          --confirm-refresh=<digest>`;
 
@@ -362,6 +365,18 @@ const runGuidedHome = createGuidedHome({
 });
 
 const executeCommand = async ({ command, flags, planOptions, guided }) => {
+  if (command === "version" || flags.version) {
+    if (flags.json) {
+      console.log(
+        JSON.stringify(
+          { name: "@rehearsal-db/core", version: REHEARSAL_VERSION },
+          null,
+          2,
+        ),
+      );
+    } else console.log(REHEARSAL_VERSION);
+    return;
+  }
   if (command === "help" || flags.help) {
     console.log(usage());
     return;
@@ -454,7 +469,10 @@ const executeCommand = async ({ command, flags, planOptions, guided }) => {
           ? renderSourceAccessPlan(result.plan)
           : [
               "SOURCE ACCESS — READY",
-              `Temporary reader expires: ${result.receipt.expiresAt}`,
+              `${result.receipt.accessMode === "external" ? "External" : "Temporary"} reader expires: ${result.receipt.expiresAt}`,
+              result.receipt.accessMode === "external"
+                ? "Rehearsal made no source-side changes."
+                : "Rehearsal created only the reviewed temporary source access.",
               `Local credential: ${result.credentialFile}`,
               "",
               "Next: run rehearsal baseline refresh, then retire source access.",

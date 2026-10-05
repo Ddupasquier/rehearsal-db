@@ -71,6 +71,15 @@ try {
         policyVersion: 2,
         migrationCutoff: "20260101000000",
         bindings: sharedBindings,
+        pathMappings: {
+          "owner-storage": {
+            binding: "approved-owner",
+            format: "uuid",
+            namespace: "account-id",
+            maximumBytes: 512,
+            maximumSegments: 4,
+          },
+        },
         tables: [
           {
             name: "profiles",
@@ -86,6 +95,10 @@ try {
                 },
                 { identity: "YES" },
               ),
+              column("avatar_path", "DERIVE", {
+                kind: "path-map",
+                mapping: "owner-storage",
+              }),
               column("display_name", "DERIVE", {
                 kind: "approved-owner",
                 approved: { action: "KEEP" },
@@ -124,20 +137,23 @@ try {
       environment: { REHEARSAL_APPROVED_OWNER_ID: owner },
       assertions: `
 const engine = create();
-const sanitize = (user_id, display_name, payload) => engine.sanitize({ table: "profiles", row: { user_id, display_name, payload } });
-const approved = sanitize(${JSON.stringify(owner)}, "Approved name", [{ actor_id: ${JSON.stringify(owner)}, note: "secret-canary" }, { actor_id: ${JSON.stringify(owner)} }]);
-const other = sanitize("22222222-2222-4222-8222-222222222222", "Other private name", []);
-const repeated = sanitize(${JSON.stringify(owner)}, "Approved name", [{ actor_id: ${JSON.stringify(owner)} }]);
-const rotated = create({}, Buffer.alloc(32, 8)).sanitize({ table: "profiles", row: { user_id: ${JSON.stringify(owner)}, display_name: "Approved name", payload: [] } });
+const sanitize = (user_id, avatar_path, display_name, payload) => engine.sanitize({ table: "profiles", row: { user_id, avatar_path, display_name, payload } });
+const approved = sanitize(${JSON.stringify(owner)}, ${JSON.stringify(`${owner}/avatars/main.png`)}, "Approved name", [{ actor_id: ${JSON.stringify(owner)}, note: "secret-canary" }, { actor_id: ${JSON.stringify(owner)} }]);
+const other = sanitize("22222222-2222-4222-8222-222222222222", ${JSON.stringify(`${owner}/avatars/main.png`)}, "Other private name", []);
+const repeated = sanitize(${JSON.stringify(owner)}, ${JSON.stringify(`${owner}/avatars/main.png`)}, "Approved name", [{ actor_id: ${JSON.stringify(owner)} }]);
+const rotated = create({}, Buffer.alloc(32, 8)).sanitize({ table: "profiles", row: { user_id: ${JSON.stringify(owner)}, avatar_path: ${JSON.stringify(`${owner}/avatars/main.png`)}, display_name: "Approved name", payload: [] } });
 assert.equal(approved.row.display_name, "Approved name");
 assert.equal(other.row.display_name, "Synthetic account");
+assert.equal(approved.row.avatar_path, approved.row.user_id + "/avatars/main.png");
+assert.equal(engine.remapPath({ mapping: "owner-storage", value: ${JSON.stringify(`${owner}/avatars/main.png`)} }), approved.row.avatar_path);
 assert.equal(approved.row.payload[0].actor_id, approved.row.user_id);
 assert.equal(repeated.row.user_id, approved.row.user_id);
 assert.notEqual(other.row.user_id, approved.row.user_id);
 assert.notEqual(rotated.row.user_id, approved.row.user_id);
 assert.equal(JSON.stringify(approved).includes("secret-canary"), false);
-assert.throws(() => sanitize(${JSON.stringify(owner)}, "A", [{ actor_id: ${JSON.stringify(owner)}, unknown: true }]), /unclassified JSON key/);
-assert.throws(() => sanitize(${JSON.stringify(owner)}, "A", [{}]), /missing required JSON keys/);
+assert.throws(() => sanitize(${JSON.stringify(owner)}, ${JSON.stringify(`${owner}/avatar.png`)}, "A", [{ actor_id: ${JSON.stringify(owner)}, unknown: true }]), /unclassified JSON key/);
+assert.throws(() => sanitize(${JSON.stringify(owner)}, ${JSON.stringify(`${owner}/avatar.png`)}, "A", [{}]), /missing required JSON keys/);
+assert.throws(() => engine.remapPath({ mapping: "owner-storage", value: "wrong-owner/avatar.png" }), /exact reviewed identity/);
 assert.throws(() => create({ REHEARSAL_APPROVED_OWNER_ID: "wrong" }), /review receipt/);
 `,
     },
@@ -153,6 +169,16 @@ assert.throws(() => create({ REHEARSAL_APPROVED_OWNER_ID: "wrong" }), /review re
             sourceRows: "STREAM AND SANITIZE",
             columns: [
               column("id", "KEEP"),
+              column("checked_at", "DERIVE", {
+                kind: "date-shift",
+                days: 30,
+                group: "audit-window",
+              }),
+              column("expires_at", "DERIVE", {
+                kind: "date-shift",
+                days: 30,
+                group: "audit-window",
+              }),
               column("events", "DERIVE", {
                 kind: "json-array",
                 maximumItems: 3,
@@ -188,10 +214,17 @@ assert.throws(() => create({ REHEARSAL_APPROVED_OWNER_ID: "wrong" }), /review re
       environment: {},
       assertions: `
 const engine = create();
-const sanitize = (events) => engine.sanitize({ schema: "audit", table: "entries", row: { id: 1, events } });
+const sanitize = (events, checked_at = "2026-01-01T12:00:00.000Z", expires_at = "2026-01-01T13:00:00.000Z") => engine.sanitize({ schema: "audit", table: "entries", row: { id: 1, checked_at, expires_at, events } });
 const first = sanitize([{ subject: "self", detail: "secret-canary" }, { subject: "self" }]);
 assert.equal(first.row.events[0].subject, first.row.events[1].subject);
 assert.equal(first.row.events[0].detail, "redacted");
+assert.equal(Date.parse(first.row.expires_at) - Date.parse(first.row.checked_at), 60 * 60 * 1000);
+for (let index = 0; index < 100; index += 1) {
+  const start = new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString();
+  const end = new Date(Date.UTC(2026, 0, 1, 0, index + 1)).toISOString();
+  const shifted = sanitize([], start, end).row;
+  assert.ok(Date.parse(shifted.checked_at) < Date.parse(shifted.expires_at));
+}
 assert.equal(JSON.stringify(first).includes("secret-canary"), false);
 assert.equal(sanitize(null).row.events, null);
 assert.throws(() => sanitize([{ subject: "a" }, { subject: "b" }, { subject: "c" }, { subject: "d" }]), /maximumItems/);
@@ -235,6 +268,8 @@ assert.throws(() => sanitize([{ subject: { one: { two: { three: { four: "deep" }
         consumers: consumers.map(({ name }) => name),
         approvedOwnerConditional: true,
         boundedStructuredJson: true,
+        identityAwareStoragePaths: true,
+        groupedDateOrdering: true,
       },
       null,
       2,

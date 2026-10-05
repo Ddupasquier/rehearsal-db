@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { createPrivacyEngine } from "../../../src/baseline/privacy_engine.mjs";
 import { streamApprovedSupabaseAssets } from "../../../src/source/asset_transfer.mjs";
 
 const response = ({ status = 200, body, headers = {} }) =>
@@ -6,6 +8,58 @@ const response = ({ status = 200, body, headers = {} }) =>
 
 describe("approved Storage transfer", () => {
   it("inventories and streams only the declared bucket prefix", async () => {
+    const owner = "11111111-1111-4111-8111-111111111111";
+    const engine = createPrivacyEngine({
+      policy: {
+        policyVersion: 2,
+        migrationCutoff: "20260101000000",
+        bindings: {
+          "approved-owner": {
+            environmentVariable: "REHEARSAL_APPROVED_OWNER_ID",
+            approvedValueSha256: createHash("sha256")
+              .update(owner)
+              .digest("hex"),
+          },
+        },
+        pathMappings: {
+          "owner-storage": {
+            binding: "approved-owner",
+            format: "uuid",
+            namespace: "account-id",
+          },
+        },
+        tables: [
+          {
+            name: "profiles",
+            sourceRows: "STREAM AND SANITIZE",
+            columns: [
+              {
+                name: "user_id",
+                action: "PSEUDONYMIZE",
+                recipe: { format: "uuid", namespace: "account-id" },
+                generated: "NEVER",
+                identity: "NO",
+                foreignKey: null,
+              },
+              {
+                name: "avatar_path",
+                action: "DERIVE",
+                recipe: { kind: "path-map", mapping: "owner-storage" },
+                generated: "NEVER",
+                identity: "NO",
+                foreignKey: null,
+              },
+            ],
+          },
+        ],
+      },
+      key: Buffer.alloc(32, 7),
+      environment: { REHEARSAL_APPROVED_OWNER_ID: owner },
+    });
+    const databaseRow = engine.sanitize({
+      table: "profiles",
+      row: { user_id: owner, avatar_path: `${owner}/avatar.png` },
+    }).row;
     const calls = [];
     const fetchImplementation = async (url, options) => {
       calls.push({ url, options });
@@ -32,10 +86,12 @@ describe("approved Storage transfer", () => {
       declarations: [
         {
           bucket: "avatars",
-          prefix: "approved-owner/",
+          prefix: `${owner}/`,
           rights: "approved-owner",
+          pathMapping: "owner-storage",
         },
       ],
+      pathMapper: ({ mapping, value }) => engine.remapPath({ mapping, value }),
       fetchImplementation,
     })) {
       const chunks = [];
@@ -45,12 +101,47 @@ describe("approved Storage transfer", () => {
     expect(assets).toEqual([
       {
         bucket: "avatars",
-        objectPath: "approved-owner/avatar.png",
+        objectPath: databaseRow.avatar_path,
         contentType: "image/png",
         content: Buffer.from("safe"),
       },
     ]);
+    expect(databaseRow.avatar_path).toBe(`${databaseRow.user_id}/avatar.png`);
     expect(JSON.stringify(calls)).not.toContain("unrelated");
+  });
+
+  it("requires package-owned mapping for a declared destination rewrite", async () => {
+    await expect(async () => {
+      for await (const _asset of streamApprovedSupabaseAssets({
+        baseUrl: "https://source.example.invalid",
+        token: "scoped-reader-token-value",
+        declarations: [
+          {
+            bucket: "avatars",
+            prefix: "approved-owner/",
+            pathMapping: "owner-storage",
+          },
+        ],
+        fetchImplementation: async (url) =>
+          url.includes("/list/")
+            ? response({
+                body: JSON.stringify([
+                  {
+                    name: "avatar.png",
+                    metadata: { size: 4, eTag: '"v1"' },
+                  },
+                ]),
+              })
+            : response({
+                body: Buffer.from("safe"),
+                headers: { etag: '"v1"' },
+              }),
+      })) {
+        // Iteration must refuse a mapping without package-owned privacy execution.
+      }
+    }).rejects.toThrow(
+      "Storage path mapping requires the package-owned privacy mapper",
+    );
   });
 
   it("rejects changed, oversized, traversal, and failed objects without response bodies", async () => {

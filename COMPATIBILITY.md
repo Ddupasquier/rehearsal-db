@@ -21,6 +21,12 @@ The first stable `1.0.0` requires external beta evidence, a support policy, and 
 public API. Supporting additional database families, package managers, or operating
 systems is not implied by the 0.x contract.
 
+Rehearsal supports maintained even-numbered Node.js release lines that pass its CI
+matrix. Beta.13 supports Node.js 22, 24, and 26; Node.js 24 LTS is the recommended
+default and the release-build runtime. End-of-life and odd-numbered Node.js releases are
+not supported. A future release may remove a Node.js line after its upstream end-of-life
+date, with that change called out in the changelog.
+
 The npm install hook may create project scaffolding only when it proves one application
 root. Ordinary npm application installs are covered. A workspace is automatic only when
 one declaring consumer is already visible in its manifest or lockfile; npm can save a

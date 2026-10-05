@@ -266,6 +266,182 @@ describe("executable privacy engine", () => {
     expect(first.row.created_at).not.toBe(source.row.created_at);
   });
 
+  it("aligns identity paths and preserves related timestamp ordering", () => {
+    const owner = "11111111-1111-4111-8111-111111111111";
+    const equivalentPolicy = {
+      policyVersion: 2,
+      migrationCutoff: "20260101000000",
+      bindings: {
+        "approved-owner": {
+          environmentVariable: "REHEARSAL_APPROVED_OWNER_ID",
+          approvedValueSha256: createHash("sha256").update(owner).digest("hex"),
+        },
+      },
+      pathMappings: {
+        "owner-storage": {
+          binding: "approved-owner",
+          format: "uuid",
+          namespace: "account-id",
+          maximumBytes: 512,
+          maximumSegments: 4,
+        },
+      },
+      tables: [
+        {
+          name: "coverage",
+          sourceRows: "STREAM AND SANITIZE",
+          columns: [
+            {
+              name: "user_id",
+              action: "PSEUDONYMIZE",
+              recipe: { format: "uuid", namespace: "account-id" },
+              generated: "NEVER",
+              identity: "YES",
+              foreignKey: null,
+            },
+            {
+              name: "avatar_path",
+              action: "DERIVE",
+              recipe: { kind: "path-map", mapping: "owner-storage" },
+              generated: "NEVER",
+              identity: "NO",
+              foreignKey: null,
+            },
+            {
+              name: "checked_at",
+              action: "DERIVE",
+              recipe: {
+                kind: "date-shift",
+                days: 30,
+                group: "coverage-window",
+              },
+              generated: "NEVER",
+              identity: "NO",
+              foreignKey: null,
+            },
+            {
+              name: "expires_at",
+              action: "DERIVE",
+              recipe: {
+                kind: "date-shift",
+                days: 30,
+                group: "coverage-window",
+              },
+              generated: "NEVER",
+              identity: "NO",
+              foreignKey: null,
+            },
+          ],
+        },
+      ],
+    };
+    const engine = createPrivacyEngine({
+      policy: equivalentPolicy,
+      key: Buffer.alloc(32, 7),
+      environment: { REHEARSAL_APPROVED_OWNER_ID: owner },
+    });
+    for (let index = 0; index < 100; index += 1) {
+      const checkedAt = new Date(Date.UTC(2026, 0, 1, 0, index));
+      const expiresAt = new Date(checkedAt.valueOf() + 60 * 60 * 1_000);
+      const result = engine.sanitize({
+        table: "coverage",
+        row: {
+          user_id: owner,
+          avatar_path: `${owner}/avatars/photo.png`,
+          checked_at: checkedAt.toISOString(),
+          expires_at: expiresAt.toISOString(),
+        },
+      });
+      expect(result.row.avatar_path).toBe(
+        `${result.row.user_id}/avatars/photo.png`,
+      );
+      expect(
+        new Date(result.row.expires_at).valueOf() -
+          new Date(result.row.checked_at).valueOf(),
+      ).toBe(60 * 60 * 1_000);
+    }
+    expect(
+      engine.remapPath({
+        mapping: "owner-storage",
+        value: `${owner}/avatars/photo.png`,
+      }),
+    ).toMatch(/^[a-f0-9-]{36}\/avatars\/photo\.png$/u);
+    expect(() =>
+      engine.remapPath({
+        mapping: "owner-storage",
+        value: "22222222-2222-4222-8222-222222222222/avatar.png",
+      }),
+    ).toThrow("exact reviewed identity");
+    expect(() =>
+      engine.remapPath({
+        mapping: "owner-storage",
+        value: `${owner}/../avatar.png`,
+      }),
+    ).toThrow("safe bounded Storage path");
+  });
+
+  it("fails closed for inconsistent shift groups and path mappings", () => {
+    const owner = "11111111-1111-4111-8111-111111111111";
+    const base = {
+      policyVersion: 2,
+      migrationCutoff: "20260101000000",
+      bindings: {
+        owner: {
+          environmentVariable: "REHEARSAL_APPROVED_OWNER_ID",
+          approvedValueSha256: createHash("sha256").update(owner).digest("hex"),
+        },
+      },
+      pathMappings: {
+        files: {
+          binding: "owner",
+          format: "uuid",
+          namespace: "account-id",
+        },
+      },
+      tables: [
+        {
+          name: "events",
+          sourceRows: "STREAM AND SANITIZE",
+          columns: [
+            {
+              name: "path",
+              action: "DERIVE",
+              recipe: { kind: "path-map", mapping: "missing" },
+              generated: "NEVER",
+              identity: "NO",
+              foreignKey: null,
+            },
+          ],
+        },
+      ],
+    };
+    expect(() => validateExecutablePrivacyPolicy(base)).toThrow(
+      "unknown path mapping missing",
+    );
+    expect(() =>
+      validateExecutablePrivacyPolicy({
+        ...base,
+        tables: [
+          {
+            ...base.tables[0],
+            columns: [
+              {
+                ...base.tables[0].columns[0],
+                name: "first_at",
+                recipe: { kind: "date-shift", days: 3, group: "window" },
+              },
+              {
+                ...base.tables[0].columns[0],
+                name: "second_at",
+                recipe: { kind: "date-shift", days: 4, group: "window" },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrow("must use one days value");
+  });
+
   it("fails closed for unknown tables, columns, JSON keys, and recipes", () => {
     const engine = createPrivacyEngine({ policy, key: Buffer.alloc(32, 9) });
     expect(() => engine.sanitize({ table: "unknown", row: { id: 1 } })).toThrow(

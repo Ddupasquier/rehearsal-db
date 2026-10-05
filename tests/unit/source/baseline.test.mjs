@@ -1,4 +1,4 @@
-import { mkdtemp, readlink, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, readlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -7,7 +7,11 @@ import {
   verifyActiveBaseline,
 } from "../../../src/baseline/artifact.mjs";
 import { refreshPostgresqlBaseline } from "../../../src/source/baseline.mjs";
-import { sourceTargetFingerprint } from "../../../src/source/access.mjs";
+import {
+  externalViewDefinitionFingerprint,
+  sourceAccessPolicyFingerprint,
+  sourceTargetFingerprint,
+} from "../../../src/source/access.mjs";
 
 const roots = [];
 const connectionString =
@@ -133,9 +137,18 @@ const schemaRows = [
 const fakeClient = ({
   observer = false,
   drift = false,
+  schemaDrift = false,
   failDuringFetch = false,
+  failAfterFetches,
+  malformedBatch = false,
+  malformedRow = false,
+  rowCount = 2,
+  estimateRows,
+  estimateBytes,
+  stats,
 } = {}) => {
-  let fetched = false;
+  let offset = 0;
+  let fetches = 0;
   return {
     async connect() {},
     async end() {},
@@ -148,32 +161,81 @@ const fakeClient = ({
         };
       }
       if (sql.includes("information_schema.columns"))
-        return { rows: schemaRows };
+        return {
+          rows: schemaDrift
+            ? schemaRows.map((row) =>
+                row.name === "name"
+                  ? {
+                      ...row,
+                      data_type: "character varying",
+                      udt_name: "varchar",
+                    }
+                  : row,
+              )
+            : schemaRows,
+        };
       if (sql.includes("pg_column_size"))
-        return { rows: [{ rows: "2", bytes: "256" }] };
-      if (sql.startsWith("fetch forward")) {
-        if (failDuringFetch) throw new Error("synthetic interrupted stream");
-        if (observer || fetched) return { rows: [] };
-        fetched = true;
         return {
           rows: [
             {
-              id: 1,
-              name: "Secret one",
-              created_at: "2026-01-01T00:00:00.000Z",
-            },
-            {
-              id: 2,
-              name: "Secret two",
-              created_at: "2026-01-02T00:00:00.000Z",
+              rows:
+                estimateRows === undefined ? String(rowCount) : estimateRows,
+              bytes:
+                estimateBytes === undefined
+                  ? String(rowCount * 128)
+                  : estimateBytes,
             },
           ],
         };
+      if (sql.startsWith("fetch forward")) {
+        if (failDuringFetch) throw new Error("synthetic interrupted stream");
+        if (failAfterFetches !== undefined && fetches >= failAfterFetches) {
+          throw new Error("synthetic source connection lost");
+        }
+        if (malformedBatch) return { rows: "truncated" };
+        if (observer || offset >= rowCount) return { rows: [] };
+        const requested = Number(sql.match(/^fetch forward (\d+)/u)?.[1]);
+        const size = Math.min(requested, rowCount - offset);
+        const rows = Array.from({ length: size }, (_, index) => {
+          const id = offset + index + 1;
+          if (malformedRow && id === 2) return { id, name: `Secret ${id}` };
+          return {
+            id,
+            name: `Secret ${id}`,
+            created_at: "2026-01-01T00:00:00.000Z",
+          };
+        });
+        offset += size;
+        fetches += 1;
+        if (stats) {
+          stats.fetches = fetches;
+          stats.maximumBatch = Math.max(stats.maximumBatch ?? 0, rows.length);
+        }
+        return { rows };
       }
       return { rows: [] };
     },
   };
 };
+
+const commonRefreshOptions = ({ root, key = Buffer.alloc(32, 4) }) => ({
+  connectionString,
+  sourcePolicy,
+  sourceAccessReceipt,
+  privacyPolicyBytes: Buffer.from(`${JSON.stringify(privacyPolicy)}\n`),
+  privacyKey: key,
+  artifactRoot: join(root, ".rehearsal"),
+  migrationDirectory: join(
+    process.cwd(),
+    "tests/fixtures/postgresql-project/database/migrations",
+  ),
+  availableBytes: 1024 * 1024 * 1024,
+});
+
+const generationData = (artifactRoot, generationId) =>
+  readFile(
+    join(artifactRoot, "generations", generationId, "sanitized-data.ndjson"),
+  );
 
 afterEach(async () => {
   await Promise.all(
@@ -209,6 +271,76 @@ describe("coherent source baseline refresh", () => {
         clientFactory: async () => fakeClient(),
       }),
     ).rejects.toThrow("missing, mismatched, or expired");
+  });
+
+  it("accepts a verified external-reader receipt without an owner role", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-source-baseline-"));
+    roots.push(root);
+    const externalPolicy = {
+      ...sourcePolicy,
+      administratorEnvironmentVariable: undefined,
+      reader: {
+        mode: "external",
+        role: "rehearsal_reader",
+        connectionEnvironmentVariable: "REHEARSAL_SOURCE_READER_URL",
+        credentialFile: ".rehearsal/secrets/source-reader.env",
+        maximumValidForMinutes: 30,
+      },
+      relations: sourcePolicy.relations.map((relation) => ({
+        ...relation,
+        viewDefinitionSha256: externalViewDefinitionFingerprint(
+          "select id, name, created_at from public.widgets",
+        ),
+      })),
+    };
+    const externalReceipt = {
+      ...sourceAccessReceipt,
+      accessMode: "external",
+      readerRole: "rehearsal_reader",
+      ownerRole: undefined,
+      policyFingerprint: sourceAccessPolicyFingerprint(externalPolicy),
+    };
+    await expect(
+      refreshPostgresqlBaseline({
+        connectionString,
+        sourcePolicy: {
+          ...externalPolicy,
+          relations: externalPolicy.relations.map((relation) => ({
+            ...relation,
+            viewDefinitionSha256: "f".repeat(64),
+          })),
+        },
+        sourceAccessReceipt: externalReceipt,
+        privacyPolicyBytes: Buffer.from(`${JSON.stringify(privacyPolicy)}\n`),
+        privacyKey: Buffer.alloc(32, 4),
+        artifactRoot: join(root, ".rehearsal"),
+        migrationDirectory: join(
+          process.cwd(),
+          "tests/fixtures/postgresql-project/database/migrations",
+        ),
+        availableBytes: 1024 * 1024 * 1024,
+        clientFactory: async () => {
+          throw new Error("policy drift must fail before connection");
+        },
+      }),
+    ).rejects.toThrow("missing, mismatched, or expired");
+    const clients = [fakeClient(), fakeClient({ observer: true })];
+    const result = await refreshPostgresqlBaseline({
+      connectionString,
+      sourcePolicy: externalPolicy,
+      sourceAccessReceipt: externalReceipt,
+      privacyPolicyBytes: Buffer.from(`${JSON.stringify(privacyPolicy)}\n`),
+      privacyKey: Buffer.alloc(32, 4),
+      artifactRoot: join(root, ".rehearsal"),
+      migrationDirectory: join(
+        process.cwd(),
+        "tests/fixtures/postgresql-project/database/migrations",
+      ),
+      availableBytes: 1024 * 1024 * 1024,
+      clientFactory: async () => clients.shift(),
+    });
+
+    expect(result.manifest.rowCount).toBe(2);
   });
 
   it("streams, sanitizes, stages, verifies, and atomically activates", async () => {
@@ -309,4 +441,277 @@ describe("coherent source baseline refresh", () => {
       expect(await readlink(join(artifactRoot, "current"))).toBe(before);
     },
   );
+
+  it("streams a large source in bounded batches", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-source-baseline-"));
+    roots.push(root);
+    const stats = {};
+    const rowCount = 50_000;
+    const clients = [
+      fakeClient({ rowCount, stats }),
+      fakeClient({ observer: true, rowCount }),
+    ];
+    const result = await refreshPostgresqlBaseline({
+      ...commonRefreshOptions({ root }),
+      limits: {
+        batchRows: 257,
+        maximumRows: rowCount,
+        maximumBytes: 32 * 1024 * 1024,
+        diskHeadroomBytes: 1,
+      },
+      clientFactory: async () => clients.shift(),
+    });
+
+    expect(result.manifest.rowCount).toBe(rowCount);
+    expect(stats.maximumBatch).toBe(257);
+    expect(stats.fetches).toBe(Math.ceil(rowCount / 257));
+  }, 15_000);
+
+  it("keeps one repeatable-read row snapshot while source rows change", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-source-baseline-"));
+    roots.push(root);
+    let changedOutsideSnapshot = false;
+    const clients = [
+      fakeClient({ rowCount: 1_003 }),
+      fakeClient({ observer: true, rowCount: 1_200 }),
+    ];
+    const result = await refreshPostgresqlBaseline({
+      ...commonRefreshOptions({ root }),
+      limits: { batchRows: 97, diskHeadroomBytes: 1 },
+      progress: () => {
+        changedOutsideSnapshot = true;
+      },
+      clientFactory: async () => clients.shift(),
+    });
+
+    expect(changedOutsideSnapshot).toBe(true);
+    expect(result.estimate.rows).toBe(1_003);
+    expect(result.manifest.rowCount).toBe(1_003);
+  });
+
+  it.each([
+    [
+      "schema drift",
+      { schemaDrift: true },
+      "changed during baseline preparation",
+    ],
+    ["connection loss", { failAfterFetches: 1 }, "source connection lost"],
+    ["malformed batch", { malformedBatch: true }, "malformed or oversized"],
+    ["malformed row", { malformedRow: true }, "unclassified or missing column"],
+    ["negative estimate", { estimateRows: -1 }, "missing, negative"],
+    ["missing estimate", { estimateRows: null }, "missing, negative"],
+    [
+      "truncated estimate",
+      { estimateRows: "not-a-number" },
+      "missing, negative",
+    ],
+  ])(
+    "preserves the active generation and removes staging after %s",
+    async (_label, failure, message) => {
+      const root = await mkdtemp(join(tmpdir(), "rehearsal-source-baseline-"));
+      roots.push(root);
+      const common = commonRefreshOptions({ root });
+      let clients = [fakeClient(), fakeClient({ observer: true })];
+      await refreshPostgresqlBaseline({
+        ...common,
+        clientFactory: async () => clients.shift(),
+      });
+      const before = await readlink(join(common.artifactRoot, "current"));
+      clients = failure.schemaDrift
+        ? [fakeClient(), fakeClient({ observer: true, ...failure })]
+        : [fakeClient(failure)];
+
+      await expect(
+        refreshPostgresqlBaseline({
+          ...common,
+          clientFactory: async () => clients.shift(),
+        }),
+      ).rejects.toThrow(message);
+      expect(await readlink(join(common.artifactRoot, "current"))).toBe(before);
+      expect(
+        (await readdir(common.artifactRoot)).filter((name) =>
+          name.startsWith(".building-"),
+        ),
+      ).toEqual([]);
+    },
+  );
+
+  it("produces identical fixed-key data and changes pseudonyms with the key", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-source-baseline-"));
+    roots.push(root);
+    const deterministicPolicy = structuredClone(privacyPolicy);
+    deterministicPolicy.tables[0].columns[1] = {
+      ...deterministicPolicy.tables[0].columns[1],
+      action: "PSEUDONYMIZE",
+      recipe: { format: "text", namespace: "widget-name", maxLength: 32 },
+    };
+    const run = async (key) => {
+      const clients = [fakeClient(), fakeClient({ observer: true })];
+      return refreshPostgresqlBaseline({
+        ...commonRefreshOptions({ root, key }),
+        privacyPolicyBytes: Buffer.from(
+          `${JSON.stringify(deterministicPolicy)}\n`,
+        ),
+        clientFactory: async () => clients.shift(),
+      });
+    };
+
+    const first = await run(Buffer.alloc(32, 4));
+    const second = await run(Buffer.alloc(32, 4));
+    const third = await run(Buffer.alloc(32, 5));
+    const firstData = await generationData(
+      commonRefreshOptions({ root }).artifactRoot,
+      first.generationId,
+    );
+    const secondData = await generationData(
+      commonRefreshOptions({ root }).artifactRoot,
+      second.generationId,
+    );
+    const thirdData = await generationData(
+      commonRefreshOptions({ root }).artifactRoot,
+      third.generationId,
+    );
+
+    expect(secondData).toEqual(firstData);
+    expect(thirdData).not.toEqual(firstData);
+    expect(second.manifest.files["sanitized-data.ndjson"].sha256).toBe(
+      first.manifest.files["sanitized-data.ndjson"].sha256,
+    );
+  });
+
+  it("extracts two unrelated target schemas without mixing their records", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-source-baseline-"));
+    roots.push(root);
+    const auditRelation = {
+      source: { schema: "audit_private", table: "entries" },
+      view: "audit_entries",
+      targetSchema: "audit",
+      targetTable: "entries",
+      columns: ["id", "payload"],
+      orderBy: ["id"],
+      rowScope: { kind: "approved-public" },
+    };
+    const multiPolicy = {
+      ...sourcePolicy,
+      relations: [...sourcePolicy.relations, auditRelation],
+    };
+    const multiReceipt = {
+      ...sourceAccessReceipt,
+      views: multiPolicy.relations.map((relation) => relation.view).sort(),
+      relations: multiPolicy.relations.map((relation) => ({
+        ...relation.source,
+        columns: relation.columns,
+      })),
+    };
+    const multiPrivacy = {
+      ...privacyPolicy,
+      tables: [
+        ...privacyPolicy.tables,
+        {
+          schema: "audit",
+          name: "entries",
+          sourceRows: "STREAM AND SANITIZE",
+          columns: [
+            {
+              name: "id",
+              action: "KEEP",
+              generated: "NEVER",
+              identity: "YES",
+              foreignKey: null,
+            },
+            {
+              name: "payload",
+              action: "REPLACE",
+              recipe: { kind: "constant", value: "Safe audit event" },
+              generated: "NEVER",
+              identity: "NO",
+              foreignKey: null,
+            },
+          ],
+        },
+      ],
+    };
+    const makeMultiClient = () => {
+      let activeView;
+      const delivered = new Set();
+      return {
+        async connect() {},
+        async end() {},
+        async query(sql, parameters = []) {
+          if (sql.includes("as version") && sql.includes("schema_migrations"))
+            return { rows: ledgerRows };
+          if (sql.includes("information_schema.columns")) {
+            return {
+              rows:
+                parameters[1] === "audit_entries"
+                  ? [
+                      { ...schemaRows[0] },
+                      {
+                        ...schemaRows[1],
+                        name: "payload",
+                        ordinal_position: 2,
+                      },
+                    ]
+                  : schemaRows,
+            };
+          }
+          if (sql.includes("pg_column_size"))
+            return { rows: [{ rows: "1", bytes: "128" }] };
+          if (sql.startsWith("declare")) {
+            activeView = sql.includes('"audit_entries"')
+              ? "audit_entries"
+              : "widgets";
+            return { rows: [] };
+          }
+          if (sql.startsWith("fetch forward")) {
+            if (delivered.has(activeView)) return { rows: [] };
+            delivered.add(activeView);
+            return {
+              rows:
+                activeView === "audit_entries"
+                  ? [{ id: 91, payload: "private audit payload" }]
+                  : [
+                      {
+                        id: 41,
+                        name: "private widget",
+                        created_at: "2026-01-01T00:00:00.000Z",
+                      },
+                    ],
+            };
+          }
+          return { rows: [] };
+        },
+      };
+    };
+    const clients = [makeMultiClient(), makeMultiClient()];
+    const result = await refreshPostgresqlBaseline({
+      ...commonRefreshOptions({ root }),
+      sourcePolicy: multiPolicy,
+      sourceAccessReceipt: multiReceipt,
+      privacyPolicyBytes: Buffer.from(`${JSON.stringify(multiPrivacy)}\n`),
+      clientFactory: async () => clients.shift(),
+    });
+    const records = (
+      await generationData(
+        commonRefreshOptions({ root }).artifactRoot,
+        result.generationId,
+      )
+    )
+      .toString("utf8")
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+
+    expect(result.manifest.tableCounts).toEqual({
+      widgets: 1,
+      "audit.entries": 1,
+    });
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ table: "widgets" }),
+        expect.objectContaining({ schema: "audit", table: "entries" }),
+      ]),
+    );
+    expect(JSON.stringify(records)).not.toContain("private");
+  });
 });
