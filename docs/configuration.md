@@ -130,9 +130,7 @@ All paths resolve inside the consuming project. The artifact directory must be n
 `.rehearsal`; this is an intentional deletion guard. `runtimeWorkdir` must be its
 `runtime` child, and the generated application environment file must remain inside it.
 
-Rehearsal never overwrites this config. To start over, move the existing file somewhere
-safe, run setup again, and compare the two files before deleting either one.
-
+Rehearsal never overwrites this config. Do not move it merely to inspect a newer template.
 After upgrading, run `npx rehearsal init` to print the current release's generated
 template beside the path of your existing config. This comparison is read-only; adding a
 new optional key remains your decision. `npx rehearsal init --write` still refuses to
@@ -158,8 +156,38 @@ checkout never receive project files.
 
 Supported existing config paths—including
 `infrastructure/rehearsal/rehearsal.config.mjs`—are preserved, and a second root config
-is not created. Use `--config=<project-relative-path>` for other explicit paths when
-running commands.
+is not created. The install hook reports the exact active path when npm displays lifecycle
+output, and setup always prints it. `npx rehearsal init --json` is the package-manager-
+independent way to check the `destination`. Rehearsal checks the supported root filenames
+first and then the supported nested filenames; finding any one of them prevents automatic
+creation of another. Use
+`--config=<project-relative-path>` for other explicit paths when running commands.
+
+### Move an existing config to the project root
+
+Relocation is deliberately manual because the config may contain reviewed settings and
+JavaScript imports. Rehearsal will never move it or create a competing root file.
+
+From the directory containing `package.json`:
+
+1. Stop active Rehearsal commands and confirm the current path with
+   `npx rehearsal init --json`.
+2. Make a backup outside every supported discovery path, such as
+   `.rehearsal/config-backups/rehearsal.config.mjs`.
+3. Move—do not copy—the active file to `./rehearsal.config.mjs`. Use `git mv` when it is
+   tracked so review history remains clear.
+4. Update relative JavaScript `import` specifiers inside the moved file. Imports resolve
+   from the config file's own folder, so a nested `../../something.mjs` import usually
+   changes after moving to the root.
+5. Leave config values such as `migrationDirectory`, `sanitizationPolicy`,
+   `runtimePolicy`, `identityPolicy`, and `dependentTargets[].configPath` unchanged unless
+   the referenced project file also moved. Rehearsal resolves those values from the
+   project root, not from the config file's folder.
+6. Run `npx rehearsal init --json`, confirm its `destination` is
+   `rehearsal.config.mjs`, then run `npx rehearsal doctor` and review the Git diff.
+
+If validation fails, restore the backup to its original path. Do not run setup while the
+move is half-finished; setup may correctly conclude that no supported config exists.
 
 `preparation.privacyKey` must stay inside `.rehearsal`; it is ignored and owner-readable
 only. Source, runtime, and identity policy files are declarations that may be reviewed in

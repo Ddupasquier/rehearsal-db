@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
@@ -226,6 +227,9 @@ describe("guided Rehearsal setup", () => {
     expect(preview.data).toMatchObject({
       mode: "preview",
       project: "setup-fixture",
+      configurationPath: "rehearsal.config.mjs",
+      configurationAction: "create",
+      rootConfigGenerationSkipped: false,
     });
     await expect(
       stat(join(root, "rehearsal.config.mjs")),
@@ -241,6 +245,7 @@ describe("guided Rehearsal setup", () => {
       ).stdout,
     );
     expect(written.data.mode).toBe("written");
+    expect(written.data.configurationPath).toBe("rehearsal.config.mjs");
     expect(written.data.readiness.state).toBe("NOT READY");
     await expect(
       stat(join(root, "rehearsal.config.mjs")),
@@ -257,6 +262,52 @@ describe("guided Rehearsal setup", () => {
     expect(
       repeated.data.files.every(({ action }) => action === "unchanged"),
     ).toBe(true);
+    expect(repeated.data).toMatchObject({
+      configurationPath: "rehearsal.config.mjs",
+      configurationAction: "unchanged",
+      rootConfigGenerationSkipped: false,
+    });
+  });
+
+  it("reports a preserved nested configuration as the active setup path", async () => {
+    const root = await makeProject();
+    const plan = await planRehearsalSetup({
+      projectRoot: root,
+      isPortAvailable: async () => true,
+    });
+    await applyRehearsalSetup(plan);
+    const nestedPath = join(
+      root,
+      "infrastructure/rehearsal/rehearsal.config.mjs",
+    );
+    await rename(join(root, "rehearsal.config.mjs"), nestedPath);
+    await mkdir(join(root, "node_modules/@rehearsal-db"), {
+      recursive: true,
+    });
+    await symlink(
+      process.cwd(),
+      join(root, "node_modules/@rehearsal-db/core"),
+      "dir",
+    );
+
+    const { stdout } = await execute(
+      process.execPath,
+      [cliPath, "setup", "--write", "--plain"],
+      { cwd: root },
+    );
+
+    expect(stdout).toContain(
+      "Configuration: infrastructure/rehearsal/rehearsal.config.mjs (existing)",
+    );
+    expect(stdout).toContain(
+      "Root config: not created because the existing supported configuration remains active.",
+    );
+    expect(stdout).toContain(
+      "Review infrastructure/rehearsal/rehearsal.config.mjs",
+    );
+    await expect(
+      stat(join(root, "rehearsal.config.mjs")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("summarizes expected first-run gaps without repeated file errors", async () => {

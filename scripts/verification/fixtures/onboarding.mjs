@@ -84,9 +84,42 @@ const createConsumer = async (root, name, { target = "supabase" } = {}) => {
 const install = (root, specification) =>
   run(
     "npm",
-    ["install", "--save-dev", "--no-audit", "--no-fund", specification],
+    [
+      "install",
+      "--save-dev",
+      "--no-audit",
+      "--no-fund",
+      "--foreground-scripts",
+      specification,
+    ],
     { cwd: root },
   );
+
+const existingSupabaseConfig = (name) => `export default {
+  schemaVersion: 1,
+  project: { name: ${JSON.stringify(name)} },
+  supabase: {
+    workdir: ".",
+    migrationDirectory: "supabase/migrations",
+    rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml",
+    runtimeWorkdir: ".rehearsal/runtime",
+  },
+  baseline: {
+    artifactDirectory: ".rehearsal",
+    sanitizationPolicy: "infrastructure/rehearsal/sanitization-policy.json",
+  },
+  application: { startCommand: "npm run dev", proofCommand: "npm test" },
+  runtime: {
+    target: "supabase",
+    applicationUrl: "http://localhost:5175",
+    projectId: ${JSON.stringify(`${name}-rehearsal`)},
+    apiPort: 58321,
+    databasePort: 58322,
+    studioPort: 58323,
+  },
+  safety: { hostedAccess: "disabled", outboundNetwork: "deny" },
+};
+`;
 
 const runInit = (root) =>
   JSON.parse(
@@ -159,11 +192,14 @@ try {
 
   const freshRoot = join(temporaryRoot, "fresh-consumer");
   await createConsumer(freshRoot, "fresh-onboarding-consumer");
-  install(freshRoot, tarball);
-  const freshConfig = await readFile(
-    join(freshRoot, "rehearsal.config.mjs"),
-    "utf8",
+  const freshInstallOutput = install(freshRoot, tarball);
+  assert.match(
+    freshInstallOutput,
+    /Configuration: rehearsal\.config\.mjs \(created\)/u,
   );
+  assert.match(freshInstallOutput, /Next: review rehearsal\.config\.mjs/iu);
+  const freshConfigPath = join(freshRoot, "rehearsal.config.mjs");
+  const freshConfig = await readFile(freshConfigPath, "utf8");
   const freshIgnore = await readFile(join(freshRoot, ".gitignore"), "utf8");
   const freshInit = runInit(freshRoot);
   assert.equal(freshInit.data.mode, "current-template");
@@ -177,7 +213,69 @@ try {
     "supabase.authentication",
   );
 
-  const freshConfigPath = join(freshRoot, "rehearsal.config.mjs");
+  await appendFile(freshConfigPath, "\n// repeat-install canary\n");
+  const beforeRepeatInstall = await readFile(freshConfigPath, "utf8");
+  await rm(join(freshRoot, "node_modules/@rehearsal-db/core"), {
+    recursive: true,
+    force: true,
+  });
+  const repeatInstallOutput = install(freshRoot, tarball);
+  assert.match(
+    repeatInstallOutput,
+    /Configuration: rehearsal\.config\.mjs \(existing\)/u,
+  );
+  assert.match(repeatInstallOutput, /review rehearsal\.config\.mjs/iu);
+  assert.equal(await readFile(freshConfigPath, "utf8"), beforeRepeatInstall);
+
+  const nestedRoot = join(temporaryRoot, "nested-config-consumer");
+  await createConsumer(nestedRoot, "nested-config-consumer");
+  const nestedConfigPath = join(
+    nestedRoot,
+    "infrastructure/rehearsal/rehearsal.config.mjs",
+  );
+  await mkdir(join(nestedRoot, "infrastructure/rehearsal"), {
+    recursive: true,
+  });
+  const nestedConfig = existingSupabaseConfig("nested-config-consumer");
+  await writeFile(nestedConfigPath, nestedConfig);
+  const nestedInstallOutput = install(nestedRoot, tarball);
+  assert.match(
+    nestedInstallOutput,
+    /Configuration: infrastructure\/rehearsal\/rehearsal\.config\.mjs \(existing\)/u,
+  );
+  assert.match(
+    nestedInstallOutput,
+    /rehearsal\.config\.mjs was not created because Rehearsal preserves one active configuration/iu,
+  );
+  assert.equal(await readFile(nestedConfigPath, "utf8"), nestedConfig);
+  await assert.rejects(readFile(join(nestedRoot, "rehearsal.config.mjs")), {
+    code: "ENOENT",
+  });
+  const nestedInit = runInit(nestedRoot);
+  assert.equal(
+    nestedInit.data.destination,
+    "infrastructure/rehearsal/rehearsal.config.mjs",
+  );
+
+  const existingRoot = join(temporaryRoot, "existing-root-consumer");
+  await createConsumer(existingRoot, "existing-root-consumer");
+  const existingRootConfigPath = join(existingRoot, "rehearsal.config.mjs");
+  const existingRootConfig = existingSupabaseConfig("existing-root-consumer");
+  await writeFile(existingRootConfigPath, existingRootConfig);
+  const existingRootInstallOutput = install(existingRoot, tarball);
+  assert.match(
+    existingRootInstallOutput,
+    /Configuration: rehearsal\.config\.mjs \(existing\)/u,
+  );
+  assert.doesNotMatch(
+    existingRootInstallOutput,
+    /rehearsal\.config\.mjs was not created/iu,
+  );
+  assert.equal(
+    await readFile(existingRootConfigPath, "utf8"),
+    existingRootConfig,
+  );
+
   const freshRuntimeConfigPath = join(
     freshRoot,
     "infrastructure/rehearsal/supabase/config.toml",
@@ -326,6 +424,10 @@ try {
         artifactSha256,
         freshRootConfigCreated: true,
         freshRootConfigValidated: true,
+        freshInstallReportedActiveConfig: true,
+        nestedConfigPreservedAndReported: true,
+        existingRootConfigPreservedAndReported: true,
+        repeatInstallPreservedAndReported: true,
         postgresqlRootConfigCreated: true,
         occupiedPortRefusedBeforeRecovery: true,
         partialSetupRecovered: true,

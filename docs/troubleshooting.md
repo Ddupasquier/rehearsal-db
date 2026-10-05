@@ -32,7 +32,11 @@ npx rehearsal
 
 Choose **Set the stage** and approve the preview. For pnpm and Yarn, use this guided path;
 automatic root generation is currently tested with npm. An existing supported config is
-kept in place, including `infrastructure/rehearsal/rehearsal.config.mjs`.
+kept in place, including `infrastructure/rehearsal/rehearsal.config.mjs`. When npm shows
+lifecycle output, the install message names the active path and explains when that
+existing file prevented `rehearsal.config.mjs` from being generated. You can always run
+`npx rehearsal init --json` and read `data.destination`. To relocate it safely, follow
+[Move an existing config to the project root](configuration.md#move-an-existing-config-to-the-project-root).
 
 ## Setup says this Node.js version is unsupported
 

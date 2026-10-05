@@ -46,6 +46,26 @@ const documentedCommands = [
 ];
 
 describe("documented CLI contract", () => {
+  it("documents safe configuration discovery and root relocation", async () => {
+    const configuration = await readFile(
+      join(root, "docs/configuration.md"),
+      "utf8",
+    );
+    const normalized = configuration.replace(/\s+/gu, " ");
+
+    expect(configuration).toContain(
+      "infrastructure/rehearsal/rehearsal.config.mjs",
+    );
+    expect(configuration).toContain("npx rehearsal init --json");
+    expect(configuration).toContain("Move—do not copy");
+    expect(normalized).toContain(
+      "Imports resolve from the config file's own folder",
+    );
+    expect(normalized).toContain(
+      "Rehearsal resolves those values from the project root",
+    );
+  });
+
   it("keeps generated configuration sections represented in the reference", async () => {
     const detected = {
       projectName: "contract-app",
