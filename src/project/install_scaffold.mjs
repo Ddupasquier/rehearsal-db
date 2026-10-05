@@ -138,6 +138,31 @@ const uniqueProjects = (projects) => [
 
 const skip = (reason) => ({ status: "skipped", reason });
 
+export const renderInstalledRehearsalScaffold = (result) => {
+  if (result.status !== "ready") {
+    return `Rehearsal did not create project files: ${result.reason}.\nNext: run npx rehearsal from the application directory.`;
+  }
+  const changed = result.files.filter((file) => file.action !== "unchanged");
+  return [
+    "Rehearsal is ready in this project.",
+    `Configuration: ${result.configurationPath} (${result.configurationAction === "create" ? "created" : "existing"})`,
+    ...(result.rootConfigGenerationSkipped
+      ? [
+          `  Existing supported configuration detected at ${result.configurationPath}.`,
+          "  rehearsal.config.mjs was not created because Rehearsal preserves one active configuration and never creates a competing file.",
+        ]
+      : []),
+    ...(changed.length
+      ? [
+          ...changed.map(
+            (file) => `  ${file.action === "create" ? "+" : "~"} ${file.path}`,
+          ),
+        ]
+      : ["  Existing Rehearsal files preserved."]),
+    `Next: review ${result.configurationPath}, then run npx rehearsal.`,
+  ].join("\n");
+};
+
 export const resolveRehearsalConsumerRoot = async ({
   packageRoot,
   initCwd,
@@ -281,11 +306,20 @@ export const createInstalledRehearsalScaffold = async ({
     isPortAvailable,
   });
   const result = await applyRehearsalSetup(plan);
-  await loadRehearsalConfig({ projectRoot: resolution.projectRoot });
+  const loaded = await loadRehearsalConfig({
+    projectRoot: resolution.projectRoot,
+  });
+  const configurationPath = relative(resolution.projectRoot, loaded.configPath);
+  const configurationAction =
+    result.files.find(({ path }) => path === configurationPath)?.action ??
+    "unchanged";
   return {
     status: "ready",
     projectRoot: resolution.projectRoot,
     target: plan.target,
     files: result.files,
+    configurationPath,
+    configurationAction,
+    rootConfigGenerationSkipped: configurationPath !== "rehearsal.config.mjs",
   };
 };

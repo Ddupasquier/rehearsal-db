@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createInstalledRehearsalScaffold,
+  renderInstalledRehearsalScaffold,
   resolveRehearsalConsumerRoot,
 } from "../../../src/project/install_scaffold.mjs";
 
@@ -67,7 +68,16 @@ describe("install-time project scaffolding", () => {
       isPortAvailable: async () => true,
     });
 
-    expect(result).toMatchObject({ status: "ready", target: "supabase" });
+    expect(result).toMatchObject({
+      status: "ready",
+      target: "supabase",
+      configurationPath: "rehearsal.config.mjs",
+      configurationAction: "create",
+      rootConfigGenerationSkipped: false,
+    });
+    expect(renderInstalledRehearsalScaffold(result)).toContain(
+      "Configuration: rehearsal.config.mjs (created)",
+    );
     const [config, localConfig, gitignore] = await Promise.all([
       readFile(join(root, "rehearsal.config.mjs"), "utf8"),
       readFile(
@@ -113,6 +123,14 @@ describe("install-time project scaffolding", () => {
 
     expect(repeated.files.every((file) => file.action === "unchanged")).toBe(
       true,
+    );
+    expect(repeated).toMatchObject({
+      configurationPath: "rehearsal.config.mjs",
+      configurationAction: "unchanged",
+      rootConfigGenerationSkipped: false,
+    });
+    expect(renderInstalledRehearsalScaffold(repeated)).toContain(
+      "Next: review rehearsal.config.mjs, then run npx rehearsal.",
     );
     expect(await readFile(configPath, "utf8")).toBe(
       `${original}\n// user-owned marker\n`,
@@ -168,7 +186,17 @@ describe("install-time project scaffolding", () => {
       },
     });
 
-    expect(result.status).toBe("ready");
+    expect(result).toMatchObject({
+      status: "ready",
+      configurationPath: "infrastructure/rehearsal/rehearsal.config.mjs",
+      configurationAction: "unchanged",
+      rootConfigGenerationSkipped: true,
+    });
+    const message = renderInstalledRehearsalScaffold(result);
+    expect(message).toContain(
+      "Configuration: infrastructure/rehearsal/rehearsal.config.mjs (existing)",
+    );
+    expect(message).toContain("rehearsal.config.mjs was not created");
     await expect(
       readFile(join(root, "rehearsal.config.mjs")),
     ).rejects.toMatchObject({ code: "ENOENT" });

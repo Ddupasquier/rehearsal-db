@@ -45,7 +45,9 @@ For an ordinary npm application install, Rehearsal safely creates a commented
 `rehearsal.config.mjs` in the project root, adds only its local-artifact entries to
 `.gitignore`, and prepares the isolated local runtime configuration. It detects the
 project name, database target, migration paths, commands, and free ports. Review lines
-marked `CHECK`, then open the guide. Existing files are never overwritten.
+marked `CHECK`, then open the guide. Existing files are never overwritten. If a supported
+root or nested config already exists, Rehearsal reports that active path and does not
+create a competing file; see [Configuration](docs/configuration.md#workspaces-and-custom-paths).
 
 If install scripts are disabled or the workspace root is ambiguous, installation makes
 no guess. Run `npx rehearsal` inside the application and choose **Set the stage** for the

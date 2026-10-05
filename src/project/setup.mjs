@@ -374,6 +374,9 @@ export const planRehearsalSetup = async ({
   ];
   return {
     projectRoot: root,
+    configurationPath: existingConfigPath
+      ? relative(root, existingConfigPath)
+      : CONFIG_PATH,
     project: detected.projectName,
     projectId,
     target: runtimeTarget,
@@ -444,6 +447,11 @@ export const applyRehearsalSetup = async (plan) => {
 
 export const summarizeRehearsalSetup = (plan, { mode }) => ({
   mode,
+  configurationPath: plan.configurationPath,
+  configurationAction:
+    plan.files.find((file) => file.path === plan.configurationPath)?.action ??
+    "unchanged",
+  rootConfigGenerationSkipped: plan.configurationPath !== CONFIG_PATH,
   project: plan.project,
   projectId: plan.projectId,
   target: plan.target,
@@ -461,6 +469,6 @@ export const summarizeRehearsalSetup = (plan, { mode }) => ({
   safety: plan.safety,
   nextAction:
     mode === "written"
-      ? "Review the generated commands and sanitization policy path, then run rehearsal doctor."
+      ? `Review ${plan.configurationPath}, including its commands and sanitization policy path, then run rehearsal doctor.`
       : "Review this plan, then rerun rehearsal setup --write to create it.",
 });

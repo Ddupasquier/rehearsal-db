@@ -48,6 +48,11 @@ especially:
 - the application start and proof commands;
 - the local ports.
 
+If a supported configuration already exists elsewhere—such as
+`infrastructure/rehearsal/rehearsal.config.mjs`—the installer reports that exact active
+path and does not generate a competing root file. Keep using it, or follow the explicit
+[root relocation guide](configuration.md#move-an-existing-config-to-the-project-root).
+
 If lifecycle scripts were disabled, a global/cache install was used, or a workspace has
 more than one possible application, no project files are created automatically. Run
 `npx rehearsal` inside the intended application, choose **Set the stage**, select

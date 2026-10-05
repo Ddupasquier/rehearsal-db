@@ -270,6 +270,18 @@ export const renderSetup = (result) => {
   return [
     `REHEARSAL SETUP — ${result.mode.toUpperCase()}`,
     `Project: ${result.project}`,
+    `Configuration: ${result.configurationPath} (${
+      result.configurationAction === "create"
+        ? result.mode === "written"
+          ? "created"
+          : "will create"
+        : "existing"
+    })`,
+    ...(result.rootConfigGenerationSkipped
+      ? [
+          "Root config: not created because the existing supported configuration remains active.",
+        ]
+      : []),
     `Database: ${result.target === "postgresql" ? "PostgreSQL" : "Supabase"}`,
     `Runtime ID: ${result.projectId}`,
     `Application: ${result.applicationUrl}`,

@@ -165,7 +165,8 @@ const runSetup = async ({ flags, planOptions }) => {
   return {
     ...result,
     readiness,
-    nextAction:
+    nextAction: [
+      `Review ${result.configurationPath}.`,
       readiness.state === "READY"
         ? "Next: run rehearsal explain to review the migration plan."
         : needsBaselinePolicy
@@ -173,6 +174,7 @@ const runSetup = async ({ flags, planOptions }) => {
             ? "Next: choose Prepare the script to create a reviewable policy draft."
             : "Next: run rehearsal again and choose Prepare a reviewable baseline policy draft."
           : "Next: complete the remaining readiness items shown above.",
+    ].join("\n"),
   };
 };
 

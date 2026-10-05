@@ -12,11 +12,17 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   ports, malformed configuration, and non-destructive partial-setup recovery.
 - The independent test lab can run the same first-install boundary against an exact
   candidate tarball before either database lifecycle.
+- Installation and setup now report the exact active Rehearsal configuration path and
+  explain when a supported existing nested config prevents root-file generation.
+- Packed-package onboarding covers fresh, nested, existing-root, and repeated installs
+  while proving reviewed configuration bytes are preserved.
 
 ### Documentation
 
 - First-time users now have a short recovery table for interrupted setup, failed
   upgrades, port conflicts, missing OAuth credentials, and low Docker capacity.
+- The configuration guide documents a safe manual move to the project root, separating
+  config-file-relative JavaScript imports from project-root-relative Rehearsal paths.
 
 ## [0.1.0-beta.13] - 2026-10-05
 
