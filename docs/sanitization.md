@@ -69,7 +69,7 @@ environment-variable name and SHA-256 receipt:
           "action": "PSEUDONYMIZE",
           "recipe": { "format": "uuid", "namespace": "account-id" },
           "generated": "NEVER",
-          "identity": "YES",
+          "identity": "NO",
           "foreignKey": null
         },
         {
@@ -101,8 +101,12 @@ node -e 'const {createHash}=require("node:crypto"); process.stdout.write(createH
 
 Every conditional table names its owner column. Missing bindings, hash mismatches,
 missing owner columns, null/unsupported owner values, and conditionals without an owner
-binding are refused. The owner column must be marked `identity: "YES"` and use
-`PSEUDONYMIZE`, preventing a conditional policy from retaining raw account IDs. Other
+binding are refused. The owner column must use `PSEUDONYMIZE`, preventing a conditional
+policy from retaining raw account IDs. `identity` describes PostgreSQL's generated SQL
+identity metadata, not whether a value identifies a person: ordinary UUID primary keys
+use `"NO"`, while a genuine `GENERATED ... AS IDENTITY` column uses `"YES"`. Rehearsal
+checks the restored PostgreSQL schema for a real backing sequence before attempting a
+sequence reset, so UUID identity values never receive numeric sequence operations. Other
 owners take the declared `otherwise` path; every other identity-bearing field still
 needs its own pseudonymization declaration. Supply the binding only to the local
 server-side Rehearsal process; do not put it in the policy, baseline, or tracked files.

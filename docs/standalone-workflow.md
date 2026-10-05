@@ -68,6 +68,10 @@ current activation. Invalid estimates, malformed batches, connection loss, inter
 and disk or configured-limit failures remove private staging and preserve the previously
 active baseline.
 
+Cleanup recursively makes only Rehearsal's private staging tree removable. A failed
+Storage transfer therefore reports the original safe transfer error, removes incomplete
+files, and does not alter the active generation.
+
 Storage objects do not share the database transaction guarantee. Their inventory records
 size and version metadata; transfer requires that version, verifies the exact byte count,
 and records a SHA-256 in the immutable baseline. Transfer refuses an object that changes,

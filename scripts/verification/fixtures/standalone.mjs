@@ -160,9 +160,11 @@ $$;
     const applicationPort = ports.api;
     projectId = `rehearsal-standalone-${process.pid}`;
     const sourcePassword = "synthetic-source-password";
+    const approvedOwnerId = "11111111-1111-4111-8111-111111111111";
     const sourceAdminUrl = `postgresql://postgres:${sourcePassword}@127.0.0.1:${sourcePort}/postgres`;
     const sourceEnvironment = {
       REHEARSAL_SOURCE_ADMIN_URL: sourceAdminUrl,
+      REHEARSAL_APPROVED_OWNER_ID: approvedOwnerId,
     };
 
     run(
@@ -213,6 +215,14 @@ insert into public.widgets (id, name, created_at, owner_id)
 overriding system value values (41, 'private-source-canary', '2026-01-01T00:00:00Z', '11111111-1111-4111-8111-111111111111');
 insert into audit.entries (id, message)
 values (7, 'private-audit-canary');
+insert into public.profiles (id, display_name, avatar_path, created_at, updated_at)
+values (
+  '${approvedOwnerId}',
+  'private-approved-owner-name',
+  '${approvedOwnerId}/avatar.png',
+  '2026-01-01T00:00:00Z',
+  '2026-01-01T01:00:00Z'
+);
 `,
       },
     );
@@ -342,6 +352,24 @@ process.on("SIGTERM", () => server.close());
               orderBy: ["id"],
               rowScope: { kind: "approved-public" },
             },
+            {
+              source: { schema: "public", table: "profiles" },
+              view: "approved_owner_profiles",
+              targetTable: "profiles",
+              columns: [
+                "id",
+                "display_name",
+                "avatar_path",
+                "created_at",
+                "updated_at",
+              ],
+              orderBy: ["id"],
+              rowScope: {
+                kind: "approved-owner",
+                column: "id",
+                valueEnvironmentVariable: "REHEARSAL_APPROVED_OWNER_ID",
+              },
+            },
           ],
           assets: [],
         },
@@ -355,6 +383,23 @@ process.on("SIGTERM", () => server.close());
         {
           policyVersion: 2,
           migrationCutoff: "20260101000000",
+          bindings: {
+            "approved-owner": {
+              environmentVariable: "REHEARSAL_APPROVED_OWNER_ID",
+              approvedValueSha256: createHash("sha256")
+                .update(approvedOwnerId)
+                .digest("hex"),
+            },
+          },
+          pathMappings: {
+            "owner-storage": {
+              binding: "approved-owner",
+              format: "uuid",
+              namespace: "account-id",
+              maximumBytes: 512,
+              maximumSegments: 4,
+            },
+          },
           tables: [
             {
               name: "widgets",
@@ -408,6 +453,74 @@ process.on("SIGTERM", () => server.close());
                   name: "message",
                   action: "REPLACE",
                   recipe: { kind: "constant", value: "Safe audit event" },
+                  generated: "NEVER",
+                  identity: "NO",
+                  foreignKey: null,
+                },
+              ],
+            },
+            {
+              name: "profiles",
+              sourceRows: "STREAM AND SANITIZE",
+              ownerBinding: {
+                binding: "approved-owner",
+                column: "id",
+              },
+              columns: [
+                {
+                  name: "id",
+                  action: "PSEUDONYMIZE",
+                  recipe: { format: "uuid", namespace: "account-id" },
+                  generated: "NEVER",
+                  identity: "NO",
+                  foreignKey: null,
+                },
+                {
+                  name: "display_name",
+                  action: "DERIVE",
+                  recipe: {
+                    kind: "approved-owner",
+                    approved: { action: "KEEP" },
+                    otherwise: {
+                      action: "REPLACE",
+                      recipe: {
+                        kind: "constant",
+                        value: "Synthetic profile",
+                      },
+                    },
+                  },
+                  generated: "NEVER",
+                  identity: "NO",
+                  foreignKey: null,
+                },
+                {
+                  name: "avatar_path",
+                  action: "DERIVE",
+                  recipe: { kind: "path-map", mapping: "owner-storage" },
+                  generated: "NEVER",
+                  identity: "NO",
+                  foreignKey: null,
+                },
+                {
+                  name: "created_at",
+                  action: "DERIVE",
+                  recipe: {
+                    kind: "date-shift",
+                    days: 7,
+                    group: "profile-time",
+                  },
+                  generated: "NEVER",
+                  identity: "NO",
+                  foreignKey: null,
+                },
+                {
+                  name: "updated_at",
+                  action: "DERIVE",
+                  recipe: {
+                    kind: "date-shift",
+                    days: 7,
+                    group: "profile-time",
+                  },
                   generated: "NEVER",
                   identity: "NO",
                   foreignKey: null,
@@ -577,6 +690,64 @@ process.on("SIGTERM", () => server.close());
       ],
       { cwd },
     );
+    await writeFile(
+      join(cwd, "installed-cleanup-proof.mjs"),
+      `import assert from "node:assert/strict";
+import { mkdir, readlink, rm } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  createAndActivateBaseline,
+  listIncompleteBaselineBuilds,
+  removeBaselineArtifactRoot,
+} from "@rehearsal-db/core/baseline";
+
+const proofRoot = join(process.cwd(), "cleanup-proof");
+const artifactRoot = join(proofRoot, ".rehearsal");
+await mkdir(proofRoot, { recursive: true });
+const metadata = {
+  migrationCutoff: "20260101000000",
+  migrationHistorySha256: "a".repeat(64),
+  sanitizationPolicySha256: "b".repeat(64),
+};
+try {
+  await createAndActivateBaseline({
+    artifactRoot,
+    generationId: "20261004T120000Z-131313131313",
+    metadata,
+    records: [],
+  });
+  const before = await readlink(join(artifactRoot, "current"));
+  async function* failingAssets() {
+    yield {
+      bucket: "avatars",
+      objectPath: "safe/avatar.png",
+      content: Buffer.from("safe asset"),
+    };
+    throw new Error("Synthetic Storage response was HTTP 503.");
+  }
+  await assert.rejects(
+    createAndActivateBaseline({
+      artifactRoot,
+      generationId: "20261004T120100Z-141414141414",
+      metadata,
+      records: [],
+      migrationFiles: [{
+        filename: "20260101000000_baseline.sql",
+        content: "create table public.fixture(id bigint);\\n",
+      }],
+      assets: failingAssets(),
+    }),
+    /Storage response was HTTP 503/,
+  );
+  assert.equal(await readlink(join(artifactRoot, "current")), before);
+  assert.deepEqual(await listIncompleteBaselineBuilds({ artifactRoot }), []);
+} finally {
+  await removeBaselineArtifactRoot({ artifactRoot }).catch(() => undefined);
+  await rm(proofRoot, { recursive: true, force: true });
+}
+`,
+    );
+    run(process.execPath, ["installed-cleanup-proof.mjs"], { cwd });
 
     executeCliOrThrow({
       cwd,
@@ -623,10 +794,13 @@ process.on("SIGTERM", () => server.close());
         cwd,
         label: "baseline refresh",
         args: ["baseline", "refresh", "--json"],
+        environment: sourceEnvironment,
       }).stdout,
     ).data;
-    if (refreshed.manifest?.rowCount !== 2) {
-      throw new Error("Standalone refresh did not stream both source schemas.");
+    if (refreshed.manifest?.rowCount !== 3) {
+      throw new Error(
+        "Standalone refresh did not stream both schemas and the approved UUID owner.",
+      );
     }
     const dataFile = await readFile(
       join(
@@ -645,16 +819,36 @@ process.on("SIGTERM", () => server.close());
     ) {
       throw new Error("Standalone privacy transformation did not fail closed.");
     }
+    const sanitizedProfile = dataFile
+      .trim()
+      .split("\n")
+      .map(JSON.parse)
+      .find((record) => record.table === "profiles");
+    if (
+      !sanitizedProfile ||
+      sanitizedProfile.row.id === approvedOwnerId ||
+      sanitizedProfile.row.avatar_path !==
+        `${sanitizedProfile.row.id}/avatar.png` ||
+      Date.parse(sanitizedProfile.row.updated_at) -
+        Date.parse(sanitizedProfile.row.created_at) !==
+        60 * 60 * 1_000
+    ) {
+      throw new Error(
+        "Standalone UUID owner, Storage path, or grouped timestamps were not sanitized coherently.",
+      );
+    }
     const replacementPlan = JSON.parse(
       executeCliOrThrow({
         cwd,
         label: "refresh preview",
         args: ["refresh", "--json"],
+        environment: sourceEnvironment,
       }).stdout,
     ).data.plan;
     const wrongRefresh = executeCli({
       cwd,
       args: ["refresh", `--confirm-refresh=${"0".repeat(64)}`, "--json"],
+      environment: sourceEnvironment,
     });
     if (wrongRefresh.status === 0) {
       throw new Error(
@@ -670,6 +864,7 @@ process.on("SIGTERM", () => server.close());
           `--confirm-refresh=${replacementPlan.digest}`,
           "--json",
         ],
+        environment: sourceEnvironment,
       }).stdout,
     ).data;
     if (
@@ -780,17 +975,24 @@ grant usage on schema public to ${externalOwner};
 grant usage on schema audit to ${externalOwner};
 grant select (id, name, created_at, owner_id) on public.widgets to ${externalOwner};
 grant select (id, message) on audit.entries to ${externalOwner};
+grant select (id, display_name, avatar_path, created_at, updated_at) on public.profiles to ${externalOwner};
 set role ${externalOwner};
 create view ${externalSchema}.widgets with (security_barrier = true) as
 select id, name, created_at, owner_id from public.widgets;
 create view ${externalSchema}.audit_entries with (security_barrier = true) as
 select id, message from audit.entries;
+create view ${externalSchema}.approved_owner_profiles with (security_barrier = true) as
+select id, display_name, avatar_path, created_at, updated_at
+from public.profiles
+where id = '${approvedOwnerId}'::uuid;
 reset role;
 revoke all on ${externalSchema}.widgets from public;
 revoke all on ${externalSchema}.audit_entries from public;
+revoke all on ${externalSchema}.approved_owner_profiles from public;
 grant usage on schema ${externalSchema} to ${externalReader};
 grant select on ${externalSchema}.widgets to ${externalReader};
 grant select on ${externalSchema}.audit_entries to ${externalReader};
+grant select on ${externalSchema}.approved_owner_profiles to ${externalReader};
 grant usage on schema supabase_migrations to ${externalReader};
 grant select (version, name, statements)
 on supabase_migrations.schema_migrations to ${externalReader};
@@ -863,6 +1065,39 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
         },
       },
     );
+    const canonicalProfileViewDefinition = run(
+      "docker",
+      [
+        "exec",
+        sourceName,
+        "psql",
+        "--quiet",
+        "--no-align",
+        "--tuples-only",
+        "--username",
+        "postgres",
+        "--dbname",
+        "postgres",
+        "--command",
+        `select pg_get_viewdef('${externalSchema}.approved_owner_profiles'::regclass, false)`,
+      ],
+      { cwd },
+    ).trim();
+    const externalProfileViewFingerprint = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `import { externalViewDefinitionFingerprint } from "@rehearsal-db/core/source-access";
+process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIEW_DEFINITION));`,
+      ],
+      {
+        cwd,
+        environment: {
+          REHEARSAL_VIEW_DEFINITION: canonicalProfileViewDefinition,
+        },
+      },
+    );
     const externalReaderUrl = `postgresql://${externalReader}:${externalPassword}@127.0.0.1:${sourcePort}/postgres`;
     await writeFile(
       join(cwd, "rehearsal/source-access-policy.json"),
@@ -905,6 +1140,25 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
               rowScope: { kind: "approved-public" },
               viewDefinitionSha256: externalAuditViewFingerprint,
             },
+            {
+              source: { schema: "public", table: "profiles" },
+              view: "approved_owner_profiles",
+              targetTable: "profiles",
+              columns: [
+                "id",
+                "display_name",
+                "avatar_path",
+                "created_at",
+                "updated_at",
+              ],
+              orderBy: ["id"],
+              rowScope: {
+                kind: "approved-owner",
+                column: "id",
+                valueEnvironmentVariable: "REHEARSAL_APPROVED_OWNER_ID",
+              },
+              viewDefinitionSha256: externalProfileViewFingerprint,
+            },
           ],
           assets: [],
         },
@@ -914,6 +1168,7 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
     );
     const externalEnvironment = {
       REHEARSAL_SOURCE_READER_URL: externalReaderUrl,
+      REHEARSAL_APPROVED_OWNER_ID: approvedOwnerId,
     };
     const externalPlan = JSON.parse(
       executeCliOrThrow({
@@ -942,11 +1197,12 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
         cwd,
         label: "external baseline refresh",
         args: ["baseline", "refresh", "--json"],
+        environment: externalEnvironment,
       }).stdout,
     ).data;
-    if (externalRefresh.manifest?.rowCount !== 10_002) {
+    if (externalRefresh.manifest?.rowCount !== 10_003) {
       throw new Error(
-        "External reader did not stream the expected 10,002 rows across two schemas.",
+        "External reader did not stream the expected 10,003 rows across two schemas and a UUID owner.",
       );
     }
     const externalRetirement = JSON.parse(
@@ -983,7 +1239,8 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
         `select exists(select 1 from pg_roles where rolname = '${externalReader}')
           and exists(select 1 from pg_roles where rolname = '${externalOwner}')
           and to_regclass('${externalSchema}.widgets') is not null
-          and to_regclass('${externalSchema}.audit_entries') is not null`,
+          and to_regclass('${externalSchema}.audit_entries') is not null
+          and to_regclass('${externalSchema}.approved_owner_profiles') is not null`,
       ],
       { cwd },
     ).trim();
@@ -1043,6 +1300,50 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
       ],
       { cwd },
     ).trim();
+    const generatedIdentity = Number(
+      run(
+        "docker",
+        [
+          "exec",
+          runtimeContainer,
+          "psql",
+          "--quiet",
+          "--no-align",
+          "--tuples-only",
+          "--username",
+          "postgres",
+          "--dbname",
+          "postgres",
+          "--command",
+          "insert into public.widgets (name, created_at) values ('sequence-proof', now()) returning id",
+        ],
+        { cwd },
+      ).trim(),
+    );
+    if (
+      !Number.isSafeInteger(generatedIdentity) ||
+      generatedIdentity <= 10_999
+    ) {
+      throw new Error(
+        "The genuine numeric identity sequence was not advanced after restore.",
+      );
+    }
+    run(
+      "docker",
+      [
+        "exec",
+        runtimeContainer,
+        "psql",
+        "--quiet",
+        "--username",
+        "postgres",
+        "--dbname",
+        "postgres",
+        "--command",
+        `delete from public.widgets where id = ${generatedIdentity}`,
+      ],
+      { cwd },
+    );
     run(
       "docker",
       [
@@ -1232,8 +1533,11 @@ where id = '22222222-2222-4222-8222-222222222222';
           sourceAccessRetired: true,
           externalReaderVerified: true,
           externalProviderResourcesPreserved: true,
-          streamedRows: 10_002,
+          streamedRows: 10_003,
           unrelatedTargetSchemasVerified: 2,
+          approvedOwnerUuidRestoreVerified: true,
+          numericIdentitySequenceVerified: true,
+          failedAssetCleanupVerified: true,
           refreshAndReplaceVerified: true,
           rawCanaryExcluded: true,
           runtimePolicyVerified: true,

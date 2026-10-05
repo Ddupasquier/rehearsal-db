@@ -93,7 +93,7 @@ try {
                   format: "uuid",
                   namespace: "account-id",
                 },
-                { identity: "YES" },
+                { identity: "NO" },
               ),
               column("avatar_path", "DERIVE", {
                 kind: "path-map",

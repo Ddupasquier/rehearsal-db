@@ -509,12 +509,9 @@ export const validateExecutablePrivacyPolicy = (policy) => {
         throw new Error(`${label}.ownerBinding references an unknown column.`);
       }
       const ownerColumn = columns.find((entry) => entry.name === column);
-      if (
-        ownerColumn.action !== "PSEUDONYMIZE" ||
-        ownerColumn.identity !== "YES"
-      ) {
+      if (ownerColumn.action !== "PSEUDONYMIZE") {
         throw new Error(
-          `${label}.ownerBinding column must be an explicitly pseudonymized identity.`,
+          `${label}.ownerBinding column must be explicitly pseudonymized.`,
         );
       }
       ownerBinding = Object.freeze({ binding, column });

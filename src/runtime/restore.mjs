@@ -194,11 +194,19 @@ const buildIdentitySequenceSql = (table) =>
       const schema = tableSchema(table);
       const relation = qualifiedRelation(table);
       const columnName = quoteIdentifier(column.name);
-      return `select setval(
-	pg_get_serial_sequence(${quoteLiteral(`${schema}.${table.name}`)}, ${quoteLiteral(column.name)}),
-	coalesce((select max(${columnName}) from ${relation}), 1),
-	exists(select 1 from ${relation})
-);`;
+      const sequenceValueQuery = `select max(${columnName})::bigint, exists(select 1 from ${relation}) from ${relation}`;
+      return `do $rehearsal_sequence$
+declare
+	sequence_name text := pg_get_serial_sequence(${quoteLiteral(`${schema}.${table.name}`)}, ${quoteLiteral(column.name)});
+	maximum_value bigint;
+	has_rows boolean;
+begin
+	if sequence_name is not null then
+		execute ${quoteLiteral(sequenceValueQuery)} into maximum_value, has_rows;
+		perform setval(sequence_name, coalesce(maximum_value, 1), has_rows);
+	end if;
+end
+$rehearsal_sequence$;`;
     })
     .join("\n");
 

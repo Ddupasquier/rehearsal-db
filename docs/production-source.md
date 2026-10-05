@@ -271,6 +271,12 @@ limit overruns, and low disk also leave the previous baseline active. Because `b
 refresh` never resets the runtime, local runtime edits remain in place whether that
 baseline-only preparation succeeds or fails.
 
+Privacy `identity` metadata describes PostgreSQL `GENERATED ... AS IDENTITY`, not a
+person or account identifier. UUID account keys normally use `identity: "NO"` while
+remaining explicitly pseudonymized. During restore, Rehearsal consults the actual local
+table for a backing sequence before resetting it; UUID columns never receive numeric
+`max` or `setval` operations.
+
 Storage cannot share PostgreSQL's transaction snapshot. Rehearsal instead verifies each
 object's inventory version and byte count during transfer, then records its SHA-256 in
 the immutable baseline. For an identity-aware path, the database reference and physical

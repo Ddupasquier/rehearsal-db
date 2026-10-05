@@ -22,7 +22,7 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - Related timestamps can share a named deterministic date-shift group, preserving their
   ordering and duration without consumer callbacks.
 - The baseline verification corpus now exercises two unrelated target schemas, a
-  10,002-row packed-package stream, concurrent row/schema/ledger changes, malformed and
+  10,003-row packed-package stream, concurrent row/schema/ledger changes, malformed and
   truncated results, connection loss, low disk, interruption, and deterministic
   fixed-key output.
 
@@ -32,6 +32,12 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   oversized PostgreSQL estimate and cursor results before activation. Every preparation
   failure preserves the active baseline, removes private staging, and leaves an edited
   runtime untouched.
+- Approved-owner UUID columns are no longer confused with PostgreSQL sequence-backed
+  identities. Restore checks the actual local schema before resetting a sequence, while
+  genuine numeric identity columns retain correct next-value behavior.
+- A failed Storage transfer now recursively restores write permission only within its
+  owned staging tree, removes that incomplete generation, and preserves the original
+  safe preparation error instead of replacing it with a cleanup error.
 
 ## [0.1.0-beta.12] - 2026-10-04
 

@@ -99,7 +99,7 @@ describe("executable privacy engine", () => {
               action: "PSEUDONYMIZE",
               recipe: { format: "uuid", namespace: "account-id" },
               generated: "NEVER",
-              identity: "YES",
+              identity: "NO",
               foreignKey: null,
             },
             {
@@ -235,7 +235,7 @@ describe("executable privacy engine", () => {
           },
         ],
       }),
-    ).toThrow("explicitly pseudonymized identity");
+    ).toThrow("must be explicitly pseudonymized");
   });
 
   it("produces stable, shape-valid pseudonyms and removes excluded nested values", () => {
