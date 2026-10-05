@@ -42,6 +42,21 @@ const readError = (label, response) =>
     `${label} failed with HTTP ${response.status}; response content was withheld.`,
   );
 
+const canonicalContentType = (...values) => {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const mediaType = value.split(";", 1)[0].trim().toLowerCase();
+    if (
+      /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/u.test(
+        mediaType,
+      )
+    ) {
+      return mediaType;
+    }
+  }
+  return "application/octet-stream";
+};
+
 const responseBody = async function* ({
   response,
   expectedBytes,
@@ -174,10 +189,10 @@ export const streamApprovedSupabaseAssets = async function* ({
         yield {
           bucket: declaration.bucket,
           objectPath,
-          contentType:
-            download.headers.get("content-type") ??
-            object.metadata?.mimetype ??
-            "application/octet-stream",
+          contentType: canonicalContentType(
+            object.metadata?.mimetype,
+            download.headers.get("content-type"),
+          ),
           content: responseBody({
             response: download,
             expectedBytes,

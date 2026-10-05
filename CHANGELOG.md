@@ -38,6 +38,12 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - A failed Storage transfer now recursively restores write permission only within its
   owned staging tree, removes that incomplete generation, and preserves the original
   safe preparation error instead of replacing it with a cleanup error.
+- Storage preparation now records a canonical media type from reviewed object metadata,
+  removing response-only parameters such as a text charset that local bucket MIME
+  allowlists reject during restore.
+- Container startup and health failures are now classified as runtime dependency
+  failures and include safe Docker/Colima capacity context instead of being mislabeled
+  as migration verification failures.
 
 ## [0.1.0-beta.12] - 2026-10-04
 

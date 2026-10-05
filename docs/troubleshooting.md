@@ -54,6 +54,12 @@ writes setup files.
 Start Docker Desktop or Colima, confirm `docker info`, then rerun `rehearsal doctor`.
 Restarting the computer is rarely necessary.
 
+When a container stays in `starting` or becomes `unhealthy`, Rehearsal reports a runtime
+dependency failure rather than a migration failure. The safe diagnostic includes Docker
+CPU, memory, and container counts; Colima also includes available VM memory when it can
+be read. Stop unrelated local stacks or increase the engine's resources before retrying.
+Rehearsal never changes engine settings or bypasses service health checks.
+
 ## Docker or Colima is out of disk space
 
 Preview what Rehearsal can safely remove:

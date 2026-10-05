@@ -144,6 +144,43 @@ describe("approved Storage transfer", () => {
     );
   });
 
+  it("records a canonical Storage media type without response parameters", async () => {
+    const assets = [];
+    for await (const asset of streamApprovedSupabaseAssets({
+      baseUrl: "https://source.example.invalid",
+      token: "scoped-reader-token-value",
+      declarations: [{ bucket: "assets", prefix: "owner/" }],
+      fetchImplementation: async (url) =>
+        url.includes("/list/")
+          ? response({
+              body: JSON.stringify([
+                {
+                  name: "note.txt",
+                  metadata: {
+                    size: 4,
+                    eTag: '"v1"',
+                    mimetype: "text/plain",
+                  },
+                },
+              ]),
+            })
+          : response({
+              body: Buffer.from("safe"),
+              headers: {
+                etag: '"v1"',
+                "content-type": "text/plain; charset=UTF-8",
+              },
+            }),
+    })) {
+      for await (const _chunk of asset.content) {
+        // Consume the bounded stream so the transfer is fully verified.
+      }
+      assets.push(asset);
+    }
+
+    expect(assets[0].contentType).toBe("text/plain");
+  });
+
   it("rejects changed, oversized, traversal, and failed objects without response bodies", async () => {
     const inventory = (entry) => async (url) =>
       url.includes("/list/")

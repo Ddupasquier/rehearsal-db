@@ -94,6 +94,13 @@ export class RehearsalError extends Error {
 const inferCategory = (error) => {
   const message = String(error?.message ?? error);
   if (/checksum/iu.test(message)) return "baseline_checksum_mismatch";
+  if (
+    /container\b.*\b(?:is not ready|starting|unhealthy)|health(?:check)?\b.*\b(?:failed|starting|unhealthy)|out of memory|\boom\b|no space left|resource temporarily unavailable/iu.test(
+      message,
+    )
+  ) {
+    return "runtime_dependency_failure";
+  }
   if (/candidate|migration history diverges/iu.test(message)) {
     return "migration_candidate_failure";
   }
