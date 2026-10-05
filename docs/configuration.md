@@ -139,6 +139,13 @@ new optional key remains your decision. `npx rehearsal init --write` still refus
 replace an existing config. Rehearsal lists important optional settings that are
 available but not enabled before printing the template, so they are easier to find.
 
+If setup was interrupted after creating only some files, rerun
+`npx rehearsal setup --write`. It recreates missing generated files while preserving every
+existing config and local runtime file. When a config itself is invalid, keep it as a
+backup, generate a fresh file, and manually carry over only reviewed settings. See
+[Getting started](getting-started.md#if-setup-or-an-upgrade-is-interrupted) for the short
+recovery table.
+
 ### Workspaces and custom paths
 
 For an npm workspace, automatic creation proceeds only when exactly one application

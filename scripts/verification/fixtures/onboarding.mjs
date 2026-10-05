@@ -1,24 +1,30 @@
 /**
- * Prove root-config onboarding from the packed package and a published beta.11
- * upgrade without touching either consumer's existing configuration.
+ * Prove first-time Supabase/PostgreSQL onboarding and non-destructive recovery
+ * from the exact packed package, including an upgrade from the oldest retained
+ * beta configuration contract.
  */
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFile,
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   writeFile,
 } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const packageManifest = JSON.parse(
+  await readFile(join(repositoryRoot, "package.json"), "utf8"),
+);
 const temporaryRoot = await mkdtemp(
   join(tmpdir(), "rehearsal-onboarding-fixture-"),
 );
@@ -43,8 +49,14 @@ const run = (command, args, { cwd = repositoryRoot } = {}) => {
 
 const sha256 = (source) => createHash("sha256").update(source).digest("hex");
 
-const createConsumer = async (root, name) => {
-  await mkdir(join(root, "supabase/migrations"), { recursive: true });
+const createConsumer = async (root, name, { target = "supabase" } = {}) => {
+  await mkdir(
+    join(
+      root,
+      target === "supabase" ? "supabase/migrations" : "database/migrations",
+    ),
+    { recursive: true },
+  );
   await writeFile(
     join(root, "package.json"),
     `${JSON.stringify(
@@ -60,10 +72,12 @@ const createConsumer = async (root, name) => {
       2,
     )}\n`,
   );
-  await writeFile(
-    join(root, "supabase/config.toml"),
-    `project_id = ${JSON.stringify(name)}\n\n[db]\nmajor_version = 17\n`,
-  );
+  if (target === "supabase") {
+    await writeFile(
+      join(root, "supabase/config.toml"),
+      `project_id = ${JSON.stringify(name)}\n\n[db]\nmajor_version = 17\n`,
+    );
+  }
   await writeFile(join(root, ".gitignore"), "node_modules/\nproject-cache/\n");
 };
 
@@ -81,6 +95,52 @@ const runInit = (root) =>
     }),
   );
 
+const executeCli = (root, args, { environment = {} } = {}) =>
+  spawnSync(join(root, "node_modules/.bin/rehearsal"), args, {
+    cwd: root,
+    encoding: "utf8",
+    env: { ...process.env, ...environment },
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 16 * 1024 * 1024,
+  });
+
+const runCliJson = (root, args) => {
+  const result = executeCli(root, [...args, "--json"]);
+  assert.equal(
+    result.status,
+    0,
+    result.stderr || result.stdout || `${args.join(" ")} failed`,
+  );
+  return JSON.parse(result.stdout);
+};
+
+const enableGeneratedGoogleAuthentication = (source) => {
+  const start = source.indexOf("    // authentication: {");
+  const end = source.indexOf("\n  },\n\n  // Immutable", start);
+  assert.notEqual(
+    start,
+    -1,
+    "Generated Supabase config omitted authentication",
+  );
+  assert.notEqual(end, -1, "Generated Supabase authentication block changed");
+  const enabled = source.slice(start, end).replace(/^(\s*)\/\/ ?/gmu, "$1");
+  return `${source.slice(0, start)}${enabled}${source.slice(end)}`;
+};
+
+const listen = async (port) => {
+  const server = createServer();
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
+  return server;
+};
+
+const close = (server) =>
+  new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
+  );
+
 try {
   await mkdir(packedRoot, { recursive: true });
   const packed = JSON.parse(
@@ -93,7 +153,7 @@ try {
     ]),
   )[0];
   assert.equal(packed.name, "@rehearsal-db/core");
-  assert.equal(packed.version, "0.1.0-beta.12");
+  assert.equal(packed.version, packageManifest.version);
   const tarball = join(packedRoot, packed.filename);
   const artifactSha256 = sha256(await readFile(tarball));
 
@@ -117,40 +177,123 @@ try {
     "supabase.authentication",
   );
 
+  const freshConfigPath = join(freshRoot, "rehearsal.config.mjs");
+  const freshRuntimeConfigPath = join(
+    freshRoot,
+    "infrastructure/rehearsal/supabase/config.toml",
+  );
+  const beforeRecoveryConfig = await readFile(freshConfigPath, "utf8");
+  const databasePort = Number(
+    /databasePort:\s*(\d+)/u.exec(beforeRecoveryConfig)?.[1],
+  );
+  assert.ok(Number.isInteger(databasePort));
+  await rm(freshRuntimeConfigPath);
+  const occupiedServer = await listen(databasePort);
+  const occupied = executeCli(freshRoot, ["setup", "--write", "--json"]);
+  await close(occupiedServer);
+  assert.notEqual(occupied.status, 0);
+  assert.match(
+    `${occupied.stdout}\n${occupied.stderr}`,
+    /ports became occupied/iu,
+  );
+  await assert.rejects(readFile(freshRuntimeConfigPath, "utf8"), {
+    code: "ENOENT",
+  });
+  const recovered = runCliJson(freshRoot, ["setup", "--write"]);
+  assert.equal(
+    recovered.data.files.find(
+      ({ path }) => path === "infrastructure/rehearsal/supabase/config.toml",
+    )?.action,
+    "create",
+  );
+  assert.equal(await readFile(freshConfigPath, "utf8"), beforeRecoveryConfig);
+
+  const credentialCanary = "onboarding-secret-must-not-appear";
+  await writeFile(
+    freshConfigPath,
+    enableGeneratedGoogleAuthentication(beforeRecoveryConfig),
+  );
+  const missingCredentials = executeCli(freshRoot, ["doctor", "--json"], {
+    environment: {
+      REHEARSAL_GOOGLE_CLIENT_ID: credentialCanary,
+      REHEARSAL_GOOGLE_CLIENT_SECRET: credentialCanary,
+    },
+  });
+  assert.notEqual(missingCredentials.status, 0);
+  const missingCredentialReport = JSON.parse(missingCredentials.stdout);
+  const credentialCheck = missingCredentialReport.data.checks.find(
+    ({ id }) => id === "service-environment",
+  );
+  assert.equal(credentialCheck.status, "fail");
+  assert.match(credentialCheck.detail, /environment file is missing/iu);
+  assert.doesNotMatch(
+    missingCredentials.stdout,
+    new RegExp(credentialCanary, "u"),
+  );
+  await writeFile(freshConfigPath, beforeRecoveryConfig);
+
+  const postgresqlRoot = join(temporaryRoot, "fresh-postgresql-consumer");
+  await createConsumer(postgresqlRoot, "fresh-postgresql-consumer", {
+    target: "postgresql",
+  });
+  install(postgresqlRoot, tarball);
+  const postgresqlConfig = await readFile(
+    join(postgresqlRoot, "rehearsal.config.mjs"),
+    "utf8",
+  );
+  assert.match(postgresqlConfig, /target: "postgresql"/u);
+  assert.match(postgresqlConfig, /image: "postgres:17-alpine"/u);
+  assert.match(postgresqlConfig, /migrationDirectory: "database\/migrations"/u);
+  await assert.rejects(
+    readFile(
+      join(postgresqlRoot, "infrastructure/rehearsal/supabase/config.toml"),
+      "utf8",
+    ),
+    { code: "ENOENT" },
+  );
+  const postgresqlConfigPath = join(postgresqlRoot, "rehearsal.config.mjs");
+  await writeFile(
+    postgresqlConfigPath,
+    postgresqlConfig.replace('target: "postgresql"', 'target: "sqlite"'),
+  );
+  const unsupportedTarget = executeCli(postgresqlRoot, ["doctor", "--json"]);
+  assert.notEqual(unsupportedTarget.status, 0);
+  assert.match(
+    unsupportedTarget.stdout,
+    /unsupported rehearsal (?:runtime )?target: sqlite/iu,
+  );
+  await writeFile(postgresqlConfigPath, postgresqlConfig);
+
+  const malformedRoot = join(temporaryRoot, "malformed-consumer");
+  await createConsumer(malformedRoot, "malformed-onboarding-consumer");
+  const malformedPath = join(malformedRoot, "rehearsal.config.mjs");
+  const malformedSource =
+    "export default { schemaVersion: 999, runtime: { target: 'sqlite' } };\n";
+  await writeFile(malformedPath, malformedSource);
+  install(malformedRoot, tarball);
+  assert.equal(await readFile(malformedPath, "utf8"), malformedSource);
+  const malformedDoctor = executeCli(malformedRoot, ["doctor", "--json"]);
+  assert.notEqual(malformedDoctor.status, 0);
+  const malformedReport = JSON.parse(malformedDoctor.stdout);
+  assert.equal(malformedReport.data.checks[0].status, "fail");
+  assert.match(
+    JSON.stringify(malformedReport.data.checks[0]),
+    /schemaVersion|configuration|runtime-topology/iu,
+  );
+  await rename(malformedPath, `${malformedPath}.invalid`);
+  const malformedRecovery = runCliJson(malformedRoot, ["setup", "--write"]);
+  assert.equal(malformedRecovery.data.mode, "written");
+  assert.match(await readFile(malformedPath, "utf8"), /target: "supabase"/u);
+
   const upgradeRoot = join(temporaryRoot, "upgrade-consumer");
   await createConsumer(upgradeRoot, "upgrade-onboarding-consumer");
-  install(upgradeRoot, "@rehearsal-db/core@0.1.0-beta.11");
+  install(upgradeRoot, "@rehearsal-db/core@0.1.0-beta.7");
+  runCliJson(upgradeRoot, ["setup", "--write"]);
   const upgradeConfigPath = join(upgradeRoot, "rehearsal.config.mjs");
-  const beta11Config = await readFile(upgradeConfigPath, "utf8");
-  const legacyConfig = beta11Config
-    .replace(
-      'runtimeWorkdir: ".rehearsal/runtime",',
-      'runtimeWorkdir: ".rehearsal/runtime",\n    serviceEnvironmentFile: ".env.rehearsal-service.local",\n    serviceEnvironmentVariables: ["LEGACY_GOOGLE_CLIENT_ID", "LEGACY_GOOGLE_SECRET"],',
-    )
-    .replace(
-      'hostedAccess: "disabled",',
-      'authenticationProviders: ["google"],\n    hostedAccess: "disabled",',
-    );
-  assert.notEqual(legacyConfig, beta11Config);
-  await writeFile(upgradeConfigPath, legacyConfig);
   await appendFile(upgradeConfigPath, "\n// user-owned upgrade marker\n");
   const upgradeRuntimeConfigPath = join(
     upgradeRoot,
     "infrastructure/rehearsal/supabase/config.toml",
-  );
-  const beta11RuntimeConfig = await readFile(upgradeRuntimeConfigPath, "utf8");
-  await writeFile(
-    upgradeRuntimeConfigPath,
-    `${beta11RuntimeConfig.trimEnd()}
-
-[auth.external.google]
-enabled = true
-client_id = "env(LEGACY_GOOGLE_CLIENT_ID)"
-secret = "env(LEGACY_GOOGLE_SECRET)"
-redirect_uri = "http://127.0.0.1:54321/auth/v1/callback"
-skip_nonce_check = true
-email_optional = false
-`,
   );
   const beforeUpgrade = await readFile(upgradeConfigPath, "utf8");
   const beforeRuntimeConfig = await readFile(upgradeRuntimeConfigPath, "utf8");
@@ -171,7 +314,7 @@ email_optional = false
   );
   assert.match(
     upgradeInit.data.availableOptions[0]?.summary,
-    /replace the legacy provider fields together/iu,
+    /Google or GitHub/iu,
   );
 
   console.log(
@@ -183,8 +326,14 @@ email_optional = false
         artifactSha256,
         freshRootConfigCreated: true,
         freshRootConfigValidated: true,
-        beta11ConfigPreserved: true,
-        beta11ConfigSha256: sha256(afterUpgrade),
+        postgresqlRootConfigCreated: true,
+        occupiedPortRefusedBeforeRecovery: true,
+        partialSetupRecovered: true,
+        missingCredentialsRefused: true,
+        unsupportedTargetRefused: true,
+        malformedConfigurationPreservedAndRecovered: true,
+        beta7ConfigPreserved: true,
+        beta7ConfigSha256: sha256(afterUpgrade),
         authenticationOptionDiscoverable: true,
       },
       null,

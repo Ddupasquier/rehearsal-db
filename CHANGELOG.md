@@ -7,6 +7,21 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ### Added
 
+- Packed-package onboarding is now a required CI job. It covers fresh Supabase and
+  PostgreSQL installs, beta.7 configuration preservation, missing credentials, occupied
+  ports, malformed configuration, and non-destructive partial-setup recovery.
+- The independent test lab can run the same first-install boundary against an exact
+  candidate tarball before either database lifecycle.
+
+### Documentation
+
+- First-time users now have a short recovery table for interrupted setup, failed
+  upgrades, port conflicts, missing OAuth credentials, and low Docker capacity.
+
+## [0.1.0-beta.13] - 2026-10-05
+
+### Added
+
 - Runtime and CI compatibility now cover maintained Node.js 22, 24, and 26 releases;
   Node.js 24 LTS remains the recommended default and release-build runtime.
 - Source access policies can use an externally provisioned, database-expiring
