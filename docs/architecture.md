@@ -43,15 +43,33 @@ rehearsal-db/
 ## CLI modules
 
 The executable is split by responsibility so no command file becomes a second
-application layer:
+application layer. Scripted commands and the interactive guide resolve through the same
+typed registry and produce the same result contract:
 
-- `rehearsal.mts` starts the process and dispatches commands.
+- `rehearsal.mts` owns process lifecycle, project locking, guided-loop coordination, and
+  top-level error handling. It does not implement commands.
 - `arguments.mts` owns the command-line contract and mutation classification.
+- `command_contract.mts`, `command_registry.mts`, and `command_output.mts` define command
+  context, handler selection, stable JSON envelopes, human rendering, and exit codes.
+- `*_command_handlers.mts` and `runtime_action_handlers.mts` group handlers by project,
+  source, identity, inspection, application, or runtime responsibility.
+- `cli_commands.mts` composes those focused families in precedence order without
+  implementing their behavior.
 - `guided.mts` owns the interactive home screen and first-run questions.
 - `runtime_commands.mts` coordinates local runtimes and project proofs.
 - `source_commands.mts` coordinates approved source access and refresh.
 - `renderers.mts` formats human-readable results without changing state.
 - `terminal.mts` owns prompts, colors, and terminal exit behavior.
+
+Command handlers receive an explicit context containing parsed flags, selected config,
+guided state, and session-local caches. They return a rendered, text, or silent result;
+only the shared output boundary creates JSON envelopes or writes final human output.
+Session caches never appear in the public parsed-flags type.
+
+Repository contracts keep the process entry point at 300 lines or fewer and every
+handler-family module at 350 lines or fewer. A new command belongs in the narrowest
+existing family, or in a new focused family when it represents a genuinely separate
+responsibility.
 
 ## Adding something new
 

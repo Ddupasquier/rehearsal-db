@@ -21,6 +21,7 @@ import {
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
+import type { CliSessionState } from "./command_contract.mjs";
 import {
   createSourceAccessPlan,
   validateSourceAccessPolicy,
@@ -336,6 +337,7 @@ export const createRefreshWorkflow =
       command: "reset";
       flags: RehearsalCliFlags;
       planOptions: RehearsalConfigPathOptions;
+      session: CliSessionState;
     }) => Promise<{ runtime: unknown; topology: RuntimeTopology }>;
     prepareDependentTargets: (input: {
       topology: RuntimeTopology;
@@ -349,7 +351,11 @@ export const createRefreshWorkflow =
     ) => Promise<RefreshPlanContext>;
     refreshBaseline?: typeof runSourceBaselineRefresh;
   }) =>
-  async ({ flags, planOptions }: SourceCommandInput) => {
+  async ({
+    flags,
+    planOptions,
+    session,
+  }: SourceCommandInput & { session: CliSessionState }) => {
     const context = await buildPlan(planOptions);
     if (!flags.refreshConfirmation) {
       return { mode: "preview" as const, plan: context.plan };
@@ -369,6 +375,7 @@ export const createRefreshWorkflow =
         command: "reset",
         flags,
         planOptions,
+        session,
       });
       runtime = stack.runtime;
       preparations = prepareDependentTargets({
@@ -386,6 +393,7 @@ export const createRefreshWorkflow =
             command: "reset",
             flags,
             planOptions,
+            session,
           });
           prepareDependentTargets({
             topology: rollback.topology,

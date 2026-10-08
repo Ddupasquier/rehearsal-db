@@ -85,4 +85,20 @@ describe("repository structure", () => {
       expect(source.split("\n").length, module).toBeLessThanOrEqual(1_000);
     }
   });
+
+  it("keeps the CLI entry point and typed handler families from becoming catch-alls", async () => {
+    const entry = await readFile(join(root, "src/cli/rehearsal.mts"), "utf8");
+    expect(entry.split("\n").length).toBeLessThanOrEqual(300);
+
+    const handlerModules = (await readdir(join(root, "src/cli"))).filter(
+      (file) =>
+        file.endsWith("_command_handlers.mts") ||
+        file.endsWith("_action_handlers.mts"),
+    );
+    expect(handlerModules.length).toBeGreaterThanOrEqual(7);
+    for (const module of handlerModules) {
+      const source = await readFile(join(root, "src/cli", module), "utf8");
+      expect(source.split("\n").length, module).toBeLessThanOrEqual(350);
+    }
+  });
 });

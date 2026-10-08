@@ -39,6 +39,7 @@ import {
 } from "./terminal.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
 import type { RehearsalErrorCategory } from "../shared/diagnostics.mjs";
+import type { CliSessionState } from "./command_contract.mjs";
 
 type RuntimeTopology = Awaited<ReturnType<typeof loadRuntimeTopology>>;
 type RuntimeAction =
@@ -572,13 +573,15 @@ export const createRuntimeCommands = ({
     command,
     flags,
     planOptions,
+    session,
   }: {
     command: RuntimeAction;
     flags: RehearsalCliFlags;
     planOptions: RehearsalConfigPathOptions;
+    session: CliSessionState;
   }): Promise<RuntimeStackResult> => {
     const topology =
-      (flags.runtimeTopology as RuntimeTopology | undefined) ??
+      (session.runtimeTopology as RuntimeTopology | undefined) ??
       (await loadRuntimeTopology(planOptions));
     const reverse = ["stop", "discard"].includes(command);
     const targets = reverse
@@ -586,7 +589,7 @@ export const createRuntimeCommands = ({
       : topology.targets;
     const results = targets.map((target) => {
       const confirmation = (
-        flags.targetConfirmations as Map<string, string> | undefined
+        session.targetConfirmations as Map<string, string> | undefined
       )?.get(target.configPath);
       return runManager({
         action: command,
@@ -689,10 +692,12 @@ export const createRuntimeCommands = ({
   const openRuntimeApplication = async ({
     flags,
     planOptions,
+    session: commandSession,
     onReady = () => undefined,
   }: {
     flags: RehearsalCliFlags;
     planOptions: RehearsalConfigPathOptions;
+    session: CliSessionState;
     onReady?: Parameters<typeof holdApplicationSession>[0]["onReady"];
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
@@ -723,16 +728,18 @@ export const createRuntimeCommands = ({
         "rehearsal open requires an existing verified runtime. Run rehearsal run first.",
       );
     }
-    flags.runtimeTopology = topology;
+    commandSession.runtimeTopology = topology;
     const started = await runRuntimeStack({
       command: "start",
       flags,
       planOptions,
+      session: commandSession,
     });
     const verified = await runRuntimeStack({
       command: "verify",
       flags,
       planOptions,
+      session: commandSession,
     });
     const preparations = prepareDependentTargets({
       topology,
@@ -764,15 +771,17 @@ export const createRuntimeCommands = ({
     command,
     flags,
     planOptions,
+    session,
   }: {
     command: RuntimeAction;
     flags: RehearsalCliFlags;
     planOptions: RehearsalConfigPathOptions;
+    session: CliSessionState;
   }): Promise<boolean> => {
     if (!["run", "migrate"].includes(command) || flags.dryRun) return true;
     const summary = await topologyCandidateSummary(planOptions);
-    flags.runtimeTopology = summary.topology;
-    flags.targetConfirmations = new Map(
+    session.runtimeTopology = summary.topology;
+    session.targetConfirmations = new Map(
       summary.targets.map((target) => [
         target.configPath,
         target.candidateSha256,

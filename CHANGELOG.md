@@ -5,6 +5,15 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Changed
+
+- The CLI now routes guided and scripted requests through focused typed command
+  handlers and one result/output contract. The executable retains only process
+  lifecycle, project locking, guided-loop coordination, and top-level error handling;
+  command-session caches no longer live in public parsed flags.
+
+## [0.1.0-beta.15] - 2026-10-08
+
 ### Added
 
 - A strict, no-emit TypeScript gate now checks the first shared runtime utilities and
@@ -482,7 +491,10 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.12...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.15...HEAD
+[0.1.0-beta.15]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.14...v0.1.0-beta.15
+[0.1.0-beta.14]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.13...v0.1.0-beta.14
+[0.1.0-beta.13]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.12...v0.1.0-beta.13
 [0.1.0-beta.12]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.11...v0.1.0-beta.12
 [0.1.0-beta.11]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.10...v0.1.0-beta.11
 [0.1.0-beta.10]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.9...v0.1.0-beta.10

@@ -28,6 +28,7 @@ import type { RehearsalCleanupPlan } from "../runtime/cleanup.mjs";
 import { runRehearsalDoctor } from "../runtime/plan.mjs";
 import { loadRuntimeTopology } from "../runtime/topology.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
+import type { CliSessionState } from "./command_contract.mjs";
 
 type CleanupStackPlan = Readonly<{
   digest: string;
@@ -48,6 +49,7 @@ type RunManager = (input: {
 interface ProjectCommandInput {
   readonly flags: RehearsalCliFlags;
   readonly planOptions: RehearsalConfigPathOptions;
+  readonly session?: CliSessionState;
 }
 
 const isCleanupStackPlan = (
@@ -64,6 +66,7 @@ export const createProjectCommands = ({
   const runSetup = async ({
     flags,
     planOptions,
+    session,
   }: ProjectCommandInput): Promise<unknown> => {
     const setupTarget =
       flags.target === "supabase" || flags.target === "postgresql"
@@ -73,7 +76,7 @@ export const createProjectCommands = ({
       throw new Error("--target must be supabase or postgresql.");
     }
     const plan =
-      (flags.setupPlan as RehearsalSetupPlan | undefined) ??
+      (session?.setupPlan as RehearsalSetupPlan | undefined) ??
       (await planRehearsalSetup({
         projectRoot,
         ...(planOptions.configPath === undefined
@@ -109,6 +112,7 @@ export const createProjectCommands = ({
   const runBaselinePreparation = async ({
     flags,
     planOptions,
+    session,
   }: ProjectCommandInput): Promise<
     ReturnType<typeof summarizeBaselinePreparation>
   > => {
@@ -118,7 +122,7 @@ export const createProjectCommands = ({
       );
     }
     const plan =
-      (flags.preparationPlan as BaselinePreparationPlan | undefined) ??
+      (session?.preparationPlan as BaselinePreparationPlan | undefined) ??
       (await planBaselinePreparation({
         ...planOptions,
         recordsPath: flags.recordsPath,
@@ -178,9 +182,10 @@ export const createProjectCommands = ({
   const runCleanup = async ({
     flags,
     planOptions,
+    session,
   }: ProjectCommandInput): Promise<unknown> => {
     const plan =
-      (flags.cleanupPlan as
+      (session?.cleanupPlan as
         RehearsalCleanupPlan | CleanupStackPlan | undefined) ??
       (await planRuntimeStackCleanup({ flags, planOptions }));
     if (!flags.write) return { mode: "preview", plan };
