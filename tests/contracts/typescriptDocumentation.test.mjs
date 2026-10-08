@@ -6,6 +6,7 @@ const root = process.cwd();
 const documentedExamples = new Map([
   ["javascript-config", "tests/types/documented_configuration.mjs"],
   ["type-usage", "tests/types/documented_type_usage.mts"],
+  ["privacy-usage", "tests/types/documented_privacy_usage.mts"],
 ]);
 
 describe("TypeScript documentation", () => {
@@ -39,6 +40,8 @@ describe("TypeScript documentation", () => {
     expect(documentation).toContain("RehearsalConfig");
     expect(documentation).toContain("NormalizedRehearsalConfig");
     expect(documentation).toContain("defineRehearsalConfig()");
+    expect(documentation).toContain("ExecutablePrivacyPolicy");
+    expect(documentation).toContain("PrivacyColumn");
     expect(documentation).toContain(
       "All shipped Rehearsal implementation source",
     );

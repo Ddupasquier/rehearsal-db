@@ -28,6 +28,10 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   dispatch, active-baseline loading, migration confirmation and receipts, runtime
   markers, and rollback. Candidate receipts are bound to their exact database target,
   while each driver retains its own ownership proof and database-specific behavior.
+- Privacy policy types, recipe normalization, dependency validation, deterministic
+  transforms, structured JSON, rule dispatch, row execution, and key handling now live
+  in focused typed stages behind the unchanged public privacy import. An explicit closed
+  registry covers every supported action and derivation without widening policy v2.
 
 ## [0.1.0-beta.15] - 2026-10-08
 

@@ -1,6 +1,6 @@
 # TypeScript
 
-Rehearsal includes types for its public root API. TypeScript is optional: the CLI and the
+Rehearsal includes types for its documented public APIs. TypeScript is optional: the CLI and the
 generated `rehearsal.config.mjs` work in JavaScript, TypeScript, CommonJS, and ESM
 applications.
 
@@ -77,6 +77,47 @@ Nested sections are available through indexed access types such as
 `RehearsalConfig["safety"]`. The [configuration reference](configuration.md) explains
 what each setting does and remains the source of truth for runtime behavior.
 
+## Type reviewed privacy policies
+
+The advanced privacy entry point exports the normalized policy, table, column, engine,
+foreign-key, and source-record types emitted from the same implementation used for
+runtime validation. Keep policy input as ordinary JSON-compatible data and use the
+validator's typed return value; runtime validation remains the authority for untrusted
+files.
+
+<!-- checked-example: privacy-usage -->
+
+```ts
+import {
+  validateExecutablePrivacyPolicy,
+  type ExecutablePrivacyPolicy,
+  type PrivacyColumn,
+} from "@rehearsal-db/core/privacy";
+
+export const policy: ExecutablePrivacyPolicy = validateExecutablePrivacyPolicy({
+  policyVersion: 2,
+  migrationCutoff: "20260101000000",
+  tables: [
+    {
+      name: "widgets",
+      sourceRows: "STREAM AND SANITIZE",
+      columns: [
+        {
+          name: "id",
+          action: "PSEUDONYMIZE",
+          recipe: { format: "uuid", namespace: "widget-id" },
+          generated: "NEVER",
+          identity: "NO",
+          foreignKey: null,
+        },
+      ],
+    },
+  ],
+});
+
+export const identifierColumn: PrivacyColumn = policy.tables[0]!.columns[0]!;
+```
+
 ## Package implementation and declarations
 
 All shipped Rehearsal implementation source is TypeScript. The package build emits
@@ -86,8 +127,8 @@ need TypeScript, a transpiler, or a TypeScript runtime.
 The package-root import, `@rehearsal-db/core`, uses declarations generated from the
 same TypeScript implementation that runs at runtime; the small `types/` entry point
 only forwards those generated declarations. Advanced subpath imports such as
-`@rehearsal-db/core/baseline` also receive generated declarations, but they remain
+`@rehearsal-db/core/baseline` and `@rehearsal-db/core/privacy` also receive generated declarations, but they remain
 advanced APIs: only their documented exports and behavior are compatibility promises.
 
-Rehearsal's own `npm run typecheck` compiles both examples on this page. A documentation
+Rehearsal's own `npm run typecheck` compiles every example on this page. A documentation
 contract also requires the displayed snippets to match those checked files exactly.

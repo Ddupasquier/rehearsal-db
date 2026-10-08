@@ -147,6 +147,27 @@ Repository contracts keep the facade at 50 lines or fewer and every identity-cla
 stage at 600 lines or fewer. Provider callbacks and consumer application behavior stay
 outside this pipeline.
 
+## Privacy rule pipeline
+
+The stable `baseline/privacy_engine.mts` facade preserves the documented privacy import
+path while policy work is divided into fail-closed typed stages:
+
+1. `privacy_contract.mts` defines normalized policy and execution types.
+2. `privacy_recipe_validation.mts` normalizes only reviewed rule shapes;
+   `privacy_policy.mts` validates complete policy structure.
+3. `privacy_dependency_graph.mts` checks owner bindings, path mappings, sanitized digest
+   inputs, cycles, and shared date groups.
+4. `privacy_transforms.mts` implements deterministic pseudonyms and bounded paths.
+5. `privacy_rule_registry.mts` explicitly registers every action and derivation kind;
+   unknown kinds have no fallback execution path.
+6. `privacy_structured_json.mts` owns bounded object, array, union, and dictionary rules.
+7. `privacy_pipeline.mts` resolves reviewed bindings and executes rows, while
+   `privacy_key.mts` owns the local secret-file boundary.
+
+Repository contracts keep the facade at 50 lines or fewer and every privacy stage at
+700 lines or fewer. Adding a rule requires its normalized type, validator, registered
+handler, focused boundary tests, and documentation—without widening policy version 2.
+
 ## Adding something new
 
 1. Put policy and reusable behavior in the domain that owns it.

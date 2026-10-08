@@ -159,4 +159,30 @@ describe("repository structure", () => {
       expect(source.split("\n").length, target).toBeLessThanOrEqual(900);
     }
   });
+
+  it("keeps privacy policy work in explicit typed stages", async () => {
+    const baselineDirectory = join(root, "src/baseline");
+    const facade = await readFile(
+      join(baselineDirectory, "privacy_engine.mts"),
+      "utf8",
+    );
+    expect(facade.split("\n").length).toBeLessThanOrEqual(50);
+
+    const stages = [
+      "privacy_contract.mts",
+      "privacy_dependency_graph.mts",
+      "privacy_key.mts",
+      "privacy_pipeline.mts",
+      "privacy_policy.mts",
+      "privacy_recipe_validation.mts",
+      "privacy_rule_registry.mts",
+      "privacy_structured_json.mts",
+      "privacy_transforms.mts",
+      "privacy_validation_shared.mts",
+    ];
+    for (const stage of stages) {
+      const source = await readFile(join(baselineDirectory, stage), "utf8");
+      expect(source.split("\n").length, stage).toBeLessThanOrEqual(700);
+    }
+  });
 });
