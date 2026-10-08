@@ -35,6 +35,7 @@ import {
 
 type LoadedRehearsalConfig = Awaited<ReturnType<typeof loadRehearsalConfig>>;
 type RuntimeReceipt = Readonly<{
+  target?: string;
   baselineGenerationId?: string;
   candidateSha256?: string;
 }>;
@@ -248,6 +249,7 @@ const loadPlanInputs = async (options: RehearsalConfigPathOptions = {}) => {
   });
   const runtimeReceipt = await readRuntimeReceipt(loaded.paths.runtimeWorkdir);
   const appliedCandidateDigest =
+    runtimeReceipt?.target === loaded.config.runtime.target &&
     runtimeReceipt?.baselineGenerationId === baseline.generationId &&
     runtimeReceipt?.candidateSha256 === candidateReceipt.candidateSha256
       ? candidateReceipt.candidateSha256

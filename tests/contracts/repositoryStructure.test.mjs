@@ -85,4 +85,104 @@ describe("repository structure", () => {
       expect(source.split("\n").length, module).toBeLessThanOrEqual(1_000);
     }
   });
+
+  it("keeps the CLI entry point and typed handler families from becoming catch-alls", async () => {
+    const entry = await readFile(join(root, "src/cli/rehearsal.mts"), "utf8");
+    expect(entry.split("\n").length).toBeLessThanOrEqual(300);
+
+    const handlerModules = (await readdir(join(root, "src/cli"))).filter(
+      (file) =>
+        file.endsWith("_command_handlers.mts") ||
+        file.endsWith("_action_handlers.mts"),
+    );
+    expect(handlerModules.length).toBeGreaterThanOrEqual(7);
+    for (const module of handlerModules) {
+      const source = await readFile(join(root, "src/cli", module), "utf8");
+      expect(source.split("\n").length, module).toBeLessThanOrEqual(350);
+    }
+  });
+
+  it("keeps configuration phases separated behind a small public facade", async () => {
+    const projectDirectory = join(root, "src/project");
+    const facade = await readFile(
+      join(projectDirectory, "configuration.mts"),
+      "utf8",
+    );
+    expect(facade.split("\n").length).toBeLessThanOrEqual(50);
+
+    const phases = [
+      "configuration_contract.mts",
+      "configuration_discovery.mts",
+      "configuration_schema.mts",
+      "configuration_normalization.mts",
+      "configuration_resolution.mts",
+      "configuration_rendering.mts",
+      "configuration_validation.mts",
+      "project_detection.mts",
+    ];
+    for (const phase of phases) {
+      const source = await readFile(join(projectDirectory, phase), "utf8");
+      expect(source.split("\n").length, phase).toBeLessThanOrEqual(700);
+    }
+  });
+
+  it("keeps identity claims in explicit auditable stages", async () => {
+    const identityDirectory = join(root, "src/identity");
+    const facade = await readFile(join(identityDirectory, "claim.mts"), "utf8");
+    expect(facade.split("\n").length).toBeLessThanOrEqual(50);
+
+    const stages = [
+      "claim_contract.mts",
+      "claim_policy.mts",
+      "claim_plan.mts",
+      "claim_sql.mts",
+      "claim_identity_lookup.mts",
+      "claim_verification.mts",
+      "claim_executor.mts",
+    ];
+    for (const stage of stages) {
+      const source = await readFile(join(identityDirectory, stage), "utf8");
+      expect(source.split("\n").length, stage).toBeLessThanOrEqual(600);
+    }
+  });
+
+  it("keeps database drivers behind the shared lifecycle engine", async () => {
+    const lifecycle = await readFile(
+      join(root, "src/runtime/lifecycle_engine.mts"),
+      "utf8",
+    );
+    expect(lifecycle.split("\n").length).toBeLessThanOrEqual(300);
+
+    for (const target of ["postgresql.mts", "supabase.mts"]) {
+      const source = await readFile(join(root, "src/targets", target), "utf8");
+      expect(source).toContain('from "../runtime/lifecycle_engine.mjs"');
+      expect(source.split("\n").length, target).toBeLessThanOrEqual(900);
+    }
+  });
+
+  it("keeps privacy policy work in explicit typed stages", async () => {
+    const baselineDirectory = join(root, "src/baseline");
+    const facade = await readFile(
+      join(baselineDirectory, "privacy_engine.mts"),
+      "utf8",
+    );
+    expect(facade.split("\n").length).toBeLessThanOrEqual(50);
+
+    const stages = [
+      "privacy_contract.mts",
+      "privacy_dependency_graph.mts",
+      "privacy_key.mts",
+      "privacy_pipeline.mts",
+      "privacy_policy.mts",
+      "privacy_recipe_validation.mts",
+      "privacy_rule_registry.mts",
+      "privacy_structured_json.mts",
+      "privacy_transforms.mts",
+      "privacy_validation_shared.mts",
+    ];
+    for (const stage of stages) {
+      const source = await readFile(join(baselineDirectory, stage), "utf8");
+      expect(source.split("\n").length, stage).toBeLessThanOrEqual(700);
+    }
+  });
 });

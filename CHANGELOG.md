@@ -5,6 +5,36 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Changed
+
+- The CLI now routes guided and scripted requests through focused typed command
+  handlers and one result/output contract. The executable retains only process
+  lifecycle, project locking, guided-loop coordination, and top-level error handling;
+  command-session caches no longer live in public parsed flags.
+- Configuration now passes through separate discovery, raw-schema validation,
+  normalization, project-root path resolution, project detection, and starter-rendering
+  modules behind the existing import path. Public declarations come from the same
+  TypeScript source, including the new `NormalizedRehearsalConfig` type.
+- Installed-consumer verification now shares one scenario catalog, artifact installer,
+  isolated workspace boundary, process boundary, and persistent application-session
+  helper. The complete release gate runs every scenario against one immutable tarball
+  and records its exact version, SHA-256, tool environment, commands, timings, and
+  results.
+- Identity policy validation, deterministic claim planning, SQL generation, local Auth
+  lookup, pure verification, and transactional execution now live in separate typed
+  stages behind the unchanged public claim API. Generated reference SQL is independently
+  testable, while only the executor can mutate the local database or Storage runtime.
+- PostgreSQL and Supabase now share one typed runtime lifecycle engine for command
+  dispatch, active-baseline loading, migration confirmation and receipts, runtime
+  markers, and rollback. Candidate receipts are bound to their exact database target,
+  while each driver retains its own ownership proof and database-specific behavior.
+- Privacy policy types, recipe normalization, dependency validation, deterministic
+  transforms, structured JSON, rule dispatch, row execution, and key handling now live
+  in focused typed stages behind the unchanged public privacy import. An explicit closed
+  registry covers every supported action and derivation without widening policy v2.
+
+## [0.1.0-beta.15] - 2026-10-08
+
 ### Added
 
 - A strict, no-emit TypeScript gate now checks the first shared runtime utilities and
@@ -482,7 +512,10 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.12...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.15...HEAD
+[0.1.0-beta.15]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.14...v0.1.0-beta.15
+[0.1.0-beta.14]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.13...v0.1.0-beta.14
+[0.1.0-beta.13]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.12...v0.1.0-beta.13
 [0.1.0-beta.12]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.11...v0.1.0-beta.12
 [0.1.0-beta.11]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.10...v0.1.0-beta.11
 [0.1.0-beta.10]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.9...v0.1.0-beta.10

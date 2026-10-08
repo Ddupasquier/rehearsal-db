@@ -6,7 +6,6 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   appendFile,
   mkdir,
@@ -21,6 +20,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
+import {
+  prepareCandidateArtifact,
+  sha256Value as sha256,
+} from "../scenarios/artifact.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const packageManifest = JSON.parse(
@@ -47,8 +50,6 @@ const run = (command, args, { cwd = repositoryRoot } = {}) => {
     );
   }
 };
-
-const sha256 = (source) => createHash("sha256").update(source).digest("hex");
 
 const createConsumer = async (root, name, { target = "supabase" } = {}) => {
   await mkdir(
@@ -190,19 +191,13 @@ const close = (server) =>
 
 try {
   await mkdir(packedRoot, { recursive: true });
-  const packed = JSON.parse(
-    run("npm", [
-      "pack",
-      "--json",
-      "--ignore-scripts",
-      "--pack-destination",
-      packedRoot,
-    ]),
-  )[0];
-  assert.equal(packed.name, "@rehearsal-db/core");
-  assert.equal(packed.version, packageManifest.version);
-  const tarball = join(packedRoot, packed.filename);
-  const artifactSha256 = sha256(await readFile(tarball));
+  const artifact = await prepareCandidateArtifact({
+    repositoryRoot,
+    outputDirectory: packedRoot,
+  });
+  assert.equal(artifact.name, "@rehearsal-db/core");
+  assert.equal(artifact.version, packageManifest.version);
+  const tarball = artifact.path;
 
   const freshRoot = join(temporaryRoot, "fresh-consumer");
   await createConsumer(freshRoot, "fresh-onboarding-consumer");
@@ -440,8 +435,9 @@ try {
       {
         status: "passed",
         fixture: "packed-package-onboarding",
-        installedPackage: `${packed.name}@${packed.version}`,
-        artifactSha256,
+        installedPackage: `${artifact.name}@${artifact.version}`,
+        artifactSha256: artifact.sha256,
+        artifactSource: artifact.source,
         freshRootConfigCreated: true,
         freshRootConfigValidated: true,
         freshInstallReportedActiveConfig: true,

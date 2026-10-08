@@ -29,6 +29,14 @@ describe("runtime command diagnostics", () => {
         inferredCategory: "internal_failure",
       }),
     ).toBe("migration_candidate_failure");
+    expect(
+      classifyManagerFailure({
+        action: "run",
+        output:
+          "at applyMigration (...)\nat async migrateRuntimeOperation (...)\nat async withOwnedRuntimeRollback (...)",
+        inferredCategory: "baseline_invalid",
+      }),
+    ).toBe("migration_candidate_failure");
   });
 
   it("parses safe Docker and Colima capacity summaries", () => {

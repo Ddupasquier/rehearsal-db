@@ -35,6 +35,34 @@ const policy = {
 };
 
 describe("local identity claim", () => {
+  it("builds a deterministic immutable plan whose digest covers reviewed operations", () => {
+    const environment = { REHEARSAL_APPROVED_OWNER_EMAIL: email };
+    const first = createIdentityClaimPlan({
+      policy,
+      name: "approved-owner",
+      environment,
+    });
+    const second = createIdentityClaimPlan({
+      policy: structuredClone(policy),
+      name: "approved-owner",
+      environment,
+    });
+    expect(second.digest).toBe(first.digest);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.review)).toBe(true);
+
+    const changed = structuredClone(policy);
+    changed.identities[0].claims = { role: "developer" };
+    changed.identities[0].jsonReferences[0].path = ["owner", "id"];
+    expect(
+      createIdentityClaimPlan({
+        policy: changed,
+        name: "approved-owner",
+        environment,
+      }).digest,
+    ).not.toBe(first.digest);
+  });
+
   it("binds an exact redacted plan and applies it transactionally without overlapping client queries", async () => {
     expect(() =>
       validateIdentityPolicy(validateIdentityPolicy(policy)),

@@ -15,6 +15,7 @@ import type {
   RehearsalConfigPathOptions,
 } from "../project/configuration.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
+import type { CliSessionState } from "./command_contract.mjs";
 import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
 import type { RehearsalCleanupPlan } from "../runtime/cleanup.mjs";
 import type { ChoiceOption } from "./terminal.mjs";
@@ -590,6 +591,7 @@ const guideCleanup = async ({
   flags,
   planOptions,
   planRuntimeStackCleanup,
+  session,
 }: {
   flags: RehearsalCliFlags;
   planOptions: RehearsalConfigPathOptions;
@@ -597,6 +599,7 @@ const guideCleanup = async ({
     flags: RehearsalCliFlags;
     planOptions: RehearsalConfigPathOptions;
   }) => Promise<GuidedCleanupPlan>;
+  session: CliSessionState;
 }): Promise<string> => {
   const cleanupScope = await promptForChoice({
     message: "What may Rehearsal include in the cleanup preview?",
@@ -625,7 +628,7 @@ const guideCleanup = async ({
   flags.includeRuntime = ["runtime", "all"].includes(cleanupScope.command);
   flags.includeImages = ["images", "all"].includes(cleanupScope.command);
   const cleanupPlan = await planRuntimeStackCleanup({ flags, planOptions });
-  flags.cleanupPlan = cleanupPlan;
+  session.cleanupPlan = cleanupPlan;
   console.log(`\n${renderCleanup({ mode: "preview", plan: cleanupPlan })}`);
   const selectedCount =
     "targets" in cleanupPlan
@@ -659,12 +662,14 @@ const guideBaseline = async ({
   flags,
   planOptions,
   projectRoot,
+  session,
 }: {
   state: GuidedState;
   selected: GuidedCommandOption;
   flags: RehearsalCliFlags;
   planOptions: RehearsalConfigPathOptions;
   projectRoot: string;
+  session: CliSessionState;
 }): Promise<string> => {
   console.log(
     [
@@ -735,7 +740,7 @@ const guideBaseline = async ({
         console.log("No changes made.");
         return "home";
       }
-      flags.preparationPlan = preparationPlan;
+      session.preparationPlan = preparationPlan;
       flags.write = true;
       return "baseline prepare";
     }
@@ -785,6 +790,7 @@ export const createGuidedHome =
     buildRefreshWorkflowPlan,
     planRuntimeStackCleanup,
     getLastGuidedDetails,
+    session,
   }: {
     projectRoot: string;
     topologyCandidateSummary: (
@@ -798,6 +804,7 @@ export const createGuidedHome =
       planOptions: RehearsalConfigPathOptions;
     }) => Promise<GuidedCleanupPlan>;
     getLastGuidedDetails: () => string | undefined;
+    session: CliSessionState;
   }) =>
   async ({
     flags,
@@ -898,7 +905,12 @@ export const createGuidedHome =
       return runtimeAction.command;
     }
     if (selected.command === "cleanup-guide") {
-      return guideCleanup({ flags, planOptions, planRuntimeStackCleanup });
+      return guideCleanup({
+        flags,
+        planOptions,
+        planRuntimeStackCleanup,
+        session,
+      });
     }
     if (["baseline-guide", "baseline-prepare"].includes(selected.command)) {
       return guideBaseline({
@@ -907,6 +919,7 @@ export const createGuidedHome =
         flags,
         planOptions,
         projectRoot,
+        session,
       });
     }
     if (selected.command !== "setup-write") return selected.command;
@@ -952,7 +965,7 @@ export const createGuidedHome =
       console.log("No changes made.");
       return "home";
     }
-    flags.setupPlan = setupPlan;
+    session.setupPlan = setupPlan;
     flags.write = true;
     return "setup";
   };

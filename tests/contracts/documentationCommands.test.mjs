@@ -154,6 +154,7 @@ describe("documented CLI contract", () => {
       fixtureProof,
       standaloneFixtureProof,
       postgresqlFixtureProof,
+      applicationSessionProof,
     ] = await Promise.all([
       execute(process.execPath, [cli, "--help"], { cwd: root }),
       readFile(join(root, "docs/commands.md"), "utf8"),
@@ -167,6 +168,10 @@ describe("documented CLI contract", () => {
       ),
       readFile(
         join(root, "scripts/verification/fixtures/postgresql.mjs"),
+        "utf8",
+      ),
+      readFile(
+        join(root, "scripts/verification/scenarios/application_session.mjs"),
         "utf8",
       ),
     ]);
@@ -200,7 +205,8 @@ describe("documented CLI contract", () => {
     }
 
     expect(standaloneFixtureProof).toContain('"refresh"');
-    expect(postgresqlFixtureProof).toContain('["open", "--plain"]');
+    expect(postgresqlFixtureProof).toContain("openApplicationSession");
+    expect(applicationSessionProof).toContain('["open", "--plain"]');
   });
 
   it("links every primary guide from the README", async () => {

@@ -31,9 +31,10 @@ publication must change and prove the workflow before narrowing that permission.
 
 1. Start from protected `main` on a dedicated ticketed release branch.
 2. Verify the exact version, changelog, compatibility notes, and packed file list.
-3. Run unit and contract tests, formatting, package-content and secret audits,
-   dependency audit, packed onboarding, clean tarball installation, and the installed
-   Docker fixtures.
+3. Run `npm run release:verify`. It performs the package checks and every
+   installed-consumer scenario against one tarball, then records the exact package
+   version, SHA-256, environment, commands, timings, and results in
+   `test-results/release-gate/`. Run the dependency audit separately.
 4. When an unfamiliar developer is available, have them follow clean-project onboarding.
    Correct and retest the first confusing, missing, or wrong instruction. Record when
    this human observation was unavailable; automated checks must not impersonate it.
@@ -52,6 +53,10 @@ publication must change and prove the workflow before narrowing that permission.
     failure.
 11. Replace consuming projects' temporary Git/archive references only on their own
     protected integration branches and rerun their complete verification.
+
+The independent Rehearsal Test Lab is the primary pre-release consumer environment.
+Real product integrations provide additional compatibility evidence; they do not
+replace the package-owned release gate or Test Lab.
 
 The workflow publishes prereleases under the `beta` dist-tag and refuses a stable
 version. While Rehearsal has no stable release, the workflow also moves `latest` to the

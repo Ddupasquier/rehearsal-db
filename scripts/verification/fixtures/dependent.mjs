@@ -4,45 +4,26 @@
  * positive/negative business assertions.
  */
 
-import { spawnSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
 import { removeBaselineArtifactRoot } from "../../../dist/src/baseline/artifact.mjs";
+import {
+  installCandidateArtifact,
+  prepareCandidateArtifact,
+} from "../scenarios/artifact.mjs";
+import {
+  executeInstalledCli,
+  runScenarioCommand,
+} from "../scenarios/process.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");
 
-const run = (command, args, { cwd } = {}) => {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    env: createCleanProcessEnvironment(),
-    stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  if (result.error || result.status !== 0) {
-    throw new Error(
-      result.stderr ||
-        result.stdout ||
-        result.error?.message ||
-        `${command} failed.`,
-    );
-  }
-  return result.stdout;
-};
-
-const executeCli = ({ cwd, args }) =>
-  spawnSync(join(cwd, "node_modules/.bin/rehearsal"), args, {
-    cwd,
-    encoding: "utf8",
-    env: createCleanProcessEnvironment(),
-    stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: 16 * 1024 * 1024,
-  });
+const run = runScenarioCommand;
+const executeCli = executeInstalledCli;
 
 const executeCliOrThrow = ({ cwd, args, label }) => {
   const result = executeCli({ cwd, args });
@@ -162,31 +143,11 @@ const main = async () => {
       ),
     ]);
 
-    const packed = JSON.parse(
-      run(
-        "npm",
-        [
-          "pack",
-          "--json",
-          "--ignore-scripts",
-          "--pack-destination",
-          packageOutput,
-        ],
-        { cwd: repositoryRoot },
-      ),
-    )[0];
-    run(
-      "npm",
-      [
-        "install",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--no-save",
-        join(packageOutput, packed.filename),
-      ],
-      { cwd },
-    );
+    const artifact = await prepareCandidateArtifact({
+      repositoryRoot,
+      outputDirectory: packageOutput,
+    });
+    installCandidateArtifact(cwd, artifact);
     installed = true;
 
     for (const [label, configPath, base] of [
@@ -336,7 +297,9 @@ const main = async () => {
         {
           status: "passed",
           fixture: "dependent-postgresql-project",
-          installedPackage: `${packed.name}@${packed.version}`,
+          installedPackage: `${artifact.name}@${artifact.version}`,
+          artifactSha256: artifact.sha256,
+          artifactSource: artifact.source,
           targets: 2,
           positiveAndNegativeProofs: true,
         },

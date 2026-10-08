@@ -15,41 +15,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { removeBaselineArtifactRoot } from "../../../dist/src/baseline/artifact.mjs";
-import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
 import { sourceTargetFingerprint } from "../../../dist/src/source/access.mjs";
+import {
+  installCandidateArtifact,
+  prepareCandidateArtifact,
+} from "../scenarios/artifact.mjs";
+import {
+  executeInstalledCli,
+  runScenarioCommand,
+} from "../scenarios/process.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");
 
-const run = (command, args, { cwd, input, environment = {} } = {}) => {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    env: createCleanProcessEnvironment({ overrides: environment }),
-    input,
-    maxBuffer: 16 * 1024 * 1024,
-    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-  });
-  if (result.error || result.status !== 0) {
-    throw new Error(
-      result.stderr ||
-        result.stdout ||
-        result.error?.message ||
-        `${command} failed.`,
-    );
-  }
-  return result.stdout;
-};
-
-const executeCli = ({ cwd, args, environment = {} }) =>
-  spawnSync(join(cwd, "node_modules/.bin/rehearsal"), args, {
-    cwd,
-    encoding: "utf8",
-    env: createCleanProcessEnvironment({ overrides: environment }),
-    stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: 16 * 1024 * 1024,
-  });
+const run = runScenarioCommand;
+const executeCli = executeInstalledCli;
 
 const executeCliOrThrow = ({ cwd, args, label, environment }) => {
   const result = executeCli({ cwd, args, environment });
@@ -678,31 +659,11 @@ process.on("SIGTERM", () => server.close());
       )}\n`,
     );
 
-    const packed = JSON.parse(
-      run(
-        "npm",
-        [
-          "pack",
-          "--json",
-          "--ignore-scripts",
-          "--pack-destination",
-          packageOutput,
-        ],
-        { cwd: repositoryRoot },
-      ),
-    )[0];
-    run(
-      "npm",
-      [
-        "install",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--no-save",
-        join(packageOutput, packed.filename),
-      ],
-      { cwd },
-    );
+    const artifact = await prepareCandidateArtifact({
+      repositoryRoot,
+      outputDirectory: packageOutput,
+    });
+    installCandidateArtifact(cwd, artifact);
     await writeFile(
       join(cwd, "installed-cleanup-proof.mjs"),
       `import assert from "node:assert/strict";
@@ -1625,7 +1586,9 @@ where id = '22222222-2222-4222-8222-222222222222';
         {
           status: "passed",
           fixture: "standalone-source-to-local-postgresql",
-          installedPackage: `${packed.name}@${packed.version}`,
+          installedPackage: `${artifact.name}@${artifact.version}`,
+          artifactSha256: artifact.sha256,
+          artifactSource: artifact.source,
           sourceAccessRetired: true,
           externalReaderVerified: true,
           externalReaderMembershipVerified: true,

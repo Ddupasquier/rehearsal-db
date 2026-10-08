@@ -24,13 +24,8 @@ export interface RehearsalCliFlags {
   refreshConfirmation: string | undefined;
   identityConfirmation: string | undefined;
   identityName: string | undefined;
-  runtimeTopology: unknown | undefined;
-  targetConfirmations: unknown | undefined;
   exitGuidedSession: boolean;
   guided: boolean;
-  setupPlan?: unknown;
-  preparationPlan?: unknown;
-  cleanupPlan?: unknown;
 }
 
 export interface ParsedArguments {
@@ -63,8 +58,6 @@ export const parseArguments = (
     refreshConfirmation: undefined,
     identityConfirmation: undefined,
     identityName: undefined,
-    runtimeTopology: undefined,
-    targetConfirmations: undefined,
     exitGuidedSession: false,
     guided: false,
   };
@@ -133,12 +126,7 @@ export const resetGuidedFlags = (flags: RehearsalCliFlags): void => {
     refreshConfirmation: undefined,
     identityConfirmation: undefined,
     identityName: undefined,
-    runtimeTopology: undefined,
-    targetConfirmations: undefined,
     exitGuidedSession: false,
-    setupPlan: undefined,
-    preparationPlan: undefined,
-    cleanupPlan: undefined,
   });
 };
 
