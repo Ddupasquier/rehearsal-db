@@ -25,6 +25,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm run test:fixture:privacy
+      - run: npm run test:fixture:typescript
       - run: npm audit --omit=dev --audit-level=high
 
   installed-fixture:

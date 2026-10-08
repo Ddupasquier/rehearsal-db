@@ -30,6 +30,11 @@ import {
   inspectRehearsalMigrations,
 } from "../../../dist/src/runtime/plan.mjs";
 import { streamApprovedSupabaseAssets } from "../../../dist/src/source/asset_transfer.mjs";
+import {
+  installCandidateArtifact,
+  prepareCandidateArtifact,
+} from "../scenarios/artifact.mjs";
+import { executeInstalledCli } from "../scenarios/process.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/rehearsal-project");
@@ -141,14 +146,7 @@ const runPsql = ({ cwd, sql }) =>
     { capture: true, cwd, input: sql },
   );
 
-const executeCli = ({ cwd, args, environment = {} }) =>
-  spawnSync(join(cwd, "node_modules/.bin/rehearsal"), args, {
-    cwd,
-    encoding: "utf8",
-    env: createCleanProcessEnvironment({ overrides: environment }),
-    stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: 16 * 1024 * 1024,
-  });
+const executeCli = executeInstalledCli;
 
 const executeCliOrThrow = ({ cwd, args, label, environment }) => {
   const result = executeCli({ cwd, args, environment });
@@ -266,32 +264,11 @@ const main = async () => {
     await cp(fixtureSource, cwd, { recursive: true });
     await prepareFixtureRuntimeIdentity({ cwd });
     await mkdir(packageOutput, { recursive: true });
-    const packResult = JSON.parse(
-      runLocalCommand(
-        "npm",
-        [
-          "pack",
-          "--json",
-          "--ignore-scripts",
-          "--pack-destination",
-          packageOutput,
-        ],
-        { capture: true, cwd: repositoryRoot },
-      ),
-    )[0];
-    const tarball = join(packageOutput, packResult.filename);
-    runLocalCommand(
-      "npm",
-      [
-        "install",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--no-save",
-        tarball,
-      ],
-      { capture: true, cwd },
-    );
+    const artifact = await prepareCandidateArtifact({
+      repositoryRoot,
+      outputDirectory: packageOutput,
+    });
+    installCandidateArtifact(cwd, artifact);
     packageInstalled = true;
     const fixtureConfigPath = join(cwd, "rehearsal.config.mjs");
     const fixtureConfig = await readFile(fixtureConfigPath);
@@ -959,7 +936,9 @@ where bucket_id = 'fixture-assets'
         {
           status: "passed",
           fixture: "rehearsal-project",
-          installedPackage: `${packResult.name}@${packResult.version}`,
+          installedPackage: `${artifact.name}@${artifact.version}`,
+          artifactSha256: artifact.sha256,
+          artifactSource: artifact.source,
           validCandidate: validFilename,
           invalidCandidate: invalidFilename,
           commandsProven,

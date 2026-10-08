@@ -88,6 +88,27 @@ the normalizer, while the package's public declarations are emitted from the sam
 TypeScript implementation. Repository contracts keep the facade at 50 lines or fewer
 and each configuration phase at 700 lines or fewer.
 
+## Installed-consumer verification
+
+Repository verification installs the package tarball into disposable projects; it must
+not import unpublished product source by accident. One scenario catalog drives both the
+individual fixture commands and `npm run release:verify`.
+
+- `scenarios/artifact.mjs` selects or packs one tarball, reads its package identity, and
+  records its SHA-256 before installation.
+- `scenarios/workspace.mjs` creates and removes only scenario-owned scratch roots.
+- `scenarios/process.mjs` starts commands with inherited credentials removed unless a
+  scenario explicitly supplies a safe value.
+- `scenarios/application_session.mjs` owns persistent application and terminal-session
+  checks.
+- `scenarios/catalog.mjs` is the sole ordered list of installed-consumer scenarios.
+- Fixture files contain only the target setup and assertions unique to that scenario.
+
+Each scenario remains independently runnable through its `test:fixture:*` script. The
+complete release gate runs every catalog entry against the same immutable tarball and
+writes its version, SHA-256, tool environment, commands, timings, and results under
+`test-results/release-gate/`.
+
 ## Adding something new
 
 1. Put policy and reusable behavior in the domain that owns it.

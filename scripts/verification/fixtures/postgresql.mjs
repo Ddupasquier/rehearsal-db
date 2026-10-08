@@ -3,7 +3,6 @@
  * The proof uses only disposable local Docker resources.
  */
 
-import { spawn as spawnProcess, spawnSync } from "node:child_process";
 import {
   cp,
   mkdir,
@@ -16,42 +15,26 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn as spawnTerminal } from "@lydell/node-pty";
 import { removeBaselineArtifactRoot } from "../../../dist/src/baseline/artifact.mjs";
-import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
+import {
+  openApplicationSession,
+  openApplicationTerminalSession,
+} from "../scenarios/application_session.mjs";
+import {
+  installCandidateArtifact,
+  prepareCandidateArtifact,
+} from "../scenarios/artifact.mjs";
+import {
+  executeInstalledCli,
+  runScenarioCommand,
+} from "../scenarios/process.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");
 
-const run = (command, args, { cwd, input } = {}) => {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: "utf8",
-    env: createCleanProcessEnvironment(),
-    input,
-    maxBuffer: 16 * 1024 * 1024,
-    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-  });
-  if (result.error || result.status !== 0) {
-    throw new Error(
-      result.stderr ||
-        result.stdout ||
-        result.error?.message ||
-        `${command} failed.`,
-    );
-  }
-  return result.stdout;
-};
-
-const executeCli = ({ cwd, args }) =>
-  spawnSync(join(cwd, "node_modules/.bin/rehearsal"), args, {
-    cwd,
-    encoding: "utf8",
-    env: createCleanProcessEnvironment(),
-    stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: 16 * 1024 * 1024,
-  });
+const run = runScenarioCommand;
+const executeCli = executeInstalledCli;
 
 const executeCliOrThrow = ({ cwd, args, label }) => {
   const result = executeCli({ cwd, args });
@@ -61,159 +44,6 @@ const executeCliOrThrow = ({ cwd, args, label }) => {
     );
   }
   return result;
-};
-
-const openApplicationSession = async ({ cwd, url, whileReady }) => {
-  const child = spawnProcess(
-    join(cwd, "node_modules/.bin/rehearsal"),
-    ["open", "--plain"],
-    {
-      cwd,
-      env: createCleanProcessEnvironment(),
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk) => {
-    stdout += chunk;
-  });
-  child.stderr.on("data", (chunk) => {
-    stderr += chunk;
-  });
-  const exit = new Promise((resolve) =>
-    child.once("exit", (status, signal) => resolve({ status, signal })),
-  );
-  const deadline = Date.now() + 30_000;
-  let ready = false;
-  while (Date.now() < deadline) {
-    if (child.exitCode !== null) break;
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(500) });
-      if (response.status === 200 && stdout.includes("SANDBOX READY")) {
-        ready = true;
-        break;
-      }
-    } catch {
-      // The runtime and application are still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  if (!ready) {
-    child.kill("SIGTERM");
-    await exit;
-    throw new Error(
-      `Persistent application did not become ready: ${stdout || stderr || "no output"}`,
-    );
-  }
-  try {
-    await whileReady?.();
-  } finally {
-    child.kill("SIGINT");
-  }
-  const ended = await exit;
-  if (ended.status !== 0) {
-    throw new Error(
-      `Persistent application session failed: ${stdout || stderr || `exit ${ended.status ?? ended.signal}`}`,
-    );
-  }
-  if (
-    !stdout.includes(`Application: ${url}`) ||
-    !stdout.includes("Application stopped after SIGINT.") ||
-    !stdout.includes("database and Storage changes were preserved")
-  ) {
-    throw new Error(`Persistent application receipt is invalid: ${stdout}`);
-  }
-  try {
-    await fetch(url, { signal: AbortSignal.timeout(500) });
-    throw new Error(
-      "Persistent application child remained reachable after exit.",
-    );
-  } catch (error) {
-    if (
-      error?.message ===
-      "Persistent application child remained reachable after exit."
-    ) {
-      throw error;
-    }
-  }
-  return stdout;
-};
-
-const openApplicationTerminalSession = async ({ cwd, url }) => {
-  const terminal = spawnTerminal(
-    "npx",
-    ["--no-install", "rehearsal", "open", "--plain"],
-    {
-      name: "xterm-256color",
-      cols: 100,
-      rows: 40,
-      cwd,
-      env: createCleanProcessEnvironment(),
-    },
-  );
-  let output = "";
-  terminal.onData((chunk) => {
-    output += chunk;
-  });
-  const exit = new Promise((resolve) => terminal.onExit(resolve));
-  const deadline = Date.now() + 30_000;
-  let ready = false;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(500) });
-      if (response.status === 200 && output.includes("SANDBOX READY")) {
-        ready = true;
-        break;
-      }
-    } catch {
-      // The runtime and application are still starting.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  if (!ready) {
-    terminal.kill();
-    await exit;
-    throw new Error(
-      `Persistent terminal application did not become ready: ${output || "no output"}`,
-    );
-  }
-  terminal.write("\u0003");
-  let exitTimeout;
-  const ended = await Promise.race([
-    exit,
-    new Promise((_, reject) => {
-      exitTimeout = setTimeout(
-        () => reject(new Error(`Terminal Ctrl+C timed out: ${output}`)),
-        10_000,
-      );
-    }),
-  ]).finally(() => clearTimeout(exitTimeout));
-  if (ended.exitCode !== 0) {
-    throw new Error(
-      `Terminal Ctrl+C exited ${ended.exitCode}: ${output || "no output"}`,
-    );
-  }
-  if (
-    !output.includes("Application stopped after SIGINT.") ||
-    !output.includes("database and Storage changes were preserved")
-  ) {
-    throw new Error(`Terminal Ctrl+C receipt is invalid: ${output}`);
-  }
-  try {
-    await fetch(url, { signal: AbortSignal.timeout(500) });
-    throw new Error(
-      "Persistent terminal application child remained reachable after exit.",
-    );
-  } catch (error) {
-    if (
-      error?.message ===
-      "Persistent terminal application child remained reachable after exit."
-    ) {
-      throw error;
-    }
-  }
-  return output;
 };
 
 const main = async () => {
@@ -252,31 +82,11 @@ const main = async () => {
         .replaceAll("5275", String(ports.api)),
     );
 
-    const packed = JSON.parse(
-      run(
-        "npm",
-        [
-          "pack",
-          "--json",
-          "--ignore-scripts",
-          "--pack-destination",
-          packageOutput,
-        ],
-        { cwd: repositoryRoot },
-      ),
-    )[0];
-    run(
-      "npm",
-      [
-        "install",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--no-save",
-        join(packageOutput, packed.filename),
-      ],
-      { cwd },
-    );
+    const artifact = await prepareCandidateArtifact({
+      repositoryRoot,
+      outputDirectory: packageOutput,
+    });
+    installCandidateArtifact(cwd, artifact);
     installed = true;
 
     const fixtureConfig = await readFile(configPath);
@@ -545,7 +355,9 @@ const main = async () => {
         {
           status: "passed",
           fixture: "postgresql-project",
-          installedPackage: `${packed.name}@${packed.version}`,
+          installedPackage: `${artifact.name}@${artifact.version}`,
+          artifactSha256: artifact.sha256,
+          artifactSource: artifact.source,
           target: "postgresql",
           validCandidate: "20260101000100_add_widget_description.sql",
           invalidCandidate: "20260101000200_invalid_candidate.sql",

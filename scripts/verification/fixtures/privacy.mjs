@@ -4,6 +4,10 @@ import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  installCandidateArtifact,
+  prepareCandidateArtifact,
+} from "../scenarios/artifact.mjs";
 
 const repositoryRoot = process.cwd();
 const temporaryRoot = await mkdtemp(
@@ -47,14 +51,10 @@ console.log(JSON.stringify({ status: "passed" }));
 
 try {
   await mkdir(packedRoot, { recursive: true });
-  const packed = JSON.parse(
-    run(
-      "npm",
-      ["pack", "--json", "--ignore-scripts", "--pack-destination", packedRoot],
-      { capture: true },
-    ),
-  )[0];
-  const tarball = join(packedRoot, packed.filename);
+  const artifact = await prepareCandidateArtifact({
+    repositoryRoot,
+    outputDirectory: packedRoot,
+  });
   const owner = "11111111-1111-4111-8111-111111111111";
   const ownerSha256 =
     "bd7662a5eeb41614e720d477abfcb2272e19a8a70a93b7e3bc8560d44ad326e9";
@@ -824,18 +824,7 @@ assert.throws(() => sanitize([], undefined, undefined, null, { servingGrams: { 1
       join(root, "package.json"),
       `${JSON.stringify({ name: consumer.name, private: true, type: "module" })}\n`,
     );
-    run(
-      "npm",
-      [
-        "install",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--no-save",
-        tarball,
-      ],
-      { cwd: root },
-    );
+    installCandidateArtifact(root, artifact);
     await writeFile(join(root, "verify.mjs"), consumerProgram(consumer));
     const result = JSON.parse(
       run(process.execPath, ["verify.mjs"], { cwd: root, capture: true }),
@@ -847,7 +836,9 @@ assert.throws(() => sanitize([], undefined, undefined, null, { servingGrams: { 1
     JSON.stringify(
       {
         status: "passed",
-        installedPackage: `${packed.name}@${packed.version}`,
+        installedPackage: `${artifact.name}@${artifact.version}`,
+        artifactSha256: artifact.sha256,
+        artifactSource: artifact.source,
         consumers: consumers.map(({ name }) => name),
         approvedOwnerConditional: true,
         retainedTextBindingSubstitution: true,

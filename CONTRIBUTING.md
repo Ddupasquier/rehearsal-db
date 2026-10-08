@@ -11,7 +11,8 @@ Before opening a pull request:
 4. preserve fail-closed behavior and add a regression test for every safety change;
 5. run `npm run build` and `npm run typecheck` while developing, then `npm run check`
    before review;
-6. run the relevant packed fixture when Docker is available;
+6. run the relevant `test:fixture:*` scenario while developing; before a release, run
+   `npm run release:verify` so every scenario installs the same exact tarball;
 7. update public contracts and the changelog when behavior changes.
 
 Never use real production data in an issue, test, fixture, or pull request. Use small

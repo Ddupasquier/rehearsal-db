@@ -15,6 +15,11 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   normalization, project-root path resolution, project detection, and starter-rendering
   modules behind the existing import path. Public declarations come from the same
   TypeScript source, including the new `NormalizedRehearsalConfig` type.
+- Installed-consumer verification now shares one scenario catalog, artifact installer,
+  isolated workspace boundary, process boundary, and persistent application-session
+  helper. The complete release gate runs every scenario against one immutable tarball
+  and records its exact version, SHA-256, tool environment, commands, timings, and
+  results.
 
 ## [0.1.0-beta.15] - 2026-10-08
 
