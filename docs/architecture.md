@@ -109,6 +109,26 @@ complete release gate runs every catalog entry against the same immutable tarbal
 writes its version, SHA-256, tool environment, commands, timings, and results under
 `test-results/release-gate/`.
 
+## Identity claim pipeline
+
+The stable `identity/claim.mts` facade exposes policy validation, deterministic planning,
+and confirmed execution while keeping those responsibilities separate:
+
+1. `claim_contract.mts` defines the normalized policy, plan, database, and receipt types.
+2. `claim_policy.mts` validates and normalizes the reviewed declaration.
+3. `claim_plan.mts` binds the local matcher value to an immutable redacted review and
+   digest without opening a database or Storage connection.
+4. `claim_sql.mts` generates identifier-safe relational, JSON, signup-default, and path
+   SQL without executing it.
+5. `claim_identity_lookup.mts` performs read-only local Auth and reference discovery.
+6. `claim_verification.mts` checks signup defaults and token-hook claim shapes.
+7. `claim_executor.mts` alone owns the database transaction, Storage staging, rollback,
+   commit, old-object cleanup, and final receipt.
+
+Repository contracts keep the facade at 50 lines or fewer and every identity-claim
+stage at 600 lines or fewer. Provider callbacks and consumer application behavior stay
+outside this pipeline.
+
 ## Adding something new
 
 1. Put policy and reusable behavior in the domain that owns it.

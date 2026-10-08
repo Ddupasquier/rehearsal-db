@@ -125,4 +125,24 @@ describe("repository structure", () => {
       expect(source.split("\n").length, phase).toBeLessThanOrEqual(700);
     }
   });
+
+  it("keeps identity claims in explicit auditable stages", async () => {
+    const identityDirectory = join(root, "src/identity");
+    const facade = await readFile(join(identityDirectory, "claim.mts"), "utf8");
+    expect(facade.split("\n").length).toBeLessThanOrEqual(50);
+
+    const stages = [
+      "claim_contract.mts",
+      "claim_policy.mts",
+      "claim_plan.mts",
+      "claim_sql.mts",
+      "claim_identity_lookup.mts",
+      "claim_verification.mts",
+      "claim_executor.mts",
+    ];
+    for (const stage of stages) {
+      const source = await readFile(join(identityDirectory, stage), "utf8");
+      expect(source.split("\n").length, stage).toBeLessThanOrEqual(600);
+    }
+  });
 });
