@@ -158,6 +158,29 @@ describe("source access boundary", () => {
         ],
       }),
     ).toThrow("requires prefixEnvironmentVariable");
+    expect(
+      validateSourceAccessPolicy({
+        ...policy,
+        reader: {
+          ...policy.reader,
+          credentialFile:
+            "targets/primary/.rehearsal/secrets/source-reader.env",
+        },
+      }).reader.credentialFile,
+    ).toBe("targets/primary/.rehearsal/secrets/source-reader.env");
+    for (const credentialFile of [
+      "/tmp/source-reader.env",
+      "../.rehearsal/secrets/source-reader.env",
+      ".rehearsal/source-reader.env",
+      ".rehearsal/secrets/../source-reader.env",
+    ]) {
+      expect(() =>
+        validateSourceAccessPolicy({
+          ...policy,
+          reader: { ...policy.reader, credentialFile },
+        }),
+      ).toThrow("configured .rehearsal/secrets directory");
+    }
   });
 
   it("plans an externally provisioned reader without administrator access", () => {
@@ -170,6 +193,7 @@ describe("source access boundary", () => {
       reader: {
         mode: "external",
         role: "provided_reader",
+        allowedMemberships: ["provided_reader_group"],
         connectionEnvironmentVariable: "REHEARSAL_SOURCE_READER_URL",
         credentialFile: ".rehearsal/secrets/source-reader.env",
         maximumValidForMinutes: 30,
@@ -194,6 +218,7 @@ describe("source access boundary", () => {
     expect(plan.review.reader).toMatchObject({
       mode: "external",
       role: "provided_reader",
+      allowedMemberships: ["provided_reader_group"],
       maximumValidForMinutes: 30,
       sourceChanges: false,
     });
@@ -210,6 +235,27 @@ describe("source access boundary", () => {
         reader: { ...externalPolicy.reader, maximumValidForMinutes: 241 },
       }),
     ).toThrow("5 through 240");
+    expect(() =>
+      validateSourceAccessPolicy({
+        ...externalPolicy,
+        reader: {
+          ...externalPolicy.reader,
+          allowedMemberships: [
+            "provided_reader_group",
+            "provided_reader_group",
+          ],
+        },
+      }),
+    ).toThrow("must not contain duplicates");
+    expect(() =>
+      validateSourceAccessPolicy({
+        ...externalPolicy,
+        reader: {
+          ...externalPolicy.reader,
+          allowedMemberships: ["provided_reader"],
+        },
+      }),
+    ).toThrow("must not include the login role");
   });
 
   it("builds retirement from the exact recorded objects only", () => {

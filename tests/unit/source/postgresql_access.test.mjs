@@ -125,10 +125,25 @@ const provisioningClient = () => {
   };
 };
 
+const externalMembership = (overrides = {}) => ({
+  role: "provided_reader_group",
+  rolcanlogin: false,
+  rolsuper: false,
+  rolcreaterole: false,
+  rolcreatedb: false,
+  rolreplication: false,
+  rolbypassrls: false,
+  admin_option: false,
+  inherit_option: true,
+  set_option: false,
+  ...overrides,
+});
+
 const externalReaderClient = ({
   expiresAt = "2026-10-02T12:20:00.000Z",
   extraReadable = false,
-  memberships = 0,
+  memberships = [],
+  nestedMemberships = 0,
   viewDefinition = "select id, email from private.profiles",
   securityBarrier = true,
   privileged = false,
@@ -137,6 +152,21 @@ const externalReaderClient = ({
   viewOwner = "provided_export_owner",
 } = {}) => {
   const queries = [];
+  const membershipRows =
+    typeof memberships === "number"
+      ? Array.from({ length: memberships }, (_, index) => ({
+          role: `unexpected_group_${index}`,
+          rolcanlogin: false,
+          rolsuper: false,
+          rolcreaterole: false,
+          rolcreatedb: false,
+          rolreplication: false,
+          rolbypassrls: false,
+          admin_option: false,
+          inherit_option: true,
+          set_option: false,
+        }))
+      : memberships;
   return {
     queries,
     async connect() {},
@@ -159,8 +189,11 @@ const externalReaderClient = ({
           ],
         };
       }
-      if (sql.includes("from pg_auth_members")) {
-        return { rows: [{ count: memberships }] };
+      if (sql.includes("nested_membership")) {
+        return { rows: [{ count: nestedMemberships }] };
+      }
+      if (sql.includes("granted.rolname as role")) {
+        return { rows: membershipRows };
       }
       if (sql.includes("has_database_privilege")) {
         return { rows: [{ count: writePrivileges }] };
@@ -477,6 +510,217 @@ describe("PostgreSQL source access lifecycle", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("isolates apply, repeat protection, planning, and retirement for two nested target roots", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-multi-source-"));
+    roots.push(root);
+    const targets = ["primary", "publication"].map((name) => {
+      const artifactRoot = join(root, "targets", name, ".rehearsal");
+      const targetPolicy = {
+        ...externalPolicy,
+        reader: {
+          ...externalPolicy.reader,
+          credentialFile: `targets/${name}/.rehearsal/secrets/source-reader.env`,
+        },
+      };
+      return {
+        name,
+        artifactRoot,
+        policy: targetPolicy,
+        plan: createSourceAccessPlan({
+          policy: targetPolicy,
+          environment: externalEnvironment,
+        }),
+      };
+    });
+
+    for (const target of targets) {
+      const applied = await applyPostgresqlSourceAccess({
+        plan: target.plan,
+        confirmation: target.plan.digest,
+        projectRoot: root,
+        artifactRoot: target.artifactRoot,
+        environment: externalEnvironment,
+        clientFactory: async () => externalReaderClient(),
+        now: new Date("2026-10-02T12:00:00.000Z"),
+      });
+      expect(applied.receiptPath).toBe(
+        join(target.artifactRoot, "source-access-receipt.json"),
+      );
+      expect(applied.credentialPath).toBe(
+        join(target.artifactRoot, "secrets/source-reader.env"),
+      );
+      await expect(
+        applyPostgresqlSourceAccess({
+          plan: target.plan,
+          confirmation: target.plan.digest,
+          projectRoot: root,
+          artifactRoot: target.artifactRoot,
+          environment: externalEnvironment,
+          clientFactory: async () => {
+            throw new Error("repeat apply must not reach the source");
+          },
+        }),
+      ).rejects.toMatchObject({ code: "EEXIST" });
+    }
+
+    await expect(
+      planPostgresqlSourceAccessRetirement({
+        projectRoot: root,
+        artifactRoot: join(root, "targets", "missing", ".rehearsal"),
+        targetFingerprint: externalPolicy.targetFingerprint,
+      }),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+
+    const retirementPlans = [];
+    for (const target of targets) {
+      const retirement = await planPostgresqlSourceAccessRetirement({
+        projectRoot: root,
+        artifactRoot: target.artifactRoot,
+        targetFingerprint: target.policy.targetFingerprint,
+      });
+      retirementPlans.push(retirement);
+      await expect(
+        retirePostgresqlSourceAccess({
+          plan: retirement,
+          confirmation: retirement.digest,
+          projectRoot: root,
+          artifactRoot: targets.find(
+            (candidate) => candidate.name !== target.name,
+          ).artifactRoot,
+          credentialFile: targets.find(
+            (candidate) => candidate.name !== target.name,
+          ).policy.reader.credentialFile,
+        }),
+      ).rejects.toThrow("does not belong to this target");
+    }
+
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      await retirePostgresqlSourceAccess({
+        plan: retirementPlans[index],
+        confirmation: retirementPlans[index].digest,
+        projectRoot: root,
+        artifactRoot: target.artifactRoot,
+        credentialFile: target.policy.reader.credentialFile,
+      });
+      await expect(
+        readFile(join(target.artifactRoot, "source-access-receipt.json")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    }
+  });
+
+  it("refuses credentials outside the selected target state root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-source-path-"));
+    roots.push(root);
+    const artifactRoot = join(root, "targets/primary/.rehearsal");
+    const targetPolicy = {
+      ...externalPolicy,
+      reader: {
+        ...externalPolicy.reader,
+        credentialFile:
+          "targets/publication/.rehearsal/secrets/source-reader.env",
+      },
+    };
+    const plan = createSourceAccessPlan({
+      policy: targetPolicy,
+      environment: externalEnvironment,
+    });
+    await expect(
+      applyPostgresqlSourceAccess({
+        plan,
+        confirmation: plan.digest,
+        projectRoot: root,
+        artifactRoot,
+        environment: externalEnvironment,
+        clientFactory: async () => {
+          throw new Error("mismatched state must not reach the source");
+        },
+      }),
+    ).rejects.toThrow("this target's configured .rehearsal/secrets");
+  });
+
+  it("accepts only an exact safe external reader-group declaration", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-external-reader-"));
+    roots.push(root);
+    const groupedPolicy = {
+      ...externalPolicy,
+      reader: {
+        ...externalPolicy.reader,
+        allowedMemberships: ["provided_reader_group"],
+      },
+    };
+    const plan = createSourceAccessPlan({
+      policy: groupedPolicy,
+      environment: externalEnvironment,
+    });
+    const applied = await applyPostgresqlSourceAccess({
+      plan,
+      confirmation: plan.digest,
+      projectRoot: root,
+      environment: externalEnvironment,
+      clientFactory: async () =>
+        externalReaderClient({ memberships: [externalMembership()] }),
+      now: new Date("2026-10-02T12:00:00.000Z"),
+    });
+
+    expect(plan.review.reader.allowedMemberships).toEqual([
+      "provided_reader_group",
+    ]);
+    expect(applied.receipt.accessMode).toBe("external");
+  });
+
+  it("refuses unsafe, nested, or owning external reader groups", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-external-reader-"));
+    roots.push(root);
+    const groupedPolicy = {
+      ...externalPolicy,
+      reader: {
+        ...externalPolicy.reader,
+        allowedMemberships: ["provided_reader_group"],
+      },
+    };
+    const plan = createSourceAccessPlan({
+      policy: groupedPolicy,
+      environment: externalEnvironment,
+    });
+    const apply = (options) =>
+      applyPostgresqlSourceAccess({
+        plan,
+        confirmation: plan.digest,
+        projectRoot: root,
+        environment: externalEnvironment,
+        clientFactory: async () => externalReaderClient(options),
+        now: new Date("2026-10-02T12:00:00.000Z"),
+      });
+
+    for (const unsafe of [
+      { set_option: true },
+      { inherit_option: false },
+      { admin_option: true },
+      { rolcanlogin: true },
+      { rolsuper: true },
+    ]) {
+      await expect(
+        apply({ memberships: [externalMembership(unsafe)] }),
+      ).rejects.toMatchObject({
+        category: "unsafe_environment",
+        code: "SOURCE_AUTHORIZATION_REFUSED",
+      });
+    }
+    await expect(
+      apply({
+        memberships: [externalMembership()],
+        nestedMemberships: 1,
+      }),
+    ).rejects.toThrow("inherits another database role");
+    await expect(
+      apply({
+        memberships: [externalMembership()],
+        viewOwner: "provided_reader_group",
+      }),
+    ).rejects.toThrow("must not own an export view");
+  });
+
   it("refuses broad or insufficiently short-lived external readers", async () => {
     const root = await mkdtemp(join(tmpdir(), "rehearsal-external-reader-"));
     roots.push(root);
@@ -494,7 +738,11 @@ describe("PostgreSQL source access lifecycle", () => {
           externalReaderClient({ extraReadable: true }),
         now: new Date("2026-10-02T12:00:00.000Z"),
       }),
-    ).rejects.toThrow("do not exactly match");
+    ).rejects.toMatchObject({
+      category: "unsafe_environment",
+      code: "SOURCE_AUTHORIZATION_REFUSED",
+      message: expect.stringContaining("do not exactly match"),
+    });
     await expect(
       applyPostgresqlSourceAccess({
         plan,
@@ -505,7 +753,11 @@ describe("PostgreSQL source access lifecycle", () => {
           externalReaderClient({ expiresAt: "2026-10-02T13:00:00.000Z" }),
         now: new Date("2026-10-02T12:00:00.000Z"),
       }),
-    ).rejects.toThrow("expiration within the reviewed limit");
+    ).rejects.toMatchObject({
+      category: "unsafe_environment",
+      code: "SOURCE_AUTHORIZATION_REFUSED",
+      message: expect.stringContaining("expiration within the reviewed limit"),
+    });
     await expect(
       applyPostgresqlSourceAccess({
         plan,
@@ -516,7 +768,11 @@ describe("PostgreSQL source access lifecycle", () => {
           externalReaderClient({ expiresAt: "2026-10-02T11:59:00.000Z" }),
         now: new Date("2026-10-02T12:00:00.000Z"),
       }),
-    ).rejects.toThrow("expiration within the reviewed limit");
+    ).rejects.toMatchObject({
+      category: "unsafe_environment",
+      code: "SOURCE_AUTHORIZATION_REFUSED",
+      message: expect.stringContaining("expiration within the reviewed limit"),
+    });
     await expect(
       applyPostgresqlSourceAccess({
         plan,
@@ -526,7 +782,11 @@ describe("PostgreSQL source access lifecycle", () => {
         clientFactory: async () => externalReaderClient({ memberships: 1 }),
         now: new Date("2026-10-02T12:00:00.000Z"),
       }),
-    ).rejects.toThrow("belongs to another database role");
+    ).rejects.toMatchObject({
+      category: "unsafe_environment",
+      code: "SOURCE_AUTHORIZATION_REFUSED",
+      message: expect.stringContaining("reviewed allowlist"),
+    });
     await expect(
       applyPostgresqlSourceAccess({
         plan,
@@ -561,7 +821,11 @@ describe("PostgreSQL source access lifecycle", () => {
         clientFactory: async () => externalReaderClient({ writePrivileges: 1 }),
         now: new Date("2026-10-02T12:00:00.000Z"),
       }),
-    ).rejects.toThrow("write or sequence privileges");
+    ).rejects.toMatchObject({
+      category: "unsafe_environment",
+      code: "SOURCE_AUTHORIZATION_REFUSED",
+      message: expect.stringContaining("write or sequence privileges"),
+    });
     await expect(
       applyPostgresqlSourceAccess({
         plan,
@@ -571,7 +835,11 @@ describe("PostgreSQL source access lifecycle", () => {
         clientFactory: async () => externalReaderClient({ privileged: true }),
         now: new Date("2026-10-02T12:00:00.000Z"),
       }),
-    ).rejects.toThrow("privileged role attributes");
+    ).rejects.toMatchObject({
+      category: "unsafe_environment",
+      code: "SOURCE_AUTHORIZATION_REFUSED",
+      message: expect.stringContaining("privileged role attributes"),
+    });
     await expect(
       applyPostgresqlSourceAccess({
         plan,
@@ -582,7 +850,11 @@ describe("PostgreSQL source access lifecycle", () => {
           externalReaderClient({ securityDefiners: 1 }),
         now: new Date("2026-10-02T12:00:00.000Z"),
       }),
-    ).rejects.toThrow("security-definer function");
+    ).rejects.toMatchObject({
+      category: "unsafe_environment",
+      code: "SOURCE_AUTHORIZATION_REFUSED",
+      message: expect.stringContaining("security-definer function"),
+    });
     await expect(
       applyPostgresqlSourceAccess({
         plan,

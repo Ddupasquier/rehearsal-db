@@ -23,6 +23,15 @@ The privacy key stays ignored under `.rehearsal`. The policy is safe to review i
 control because it contains hashes and environment-variable names, not credentials,
 URLs, or raw owner identifiers.
 
+`credentialFile` must be inside the selected target's
+`baseline.artifactDirectory`, under its `secrets` folder. With the default artifact
+directory, use `.rehearsal/secrets/source-reader.env`. For a target whose artifact
+directory is `targets/primary/.rehearsal`, use
+`targets/primary/.rehearsal/secrets/source-reader.env` and place `privacyKey` there as
+well. Rehearsal stores that target's access receipt beside its baseline at
+`targets/primary/.rehearsal/source-access-receipt.json`; separate targets never share
+the receipt or credential.
+
 ## 2. Declare the source boundary
 
 `source-access-policy.json` uses this shape:
@@ -112,6 +121,7 @@ an administrator credential or change the source:
   "reader": {
     "mode": "external",
     "role": "provided_rehearsal_reader",
+    "allowedMemberships": ["provided_rehearsal_readers"],
     "connectionEnvironmentVariable": "REHEARSAL_SOURCE_READER_URL",
     "credentialFile": ".rehearsal/secrets/source-reader.env",
     "maximumValidForMinutes": 30
@@ -153,9 +163,25 @@ view hash, columns, scopes, or reader declaration requires a new verification.
 
 External mode also requires all non-system readable columns to match only the declared
 views and migration-ledger columns. It refuses database, schema, relation, or column
-writes; inherited roles; privileged role attributes; executable non-system
-security-definer functions; a reader-owned view; or a database-enforced expiration
-beyond `maximumValidForMinutes`.
+writes; privileged role attributes; executable non-system security-definer functions;
+a reader-owned view; or a database-enforced expiration beyond
+`maximumValidForMinutes`.
+
+This audit is intentionally conservative: an object-level table, column, sequence, or
+function grant remains disallowed even when its schema currently lacks `USAGE`. Do not
+use schema visibility to hide stale grants. Revoke the object grant or move the approved
+surface behind the reviewed export views; this also avoids relying on behavior of an
+already-open or prepared database session.
+
+An external login may inherit its narrow permissions from provider-owned group roles.
+List every direct group in `allowedMemberships`; omit the field or use `[]` when the
+login has direct grants only. Rehearsal requires the observed membership set to match
+that list exactly. Every allowed group must be non-login and non-privileged, grant
+inheritance to the login, disable both `SET ROLE` and membership delegation, inherit no
+other role, and own none of the export views. PostgreSQL versions that cannot prove the
+per-membership role-switch setting are refused. Rehearsal still evaluates the login's
+complete effective read, write, sequence, and executable-function surface after those
+checks. Adding, removing, or changing a group changes the reviewed plan digest.
 
 `targetSchema` is optional and defaults to `public`. Set it when the restored relation
 belongs elsewhere, and use the same schema in privacy policy version 2. This is relation
@@ -167,6 +193,9 @@ non-identity prefix may use `prefix`. A private owner prefix uses
 the privacy policy below. Its raw value stays out of tracked files and the review plan
 records only its SHA-256. Objects outside the exact bucket/prefix are not listed or
 downloaded. Size, object-count, path, ETag, and exact-byte checks apply.
+Supabase folder entries are traversed recursively beneath that exact prefix. Folder
+entries count toward `maximumObjects`, so the same reviewed limit bounds both the
+directory walk and transferred files. Empty files remain files and are copied normally.
 
 ## 3. Use executable privacy policy version 2
 
@@ -227,10 +256,12 @@ Every selected column has one action and, where required, a bounded recipe:
 }
 ```
 
-Supported recipes are intentionally small: keyed UUID/email/text/integer pseudonyms,
-explicit constants, bounded or grouped date shifts, identity-aware path mappings, and
-fully classified JSON objects. Unknown tables, columns, JSON keys, formats, and recipes
-stop the refresh. There is no JavaScript or SQL escape hatch. See
+Supported recipes are intentionally small: keyed UUID/email/text/integer/hex/GTIN/URL
+pseudonyms, hexadecimal digests of explicitly named sanitized columns, explicit
+constants, bounded or grouped date shifts, identity-aware path mappings, bounded
+reviewed-identity substitution inside retained text, and fully classified JSON
+structures. Unknown tables, columns, digest inputs, JSON keys, formats, and recipes stop
+the refresh. There is no JavaScript or SQL escape hatch. See
 [Sanitization policy](sanitization.md) for complete path and date examples.
 
 ## 4. Preview, apply, refresh, and retire
@@ -289,6 +320,11 @@ provider-owned role and views remain untouched. The database-enforced expiration
 limits access, and the provider may revoke it sooner. Rehearsal does not claim that local
 cleanup revoked a provider-owned credential. Unrelated roles, grants, objects, baselines,
 runtimes, and Docker resources are preserved.
+
+Apply, refresh, and retire always resolve those local files from the active config's
+`baseline.artifactDirectory`. If you switch configs or target roots, Rehearsal refuses
+to retire a receipt from the other target. It also refuses an existing receipt or
+credential rather than overwriting or adopting it.
 
 ## Limits
 

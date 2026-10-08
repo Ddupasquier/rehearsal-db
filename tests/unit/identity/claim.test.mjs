@@ -35,7 +35,7 @@ const policy = {
 };
 
 describe("local identity claim", () => {
-  it("binds an exact redacted plan and applies it transactionally", async () => {
+  it("binds an exact redacted plan and applies it transactionally without overlapping client queries", async () => {
     expect(() =>
       validateIdentityPolicy(validateIdentityPolicy(policy)),
     ).not.toThrow();
@@ -49,10 +49,17 @@ describe("local identity claim", () => {
     expect(plan.digest).toMatch(/^[a-f0-9]{64}$/u);
     expect(plan.review.claimsSha256).toMatch(/^[a-f0-9]{64}$/u);
     const queries = [];
+    let queryInFlight = false;
     const client = {
       async connect() {},
       async end() {},
       async query(sql, parameters = []) {
+        if (queryInFlight) {
+          throw new Error("PostgreSQL client queries must be sequential.");
+        }
+        queryInFlight = true;
+        await new Promise((resolve) => queueMicrotask(resolve));
+        queryInFlight = false;
         queries.push({ sql, parameters });
         if (sql.includes("from rehearsal_internal.identity_claims")) {
           return { rows: [{ present: true }] };

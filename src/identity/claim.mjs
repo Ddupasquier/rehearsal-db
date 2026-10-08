@@ -740,18 +740,18 @@ export const applyIdentityClaim = async ({
       "select 1 from auth.users where id = $1::uuid limit 1",
       [plan.identity.placeholderUserId],
     );
-    const placeholderReferenceCounts =
-      localUserId === plan.identity.placeholderUserId
-        ? []
-        : await Promise.all(
-            plan.identity.references.map((reference) =>
-              countIdentityRows({
-                client,
-                reference,
-                userId: plan.identity.placeholderUserId,
-              }),
-            ),
-          );
+    const placeholderReferenceCounts = [];
+    if (localUserId !== plan.identity.placeholderUserId) {
+      for (const reference of plan.identity.references) {
+        placeholderReferenceCounts.push(
+          await countIdentityRows({
+            client,
+            reference,
+            userId: plan.identity.placeholderUserId,
+          }),
+        );
+      }
+    }
     const transferReferences = plan.identity.references.filter(
       (reference) => reference.strategy === "transfer",
     );
@@ -762,15 +762,17 @@ export const applyIdentityClaim = async ({
       const index = plan.identity.references.indexOf(reference);
       return placeholderReferenceCounts[index] ?? 0;
     });
-    const transferLocalCounts =
-      localUserId === plan.identity.placeholderUserId ||
-      preservedReferences.length === 0
-        ? []
-        : await Promise.all(
-            transferReferences.map((reference) =>
-              countIdentityRows({ client, reference, userId: localUserId }),
-            ),
-          );
+    const transferLocalCounts = [];
+    if (
+      localUserId !== plan.identity.placeholderUserId &&
+      preservedReferences.length > 0
+    ) {
+      for (const reference of transferReferences) {
+        transferLocalCounts.push(
+          await countIdentityRows({ client, reference, userId: localUserId }),
+        );
+      }
+    }
     const alreadyClaimed =
       localUserId !== plan.identity.placeholderUserId &&
       transferPlaceholderCounts.every((count) => count === 0) &&

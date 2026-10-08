@@ -7,13 +7,14 @@ import { createHash, randomBytes } from "node:crypto";
 import {
   chmod,
   link,
+  lstat,
   mkdir,
   open,
   readFile,
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import pg from "pg";
 import {
   assertSourceAccessConfirmation,
@@ -43,6 +44,36 @@ const ensureOwnedPath = (projectRoot, relativePath) => {
   return path;
 };
 
+const isInside = (root, path) => {
+  const child = relative(root, path);
+  return Boolean(child) && !child.startsWith("..") && !isAbsolute(child);
+};
+
+const resolveSourceStateRoot = ({
+  projectRoot,
+  artifactRoot = join(projectRoot, ".rehearsal"),
+}) => ensureOwnedPath(projectRoot, artifactRoot);
+
+export const resolvePostgresqlSourceStatePaths = ({
+  projectRoot = process.cwd(),
+  artifactRoot = join(projectRoot, ".rehearsal"),
+  credentialFile,
+}) => {
+  const stateRoot = resolveSourceStateRoot({ projectRoot, artifactRoot });
+  const credentialPath = ensureOwnedPath(projectRoot, credentialFile);
+  const secretsRoot = join(stateRoot, "secrets");
+  if (!isInside(secretsRoot, credentialPath)) {
+    throw new Error(
+      "Source reader credential must stay inside this target's configured .rehearsal/secrets directory.",
+    );
+  }
+  return Object.freeze({
+    stateRoot,
+    credentialPath,
+    receiptPath: join(stateRoot, "source-access-receipt.json"),
+  });
+};
+
 const readerConnectionString = (
   administratorConnectionString,
   role,
@@ -64,6 +95,22 @@ const writeExclusiveSecret = async (path, content) => {
     await handle.close();
   }
   await chmod(path, 0o600);
+};
+
+const assertSourceStateAvailable = async (...paths) => {
+  for (const path of paths) {
+    try {
+      await lstat(path);
+    } catch (error) {
+      if (error?.code === "ENOENT") continue;
+      throw error;
+    }
+    const error = new Error(
+      "Source-access state already exists and will not be overwritten.",
+    );
+    error.code = "EEXIST";
+    throw error;
+  }
 };
 
 const connection = async (connectionString, clientFactory) => {
@@ -222,6 +269,7 @@ const buildSourceAccessReceipt = ({ plan, expiresAt }) => ({
 const activateExternalPostgresqlSourceAccess = async ({
   plan,
   projectRoot,
+  artifactRoot,
   environment,
   clientFactory,
   now,
@@ -235,20 +283,18 @@ const activateExternalPostgresqlSourceAccess = async ({
   }
   assertTarget(plan, connectionString);
   assertApprovedOwnerScopes(plan, environment);
+  const { credentialPath, receiptPath } = resolvePostgresqlSourceStatePaths({
+    projectRoot,
+    artifactRoot,
+    credentialFile: plan.policy.reader.credentialFile,
+  });
+  await assertSourceStateAvailable(credentialPath, receiptPath);
   const verified = await verifyExternalPostgresqlReader({
     plan,
     connectionString,
     clientFactory,
     now,
   });
-  const credentialPath = ensureOwnedPath(
-    projectRoot,
-    plan.policy.reader.credentialFile,
-  );
-  const receiptPath = ensureOwnedPath(
-    projectRoot,
-    ".rehearsal/source-access-receipt.json",
-  );
   const temporaryCredentialPath = `${credentialPath}.building-${process.pid}`;
   const receipt = buildSourceAccessReceipt({
     plan,
@@ -280,6 +326,7 @@ export const applyPostgresqlSourceAccess = async ({
   plan,
   confirmation,
   projectRoot = process.cwd(),
+  artifactRoot = join(projectRoot, ".rehearsal"),
   environment = process.env,
   clientFactory,
   now = new Date(),
@@ -289,6 +336,7 @@ export const applyPostgresqlSourceAccess = async ({
     return activateExternalPostgresqlSourceAccess({
       plan,
       projectRoot,
+      artifactRoot,
       environment,
       clientFactory,
       now,
@@ -305,14 +353,11 @@ export const applyPostgresqlSourceAccess = async ({
   const expiresAt = new Date(
     now.valueOf() + plan.policy.reader.validForMinutes * 60_000,
   ).toISOString();
-  const credentialPath = ensureOwnedPath(
+  const { credentialPath, receiptPath } = resolvePostgresqlSourceStatePaths({
     projectRoot,
-    plan.policy.reader.credentialFile,
-  );
-  const receiptPath = ensureOwnedPath(
-    projectRoot,
-    ".rehearsal/source-access-receipt.json",
-  );
+    artifactRoot,
+    credentialFile: plan.policy.reader.credentialFile,
+  });
   const temporaryCredentialPath = `${credentialPath}.building-${process.pid}`;
   const readerUrl = readerConnectionString(
     administratorConnectionString,
@@ -446,11 +491,12 @@ export const applyPostgresqlSourceAccess = async ({
 
 export const planPostgresqlSourceAccessRetirement = async ({
   projectRoot = process.cwd(),
+  artifactRoot = join(projectRoot, ".rehearsal"),
   targetFingerprint,
 }) => {
-  const receiptPath = ensureOwnedPath(
-    projectRoot,
-    ".rehearsal/source-access-receipt.json",
+  const receiptPath = join(
+    resolveSourceStateRoot({ projectRoot, artifactRoot }),
+    "source-access-receipt.json",
   );
   const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
   return {
@@ -465,6 +511,7 @@ export const retirePostgresqlSourceAccess = async ({
   confirmation,
   administratorEnvironmentVariable,
   projectRoot = process.cwd(),
+  artifactRoot = join(projectRoot, ".rehearsal"),
   environment = process.env,
   credentialFile,
   clientFactory,
@@ -474,10 +521,20 @@ export const retirePostgresqlSourceAccess = async ({
       `Source retirement confirmation does not match. Expected ${plan.digest}.`,
     );
   }
+  const { credentialPath, receiptPath } = resolvePostgresqlSourceStatePaths({
+    projectRoot,
+    artifactRoot,
+    credentialFile,
+  });
+  if (resolve(plan.receiptPath) !== receiptPath) {
+    throw new Error(
+      "Source retirement receipt does not belong to this target's configured state root.",
+    );
+  }
   if (plan.review.accessMode === "external") {
     await Promise.all([
-      rm(ensureOwnedPath(projectRoot, credentialFile), { force: true }),
-      rm(plan.receiptPath, { force: true }),
+      rm(credentialPath, { force: true }),
+      rm(receiptPath, { force: true }),
     ]);
     return { retired: true, providerResourcesPreserved: true };
   }
@@ -574,8 +631,8 @@ export const retirePostgresqlSourceAccess = async ({
     await client.end?.();
   }
   await Promise.all([
-    rm(ensureOwnedPath(projectRoot, credentialFile), { force: true }),
-    rm(plan.receiptPath, { force: true }),
+    rm(credentialPath, { force: true }),
+    rm(receiptPath, { force: true }),
   ]);
   return { retired: true };
 };

@@ -181,6 +181,133 @@ describe("approved Storage transfer", () => {
     expect(assets[0].contentType).toBe("text/plain");
   });
 
+  it("recursively inventories Supabase folder placeholders and transfers only files", async () => {
+    const listedPrefixes = [];
+    const downloadedPaths = [];
+    const fetchImplementation = async (url, options = {}) => {
+      if (url.includes("/list/")) {
+        const { prefix } = JSON.parse(options.body);
+        listedPrefixes.push(prefix);
+        const entries = {
+          owner: [
+            { id: null, name: "photos", metadata: null },
+            { id: "root-file", name: "profile.json", metadata: { size: 2 } },
+          ],
+          "owner/photos": [
+            { id: null, name: "2026", metadata: null },
+            { id: "photo-file", name: "avatar.png", metadata: { size: 3 } },
+          ],
+          "owner/photos/2026": [
+            {
+              id: "nested-file",
+              name: "launch.png",
+              metadata: { size: 4 },
+            },
+          ],
+        };
+        return response({ body: JSON.stringify(entries[prefix] ?? []) });
+      }
+      const path = decodeURIComponent(url.split("/assets/")[1]);
+      downloadedPaths.push(path);
+      const bytes = path.endsWith("profile.json")
+        ? "{}"
+        : path.endsWith("avatar.png")
+          ? "pic"
+          : "ship";
+      return response({ body: Buffer.from(bytes) });
+    };
+
+    const assets = [];
+    for await (const asset of streamApprovedSupabaseAssets({
+      baseUrl: "https://source.example.invalid",
+      token: "scoped-reader-token-value",
+      declarations: [{ bucket: "assets", prefix: "owner/" }],
+      fetchImplementation,
+    })) {
+      const chunks = [];
+      for await (const chunk of asset.content) chunks.push(chunk);
+      assets.push({ path: asset.objectPath, bytes: Buffer.concat(chunks) });
+    }
+
+    expect(listedPrefixes).toEqual([
+      "owner",
+      "owner/photos",
+      "owner/photos/2026",
+    ]);
+    expect(downloadedPaths).toEqual([
+      "owner/profile.json",
+      "owner/photos/avatar.png",
+      "owner/photos/2026/launch.png",
+    ]);
+    expect(assets.map(({ path }) => path)).toEqual(downloadedPaths);
+    expect(assets.map(({ bytes }) => bytes.toString())).toEqual([
+      "{}",
+      "pic",
+      "ship",
+    ]);
+  });
+
+  it("distinguishes empty files from folders and bounds recursive inventory", async () => {
+    const emptyAssets = [];
+    for await (const asset of streamApprovedSupabaseAssets({
+      baseUrl: "https://source.example.invalid",
+      token: "scoped-reader-token-value",
+      declarations: [{ bucket: "assets", prefix: "owner/" }],
+      fetchImplementation: async (url) =>
+        url.includes("/list/")
+          ? response({
+              body: JSON.stringify([
+                { id: "empty-file", name: "empty.txt", metadata: { size: 0 } },
+              ]),
+            })
+          : response({ body: Buffer.alloc(0) }),
+    })) {
+      for await (const _chunk of asset.content) {
+        // Consume and verify the exact zero-byte response.
+      }
+      emptyAssets.push(asset.objectPath);
+    }
+    expect(emptyAssets).toEqual(["owner/empty.txt"]);
+
+    await expect(async () => {
+      for await (const _asset of streamApprovedSupabaseAssets({
+        baseUrl: "https://source.example.invalid",
+        token: "scoped-reader-token-value",
+        declarations: [{ bucket: "assets", prefix: "owner/" }],
+        maximumObjects: 1,
+        fetchImplementation: async (url, options = {}) => {
+          if (!url.includes("/list/")) return response({ body: "x" });
+          const { prefix } = JSON.parse(options.body);
+          return response({
+            body: JSON.stringify(
+              prefix === "owner"
+                ? [{ id: null, name: "folder", metadata: null }]
+                : [{ id: "file", name: "file.txt", metadata: { size: 1 } }],
+            ),
+          });
+        },
+      })) {
+        // Folder placeholders count toward the reviewed inventory boundary.
+      }
+    }).rejects.toThrow("reviewed transfer boundary");
+
+    await expect(async () => {
+      for await (const _asset of streamApprovedSupabaseAssets({
+        baseUrl: "https://source.example.invalid",
+        token: "scoped-reader-token-value",
+        declarations: [{ bucket: "assets", prefix: "owner/" }],
+        fetchImplementation: async () =>
+          response({
+            body: JSON.stringify([
+              { id: null, name: "../escape", metadata: null },
+            ]),
+          }),
+      })) {
+        // Unsafe folder names must fail before another request is made.
+      }
+    }).rejects.toThrow("unsafe");
+  });
+
   it("rejects changed, oversized, traversal, and failed objects without response bodies", async () => {
     const inventory = (entry) => async (url) =>
       url.includes("/list/")

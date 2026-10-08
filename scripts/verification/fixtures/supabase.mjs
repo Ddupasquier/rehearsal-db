@@ -29,6 +29,7 @@ import {
   buildRehearsalPlan,
   inspectRehearsalMigrations,
 } from "../../../src/runtime/plan.mjs";
+import { streamApprovedSupabaseAssets } from "../../../src/source/asset_transfer.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/rehearsal-project");
@@ -614,6 +615,54 @@ from public.widgets;`,
       apikey: fixtureEnvironment.serviceRoleKey,
       authorization: `Bearer ${fixtureEnvironment.serviceRoleKey}`,
     };
+    const nestedFixtureAsset = await fetch(
+      `${fixtureEnvironment.apiUrl}/storage/v1/object/copy`,
+      {
+        method: "POST",
+        headers: { ...serviceHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          bucketId: "fixture-assets",
+          sourceKey: "proof/exact-byte.txt",
+          destinationKey: "proof/nested/deeper/exact-byte.txt",
+        }),
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (!nestedFixtureAsset.ok) {
+      throw new Error(
+        `The nested Storage fixture copy failed with HTTP ${nestedFixtureAsset.status}.`,
+      );
+    }
+    const recursivelyInventoriedAssets = [];
+    for await (const asset of streamApprovedSupabaseAssets({
+      baseUrl: fixtureEnvironment.apiUrl,
+      token: fixtureEnvironment.serviceRoleKey,
+      declarations: [{ bucket: "fixture-assets", prefix: "proof/" }],
+    })) {
+      const chunks = [];
+      for await (const chunk of asset.content) chunks.push(chunk);
+      recursivelyInventoriedAssets.push({
+        path: asset.objectPath,
+        content: Buffer.concat(chunks).toString("utf8"),
+      });
+    }
+    if (
+      recursivelyInventoriedAssets.length !== 2 ||
+      !recursivelyInventoriedAssets.some(
+        ({ path }) => path === "proof/exact-byte.txt",
+      ) ||
+      !recursivelyInventoriedAssets.some(
+        ({ path }) => path === "proof/nested/deeper/exact-byte.txt",
+      ) ||
+      recursivelyInventoriedAssets.some(
+        ({ content }) => content !== "independent Rehearsal Storage proof\n",
+      )
+    ) {
+      throw new Error(
+        "The real Supabase Storage inventory did not recursively stream both exact fixture objects.",
+      );
+    }
+    commandsProven.push("recursive Supabase Storage inventory");
     const signupResponse = await fetch(
       `${fixtureEnvironment.apiUrl}/auth/v1/admin/users`,
       {
