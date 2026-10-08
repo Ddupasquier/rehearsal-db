@@ -5,6 +5,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.14] - 2026-10-05
+
 ### Added
 
 - Packed-package onboarding is now a required CI job. It covers fresh Supabase and
@@ -16,6 +18,34 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   explain when a supported existing nested config prevents root-file generation.
 - Packed-package onboarding covers fresh, nested, existing-root, and repeated installs
   while proving reviewed configuration bytes are preserved.
+- Privacy policy version 2 can explicitly treat nullable owners as non-matches and match
+  an approved owner through any of a bounded list of pseudonymized identity columns.
+- Bounded JSON unions classify each permitted root type, while JSON dictionaries require
+  reviewed runtime-key formats, key actions, value recipes, and item/depth/byte limits.
+- JSON dictionaries can restrict runtime keys to canonical signed integers within an
+  explicit safe-integer range, preserving positive, negative, and reviewed zero keys
+  without widening numeric maps to arbitrary text.
+- Date shifting can explicitly preserve numeric epoch-millisecond representation,
+  including inside structured JSON, while sharing a stable grouped offset with related
+  epoch or ISO-string dates.
+- Bounded scalar enums retain only explicitly reviewed structural strings, finite
+  numbers, or booleans inside ordinary fields and nested JSON declarations, rejecting
+  out-of-domain values without echoing them in diagnostics.
+- Validated strings preserve bounded, case-sensitive structural codes from open domains
+  using a package-owned portable alphabet, refusing credential-shaped and malformed
+  text without consumer regexes, callbacks, or static identifier lists.
+- Keyed hexadecimal and GTIN pseudonyms preserve reviewed database constraints, while
+  fixed-width digest recipes derive fingerprints only from explicitly named sanitized
+  columns and reject missing, excluded, duplicate, or cyclic inputs.
+- A single GTIN recipe can declare reviewed `allowedLengths`, preserving each source
+  value's 8-, 12-, 13-, or 14-digit shape and check digit even inside structured JSON.
+- Keyed URL pseudonyms replace private HTTPS URLs with deterministic, bounded HTTPS
+  loopback paths without retaining source hosts, paths, credentials, queries, or tokens.
+- Bounded binding substitution can retain permitted surrounding text while replacing
+  exact occurrences of a reviewed UUID with its corresponding keyed UUID pseudonym.
+- External PostgreSQL readers can declare a bounded exact allowlist of provider-owned
+  permission groups. Rehearsal verifies safe membership options, group attributes,
+  nesting, view ownership, and the complete effective privilege surface.
 
 ### Documentation
 
@@ -23,6 +53,31 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   upgrades, port conflicts, missing OAuth credentials, and low Docker capacity.
 - The configuration guide documents a safe manual move to the project root, separating
   config-file-relative JavaScript imports from project-root-relative Rehearsal paths.
+- The sanitization guide documents nullable and multi-column ownership, heterogeneous
+  JSON values, runtime-keyed dictionaries, keyed HTTPS replacements, bounded identity
+  substitution, and their fail-closed boundaries.
+
+### Fixed
+
+- Source preparation now stores and reads each target's access receipt and owner-only
+  reader credential under its configured baseline artifact directory. Nested and
+  multi-target state roots no longer collide, and retirement refuses a receipt from a
+  different target root.
+- Supabase Storage source preparation now recursively traverses real folder placeholder
+  entries while keeping the approved prefix, path, depth, object-count, per-object, and
+  total-byte boundaries fail closed.
+- Approved-owner selection now rejects non-finite numeric values in every declared
+  owner column before choosing a privacy branch, including when another column already
+  matches the approved owner.
+- Pseudonymized canonical integer dictionary keys now share the same keyed identity
+  mapping as numeric columns and nested numeric values using the same namespace, so
+  runtime maps keep their reviewed cross-representation joins.
+- External-reader membership mismatches now return a redacted, actionable source
+  authorization refusal instead of an internal-failure diagnostic.
+- All external-reader privilege, expiration, readable-surface, and security-definer
+  denials now use the same `SOURCE_AUTHORIZATION_REFUSED` diagnostic and exit code 3.
+- Identity claims now sequence PostgreSQL reads on their single transaction client,
+  avoiding deprecated overlapping queries and remaining compatible with pg 9.
 
 ## [0.1.0-beta.13] - 2026-10-05
 

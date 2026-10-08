@@ -46,6 +46,47 @@ const documentedCommands = [
 ];
 
 describe("documented CLI contract", () => {
+  it("documents structured privacy declarations without consumer callbacks", async () => {
+    const sanitization = await readFile(
+      join(root, "docs/sanitization.md"),
+      "utf8",
+    );
+    const normalized = sanitization.replace(/\s+/gu, " ");
+
+    expect(sanitization).toContain(
+      '"columns": ["target_user_id", "actor_user_id"]',
+    );
+    expect(sanitization).toContain('"match": "any"');
+    expect(sanitization).toContain('"nullBehavior": "otherwise"');
+    expect(sanitization).toContain('"kind": "json-union"');
+    expect(sanitization).toContain('"kind": "json-dictionary"');
+    expect(sanitization).toContain('"format": "integer"');
+    expect(sanitization).toContain('"minimum": -9007199254740991');
+    expect(sanitization).toContain('"representation": "epoch-milliseconds"');
+    expect(sanitization).toContain('"kind": "enum"');
+    expect(sanitization).toContain('"values": ["contain", "cover", "custom"]');
+    expect(sanitization).toContain('"kind": "validated-string"');
+    expect(sanitization).toContain('"format": "portable-code"');
+    expect(normalized).toContain(
+      "Leading zeroes, `-0`, a leading `+`, fractions, exponents, unsafe integers, and unrelated text are rejected",
+    );
+    expect(normalized).toContain(
+      "ISO-string and epoch-millisecond declarations may share a group",
+    );
+    expect(normalized).toContain(
+      "Rejected values are never included in the error message",
+    );
+    expect(normalized).toContain(
+      "Arbitrary regular expressions are not supported",
+    );
+    expect(normalized).toContain(
+      "Arrays and objects cannot use whole-value `KEEP`",
+    );
+    expect(normalized).toContain(
+      "A dictionary never infers that runtime keys are safe",
+    );
+  });
+
   it("documents safe configuration discovery and root relocation", async () => {
     const configuration = await readFile(
       join(root, "docs/configuration.md"),

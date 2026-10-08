@@ -1,6 +1,7 @@
 /** Verify an externally provisioned PostgreSQL reader without source writes. */
 
 import pg from "pg";
+import { RehearsalError } from "../shared/diagnostics.mjs";
 import { externalViewDefinitionFingerprint } from "./access.mjs";
 
 const { Client } = pg;
@@ -47,6 +48,19 @@ const count = (result, label) => {
   return value;
 };
 
+const sourceAuthorizationRefusal = ({ message, expected, actual }) =>
+  new RehearsalError({
+    category: "unsafe_environment",
+    code: "SOURCE_AUTHORIZATION_REFUSED",
+    message,
+    expected,
+    actual,
+    refused: "The external source credential was not activated or saved.",
+    suggestions: [
+      "Review sourcePolicy.reader and the database role grants, then preview source plan again.",
+    ],
+  });
+
 export const verifyExternalPostgresqlReader = async ({
   plan,
   connectionString,
@@ -68,9 +82,12 @@ export const verifyExternalPostgresqlReader = async ({
     );
     const role = roleResult.rows[0];
     if (!role || role.role !== plan.policy.reader.role || !role.rolcanlogin) {
-      throw new Error(
-        "External source credential does not authenticate as the reviewed login role.",
-      );
+      throw sourceAuthorizationRefusal({
+        message:
+          "External source credential does not authenticate as the reviewed login role.",
+        expected: "the reviewed login role",
+        actual: "a missing, different, or non-login role",
+      });
     }
     if (
       role.rolsuper ||
@@ -79,7 +96,11 @@ export const verifyExternalPostgresqlReader = async ({
       role.rolreplication ||
       role.rolbypassrls
     ) {
-      throw new Error("External source reader has privileged role attributes.");
+      throw sourceAuthorizationRefusal({
+        message: "External source reader has privileged role attributes.",
+        expected: "a non-privileged login role",
+        actual: "one or more privileged role attributes",
+      });
     }
     const expiresAt = new Date(role.rolvaliduntil);
     const maximumExpiration =
@@ -89,21 +110,94 @@ export const verifyExternalPostgresqlReader = async ({
       expiresAt.valueOf() <= now.valueOf() ||
       expiresAt.valueOf() > maximumExpiration
     ) {
-      throw new Error(
-        "External source reader must have a future database-enforced expiration within the reviewed limit.",
-      );
+      throw sourceAuthorizationRefusal({
+        message:
+          "External source reader must have a future database-enforced expiration within the reviewed limit.",
+        expected: `a future expiration within ${plan.policy.reader.maximumValidForMinutes} minutes`,
+        actual: "an absent, expired, or overly long expiration",
+      });
     }
 
     const memberships = await client.query(
-      `select count(*)::integer as count
+      `select granted.rolname as role, granted.rolcanlogin,
+              granted.rolsuper, granted.rolcreaterole, granted.rolcreatedb,
+              granted.rolreplication, granted.rolbypassrls,
+              membership.admin_option,
+              coalesce(
+                (to_jsonb(membership) ->> 'inherit_option')::boolean,
+                member.rolinherit
+              ) as inherit_option,
+              coalesce(
+                (to_jsonb(membership) ->> 'set_option')::boolean,
+                true
+              ) as set_option
        from pg_auth_members membership
        join pg_roles member on member.oid = membership.member
-       where member.rolname = current_user`,
+       join pg_roles granted on granted.oid = membership.roleid
+       where member.rolname = current_user
+       order by granted.rolname`,
     );
-    if (count(memberships, "role membership") !== 0) {
-      throw new Error(
-        "External source reader belongs to another database role.",
+    const expectedMemberships = [
+      ...plan.policy.reader.allowedMemberships,
+    ].sort();
+    const actualMemberships = memberships.rows
+      .map((membership) => membership.role)
+      .sort();
+    if (
+      actualMemberships.length !== expectedMemberships.length ||
+      actualMemberships.some(
+        (membership, index) => membership !== expectedMemberships[index],
+      )
+    ) {
+      throw sourceAuthorizationRefusal({
+        message:
+          "External source reader role memberships do not exactly match the reviewed allowlist.",
+        expected: expectedMemberships,
+        actual: actualMemberships,
+      });
+    }
+    for (const membership of memberships.rows) {
+      if (
+        membership.rolcanlogin ||
+        membership.rolsuper ||
+        membership.rolcreaterole ||
+        membership.rolcreatedb ||
+        membership.rolreplication ||
+        membership.rolbypassrls ||
+        membership.admin_option ||
+        membership.inherit_option !== true ||
+        membership.set_option !== false
+      ) {
+        throw sourceAuthorizationRefusal({
+          message:
+            "External source reader has an unsafe reviewed role membership.",
+          expected:
+            "a non-login, non-privileged group with inheritance enabled and role switching and delegation disabled",
+          actual: `unsafe membership options for ${membership.role}`,
+        });
+      }
+    }
+    if (expectedMemberships.length > 0) {
+      const nestedMemberships = await client.query(
+        `select count(*)::integer as count
+         from pg_auth_members direct_membership
+         join pg_roles direct_role
+           on direct_role.oid = direct_membership.roleid
+         join pg_auth_members nested_membership
+           on nested_membership.member = direct_membership.roleid
+         join pg_roles member on member.oid = direct_membership.member
+         where member.rolname = current_user
+           and direct_role.rolname = any($1::name[])`,
+        [expectedMemberships],
       );
+      if (count(nestedMemberships, "nested role membership") !== 0) {
+        throw sourceAuthorizationRefusal({
+          message:
+            "An allowed external source group inherits another database role.",
+          expected: "no nested role memberships",
+          actual: "one or more nested memberships",
+        });
+      }
     }
 
     const databaseWrites = await client.query(
@@ -160,9 +254,13 @@ export const verifyExternalPostgresqlReader = async ({
         sequenceAccess,
       ].some((result) => count(result, "write or sequence privilege") !== 0)
     ) {
-      throw new Error(
-        "External source reader has database write or sequence privileges.",
-      );
+      throw sourceAuthorizationRefusal({
+        message:
+          "External source reader has database write or sequence privileges.",
+        expected:
+          "no database, schema, relation, column, or sequence write access",
+        actual: "one or more disallowed effective privileges",
+      });
     }
 
     const readable = await client.query(
@@ -188,9 +286,12 @@ export const verifyExternalPostgresqlReader = async ({
       actual.size !== expected.size ||
       [...actual].some((entry) => !expected.has(entry))
     ) {
-      throw new Error(
-        "External source reader's readable columns do not exactly match the reviewed export surface.",
-      );
+      throw sourceAuthorizationRefusal({
+        message:
+          "External source reader's readable columns do not exactly match the reviewed export surface.",
+        expected: `${expected.size} reviewed readable columns`,
+        actual: `${actual.size} effective readable columns`,
+      });
     }
 
     for (const relation of plan.policy.relations) {
@@ -217,8 +318,17 @@ export const verifyExternalPostgresqlReader = async ({
           "External export views must enable PostgreSQL security_barrier.",
         );
       }
-      if (actual.owner === plan.policy.reader.role) {
-        throw new Error("External source reader must not own an export view.");
+      if (
+        [
+          plan.policy.reader.role,
+          ...plan.policy.reader.allowedMemberships,
+        ].includes(actual.owner)
+      ) {
+        throw sourceAuthorizationRefusal({
+          message: "External source reader roles must not own an export view.",
+          expected: "a separate non-reader view owner",
+          actual: "the login or an allowed membership owns a reviewed view",
+        });
       }
       if (
         externalViewDefinitionFingerprint(actual.definition) !==
@@ -239,9 +349,12 @@ export const verifyExternalPostgresqlReader = async ({
          and has_function_privilege(current_user, procedure.oid, 'EXECUTE')`,
     );
     if (count(securityDefiners, "security-definer function") !== 0) {
-      throw new Error(
-        "External source reader can execute a non-system security-definer function.",
-      );
+      throw sourceAuthorizationRefusal({
+        message:
+          "External source reader can execute a non-system security-definer function.",
+        expected: "no executable non-system security-definer functions",
+        actual: "one or more executable security-definer functions",
+      });
     }
     await client.query("rollback");
     transactionOpen = false;

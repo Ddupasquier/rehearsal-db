@@ -52,8 +52,12 @@ The default managed workflow creates and verifies its own temporary PostgreSQL r
 External mode accepts a provider-managed reader only when its complete non-system
 readable-column surface exactly matches the reviewed export views and migration ledger.
 It also verifies canonical view-definition fingerprints, `security_barrier`, ownership,
-write denial, role isolation, security-definer denial, and a short database-enforced
-expiration. Rehearsal never claims ownership or revocation of provider-managed objects.
+write denial, security-definer denial, and a short database-enforced expiration. An
+external login can declare a bounded exact list of provider-owned permission groups;
+each must be non-login, non-privileged, directly inherited, unable to be assumed or
+delegated, and free of nested membership. Undeclared or unsafe role membership fails as
+an actionable source-authorization refusal. Rehearsal never claims ownership or
+revocation of provider-managed objects.
 
 ## Snapshot and privacy guarantees
 
@@ -78,10 +82,12 @@ and records a SHA-256 in the immutable baseline. Transfer refuses an object that
 exceeds its declared limit, or falls outside an approved bucket and prefix.
 
 Privacy policy version 2 is executable without project sanitizer code. It
-supports exact keep, exclusion, keyed pseudonyms, constants, and a small set of
-documented derivations. Policies classify every selected field and supported
-nested JSON key. A new or unknown field blocks refresh until the policy is
-reviewed again.
+supports exact keep, exclusion, keyed and constraint-preserving pseudonyms (including
+safe loopback HTTPS replacements), bounded reviewed-identity substitution inside
+retained text,
+constants, named sanitized-input digests, and a small set of documented
+derivations. Policies classify every selected field and supported nested JSON
+key. A new or unknown field blocks refresh until the policy is reviewed again.
 
 The pseudonym key is an owner-only local secret. It is not stored in the
 baseline or source control. Receipts bind the policy bytes, schema shape,

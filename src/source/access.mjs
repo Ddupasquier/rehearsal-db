@@ -115,6 +115,7 @@ export const validateSourceAccessPolicy = (policy) => {
       : [
           "mode",
           "role",
+          "allowedMemberships",
           "connectionEnvironmentVariable",
           "credentialFile",
           "maximumValidForMinutes",
@@ -137,6 +138,7 @@ export const validateSourceAccessPolicy = (policy) => {
   let validForMinutes;
   let connectionEnvironmentVariable;
   let maximumValidForMinutes;
+  let allowedMemberships = Object.freeze([]);
   if (readerMode === "managed") {
     ownerRole = identifier(
       policy.reader.ownerRole,
@@ -155,6 +157,33 @@ export const validateSourceAccessPolicy = (policy) => {
     }
     validForMinutes = policy.reader.validForMinutes;
   } else {
+    if (
+      policy.reader.allowedMemberships !== undefined &&
+      (!Array.isArray(policy.reader.allowedMemberships) ||
+        policy.reader.allowedMemberships.length > 8)
+    ) {
+      throw new Error(
+        "sourcePolicy.reader.allowedMemberships must contain at most 8 role names.",
+      );
+    }
+    allowedMemberships = Object.freeze(
+      (policy.reader.allowedMemberships ?? []).map((membership, index) =>
+        identifier(
+          membership,
+          `sourcePolicy.reader.allowedMemberships[${index}]`,
+        ),
+      ),
+    );
+    if (new Set(allowedMemberships).size !== allowedMemberships.length) {
+      throw new Error(
+        "sourcePolicy.reader.allowedMemberships must not contain duplicates.",
+      );
+    }
+    if (allowedMemberships.includes(role)) {
+      throw new Error(
+        "sourcePolicy.reader.allowedMemberships must not include the login role.",
+      );
+    }
     connectionEnvironmentVariable = envKey(
       policy.reader.connectionEnvironmentVariable,
       "sourcePolicy.reader.connectionEnvironmentVariable",
@@ -170,13 +199,22 @@ export const validateSourceAccessPolicy = (policy) => {
     }
     maximumValidForMinutes = policy.reader.maximumValidForMinutes;
   }
+  const credentialParts =
+    typeof policy.reader.credentialFile === "string"
+      ? policy.reader.credentialFile.split(/[\\/]/u)
+      : [];
+  const rehearsalIndex = credentialParts.lastIndexOf(".rehearsal");
   if (
     typeof policy.reader.credentialFile !== "string" ||
-    !policy.reader.credentialFile.startsWith(".rehearsal/") ||
-    policy.reader.credentialFile.split(/[\\/]/u).includes("..")
+    policy.reader.credentialFile.startsWith("/") ||
+    /^[A-Za-z]:[\\/]/u.test(policy.reader.credentialFile) ||
+    credentialParts.some((part) => !part || part === "." || part === "..") ||
+    rehearsalIndex < 0 ||
+    credentialParts[rehearsalIndex + 1] !== "secrets" ||
+    rehearsalIndex + 2 >= credentialParts.length
   ) {
     throw new Error(
-      "sourcePolicy.reader.credentialFile must stay under .rehearsal/.",
+      "sourcePolicy.reader.credentialFile must be a project-relative file under the configured .rehearsal/secrets directory.",
     );
   }
   const exportSchema = identifier(
@@ -488,7 +526,11 @@ export const validateSourceAccessPolicy = (policy) => {
       credentialFile: policy.reader.credentialFile,
       ...(readerMode === "managed"
         ? { ownerRole, validForMinutes }
-        : { connectionEnvironmentVariable, maximumValidForMinutes }),
+        : {
+            allowedMemberships,
+            connectionEnvironmentVariable,
+            maximumValidForMinutes,
+          }),
     }),
     exportSchema,
     migrationLedger,
@@ -580,6 +622,7 @@ export const createSourceAccessPlan = ({
         : {
             connectionEnvironmentVariable:
               normalized.reader.connectionEnvironmentVariable,
+            allowedMemberships: normalized.reader.allowedMemberships,
             maximumValidForMinutes: normalized.reader.maximumValidForMinutes,
             sourceChanges: false,
           }),
@@ -632,7 +675,9 @@ export const createSourceAccessPlan = ({
         : [
             "all non-system readable columns match the approved views and migration ledger",
             "no relation, column, schema, or database writes",
-            "no inherited roles or privileged role attributes",
+            "role memberships exactly match the reviewed allowlist",
+            "allowed groups cannot log in, escalate, switch roles, delegate membership, or inherit other roles",
+            "no privileged role attributes",
             "no executable non-system security-definer functions",
             "database-enforced credential expiration",
             "unrelated private assets",

@@ -28,6 +28,7 @@ import { resolvePrivacyMappedAssets } from "../source/privacy_paths.mjs";
 import {
   applyPostgresqlSourceAccess,
   planPostgresqlSourceAccessRetirement,
+  resolvePostgresqlSourceStatePaths,
   retirePostgresqlSourceAccess,
 } from "../source/postgresql_access.mjs";
 import { loadRuntimeTopology } from "../runtime/topology.mjs";
@@ -54,6 +55,7 @@ export const runSourceAccess = async ({ flags, planOptions }) => {
     plan,
     confirmation: flags.sourceAccessConfirmation,
     projectRoot: loaded.projectRoot,
+    artifactRoot: loaded.paths.artifactDirectory,
   });
   return {
     mode: "written",
@@ -67,6 +69,8 @@ export const runSourceRetirement = async ({ flags, planOptions }) => {
   const { loaded, sourcePolicy } = await loadPreparationContext(planOptions);
   const plan = await planPostgresqlSourceAccessRetirement({
     projectRoot: loaded.projectRoot,
+    artifactRoot: loaded.paths.artifactDirectory,
+    credentialFile: sourcePolicy.reader.credentialFile,
     targetFingerprint: sourcePolicy.targetFingerprint,
   });
   if (!flags.sourceRetirementConfirmation) return { mode: "preview", plan };
@@ -76,6 +80,7 @@ export const runSourceRetirement = async ({ flags, planOptions }) => {
     administratorEnvironmentVariable:
       sourcePolicy.administratorEnvironmentVariable,
     projectRoot: loaded.projectRoot,
+    artifactRoot: loaded.paths.artifactDirectory,
     credentialFile: sourcePolicy.reader.credentialFile,
   });
   return { mode: "written", plan };
@@ -102,6 +107,11 @@ const readSourceReaderCredential = async (path) => {
 
 export const runSourceBaselineRefresh = async ({ planOptions }) => {
   const { loaded, sourcePolicy } = await loadPreparationContext(planOptions);
+  const { credentialPath } = resolvePostgresqlSourceStatePaths({
+    projectRoot: loaded.projectRoot,
+    artifactRoot: loaded.paths.artifactDirectory,
+    credentialFile: sourcePolicy.reader.credentialFile,
+  });
   const [
     sourceAccessReceipt,
     privacyPolicyBytes,
@@ -114,9 +124,7 @@ export const runSourceBaselineRefresh = async ({ planOptions }) => {
     ).then(JSON.parse),
     readFile(loaded.paths.sanitizationPolicy),
     readPrivacyKey(loaded.paths.privacyKey),
-    readSourceReaderCredential(
-      join(loaded.projectRoot, sourcePolicy.reader.credentialFile),
-    ),
+    readSourceReaderCredential(credentialPath),
   ]);
   const privacyPolicy = JSON.parse(privacyPolicyBytes.toString("utf8"));
   const assetPrivacyEngine = createPrivacyEngine({

@@ -87,6 +87,10 @@ const main = async () => {
     join(tmpdir(), "rehearsal-standalone-proof-"),
   );
   const cwd = join(temporaryRoot, "project");
+  const primaryStateDirectory = "targets/primary/.rehearsal";
+  const primaryArtifactRoot = join(cwd, primaryStateDirectory);
+  const publicationStateDirectory = "targets/publication/.rehearsal";
+  const publicationArtifactRoot = join(cwd, publicationStateDirectory);
   const packageOutput = join(temporaryRoot, "packed");
   const sourceName = `rehearsal-source-${process.pid}`;
   const sourceLabel = `com.rehearsal-db.fixture=${sourceName}`;
@@ -232,12 +236,20 @@ values (
       configPath,
       (await readFile(configPath, "utf8"))
         .replaceAll("rehearsal-postgresql-fixture", projectId)
+        .replace(
+          'runtimeWorkdir: ".rehearsal/runtime"',
+          `runtimeWorkdir: "${primaryStateDirectory}/runtime"`,
+        )
+        .replace(
+          'artifactDirectory: ".rehearsal"',
+          `artifactDirectory: "${primaryStateDirectory}"`,
+        )
         .replace("databasePort: 59422", `databasePort: ${ports.database}`)
         .replace(
           "  application: {",
           `  preparation: {
     sourcePolicy: "rehearsal/source-access-policy.json",
-    privacyKey: ".rehearsal/secrets/privacy.key",
+    privacyKey: "${primaryStateDirectory}/secrets/privacy.key",
     batchRows: 257,
     maximumRows: 20000,
     maximumBytes: 33554432,
@@ -256,6 +268,7 @@ values (
           `  application: {
     startCommand: "node app-server.mjs",
     proofCommand: "npm run proof",
+    environmentFile: "${primaryStateDirectory}/runtime.env",
     environmentVariables: { DATABASE_URL: "primary:DATABASE_URL" },
     readiness: {
       url: "http://127.0.0.1:${applicationPort}/health",
@@ -323,7 +336,7 @@ process.on("SIGTERM", () => server.close());
             mode: "managed",
             role: `rehearsal_reader_${process.pid}`,
             ownerRole: `rehearsal_owner_${process.pid}`,
-            credentialFile: ".rehearsal/secrets/source-reader.env",
+            credentialFile: `${primaryStateDirectory}/secrets/source-reader.env`,
             validForMinutes: 30,
           },
           exportSchema: `rehearsal_export_${process.pid}`,
@@ -805,7 +818,7 @@ try {
     const dataFile = await readFile(
       join(
         cwd,
-        ".rehearsal/generations",
+        `${primaryStateDirectory}/generations`,
         refreshed.generationId,
         "sanitized-data.ndjson",
       ),
@@ -875,7 +888,7 @@ try {
       throw new Error("Refresh did not replace and retire the prior baseline.");
     }
     const remainingGenerations = await readdir(
-      join(cwd, ".rehearsal/generations"),
+      join(primaryArtifactRoot, "generations"),
     );
     if (remainingGenerations.length !== 1) {
       throw new Error("Refresh did not honor one-generation retention.");
@@ -944,6 +957,7 @@ from generate_series(1000, 10999) generated_id;
     );
 
     const externalReader = `provided_reader_${process.pid}`;
+    const externalReaderGroup = `provided_reader_group_${process.pid}`;
     const externalOwner = `provided_owner_${process.pid}`;
     const externalSchema = `provided_export_${process.pid}`;
     const externalPassword = "synthetic-external-reader-password";
@@ -968,7 +982,9 @@ from generate_series(1000, 10999) generated_id;
 nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
 create role ${externalReader}
 login password '${externalPassword}' valid until '${externalExpiresAt}'
-noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+inherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
+create role ${externalReaderGroup}
+nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls;
 create schema ${externalSchema} authorization ${externalOwner};
 revoke all on schema ${externalSchema} from public;
 grant usage on schema public to ${externalOwner};
@@ -989,13 +1005,15 @@ reset role;
 revoke all on ${externalSchema}.widgets from public;
 revoke all on ${externalSchema}.audit_entries from public;
 revoke all on ${externalSchema}.approved_owner_profiles from public;
-grant usage on schema ${externalSchema} to ${externalReader};
-grant select on ${externalSchema}.widgets to ${externalReader};
-grant select on ${externalSchema}.audit_entries to ${externalReader};
-grant select on ${externalSchema}.approved_owner_profiles to ${externalReader};
-grant usage on schema supabase_migrations to ${externalReader};
+grant usage on schema ${externalSchema} to ${externalReaderGroup};
+grant select on ${externalSchema}.widgets to ${externalReaderGroup};
+grant select on ${externalSchema}.audit_entries to ${externalReaderGroup};
+grant select on ${externalSchema}.approved_owner_profiles to ${externalReaderGroup};
+grant usage on schema supabase_migrations to ${externalReaderGroup};
 grant select (version, name, statements)
-on supabase_migrations.schema_migrations to ${externalReader};
+on supabase_migrations.schema_migrations to ${externalReaderGroup};
+grant ${externalReaderGroup} to ${externalReader}
+with inherit true, set false, admin false;
 `,
       },
     );
@@ -1099,6 +1117,14 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
       },
     );
     const externalReaderUrl = `postgresql://${externalReader}:${externalPassword}@127.0.0.1:${sourcePort}/postgres`;
+    const publicationConfig = "publication.rehearsal.config.mjs";
+    await writeFile(
+      join(cwd, publicationConfig),
+      (await readFile(configPath, "utf8")).replaceAll(
+        primaryStateDirectory,
+        publicationStateDirectory,
+      ),
+    );
     await writeFile(
       join(cwd, "rehearsal/source-access-policy.json"),
       `${JSON.stringify(
@@ -1108,8 +1134,9 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
           reader: {
             mode: "external",
             role: externalReader,
+            allowedMemberships: [externalReaderGroup],
             connectionEnvironmentVariable: "REHEARSAL_SOURCE_READER_URL",
-            credentialFile: ".rehearsal/secrets/source-reader.env",
+            credentialFile: `${publicationStateDirectory}/secrets/source-reader.env`,
             maximumValidForMinutes: 30,
           },
           exportSchema: externalSchema,
@@ -1170,11 +1197,68 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
       REHEARSAL_SOURCE_READER_URL: externalReaderUrl,
       REHEARSAL_APPROVED_OWNER_ID: approvedOwnerId,
     };
+    executeCliOrThrow({
+      cwd,
+      label: "publication privacy key",
+      args: [
+        "privacy",
+        "key",
+        "--write",
+        "--json",
+        `--config=${publicationConfig}`,
+      ],
+      environment: externalEnvironment,
+    });
+    const externalPolicyPath = join(cwd, "rehearsal/source-access-policy.json");
+    const groupedExternalPolicy = JSON.parse(
+      await readFile(externalPolicyPath, "utf8"),
+    );
+    const undeclaredMembershipPolicy = structuredClone(groupedExternalPolicy);
+    undeclaredMembershipPolicy.reader.allowedMemberships = [];
+    await writeFile(
+      externalPolicyPath,
+      `${JSON.stringify(undeclaredMembershipPolicy, null, 2)}\n`,
+    );
+    const undeclaredMembershipPlan = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        label: "undeclared membership source plan",
+        args: ["source", "plan", "--json", `--config=${publicationConfig}`],
+        environment: externalEnvironment,
+      }).stdout,
+    ).data;
+    const undeclaredMembershipRefusal = executeCli({
+      cwd,
+      args: [
+        "source",
+        "apply",
+        `--confirm-source-access=${undeclaredMembershipPlan.digest}`,
+        "--json",
+        `--config=${publicationConfig}`,
+      ],
+      environment: externalEnvironment,
+    });
+    const undeclaredMembershipFailure = JSON.parse(
+      undeclaredMembershipRefusal.stdout,
+    ).error;
+    if (
+      undeclaredMembershipRefusal.status !== 3 ||
+      undeclaredMembershipFailure?.category !== "unsafe_environment" ||
+      undeclaredMembershipFailure?.code !== "SOURCE_AUTHORIZATION_REFUSED"
+    ) {
+      throw new Error(
+        "An undeclared external role membership did not produce the expected source-authorization refusal.",
+      );
+    }
+    await writeFile(
+      externalPolicyPath,
+      `${JSON.stringify(groupedExternalPolicy, null, 2)}\n`,
+    );
     const externalPlan = JSON.parse(
       executeCliOrThrow({
         cwd,
         label: "external source plan",
-        args: ["source", "plan", "--json"],
+        args: ["source", "plan", "--json", `--config=${publicationConfig}`],
         environment: externalEnvironment,
       }).stdout,
     ).data;
@@ -1189,6 +1273,7 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
         "apply",
         `--confirm-source-access=${externalPlan.digest}`,
         "--json",
+        `--config=${publicationConfig}`,
       ],
       environment: externalEnvironment,
     });
@@ -1196,7 +1281,12 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
       executeCliOrThrow({
         cwd,
         label: "external baseline refresh",
-        args: ["baseline", "refresh", "--json"],
+        args: [
+          "baseline",
+          "refresh",
+          "--json",
+          `--config=${publicationConfig}`,
+        ],
         environment: externalEnvironment,
       }).stdout,
     ).data;
@@ -1209,7 +1299,7 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
       executeCliOrThrow({
         cwd,
         label: "external source retirement preview",
-        args: ["source", "retire", "--json"],
+        args: ["source", "retire", "--json", `--config=${publicationConfig}`],
       }).stdout,
     ).data.plan;
     executeCliOrThrow({
@@ -1220,6 +1310,7 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
         "retire",
         `--confirm-source-retirement=${externalRetirement.digest}`,
         "--json",
+        `--config=${publicationConfig}`,
       ],
     });
     const providerResourcesPreserved = run(
@@ -1237,6 +1328,7 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
         "postgres",
         "--command",
         `select exists(select 1 from pg_roles where rolname = '${externalReader}')
+          and exists(select 1 from pg_roles where rolname = '${externalReaderGroup}')
           and exists(select 1 from pg_roles where rolname = '${externalOwner}')
           and to_regclass('${externalSchema}.widgets') is not null
           and to_regclass('${externalSchema}.audit_entries') is not null
@@ -1249,6 +1341,10 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
         "External retirement changed provider-owned source objects.",
       );
     }
+
+    // Continue the runtime proof against the second target's independently
+    // refreshed baseline. Both target roots remain present until final cleanup.
+    await writeFile(configPath, await readFile(join(cwd, publicationConfig)));
 
     const doctor = JSON.parse(
       executeCliOrThrow({ cwd, label: "doctor", args: ["doctor", "--json"] })
@@ -1532,7 +1628,10 @@ where id = '22222222-2222-4222-8222-222222222222';
           installedPackage: `${packed.name}@${packed.version}`,
           sourceAccessRetired: true,
           externalReaderVerified: true,
+          externalReaderMembershipVerified: true,
+          externalMembershipRefusalVerified: true,
           externalProviderResourcesPreserved: true,
+          isolatedSourceStateRootsVerified: 2,
           streamedRows: 10_003,
           unrelatedTargetSchemasVerified: 2,
           legacyApprovedOwnerUuidRestoreVerified: true,
@@ -1560,7 +1659,10 @@ where id = '22222222-2222-4222-8222-222222222222';
       // The disposable source may already have been removed.
     }
     await removeBaselineArtifactRoot({
-      artifactRoot: join(cwd, ".rehearsal"),
+      artifactRoot: primaryArtifactRoot,
+    }).catch(() => undefined);
+    await removeBaselineArtifactRoot({
+      artifactRoot: publicationArtifactRoot,
     }).catch(() => undefined);
     await rm(temporaryRoot, { recursive: true, force: true });
   }
