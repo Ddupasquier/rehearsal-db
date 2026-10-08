@@ -69,7 +69,7 @@
     "test:fixture:privacy": "npm run build && node scripts/verification/fixtures/privacy.mjs",
     "check": "npm run check:syntax && npm run typecheck && npm run test && npm run docs:build && npm run format:check && npm run package:audit",
     "check:syntax": "find scripts tests -type f -name '*.mjs' -exec node --check {} +",
-    "typecheck": "tsc --project tsconfig.json",
+    "typecheck": "npm run build && tsc --project tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "package:audit": "node scripts/verification/audit_package.mjs"

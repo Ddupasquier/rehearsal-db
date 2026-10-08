@@ -1,5 +1,6 @@
 import {
   defineRehearsalConfig,
+  type NormalizedRehearsalConfig,
   type RehearsalConfig,
 } from "@rehearsal-db/core";
 
@@ -50,3 +51,8 @@ const publicConfigurations: readonly RehearsalConfig[] = [
 ];
 
 void publicConfigurations;
+
+const normalizedDatabasePort = (config: NormalizedRehearsalConfig): number =>
+  config.runtime.ports.database;
+
+void normalizedDatabasePort;

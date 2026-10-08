@@ -37,6 +37,7 @@ describe("TypeScript documentation", () => {
 
     expect(documentation).toContain("RehearsalConfigVersion");
     expect(documentation).toContain("RehearsalConfig");
+    expect(documentation).toContain("NormalizedRehearsalConfig");
     expect(documentation).toContain("defineRehearsalConfig()");
     expect(documentation).toContain(
       "All shipped Rehearsal implementation source",

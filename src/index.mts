@@ -11,6 +11,7 @@ export {
 } from "./project/configuration.mjs";
 export type {
   DetectedProject,
+  NormalizedRehearsalConfig,
   RehearsalConfig,
   RehearsalConfigPathOptions,
   RehearsalConfigVersion,

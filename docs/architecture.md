@@ -21,7 +21,7 @@ rehearsal-db/
 │   ├── runtime/           TypeScript runtime-launcher source
 │   └── verification/      repository-only package and fixture proofs
 ├── dist/                   generated ESM and declaration output; never edit directly
-├── types/                  reviewed public root declaration contract
+├── types/                  compatibility entry point for generated declarations
 ├── tests/
 │   ├── unit/              mirrors the `src/` domains
 │   ├── integration/       multi-module and terminal behavior
@@ -70,6 +70,23 @@ Repository contracts keep the process entry point at 300 lines or fewer and ever
 handler-family module at 350 lines or fewer. A new command belongs in the narrowest
 existing family, or in a new focused family when it represents a genuinely separate
 responsibility.
+
+## Configuration pipeline
+
+The stable `project/configuration.mts` facade keeps existing imports compatible while
+configuration work moves through explicit phases:
+
+1. `configuration_discovery.mts` selects one supported project-owned config path.
+2. `configuration_schema.mts` validates the raw object shape and rejects unknown keys.
+3. `configuration_normalization.mts` applies defaults and semantic safety constraints.
+4. `configuration_resolution.mts` resolves owned paths from the project root and checks
+   destructive-operation boundaries.
+
+The public contract/defaults, primitive validators, project detection, and starter
+rendering have their own focused modules. `NormalizedRehearsalConfig` is inferred from
+the normalizer, while the package's public declarations are emitted from the same
+TypeScript implementation. Repository contracts keep the facade at 50 lines or fewer
+and each configuration phase at 700 lines or fewer.
 
 ## Adding something new
 

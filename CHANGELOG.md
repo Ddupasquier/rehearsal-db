@@ -11,6 +11,10 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   handlers and one result/output contract. The executable retains only process
   lifecycle, project locking, guided-loop coordination, and top-level error handling;
   command-session caches no longer live in public parsed flags.
+- Configuration now passes through separate discovery, raw-schema validation,
+  normalization, project-root path resolution, project detection, and starter-rendering
+  modules behind the existing import path. Public declarations come from the same
+  TypeScript source, including the new `NormalizedRehearsalConfig` type.
 
 ## [0.1.0-beta.15] - 2026-10-08
 

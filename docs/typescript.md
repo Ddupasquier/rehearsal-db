@@ -47,6 +47,7 @@ from compiled JavaScript and do not start Rehearsal.
 
 ```ts
 import type {
+  NormalizedRehearsalConfig,
   RehearsalConfig,
   RehearsalConfigVersion,
 } from "@rehearsal-db/core";
@@ -57,15 +58,19 @@ export const application = {
   startCommand: "npm run dev",
   proofCommand: "npm test",
 } satisfies RehearsalConfig["application"];
+
+export const localDatabasePort = (config: NormalizedRehearsalConfig): number =>
+  config.runtime.ports.database;
 ```
 
 ## Exported configuration types
 
-| Export                    | Meaning                                                                   |
-| ------------------------- | ------------------------------------------------------------------------- |
-| `RehearsalConfigVersion`  | The supported configuration format. It is currently the literal type `1`. |
-| `RehearsalConfig`         | The complete public shape of `rehearsal.config.mjs`.                      |
-| `defineRehearsalConfig()` | Checks a config while preserving its more specific inferred value types.  |
+| Export                      | Meaning                                                                   |
+| --------------------------- | ------------------------------------------------------------------------- |
+| `RehearsalConfigVersion`    | The supported configuration format. It is currently the literal type `1`. |
+| `RehearsalConfig`           | The reviewed input shape of `rehearsal.config.mjs`.                       |
+| `NormalizedRehearsalConfig` | The immutable, defaulted configuration returned by Rehearsal's loader.    |
+| `defineRehearsalConfig()`   | Checks a config while preserving its more specific inferred value types.  |
 
 Nested sections are available through indexed access types such as
 `RehearsalConfig["application"]`, `RehearsalConfig["runtime"]`, and
@@ -78,8 +83,9 @@ All shipped Rehearsal implementation source is TypeScript. The package build emi
 ordinary ESM JavaScript for Node.js together with declaration files. Consumers do not
 need TypeScript, a transpiler, or a TypeScript runtime.
 
-The package-root import, `@rehearsal-db/core`, uses the reviewed configuration and
-sanitization declaration contract described above. Advanced subpath imports such as
+The package-root import, `@rehearsal-db/core`, uses declarations generated from the
+same TypeScript implementation that runs at runtime; the small `types/` entry point
+only forwards those generated declarations. Advanced subpath imports such as
 `@rehearsal-db/core/baseline` also receive generated declarations, but they remain
 advanced APIs: only their documented exports and behavior are compatibility promises.
 

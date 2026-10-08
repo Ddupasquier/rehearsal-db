@@ -101,4 +101,28 @@ describe("repository structure", () => {
       expect(source.split("\n").length, module).toBeLessThanOrEqual(350);
     }
   });
+
+  it("keeps configuration phases separated behind a small public facade", async () => {
+    const projectDirectory = join(root, "src/project");
+    const facade = await readFile(
+      join(projectDirectory, "configuration.mts"),
+      "utf8",
+    );
+    expect(facade.split("\n").length).toBeLessThanOrEqual(50);
+
+    const phases = [
+      "configuration_contract.mts",
+      "configuration_discovery.mts",
+      "configuration_schema.mts",
+      "configuration_normalization.mts",
+      "configuration_resolution.mts",
+      "configuration_rendering.mts",
+      "configuration_validation.mts",
+      "project_detection.mts",
+    ];
+    for (const phase of phases) {
+      const source = await readFile(join(projectDirectory, phase), "utf8");
+      expect(source.split("\n").length, phase).toBeLessThanOrEqual(700);
+    }
+  });
 });
