@@ -145,4 +145,18 @@ describe("repository structure", () => {
       expect(source.split("\n").length, stage).toBeLessThanOrEqual(600);
     }
   });
+
+  it("keeps database drivers behind the shared lifecycle engine", async () => {
+    const lifecycle = await readFile(
+      join(root, "src/runtime/lifecycle_engine.mts"),
+      "utf8",
+    );
+    expect(lifecycle.split("\n").length).toBeLessThanOrEqual(300);
+
+    for (const target of ["postgresql.mts", "supabase.mts"]) {
+      const source = await readFile(join(root, "src/targets", target), "utf8");
+      expect(source).toContain('from "../runtime/lifecycle_engine.mjs"');
+      expect(source.split("\n").length, target).toBeLessThanOrEqual(900);
+    }
+  });
 });

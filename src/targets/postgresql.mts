@@ -13,14 +13,8 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
-import {
-  resolveActiveBaselinePaths,
-  verifyActiveBaseline,
-} from "../baseline/artifact.mjs";
-import type {
-  ActiveBaselinePaths,
-  BaselineManifest,
-} from "../baseline/artifact.mjs";
+import { verifyActiveBaseline } from "../baseline/artifact.mjs";
+import type { BaselineManifest } from "../baseline/artifact.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import { formatCount } from "../shared/human_output.mjs";
 import { readMigrationFileInventory } from "../runtime/migration_history.mjs";
@@ -29,12 +23,20 @@ import { createCleanProcessEnvironment } from "../shared/process_environment.mjs
 import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
-  createCandidateMigrationReceipt,
   encodeBaselineRecordForCopy,
   summarizeRestoreError,
 } from "../runtime/restore.mjs";
-import { readBoundRuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
-import type { RuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
+import {
+  assertCandidateConfirmation,
+  readActiveRuntimeInput,
+  readCandidateMigrationPlan,
+  readMatchingRuntimeMarker,
+  runRuntimeLifecycle,
+  withOwnedRuntimeRollback,
+  writeCandidateMigrationReceipt,
+  writeRuntimeMarker,
+} from "../runtime/lifecycle_engine.mjs";
+import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
 import { ensureLocalContainerRuntime } from "./supabase_environment.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
 import {
@@ -128,12 +130,6 @@ interface RuntimeAdapter {
     environment: DatabaseEnvironment;
     runSql: typeof runPsql;
   }): { message: string };
-}
-
-interface ActiveRuntimeInput {
-  readonly baseline: BaselineManifest;
-  readonly paths: ActiveBaselinePaths;
-  readonly manifest: RuntimeSanitizationPolicy;
 }
 
 const runCommand = (
@@ -587,29 +583,27 @@ const writeRuntimeEnvironment = async ({
   );
 };
 
-const readActive = async () => {
-  const baseline = await verifyActiveBaseline({ artifactRoot });
-  const paths = await resolveActiveBaselinePaths({ artifactRoot });
-  const manifest = readBoundRuntimeSanitizationPolicy({
-    bytes: await readFile(manifestPath),
-    expectedSha256: baseline.sanitizationPolicySha256,
+const readActive = () =>
+  readActiveRuntimeInput({
+    artifactRoot,
+    manifestPath,
+    validate: ({ baseline, manifest }) => {
+      if (Object.keys(baseline.storageAssets ?? {}).length > 0) {
+        throw new Error(
+          "The PostgreSQL target cannot restore Supabase Storage assets. Create this baseline without an assets manifest.",
+        );
+      }
+      if (
+        manifest.tables.some((table) =>
+          table.columns.some((column) => column.foreignKey?.schema === "auth"),
+        )
+      ) {
+        throw new Error(
+          "The PostgreSQL target cannot synthesize Supabase Auth rows. Remove auth-schema references or use the Supabase target.",
+        );
+      }
+    },
   });
-  if (Object.keys(baseline.storageAssets ?? {}).length > 0) {
-    throw new Error(
-      "The PostgreSQL target cannot restore Supabase Storage assets. Create this baseline without an assets manifest.",
-    );
-  }
-  if (
-    manifest.tables.some((table) =>
-      table.columns.some((column) => column.foreignKey?.schema === "auth"),
-    )
-  ) {
-    throw new Error(
-      "The PostgreSQL target cannot synthesize Supabase Auth rows. Remove auth-schema references or use the Supabase target.",
-    );
-  }
-  return { baseline, paths, manifest } satisfies ActiveRuntimeInput;
-};
 
 const createContainer = async (password: string): Promise<void> => {
   assertDocker();
@@ -652,38 +646,38 @@ const resetRuntime = async () => {
   const active = await readActive();
   await removeRuntime();
   await mkdir(runtimeWorkdir, { recursive: true, mode: 0o700 });
-  try {
-    const password = randomBytes(24).toString("hex");
-    await createContainer(password);
-    const environment = databaseEnvironment(password);
-    prepareProjectPrerequisites();
-    initializeMigrationLedger();
-    const baselineMigrations = await readMigrationFileInventory(
-      new URL("./", pathToFileURL(`${active.paths.migrationsDirectory}/`)),
-    );
-    for (const migration of baselineMigrations) {
-      await applyMigration({
-        migration,
-        directory: active.paths.migrationsDirectory,
+  return withOwnedRuntimeRollback({
+    operation: async function resetRuntimeOperation() {
+      const password = randomBytes(24).toString("hex");
+      await createContainer(password);
+      const environment = databaseEnvironment(password);
+      prepareProjectPrerequisites();
+      initializeMigrationLedger();
+      const baselineMigrations = await readMigrationFileInventory(
+        new URL("./", pathToFileURL(`${active.paths.migrationsDirectory}/`)),
+      );
+      for (const migration of baselineMigrations) {
+        await applyMigration({
+          migration,
+          directory: active.paths.migrationsDirectory,
+        });
+      }
+      prepareProjectSchema({ baseline: active.baseline, environment });
+      finalizeProjectSchema();
+      await restoreBaselineRows({ ...active });
+      finalizeProjectRuntime();
+      const projectRuntime = configureProjectRuntime({
+        baseline: active.baseline,
+        environment,
       });
-    }
-    prepareProjectSchema({ baseline: active.baseline, environment });
-    finalizeProjectSchema();
-    await restoreBaselineRows({ ...active });
-    finalizeProjectRuntime();
-    const projectRuntime = configureProjectRuntime({
-      baseline: active.baseline,
-      environment,
-    });
-    await writeRuntimeEnvironment({
-      baseline: active.baseline,
-      environment,
-      projectRuntime,
-    });
-    await writeFile(
-      runtimeMarkerPath,
-      `${JSON.stringify(
-        {
+      await writeRuntimeEnvironment({
+        baseline: active.baseline,
+        environment,
+        projectRuntime,
+      });
+      await writeRuntimeMarker({
+        path: runtimeMarkerPath,
+        marker: {
           formatVersion: 1,
           target: "postgresql",
           generationId: active.baseline.generationId,
@@ -691,38 +685,37 @@ const resetRuntime = async () => {
           image,
           databasePassword: password,
         },
-        null,
-        "\t",
-      )}\n`,
-      { mode: 0o600 },
-    );
-    console.log(
-      `Restored Rehearsal baseline ${active.baseline.generationId}: ${formatCount(active.baseline.rowCount, "row")} across ${formatCount(Object.keys(active.baseline.tableCounts).length, "table")}.`,
-    );
-    console.log(projectRuntime.message);
-    return environment;
-  } catch (error) {
-    await removeRuntime().catch(() => undefined);
-    throw error;
-  }
+      });
+      console.log(
+        `Restored Rehearsal baseline ${active.baseline.generationId}: ${formatCount(active.baseline.rowCount, "row")} across ${formatCount(Object.keys(active.baseline.tableCounts).length, "table")}.`,
+      );
+      console.log(projectRuntime.message);
+      return environment;
+    },
+    rollback: removeRuntime,
+  });
 };
 
 const startRuntime = async () => {
   const { baseline } = await readActive();
   if (!(await pathExists(runtimeMarkerPath))) return resetRuntime();
-  const marker = JSON.parse(await readFile(runtimeMarkerPath, "utf8"));
+  const mismatchMessage =
+    "The local Rehearsal runtime does not match the active baseline; reset it before continuing.";
+  const marker = await readMatchingRuntimeMarker({
+    path: runtimeMarkerPath,
+    expected: {
+      target: "postgresql",
+      generationId: baseline.generationId,
+      dataSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
+      image,
+    },
+    mismatchMessage,
+  });
   if (
-    marker.target !== "postgresql" ||
-    marker.generationId !== baseline.generationId ||
-    marker.dataSha256 !== baseline.files["sanitized-data.ndjson"]!.sha256 ||
-    marker.image !== image ||
     typeof marker.databasePassword !== "string" ||
     marker.databasePassword.length < 32
-  ) {
-    throw new Error(
-      "The local Rehearsal runtime does not match the active baseline; reset it before continuing.",
-    );
-  }
+  )
+    throw new Error(mismatchMessage);
   if (!assertOwnedResource("container", containerName)) {
     return resetRuntime();
   }
@@ -751,16 +744,11 @@ const startRuntime = async () => {
   return environment;
 };
 
-const readCandidateReceipt = async (baseline: BaselineManifest) => {
-  const currentFiles = await readMigrationFileInventory(applicationMigrations);
-  return {
-    currentFiles,
-    ...createCandidateMigrationReceipt({
-      baselineManifest: baseline,
-      currentFiles,
-    }),
-  };
-};
+const readCandidateReceipt = (baseline: BaselineManifest) =>
+  readCandidateMigrationPlan({
+    baseline,
+    migrationDirectory: applicationMigrations,
+  });
 
 const verifyRuntime = async () => {
   const { baseline } = await readActive();
@@ -798,121 +786,93 @@ const migrateRuntime = async () => {
   const { baseline } = await readActive();
   await startRuntime();
   const receipt = await readCandidateReceipt(baseline);
-  const confirmation = invocation.confirmation;
-  if (confirmation !== receipt.candidateSha256) {
-    throw new Error(
-      "Candidate migration confirmation is missing or does not match the exact SHA-256.",
-    );
-  }
-  try {
-    const ledger = readRuntimeMigrationLedger();
-    for (const migration of receipt.candidates.slice(
-      Math.max(0, ledger.length - Object.keys(baseline.migrations).length),
-    )) {
-      await applyMigration({
-        migration,
-        directory: configuredPaths.migrationDirectory,
+  assertCandidateConfirmation({
+    plan: receipt,
+    confirmation: invocation.confirmation,
+  });
+  return withOwnedRuntimeRollback({
+    operation: async function migrateRuntimeOperation() {
+      const ledger = readRuntimeMigrationLedger();
+      for (const migration of receipt.candidates.slice(
+        Math.max(0, ledger.length - Object.keys(baseline.migrations).length),
+      )) {
+        await applyMigration({
+          migration,
+          directory: configuredPaths.migrationDirectory,
+        });
+      }
+      const verification = verifyMigrationLedger({
+        currentFiles: receipt.currentFiles,
+        baseline,
       });
-    }
-    const verification = verifyMigrationLedger({
-      currentFiles: receipt.currentFiles,
-      baseline,
-    });
-    if (verification.appliedCandidateCount !== receipt.candidates.length) {
-      throw new Error(
-        "Applied PostgreSQL migration history does not match the confirmed candidate suffix.",
+      if (verification.appliedCandidateCount !== receipt.candidates.length) {
+        throw new Error(
+          "Applied PostgreSQL migration history does not match the confirmed candidate suffix.",
+        );
+      }
+      await writeCandidateMigrationReceipt({
+        path: runtimeCandidateReceiptPath,
+        target: "postgresql",
+        baseline,
+        plan: receipt,
+      });
+      console.log(
+        receipt.candidates.length
+          ? `Applied ${formatCount(receipt.candidates.length, "confirmed candidate migration")} to the disposable PostgreSQL runtime.`
+          : `No candidate migrations follow baseline ${baseline.migrationCutoff}.`,
       );
-    }
-    await writeFile(
-      runtimeCandidateReceiptPath,
-      `${JSON.stringify(
-        {
-          formatVersion: 1,
-          baselineGenerationId: baseline.generationId,
-          candidateSha256: receipt.candidateSha256,
-          candidates: receipt.candidates.map((candidate) => ({
-            filename: candidate.filename,
-            sha256: candidate.fileSha256,
-          })),
-        },
-        null,
-        "\t",
-      )}\n`,
-      { mode: 0o600 },
-    );
-    console.log(
-      receipt.candidates.length
-        ? `Applied ${formatCount(receipt.candidates.length, "confirmed candidate migration")} to the disposable PostgreSQL runtime.`
-        : `No candidate migrations follow baseline ${baseline.migrationCutoff}.`,
-    );
-    return receipt;
-  } catch (error) {
-    await removeRuntime().catch(() => undefined);
-    throw error;
-  }
+      return receipt;
+    },
+    rollback: removeRuntime,
+  });
 };
 
-switch (action) {
-  case "reset":
-    await resetRuntime();
-    break;
-  case "start": {
-    const environment = await startRuntime();
-    console.log(
-      `Local Rehearsal PostgreSQL: ${environment.host}:${environment.port}/${environment.database}`,
-    );
-    break;
-  }
-  case "status": {
-    const baseline = await verifyActiveBaseline({ artifactRoot });
-    const receipt = await readCandidateReceipt(baseline);
-    const running =
-      commandSucceeds("docker", ["info"]) &&
-      resourceExists("container", containerName) &&
-      runCommand(
-        "docker",
-        ["inspect", "--format", "{{.State.Running}}", containerName],
-        { capture: true },
-      ).stdout.trim() === "true";
-    console.log(
-      `Local Rehearsal PostgreSQL: ${running ? `running on 127.0.0.1:${databasePort}` : "stopped"}`,
-    );
-    console.log(`Active sanitized baseline: ${baseline.generationId}`);
-    console.log(
-      `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
-    );
-    break;
-  }
-  case "candidates": {
-    const baseline = await verifyActiveBaseline({ artifactRoot });
-    const receipt = await readCandidateReceipt(baseline);
-    console.log(
-      `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
-    );
-    break;
-  }
-  case "migrate":
-    await migrateRuntime();
-    break;
-  case "verify":
-    await verifyRuntime();
-    break;
-  case "run":
-    await resetRuntime();
-    await migrateRuntime();
-    await verifyRuntime();
-    break;
-  case "stop":
-    if (
-      commandSucceeds("docker", ["info"]) &&
-      assertOwnedResource("container", containerName)
-    ) {
-      runCommand("docker", ["stop", containerName], { capture: true });
-    }
-    break;
-  case "discard":
-    await removeRuntime();
-    break;
-  default:
-    throw new Error(`Unknown Rehearsal database action: ${action}`);
-}
+await runRuntimeLifecycle({
+  action,
+  operations: {
+    reset: resetRuntime,
+    start: async () => {
+      const environment = await startRuntime();
+      console.log(
+        `Local Rehearsal PostgreSQL: ${environment.host}:${environment.port}/${environment.database}`,
+      );
+    },
+    status: async () => {
+      const baseline = await verifyActiveBaseline({ artifactRoot });
+      const receipt = await readCandidateReceipt(baseline);
+      const running =
+        commandSucceeds("docker", ["info"]) &&
+        resourceExists("container", containerName) &&
+        runCommand(
+          "docker",
+          ["inspect", "--format", "{{.State.Running}}", containerName],
+          { capture: true },
+        ).stdout.trim() === "true";
+      console.log(
+        `Local Rehearsal PostgreSQL: ${running ? `running on 127.0.0.1:${databasePort}` : "stopped"}`,
+      );
+      console.log(`Active sanitized baseline: ${baseline.generationId}`);
+      console.log(
+        `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
+      );
+    },
+    candidates: async () => {
+      const baseline = await verifyActiveBaseline({ artifactRoot });
+      const receipt = await readCandidateReceipt(baseline);
+      console.log(
+        `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
+      );
+    },
+    migrate: migrateRuntime,
+    verify: verifyRuntime,
+    stop: async () => {
+      if (
+        commandSucceeds("docker", ["info"]) &&
+        assertOwnedResource("container", containerName)
+      ) {
+        runCommand("docker", ["stop", containerName], { capture: true });
+      }
+    },
+    discard: removeRuntime,
+  },
+});

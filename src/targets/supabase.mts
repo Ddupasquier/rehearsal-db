@@ -14,14 +14,8 @@ import { once } from "node:events";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
-import {
-  resolveActiveBaselinePaths,
-  verifyActiveBaseline,
-} from "../baseline/artifact.mjs";
-import type {
-  ActiveBaselinePaths,
-  BaselineManifest,
-} from "../baseline/artifact.mjs";
+import { verifyActiveBaseline } from "../baseline/artifact.mjs";
+import type { BaselineManifest } from "../baseline/artifact.mjs";
 import {
   createCleanProcessEnvironment,
   assertLoopbackUrl,
@@ -37,7 +31,6 @@ import {
 import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
-  createCandidateMigrationReceipt,
   encodeBaselineRecordForCopy,
   summarizeRestoreError,
 } from "../runtime/restore.mjs";
@@ -51,8 +44,6 @@ import type { MigrationFileEntry } from "../runtime/migration_history.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import { readRehearsalServiceEnvironment } from "../runtime/service_environment.mjs";
 import { applySupabaseAuthenticationProviders } from "../identity/provider_configuration.mjs";
-import { readBoundRuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
-import type { RuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
 import type { LocalSupabaseEnvironment } from "./supabase_environment.mjs";
 import {
   captureLocalPublicSchema,
@@ -67,6 +58,17 @@ import {
   buildRuntimeVerificationSql,
   validateRuntimePolicy,
 } from "../runtime/policy.mjs";
+import {
+  assertCandidateConfirmation,
+  readActiveRuntimeInput,
+  readCandidateMigrationPlan,
+  readMatchingRuntimeMarker,
+  runRuntimeLifecycle,
+  withOwnedRuntimeRollback,
+  writeCandidateMigrationReceipt,
+  writeRuntimeMarker,
+} from "../runtime/lifecycle_engine.mjs";
+import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
 
 const repositoryRoot = process.cwd();
 const invocation = parseRuntimeInvocation();
@@ -130,18 +132,6 @@ interface RuntimeAdapter {
     environment: LocalSupabaseEnvironment;
     runSql: typeof runDatabaseSql;
   }): { message: string };
-}
-
-interface ActiveRuntimeInput {
-  readonly baseline: BaselineManifest;
-  readonly paths: ActiveBaselinePaths;
-  readonly manifest: RuntimeSanitizationPolicy;
-}
-
-interface RuntimeMarker {
-  readonly generationId?: unknown;
-  readonly dataSha256?: unknown;
-  readonly schemaSha256?: unknown;
 }
 
 const readBaselineDataSha256 = (baseline: BaselineManifest): string => {
@@ -590,56 +580,45 @@ const configureProjectRuntime = ({
   return projectRuntime;
 };
 
-const readActive = async (): Promise<ActiveRuntimeInput> => {
-  const [baseline, paths, policyBytes] = await Promise.all([
-    verifyActiveBaseline({ artifactRoot }),
-    resolveActiveBaselinePaths({ artifactRoot }),
-    readFile(manifestPath),
-  ]);
-  const manifest = readBoundRuntimeSanitizationPolicy({
-    bytes: policyBytes,
-    expectedSha256: baseline.sanitizationPolicySha256,
-  });
-  return { baseline, paths, manifest };
-};
+const readActive = () => readActiveRuntimeInput({ artifactRoot, manifestPath });
 
 const resetRuntime = async () => {
   const active = await readActive();
   const serviceEnvironment = await readServiceEnvironment();
   await removeRuntime();
-  try {
-    await prepareRuntimeWorkdir(active);
-    const environment = startLocalSupabase({
-      cwd: repositoryRoot,
-      workdir: runtimeWorkdir,
-      exclude: ["edge-runtime", "logflare", "vector", "realtime"],
-      environment: serviceEnvironment,
-      autoStartColima: config.containerRuntime.autoStartColima,
-    });
-    const structuralSchemaSha256 = await restoreProductionSchema(active);
-    await restoreBaselineRows(active);
-    await restoreBaselineAssets({
-      baseline: active.baseline,
-      paths: active.paths,
-      environment,
-    });
-    if (runtimePolicy && runtimePolicy.localRows.length > 0) {
-      runDatabaseSql(buildRuntimeFinalizationSql(runtimePolicy));
-      console.log("Applied reviewed local-only recipes.");
-    }
-    const projectRuntime = configureProjectRuntime({
-      environment,
-      baseline: active.baseline,
-    });
-    await writeRuntimeEnvironment({
-      environment,
-      baseline: active.baseline,
-      projectRuntime,
-    });
-    await writeFile(
-      runtimeMarkerPath,
-      `${JSON.stringify(
-        {
+  return withOwnedRuntimeRollback({
+    operation: async function resetRuntimeOperation() {
+      await prepareRuntimeWorkdir(active);
+      const environment = startLocalSupabase({
+        cwd: repositoryRoot,
+        workdir: runtimeWorkdir,
+        exclude: ["edge-runtime", "logflare", "vector", "realtime"],
+        environment: serviceEnvironment,
+        autoStartColima: config.containerRuntime.autoStartColima,
+      });
+      const structuralSchemaSha256 = await restoreProductionSchema(active);
+      await restoreBaselineRows(active);
+      await restoreBaselineAssets({
+        baseline: active.baseline,
+        paths: active.paths,
+        environment,
+      });
+      if (runtimePolicy && runtimePolicy.localRows.length > 0) {
+        runDatabaseSql(buildRuntimeFinalizationSql(runtimePolicy));
+        console.log("Applied reviewed local-only recipes.");
+      }
+      const projectRuntime = configureProjectRuntime({
+        environment,
+        baseline: active.baseline,
+      });
+      await writeRuntimeEnvironment({
+        environment,
+        baseline: active.baseline,
+        projectRuntime,
+      });
+      await writeRuntimeMarker({
+        path: runtimeMarkerPath,
+        marker: {
           formatVersion: active.baseline.formatVersion,
           generationId: active.baseline.generationId,
           dataSha256: readBaselineDataSha256(active.baseline),
@@ -647,39 +626,31 @@ const resetRuntime = async () => {
             active.baseline.files?.["production-schema.sql"]?.sha256 ?? null,
           structuralSchemaSha256,
         },
-        null,
-        "\t",
-      )}\n`,
-      { mode: 0o600 },
-    );
-    console.log(
-      `Restored Rehearsal baseline ${active.baseline.generationId}: ${formatCount(active.baseline.rowCount, "row")} across ${formatCount(Object.keys(active.baseline.tableCounts).length, "table")}.`,
-    );
-    console.log(projectRuntime.message);
-    return environment;
-  } catch (error) {
-    await removeRuntime().catch(() => undefined);
-    throw error;
-  }
+      });
+      console.log(
+        `Restored Rehearsal baseline ${active.baseline.generationId}: ${formatCount(active.baseline.rowCount, "row")} across ${formatCount(Object.keys(active.baseline.tableCounts).length, "table")}.`,
+      );
+      console.log(projectRuntime.message);
+      return environment;
+    },
+    rollback: removeRuntime,
+  });
 };
 
 const startRuntime = async () => {
   const { baseline } = await readActive();
   if (!(await pathExists(runtimeMarkerPath))) return resetRuntime();
   const serviceEnvironment = await readServiceEnvironment();
-  const marker = JSON.parse(
-    await readFile(runtimeMarkerPath, "utf8"),
-  ) as RuntimeMarker;
-  if (
-    marker.generationId !== baseline.generationId ||
-    marker.dataSha256 !== readBaselineDataSha256(baseline) ||
-    marker.schemaSha256 !==
-      (baseline.files?.["production-schema.sql"]?.sha256 ?? null)
-  ) {
-    throw new Error(
+  await readMatchingRuntimeMarker({
+    path: runtimeMarkerPath,
+    expected: {
+      generationId: baseline.generationId,
+      dataSha256: readBaselineDataSha256(baseline),
+      schemaSha256: baseline.files?.["production-schema.sql"]?.sha256 ?? null,
+    },
+    mismatchMessage:
       "The local Rehearsal runtime does not match the active baseline; run db:rehearsal:reset.",
-    );
-  }
+  });
   const environment = startLocalSupabase({
     cwd: repositoryRoot,
     workdir: runtimeWorkdir,
@@ -696,16 +667,11 @@ const startRuntime = async () => {
   return environment;
 };
 
-const readCandidateReceipt = async (baseline: BaselineManifest) => {
-  const currentFiles = await readMigrationFileInventory(applicationMigrations);
-  return {
-    currentFiles,
-    ...createCandidateMigrationReceipt({
-      baselineManifest: baseline,
-      currentFiles,
-    }),
-  };
-};
+const readCandidateReceipt = (baseline: BaselineManifest) =>
+  readCandidateMigrationPlan({
+    baseline,
+    migrationDirectory: applicationMigrations,
+  });
 
 const readRuntimeMigrationLedger = () => {
   const output = runLocalCommand(
@@ -806,20 +772,12 @@ const migrateRuntime = async () => {
   await startRuntime();
   const receipt = await readCandidateReceipt(baseline);
   if (receipt.candidates.length === 0) {
-    await writeFile(
-      runtimeCandidateReceiptPath,
-      `${JSON.stringify(
-        {
-          formatVersion: 1,
-          baselineGenerationId: baseline.generationId,
-          candidateSha256: receipt.candidateSha256,
-          candidates: [],
-        },
-        null,
-        "\t",
-      )}\n`,
-      { mode: 0o600 },
-    );
+    await writeCandidateMigrationReceipt({
+      path: runtimeCandidateReceiptPath,
+      target: "supabase",
+      baseline,
+      plan: receipt,
+    });
     console.log(
       `No candidate migrations follow baseline ${baseline.migrationCutoff}.`,
     );
@@ -828,129 +786,103 @@ const migrateRuntime = async () => {
   console.log(
     `${receipt.candidates.length === 1 ? "Candidate migration" : "Candidate migrations"} (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ")}`,
   );
-  const confirmation = invocation.confirmation;
-  if (confirmation !== receipt.candidateSha256) {
-    throw new Error(
-      "Candidate migration confirmation is missing or does not match the exact SHA-256.",
-    );
-  }
-  try {
-    const serviceEnvironment = await readServiceEnvironment();
-    for (const candidate of receipt.candidates) {
-      await cp(
-        join(configuredPaths.migrationDirectory, candidate.filename),
-        join(runtimeSupabaseDirectory, "migrations", candidate.filename),
+  assertCandidateConfirmation({
+    plan: receipt,
+    confirmation: invocation.confirmation,
+  });
+  return withOwnedRuntimeRollback({
+    operation: async function migrateRuntimeOperation() {
+      const serviceEnvironment = await readServiceEnvironment();
+      for (const candidate of receipt.candidates) {
+        await cp(
+          join(configuredPaths.migrationDirectory, candidate.filename),
+          join(runtimeSupabaseDirectory, "migrations", candidate.filename),
+        );
+      }
+      runLocalCommand(
+        "supabase",
+        ["migration", "up", "--local", "--workdir", runtimeWorkdir],
+        { cwd: repositoryRoot, environment: serviceEnvironment },
       );
-    }
-    runLocalCommand(
-      "supabase",
-      ["migration", "up", "--local", "--workdir", runtimeWorkdir],
-      { cwd: repositoryRoot, environment: serviceEnvironment },
-    );
-    const comparison = await verifyRuntimeMigrationHistory({
-      baseline,
-      currentFiles: receipt.currentFiles,
-    });
-    if (
-      comparison.candidates
-        .map((candidate) => candidate.filename)
-        .join("\0") !==
-      receipt.candidates.map((candidate) => candidate.filename).join("\0")
-    ) {
-      throw new Error(
-        "Applied Rehearsal migration history does not match the confirmed candidate suffix.",
+      const comparison = await verifyRuntimeMigrationHistory({
+        baseline,
+        currentFiles: receipt.currentFiles,
+      });
+      if (
+        comparison.candidates
+          .map((candidate) => candidate.filename)
+          .join("\0") !==
+        receipt.candidates.map((candidate) => candidate.filename).join("\0")
+      ) {
+        throw new Error(
+          "Applied Rehearsal migration history does not match the confirmed candidate suffix.",
+        );
+      }
+      await writeCandidateMigrationReceipt({
+        path: runtimeCandidateReceiptPath,
+        target: "supabase",
+        baseline,
+        plan: receipt,
+      });
+      console.log(
+        `Applied ${formatCount(receipt.candidates.length, "confirmed candidate migration")} to the disposable Rehearsal runtime.`,
       );
-    }
-    await writeFile(
-      runtimeCandidateReceiptPath,
-      `${JSON.stringify(
-        {
-          formatVersion: 1,
-          baselineGenerationId: baseline.generationId,
-          candidateSha256: receipt.candidateSha256,
-          candidates: receipt.candidates.map((candidate) => ({
-            filename: candidate.filename,
-            sha256: candidate.fileSha256,
-          })),
-        },
-        null,
-        "\t",
-      )}\n`,
-      { mode: 0o600 },
-    );
-    console.log(
-      `Applied ${formatCount(receipt.candidates.length, "confirmed candidate migration")} to the disposable Rehearsal runtime.`,
-    );
-    return receipt;
-  } catch (error) {
-    await removeRuntime().catch(() => undefined);
-    throw error;
-  }
+      return receipt;
+    },
+    rollback: removeRuntime,
+  });
 };
 
-switch (action) {
-  case "reset":
-    await resetRuntime();
-    break;
-  case "start": {
-    const environment = await startRuntime();
-    console.log(`Local Rehearsal Supabase: ${environment.apiUrl}`);
-    break;
-  }
-  case "status": {
-    const baseline = await verifyActiveBaseline({ artifactRoot });
-    const receipt = await readCandidateReceipt(baseline);
-    const serviceEnvironment = await readServiceEnvironment();
-    const runtimeIsRunning = localCommandSucceeds(
-      "supabase",
-      ["status", "--workdir", runtimeWorkdir],
-      { cwd: repositoryRoot, environment: serviceEnvironment },
-    );
-    if (runtimeIsRunning) {
-      const environment = readLocalSupabaseEnvironment({
+await runRuntimeLifecycle({
+  action,
+  operations: {
+    reset: resetRuntime,
+    start: async () => {
+      const environment = await startRuntime();
+      console.log(`Local Rehearsal Supabase: ${environment.apiUrl}`);
+    },
+    status: async () => {
+      const baseline = await verifyActiveBaseline({ artifactRoot });
+      const receipt = await readCandidateReceipt(baseline);
+      const serviceEnvironment = await readServiceEnvironment();
+      const runtimeIsRunning = localCommandSucceeds(
+        "supabase",
+        ["status", "--workdir", runtimeWorkdir],
+        { cwd: repositoryRoot, environment: serviceEnvironment },
+      );
+      if (runtimeIsRunning) {
+        const environment = readLocalSupabaseEnvironment({
+          cwd: repositoryRoot,
+          workdir: runtimeWorkdir,
+          environment: serviceEnvironment,
+        });
+        console.log(
+          `Local Rehearsal Supabase: running at ${environment.apiUrl}`,
+        );
+      } else {
+        console.log("Local Rehearsal Supabase: stopped");
+      }
+      console.log(`Active sanitized baseline: ${baseline.generationId}`);
+      console.log(
+        `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
+      );
+    },
+    candidates: async () => {
+      const baseline = await verifyActiveBaseline({ artifactRoot });
+      const receipt = await readCandidateReceipt(baseline);
+      console.log(
+        `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
+      );
+    },
+    migrate: migrateRuntime,
+    verify: verifyRuntime,
+    stop: async () => {
+      stopLocalSupabase({
         cwd: repositoryRoot,
         workdir: runtimeWorkdir,
-        environment: serviceEnvironment,
+        environment: await readServiceEnvironment(),
       });
-      console.log(`Local Rehearsal Supabase: running at ${environment.apiUrl}`);
-    } else {
-      console.log("Local Rehearsal Supabase: stopped");
-    }
-    console.log(`Active sanitized baseline: ${baseline.generationId}`);
-    console.log(
-      `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
-    );
-    break;
-  }
-  case "candidates": {
-    const baseline = await verifyActiveBaseline({ artifactRoot });
-    const receipt = await readCandidateReceipt(baseline);
-    console.log(
-      `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
-    );
-    break;
-  }
-  case "migrate":
-    await migrateRuntime();
-    break;
-  case "verify":
-    await verifyRuntime();
-    break;
-  case "run":
-    await resetRuntime();
-    await migrateRuntime();
-    await verifyRuntime();
-    break;
-  case "stop":
-    stopLocalSupabase({
-      cwd: repositoryRoot,
-      workdir: runtimeWorkdir,
-      environment: await readServiceEnvironment(),
-    });
-    break;
-  case "discard":
-    await removeRuntime();
-    break;
-  default:
-    throw new Error(`Unknown Rehearsal database action: ${action}`);
-}
+    },
+    discard: removeRuntime,
+  },
+});

@@ -176,6 +176,45 @@ describe("Rehearsal plan", () => {
     expect(inspection.candidateSha256).toMatch(/^[a-f0-9]{64}$/u);
   });
 
+  it("accepts an applied-candidate receipt only for its exact runtime target", async () => {
+    const root = await createFixture();
+    const candidatePath = join(
+      root,
+      "supabase/migrations/20260912000100_add_widget_name.sql",
+    );
+    await writeFile(
+      candidatePath,
+      "alter table public.widget add column name text;\n",
+    );
+    const inspection = await inspectRehearsalMigrations({ projectRoot: root });
+    const receiptPath = join(root, ".rehearsal/runtime/candidate-receipt.json");
+    await mkdir(join(root, ".rehearsal/runtime"), { recursive: true });
+    const receipt = {
+      formatVersion: 1,
+      target: "postgresql",
+      baselineGenerationId: inspection.baselineGenerationId,
+      candidateSha256: inspection.candidateSha256,
+      candidates: [],
+    };
+    await writeFile(receiptPath, `${JSON.stringify(receipt)}\n`);
+
+    expect(
+      (await inspectRehearsalMigrations({ projectRoot: root })).migrations.at(
+        -1,
+      ).status,
+    ).toBe("candidate");
+
+    await writeFile(
+      receiptPath,
+      `${JSON.stringify({ ...receipt, target: "supabase" })}\n`,
+    );
+    expect(
+      (await inspectRehearsalMigrations({ projectRoot: root })).migrations.at(
+        -1,
+      ).status,
+    ).toBe("applied_to_current_runtime");
+  });
+
   it("fails closed when represented migration bytes change", async () => {
     const root = await createFixture();
     await writeFile(

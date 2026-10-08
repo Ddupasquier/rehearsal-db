@@ -109,6 +109,24 @@ complete release gate runs every catalog entry against the same immutable tarbal
 writes its version, SHA-256, tool environment, commands, timings, and results under
 `test-results/release-gate/`.
 
+## Runtime lifecycle
+
+`runtime/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
+PostgreSQL and Supabase use it to dispatch commands, verify active baseline inputs,
+calculate and confirm the exact migration set, write target-bound receipts, validate
+runtime markers, and roll back a failed reset or migration without hiding the original
+failure.
+
+The files in `src/targets/` remain drivers. They prove ownership before deleting local
+resources and implement only the behavior that genuinely differs: Docker PostgreSQL
+containers and SQL setup on one side; Supabase CLI, Auth, Storage, and generated config
+on the other. An ordinary `stop` never enters rollback or discard, so later `start`
+preserves the sandbox database and Storage contents.
+
+Repository contracts keep each target driver at 900 lines or fewer and the shared
+lifecycle engine at 300 lines or fewer. A new database target must use this lifecycle
+boundary rather than copying an existing driver's orchestration.
+
 ## Identity claim pipeline
 
 The stable `identity/claim.mts` facade exposes policy validation, deterministic planning,

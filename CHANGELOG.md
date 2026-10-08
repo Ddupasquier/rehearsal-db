@@ -24,6 +24,10 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   lookup, pure verification, and transactional execution now live in separate typed
   stages behind the unchanged public claim API. Generated reference SQL is independently
   testable, while only the executor can mutate the local database or Storage runtime.
+- PostgreSQL and Supabase now share one typed runtime lifecycle engine for command
+  dispatch, active-baseline loading, migration confirmation and receipts, runtime
+  markers, and rollback. Candidate receipts are bound to their exact database target,
+  while each driver retains its own ownership proof and database-specific behavior.
 
 ## [0.1.0-beta.15] - 2026-10-08
 
