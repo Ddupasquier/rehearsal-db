@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { createPrivacyEngine } from "../../../src/baseline/privacy_engine.mjs";
-import { streamApprovedSupabaseAssets } from "../../../src/source/asset_transfer.mjs";
+import { createPrivacyEngine } from "../../../dist/src/baseline/privacy_engine.mjs";
+import { streamApprovedSupabaseAssets } from "../../../dist/src/source/asset_transfer.mjs";
 
 const response = ({ status = 200, body, headers = {} }) =>
   new Response(body, { status, headers });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applySupabaseAuthenticationProviders,
   renderSupabaseAuthenticationProviders,
-} from "../../../src/identity/provider_configuration.mjs";
+} from "../../../dist/src/identity/provider_configuration.mjs";
 
 const authentication = Object.freeze({
   enableLocalSignup: true,

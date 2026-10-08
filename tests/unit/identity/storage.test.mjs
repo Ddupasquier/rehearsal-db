@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSupabaseStorageTransfer } from "../../../src/identity/storage.mjs";
+import { createSupabaseStorageTransfer } from "../../../dist/src/identity/storage.mjs";
 
 const response = (body, options = {}) =>
   new Response(body, { status: 200, ...options });

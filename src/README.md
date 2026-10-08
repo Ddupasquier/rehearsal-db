@@ -2,6 +2,9 @@
 
 Production code is grouped by the responsibility it owns:
 
+All production modules use `.mts`. `npm run build` emits ordinary `.mjs` files and
+declarations into `dist/`; edit this source tree, never the generated output.
+
 - `application/` starts and proves the project application.
 - `baseline/` creates, validates, and stores safe baseline artifacts.
 - `cli/` is the human and automation entry point.

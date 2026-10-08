@@ -6,12 +6,12 @@ import {
   createSourceAccessPlan,
   externalViewDefinitionFingerprint,
   sourceTargetFingerprint,
-} from "../../../src/source/access.mjs";
+} from "../../../dist/src/source/access.mjs";
 import {
   applyPostgresqlSourceAccess,
   planPostgresqlSourceAccessRetirement,
   retirePostgresqlSourceAccess,
-} from "../../../src/source/postgresql_access.mjs";
+} from "../../../dist/src/source/postgresql_access.mjs";
 
 const roots = [];
 const administratorUrl =
@@ -720,7 +720,6 @@ describe("PostgreSQL source access lifecycle", () => {
       }),
     ).rejects.toThrow("must not own an export view");
   });
-
   it("refuses broad or insufficiently short-lived external readers", async () => {
     const root = await mkdtemp(join(tmpdir(), "rehearsal-external-reader-"));
     roots.push(root);

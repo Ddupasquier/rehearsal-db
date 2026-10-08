@@ -1,6 +1,6 @@
 {
   "name": "@rehearsal-db/core",
-  "version": "0.1.0-beta.14",
+  "version": "0.1.0-beta.15",
   "private": false,
   "description": "Safely rehearse PostgreSQL and Supabase migrations against sanitized, production-shaped data.",
   "repository": {
@@ -21,27 +21,26 @@
     "node": "^22.0.0 || ^24.0.0 || ^26.0.0"
   },
   "bin": {
-    "rehearsal": "src/cli/rehearsal.mjs"
+    "rehearsal": "dist/src/cli/rehearsal.mjs"
   },
   "exports": {
     ".": {
-      "types": "./src/project/configuration.d.mts",
-      "import": "./src/project/configuration.mjs"
+      "types": "./types/configuration.d.mts",
+      "import": "./dist/src/index.mjs"
     },
-    "./baseline": "./src/baseline/artifact.mjs",
-    "./baseline-builder": "./src/baseline/builder.mjs",
-    "./diagnostics": "./src/shared/diagnostics.mjs",
-    "./migrations": "./src/runtime/migration_history.mjs",
-    "./process-environment": "./src/shared/process_environment.mjs",
-    "./privacy": "./src/baseline/privacy_engine.mjs",
-    "./schema": "./src/baseline/schema_snapshot.mjs",
-    "./service-environment": "./src/runtime/service_environment.mjs",
-    "./source-access": "./src/source/access.mjs"
+    "./baseline": "./dist/src/baseline/artifact.mjs",
+    "./baseline-builder": "./dist/src/baseline/builder.mjs",
+    "./diagnostics": "./dist/src/shared/diagnostics.mjs",
+    "./migrations": "./dist/src/runtime/migration_history.mjs",
+    "./process-environment": "./dist/src/shared/process_environment.mjs",
+    "./privacy": "./dist/src/baseline/privacy_engine.mjs",
+    "./schema": "./dist/src/baseline/schema_snapshot.mjs",
+    "./service-environment": "./dist/src/runtime/service_environment.mjs",
+    "./source-access": "./dist/src/source/access.mjs"
   },
   "files": [
-    "src",
-    "scripts/install/create_root_config.mjs",
-    "scripts/runtime/manage_database.mjs",
+    "dist",
+    "types",
     "docs/*.md",
     "README.md",
     "BENCHMARKS.md",
@@ -52,21 +51,25 @@
     "LICENSE"
   ],
   "scripts": {
-    "postinstall": "node scripts/install/create_root_config.mjs",
+    "postinstall": "node dist/scripts/install/create_root_config.mjs",
+    "prepack": "npm run build",
+    "build": "node scripts/build/clean.mjs && tsc --project tsconfig.build.json",
     "docs:build": "node scripts/docs/build.mjs",
     "docs:preview": "node scripts/docs/serve.mjs",
-    "test": "vitest run",
-    "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration tests/contracts",
-    "test:docs": "vitest run tests/contracts/documentationCommands.test.mjs",
-    "test:fixture": "node scripts/verification/fixtures/supabase.mjs",
-    "test:fixture:postgresql": "node scripts/verification/fixtures/postgresql.mjs",
-    "test:fixture:dependent": "node scripts/verification/fixtures/dependent.mjs",
-    "test:fixture:onboarding": "node scripts/verification/fixtures/onboarding.mjs",
-    "test:fixture:standalone": "node scripts/verification/fixtures/standalone.mjs",
-    "test:fixture:privacy": "node scripts/verification/fixtures/privacy.mjs",
-    "check": "npm run check:syntax && npm run test && npm run docs:build && npm run format:check && npm run package:audit",
-    "check:syntax": "find src scripts tests -type f -name '*.mjs' -exec node --check {} +",
+    "test": "npm run build && vitest run",
+    "test:unit": "npm run build && vitest run tests/unit",
+    "test:integration": "npm run build && vitest run tests/integration tests/contracts",
+    "test:docs": "npm run build && vitest run tests/contracts/documentationCommands.test.mjs",
+    "test:fixture": "npm run build && node scripts/verification/fixtures/supabase.mjs",
+    "test:fixture:postgresql": "npm run build && node scripts/verification/fixtures/postgresql.mjs",
+    "test:fixture:dependent": "npm run build && node scripts/verification/fixtures/dependent.mjs",
+    "test:fixture:onboarding": "npm run build && node scripts/verification/fixtures/onboarding.mjs",
+    "test:fixture:typescript": "npm run build && node scripts/verification/fixtures/typescript.mjs",
+    "test:fixture:standalone": "npm run build && node scripts/verification/fixtures/standalone.mjs",
+    "test:fixture:privacy": "npm run build && node scripts/verification/fixtures/privacy.mjs",
+    "check": "npm run check:syntax && npm run typecheck && npm run test && npm run docs:build && npm run format:check && npm run package:audit",
+    "check:syntax": "find scripts tests -type f -name '*.mjs' -exec node --check {} +",
+    "typecheck": "tsc --project tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "package:audit": "node scripts/verification/audit_package.mjs"
@@ -87,8 +90,11 @@
     "@fontsource-variable/dm-sans": "^5.3.0",
     "@fontsource-variable/fraunces": "^5.3.0",
     "@lydell/node-pty": "^1.2.0-beta.15",
+    "@types/node": "22.20.5",
+    "@types/pg": "^8.23.1",
     "marked": "^18.0.14",
     "prettier": "^3.9.6",
+    "typescript": "7.0.2",
     "vitest": "^5.0.2"
   }
 }

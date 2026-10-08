@@ -24,6 +24,7 @@ want to accomplish and follow that path.
 
 - [CLI commands](commands.md)
 - [Configuration](configuration.md)
+- [TypeScript](typescript.md)
 - [Runtime and identity policies](runtime-policies.md)
 - [Database adapters](adapters.md)
 - [Glossary](glossary.md)

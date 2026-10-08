@@ -20,6 +20,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const packageManifest = JSON.parse(
@@ -81,8 +82,8 @@ const createConsumer = async (root, name, { target = "supabase" } = {}) => {
   await writeFile(join(root, ".gitignore"), "node_modules/\nproject-cache/\n");
 };
 
-const install = (root, specification) =>
-  run(
+const install = (root, specification) => {
+  const result = spawnSync(
     "npm",
     [
       "install",
@@ -92,10 +93,23 @@ const install = (root, specification) =>
       "--foreground-scripts",
       specification,
     ],
-    { cwd: root },
+    {
+      cwd: root,
+      encoding: "utf8",
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 16 * 1024 * 1024,
+    },
   );
+  assert.equal(
+    result.status,
+    0,
+    result.stderr || result.stdout || "npm install failed",
+  );
+  return `${result.stdout}${result.stderr}`;
+};
 
-const existingSupabaseConfig = (name) => `export default {
+const existingSupabaseConfig = (name, ports) => `export default {
   schemaVersion: 1,
   project: { name: ${JSON.stringify(name)} },
   supabase: {
@@ -113,9 +127,9 @@ const existingSupabaseConfig = (name) => `export default {
     target: "supabase",
     applicationUrl: "http://localhost:5175",
     projectId: ${JSON.stringify(`${name}-rehearsal`)},
-    apiPort: 58321,
-    databasePort: 58322,
-    studioPort: 58323,
+    apiPort: ${ports.api},
+    databasePort: ${ports.database},
+    studioPort: ${ports.studio},
   },
   safety: { hostedAccess: "disabled", outboundNetwork: "deny" },
 };
@@ -236,7 +250,10 @@ try {
   await mkdir(join(nestedRoot, "infrastructure/rehearsal"), {
     recursive: true,
   });
-  const nestedConfig = existingSupabaseConfig("nested-config-consumer");
+  const nestedConfig = existingSupabaseConfig(
+    "nested-config-consumer",
+    await findAvailableRehearsalPorts(),
+  );
   await writeFile(nestedConfigPath, nestedConfig);
   const nestedInstallOutput = install(nestedRoot, tarball);
   assert.match(
@@ -260,7 +277,10 @@ try {
   const existingRoot = join(temporaryRoot, "existing-root-consumer");
   await createConsumer(existingRoot, "existing-root-consumer");
   const existingRootConfigPath = join(existingRoot, "rehearsal.config.mjs");
-  const existingRootConfig = existingSupabaseConfig("existing-root-consumer");
+  const existingRootConfig = existingSupabaseConfig(
+    "existing-root-consumer",
+    await findAvailableRehearsalPorts(),
+  );
   await writeFile(existingRootConfigPath, existingRootConfig);
   const existingRootInstallOutput = install(existingRoot, tarball);
   assert.match(

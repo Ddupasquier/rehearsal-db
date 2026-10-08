@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCount } from "../../../src/shared/human_output.mjs";
+import { formatCount } from "../../../dist/src/shared/human_output.mjs";
 
 describe("human output", () => {
   it("uses singular and plural count labels", () => {

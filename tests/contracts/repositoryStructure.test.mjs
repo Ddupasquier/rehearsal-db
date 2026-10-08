@@ -51,7 +51,7 @@ describe("repository structure", () => {
 
   it("keeps shipped source independent from tests and repository-only scripts", async () => {
     const sources = (await walk(join(root, "src"))).filter((path) =>
-      path.endsWith(".mjs"),
+      path.endsWith(".mts"),
     );
     for (const path of sources) {
       const content = await readFile(path, "utf8");
@@ -70,14 +70,14 @@ describe("repository structure", () => {
         : Object.values(declaration),
     );
     for (const target of targets) {
-      expect(target).toMatch(/^\.\/src\//u);
+      expect(target).toMatch(/^\.\/(?:dist|types)\//u);
       await expect(exists(join(root, target))).resolves.toBe(true);
     }
   });
 
   it("keeps CLI modules focused enough to review independently", async () => {
     const modules = (await readdir(join(root, "src/cli")))
-      .filter((file) => file.endsWith(".mjs"))
+      .filter((file) => file.endsWith(".mts"))
       .sort();
 
     for (const module of modules) {

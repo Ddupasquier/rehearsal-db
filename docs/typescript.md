@@ -1,0 +1,87 @@
+# TypeScript
+
+Rehearsal includes types for its public root API. TypeScript is optional: the CLI and the
+generated `rehearsal.config.mjs` work in JavaScript, TypeScript, CommonJS, and ESM
+applications.
+
+## Type-check the generated config
+
+Keep the generated configuration as `.mjs`. The `// @ts-check` line and
+`defineRehearsalConfig` provide editor feedback without adding a build step or asking
+Node.js to execute a TypeScript config file.
+
+<!-- checked-example: javascript-config -->
+
+```js
+// @ts-check
+import { defineRehearsalConfig } from "@rehearsal-db/core";
+
+export default defineRehearsalConfig({
+  schemaVersion: 1,
+  project: { name: "example-postgresql-app" },
+  postgresql: { migrationDirectory: "migrations" },
+  baseline: {
+    sanitizationPolicy: "rehearsal/sanitization-policy.json",
+  },
+  application: {
+    startCommand: "npm run dev",
+    proofCommand: "npm test",
+  },
+  runtime: {
+    target: "postgresql",
+    databasePort: 55432,
+  },
+});
+```
+
+This catches misspelled keys, missing required values, invalid runtime targets, and wrong
+value types before Rehearsal starts. Runtime validation remains authoritative and still
+fails closed when a configuration is unsafe.
+
+## Import the public types
+
+Application tooling may import types from the package root. Type-only imports disappear
+from compiled JavaScript and do not start Rehearsal.
+
+<!-- checked-example: type-usage -->
+
+```ts
+import type {
+  RehearsalConfig,
+  RehearsalConfigVersion,
+} from "@rehearsal-db/core";
+
+export const schemaVersion: RehearsalConfigVersion = 1;
+
+export const application = {
+  startCommand: "npm run dev",
+  proofCommand: "npm test",
+} satisfies RehearsalConfig["application"];
+```
+
+## Exported configuration types
+
+| Export                    | Meaning                                                                   |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `RehearsalConfigVersion`  | The supported configuration format. It is currently the literal type `1`. |
+| `RehearsalConfig`         | The complete public shape of `rehearsal.config.mjs`.                      |
+| `defineRehearsalConfig()` | Checks a config while preserving its more specific inferred value types.  |
+
+Nested sections are available through indexed access types such as
+`RehearsalConfig["application"]`, `RehearsalConfig["runtime"]`, and
+`RehearsalConfig["safety"]`. The [configuration reference](configuration.md) explains
+what each setting does and remains the source of truth for runtime behavior.
+
+## Package implementation and declarations
+
+All shipped Rehearsal implementation source is TypeScript. The package build emits
+ordinary ESM JavaScript for Node.js together with declaration files. Consumers do not
+need TypeScript, a transpiler, or a TypeScript runtime.
+
+The package-root import, `@rehearsal-db/core`, uses the reviewed configuration and
+sanitization declaration contract described above. Advanced subpath imports such as
+`@rehearsal-db/core/baseline` also receive generated declarations, but they remain
+advanced APIs: only their documented exports and behavior are compatibility promises.
+
+Rehearsal's own `npm run typecheck` compiles both examples on this page. A documentation
+contract also requires the displayed snippets to match those checked files exactly.

@@ -5,13 +5,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   removeBaselineArtifactRoot,
   verifyActiveBaseline,
-} from "../../../src/baseline/artifact.mjs";
-import { refreshPostgresqlBaseline } from "../../../src/source/baseline.mjs";
+} from "../../../dist/src/baseline/artifact.mjs";
+import { refreshPostgresqlBaseline } from "../../../dist/src/source/baseline.mjs";
 import {
   externalViewDefinitionFingerprint,
   sourceAccessPolicyFingerprint,
   sourceTargetFingerprint,
-} from "../../../src/source/access.mjs";
+} from "../../../dist/src/source/access.mjs";
 
 const roots = [];
 const connectionString =

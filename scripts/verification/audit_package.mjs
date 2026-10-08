@@ -38,15 +38,25 @@ const packed = JSON.parse(
   run("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"]),
 )[0];
 const paths = packed.files.map(({ path }) => path).sort();
+
+const sourceMaps = paths.filter((path) => path.endsWith(".map"));
+if (sourceMaps.length > 0) {
+  throw new Error(
+    `Package includes repository-only JavaScript source maps: ${sourceMaps.join(", ")}`,
+  );
+}
 for (const required of [
   "README.md",
   "package.json",
-  "src/cli/rehearsal.mjs",
-  "scripts/install/create_root_config.mjs",
-  "scripts/runtime/manage_database.mjs",
-  "src/targets/target.mjs",
-  "src/targets/supabase.mjs",
-  "src/targets/postgresql.mjs",
+  "dist/src/cli/rehearsal.mjs",
+  "dist/src/index.mjs",
+  "dist/scripts/install/create_root_config.mjs",
+  "dist/scripts/runtime/manage_database.mjs",
+  "types/configuration.d.mts",
+  "dist/src/targets/target.mjs",
+  "dist/src/targets/driver.mjs",
+  "dist/src/targets/supabase.mjs",
+  "dist/src/targets/postgresql.mjs",
 ]) {
   if (!paths.includes(required)) {
     throw new Error(`Package is missing required public file ${required}.`);
@@ -59,6 +69,7 @@ for (const repositoryOnly of [
   "scripts/verification/fixtures/dependent.mjs",
   "scripts/verification/fixtures/standalone.mjs",
   "scripts/verification/fixtures/privacy.mjs",
+  "scripts/verification/fixtures/typescript.mjs",
 ]) {
   if (paths.includes(repositoryOnly)) {
     throw new Error(`Package includes repository-only file ${repositoryOnly}.`);

@@ -4,7 +4,7 @@ import {
   applyIdentityClaim,
   createIdentityClaimPlan,
   validateIdentityPolicy,
-} from "../../../src/identity/claim.mjs";
+} from "../../../dist/src/identity/claim.mjs";
 
 const email = "owner@example.com";
 const policy = {

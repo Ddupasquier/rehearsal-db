@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "lib": ["ES2024"],
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "."
+  },
+  "include": [
+    "src/**/*.mts",
+    "scripts/install/**/*.mts",
+    "scripts/runtime/**/*.mts"
+  ]
+}

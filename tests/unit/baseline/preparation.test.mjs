@@ -18,15 +18,15 @@ import {
   applyBaselinePreparation,
   inspectBaselineInputFiles,
   planBaselinePreparation,
-} from "../../../src/baseline/preparation.mjs";
-import { createSyntheticBaselineFromFiles } from "../../../src/baseline/builder.mjs";
-import { validateRuntimeSanitizationPolicy } from "../../../src/baseline/sanitization_policy.mjs";
+} from "../../../dist/src/baseline/preparation.mjs";
+import { createSyntheticBaselineFromFiles } from "../../../dist/src/baseline/builder.mjs";
+import { validateRuntimeSanitizationPolicy } from "../../../dist/src/baseline/sanitization_policy.mjs";
 
 const roots = [];
 const execute = promisify(execFile);
-const cliPath = join(process.cwd(), "src/cli/rehearsal.mjs");
+const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 const configurationUrl = pathToFileURL(
-  join(process.cwd(), "src/project/configuration.mjs"),
+  join(process.cwd(), "dist/src/project/configuration.mjs"),
 ).href;
 
 const makeTreeWritable = async (path) => {

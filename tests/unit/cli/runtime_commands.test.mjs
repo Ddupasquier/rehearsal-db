@@ -7,7 +7,7 @@ import {
   createRuntimeCommands,
   parseColimaMemory,
   parseDockerCapacity,
-} from "../../../src/cli/runtime_commands.mjs";
+} from "../../../dist/src/cli/runtime_commands.mjs";
 
 describe("runtime command diagnostics", () => {
   it("classifies container startup failures as runtime dependencies before migrations", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLocalSupabaseEnvironment } from "../../../src/targets/supabase_environment.mjs";
+import { parseLocalSupabaseEnvironment } from "../../../dist/src/targets/supabase_environment.mjs";
 
 const localStatus = `API_URL=http://127.0.0.1:58321
 DB_URL=postgresql://postgres:local-password@127.0.0.1:58322/postgres

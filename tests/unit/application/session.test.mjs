@@ -10,7 +10,7 @@ import {
   runHttpProofs,
   startApplicationSession,
   summarizeProjectCommandFailure,
-} from "../../../src/application/session.mjs";
+} from "../../../dist/src/application/session.mjs";
 
 const roots = [];
 const servers = [];

@@ -2,7 +2,7 @@ import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readRehearsalServiceEnvironment } from "../../../src/runtime/service_environment.mjs";
+import { readRehearsalServiceEnvironment } from "../../../dist/src/runtime/service_environment.mjs";
 
 const temporaryRoots = [];
 

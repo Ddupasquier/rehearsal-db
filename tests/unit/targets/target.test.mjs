@@ -4,7 +4,7 @@ import {
   parseRuntimeInvocation,
   REHEARSAL_RUNTIME_TARGETS,
   resolveRuntimeTarget,
-} from "../../../src/targets/target.mjs";
+} from "../../../dist/src/targets/target.mjs";
 
 describe("Rehearsal runtime target", () => {
   it("keeps existing configurations on the Supabase driver", () => {

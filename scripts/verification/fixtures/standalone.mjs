@@ -14,10 +14,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { removeBaselineArtifactRoot } from "../../../src/baseline/artifact.mjs";
-import { createCleanProcessEnvironment } from "../../../src/shared/process_environment.mjs";
-import { findAvailableRehearsalPorts } from "../../../src/project/setup.mjs";
-import { sourceTargetFingerprint } from "../../../src/source/access.mjs";
+import { removeBaselineArtifactRoot } from "../../../dist/src/baseline/artifact.mjs";
+import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
+import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
+import { sourceTargetFingerprint } from "../../../dist/src/source/access.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");

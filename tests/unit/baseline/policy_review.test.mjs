@@ -9,7 +9,7 @@ import {
   createSafeTablePreset,
   readReviewablePolicyDraft,
   suggestPolicyExceptionColumns,
-} from "../../../src/baseline/policy_review.mjs";
+} from "../../../dist/src/baseline/policy_review.mjs";
 
 const roots = [];
 const draft = {

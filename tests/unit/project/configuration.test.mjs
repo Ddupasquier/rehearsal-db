@@ -16,13 +16,13 @@ import {
   inspectDetectedProject,
   loadRehearsalConfig,
   renderDetectedConfig,
-} from "../../../src/project/configuration.mjs";
+} from "../../../dist/src/project/configuration.mjs";
 
 const temporaryRoots = [];
 const execute = promisify(execFile);
-const cliPath = join(process.cwd(), "src/cli/rehearsal.mjs");
+const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 const configurationModuleUrl = pathToFileURL(
-  join(process.cwd(), "src/project/configuration.mjs"),
+  join(process.cwd(), "dist/src/project/configuration.mjs"),
 ).href;
 
 const makeProject = async () => {

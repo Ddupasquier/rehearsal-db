@@ -8,7 +8,7 @@ import {
   externalViewDefinitionFingerprint,
   sourceTargetFingerprint,
   validateSourceAccessPolicy,
-} from "../../../src/source/access.mjs";
+} from "../../../dist/src/source/access.mjs";
 
 const connection =
   "postgresql://administrator:secret@127.0.0.1:55432/source_fixture";

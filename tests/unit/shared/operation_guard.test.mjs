@@ -6,7 +6,7 @@ import {
   acquireProjectOperation,
   assertInstalledPackageFingerprint,
   createInstalledPackageFingerprint,
-} from "../../../src/shared/operation_guard.mjs";
+} from "../../../dist/src/shared/operation_guard.mjs";
 
 const roots = [];
 
@@ -39,12 +39,12 @@ describe("project operation guard", () => {
     const root = await mkdtemp(join(tmpdir(), "rehearsal-package-test-"));
     roots.push(root);
     await Promise.all([
-      mkdir(join(root, "src/runtime"), { recursive: true }),
-      mkdir(join(root, "scripts/runtime"), { recursive: true }),
+      mkdir(join(root, "dist/src/runtime"), { recursive: true }),
+      mkdir(join(root, "dist/scripts/runtime"), { recursive: true }),
     ]);
     await writeFile(join(root, "package.json"), '{"version":"1.0.0"}\n');
     await writeFile(
-      join(root, "src/runtime/runtime.mjs"),
+      join(root, "dist/src/runtime/runtime.mjs"),
       "export const version = 1;\n",
     );
     const expected = createInstalledPackageFingerprint({ packageRoot: root });
@@ -52,7 +52,7 @@ describe("project operation guard", () => {
       assertInstalledPackageFingerprint({ packageRoot: root, expected }),
     ).toEqual(expected);
     await writeFile(
-      join(root, "src/runtime/runtime.mjs"),
+      join(root, "dist/src/runtime/runtime.mjs"),
       "export const version = 2;\n",
     );
     expect(() =>

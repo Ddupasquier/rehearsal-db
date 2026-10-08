@@ -18,18 +18,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { createCleanProcessEnvironment } from "../../../src/shared/process_environment.mjs";
+import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import {
   readLocalSupabaseEnvironment,
   runLocalCommand,
-} from "../../../src/targets/supabase_environment.mjs";
-import { removeBaselineArtifactRoot } from "../../../src/baseline/artifact.mjs";
-import { findAvailableRehearsalPorts } from "../../../src/project/setup.mjs";
+} from "../../../dist/src/targets/supabase_environment.mjs";
+import { removeBaselineArtifactRoot } from "../../../dist/src/baseline/artifact.mjs";
+import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
 import {
   buildRehearsalPlan,
   inspectRehearsalMigrations,
-} from "../../../src/runtime/plan.mjs";
-import { streamApprovedSupabaseAssets } from "../../../src/source/asset_transfer.mjs";
+} from "../../../dist/src/runtime/plan.mjs";
+import { streamApprovedSupabaseAssets } from "../../../dist/src/source/asset_transfer.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/rehearsal-project");

@@ -6,7 +6,7 @@ import {
   buildRuntimePrerequisiteSql,
   buildRuntimeVerificationSql,
   validateRuntimePolicy,
-} from "../../../src/runtime/policy.mjs";
+} from "../../../dist/src/runtime/policy.mjs";
 
 const policy = {
   policyVersion: 1,
