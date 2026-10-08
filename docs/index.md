@@ -11,6 +11,7 @@ you want, then follow the links when a term or safety check is new.
 | Try Rehearsal without touching my app | [Hands-on tutorial](tutorial.md)                                  |
 | Understand what makes a copy safe     | [Baselines](baselines.md) and [Sanitization](sanitization.md)     |
 | Look up a command or setting          | [CLI commands](commands.md) and [Configuration](configuration.md) |
+| Add editor and compiler type checks   | [TypeScript](typescript.md)                                       |
 | Fix something that did not work       | [Troubleshooting](troubleshooting.md)                             |
 
 ## The short version

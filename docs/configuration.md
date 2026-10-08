@@ -25,6 +25,11 @@ Use this page when changing the generated file. The schema is strict: misspelled
 unknown fields, and unsupported versions are errors. The `.mjs` extension works in both
 CommonJS and ESM projects.
 
+The generated file also receives editor and compiler checking through the package's
+public TypeScript declarations. See [TypeScript](typescript.md) for the supported type
+surface and checked examples. Keep the runnable configuration as `.mjs`; a project does
+not need to rename it to `.ts`.
+
 ```ts
 // @ts-check
 import { defineRehearsalConfig } from "@rehearsal-db/core";
@@ -466,9 +471,10 @@ may use these explicit subpaths:
 - `@rehearsal-db/core/service-environment`
 - `@rehearsal-db/core/source-access`
 
-These advanced entry points are ESM JavaScript APIs in the first beta. The root
-configuration and sanitization API has TypeScript declarations; the advanced subpaths do
-not yet promise a typed surface.
+These advanced entry points ship as ordinary ESM JavaScript with generated TypeScript
+declarations. The root configuration and sanitization contract remains the explicitly
+reviewed public type surface. The exact current boundary is documented in
+[TypeScript](typescript.md).
 
 Undocumented files under `scripts/` are package internals and are not compatibility
 contracts.

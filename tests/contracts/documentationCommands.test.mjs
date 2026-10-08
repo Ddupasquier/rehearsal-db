@@ -6,11 +6,11 @@ import { describe, expect, it } from "vitest";
 import {
   renderDetectedConfig,
   renderDetectedPostgresqlConfig,
-} from "../../src/project/configuration.mjs";
+} from "../../dist/src/project/configuration.mjs";
 
 const execute = promisify(execFile);
 const root = process.cwd();
-const cli = join(root, "src/cli/rehearsal.mjs");
+const cli = join(root, "dist/src/cli/rehearsal.mjs");
 const documentedCommands = [
   "version",
   "guide",
@@ -209,6 +209,7 @@ describe("documented CLI contract", () => {
       "getting-started",
       "tutorial",
       "configuration",
+      "typescript",
       "commands",
       "sanitization",
       "production-source",
@@ -266,7 +267,7 @@ describe("documented CLI contract", () => {
     const [gettingStarted, cliEntrySource, guidedSource] = await Promise.all([
       readFile(join(root, "docs/getting-started.md"), "utf8"),
       readFile(cli, "utf8"),
-      readFile(join(root, "src/cli/guided.mjs"), "utf8"),
+      readFile(join(root, "dist/src/cli/guided.mjs"), "utf8"),
     ]);
     const cliSource = `${cliEntrySource}\n${guidedSource}`;
 
@@ -311,8 +312,8 @@ describe("documented CLI contract", () => {
 
   it("respects user-owned container runtime capacity", async () => {
     const [runtimeSource, cleanupSource, configuration] = await Promise.all([
-      readFile(join(root, "src/targets/supabase_environment.mjs"), "utf8"),
-      readFile(join(root, "src/runtime/cleanup.mjs"), "utf8"),
+      readFile(join(root, "dist/src/targets/supabase_environment.mjs"), "utf8"),
+      readFile(join(root, "dist/src/runtime/cleanup.mjs"), "utf8"),
       readFile(join(root, "docs/configuration.md"), "utf8"),
     ]);
 
@@ -405,7 +406,7 @@ describe("documented CLI contract", () => {
     expect(readme).toContain("Intentionally rejected");
     expect(readme).toContain("MySQL, MongoDB");
     expect(configuration).toContain(
-      "advanced entry points are ESM JavaScript APIs in the first beta",
+      "ordinary ESM JavaScript with generated TypeScript",
     );
     expect(manifest.description).toContain(
       "PostgreSQL and Supabase migrations",

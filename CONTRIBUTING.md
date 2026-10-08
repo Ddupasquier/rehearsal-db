@@ -9,7 +9,8 @@ Before opening a pull request:
 3. keep the engine generic—project table names, policies, credentials, and fixtures do
    not belong in the package;
 4. preserve fail-closed behavior and add a regression test for every safety change;
-5. run `npm run check`;
+5. run `npm run build` and `npm run typecheck` while developing, then `npm run check`
+   before review;
 6. run the relevant packed fixture when Docker is available;
 7. update public contracts and the changelog when behavior changes.
 

@@ -145,6 +145,7 @@ Reference:
 
 - [CLI commands](docs/commands.md)
 - [Configuration](docs/configuration.md)
+- [TypeScript types](docs/typescript.md)
 - [Baselines](docs/baselines.md)
 - [Sanitization](docs/sanitization.md)
 - [Security model](docs/security-model.md)

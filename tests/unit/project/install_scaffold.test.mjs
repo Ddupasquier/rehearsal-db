@@ -13,7 +13,7 @@ import {
   createInstalledRehearsalScaffold,
   renderInstalledRehearsalScaffold,
   resolveRehearsalConsumerRoot,
-} from "../../../src/project/install_scaffold.mjs";
+} from "../../../dist/src/project/install_scaffold.mjs";
 
 const roots = [];
 const sourceRoot = process.cwd();

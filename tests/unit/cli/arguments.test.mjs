@@ -3,7 +3,7 @@ import {
   commandMutatesProject,
   parseArguments,
   resetGuidedFlags,
-} from "../../../src/cli/arguments.mjs";
+} from "../../../dist/src/cli/arguments.mjs";
 
 describe("CLI arguments", () => {
   it("separates commands from supported flags", () => {

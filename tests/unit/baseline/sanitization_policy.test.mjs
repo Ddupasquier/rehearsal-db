@@ -6,7 +6,7 @@ import {
   readBoundRuntimeSanitizationPolicy,
   validateSanitizationCoverage,
   validateRuntimeSanitizationPolicy,
-} from "../../../src/baseline/sanitization_policy.mjs";
+} from "../../../dist/src/baseline/sanitization_policy.mjs";
 
 const schemaTables = [
   { name: "accounts", columns: ["id", "email", "display_name"] },

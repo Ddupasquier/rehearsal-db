@@ -8,7 +8,7 @@ import {
   createPrivacyKey,
   readPrivacyKey,
   validateExecutablePrivacyPolicy,
-} from "../../../src/baseline/privacy_engine.mjs";
+} from "../../../dist/src/baseline/privacy_engine.mjs";
 
 const roots = [];
 

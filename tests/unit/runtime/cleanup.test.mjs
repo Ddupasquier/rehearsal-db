@@ -10,13 +10,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAndActivateBaseline } from "../../../src/baseline/artifact.mjs";
+import { createAndActivateBaseline } from "../../../dist/src/baseline/artifact.mjs";
 import {
   applyRehearsalCleanup,
   planRehearsalCleanup,
   parsePosixDiskUsage,
   selectOlderUnusedSupabaseImages,
-} from "../../../src/runtime/cleanup.mjs";
+} from "../../../dist/src/runtime/cleanup.mjs";
 
 const roots = [];
 const makeTreeWritable = async (path) => {

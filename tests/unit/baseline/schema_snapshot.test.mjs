@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertProductionSchemaDump,
   compareProductionSchemaDumps,
-} from "../../../src/baseline/schema_snapshot.mjs";
+} from "../../../dist/src/baseline/schema_snapshot.mjs";
 
 describe("Rehearsal production schema snapshot", () => {
   it("accepts a bounded schema-only public dump", () => {

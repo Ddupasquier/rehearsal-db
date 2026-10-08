@@ -5,7 +5,7 @@ import {
   createCandidateMigrationReceipt,
   encodeBaselineRecordForCopy,
   summarizeRestoreError,
-} from "../../../src/runtime/restore.mjs";
+} from "../../../dist/src/runtime/restore.mjs";
 
 const manifest = {
   tables: [

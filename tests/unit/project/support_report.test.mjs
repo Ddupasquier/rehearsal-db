@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { collectRehearsalSupportReport } from "../../../src/project/support_report.mjs";
+import { collectRehearsalSupportReport } from "../../../dist/src/project/support_report.mjs";
 
 const execute = promisify(execFile);
 const roots = [];
-const cliPath = join(process.cwd(), "src/cli/rehearsal.mjs");
+const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 
 afterEach(async () => {
   await Promise.all(

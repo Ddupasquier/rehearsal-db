@@ -8,7 +8,7 @@ import {
   compareSourceToReplay,
   createMigrationReplayReceipt,
   readMigrationSourceBundle,
-} from "../../../src/runtime/migration_history.mjs";
+} from "../../../dist/src/runtime/migration_history.mjs";
 
 const files = [
   {

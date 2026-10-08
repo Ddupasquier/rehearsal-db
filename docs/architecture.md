@@ -5,7 +5,7 @@ documentation so each file has one obvious home.
 
 ```text
 rehearsal-db/
-├── src/                    shipped package code
+├── src/                    TypeScript product source
 │   ├── application/       application lifecycle and HTTP proofs
 │   ├── baseline/          sanitized baseline creation and validation
 │   ├── cli/               the `rehearsal` executable
@@ -16,8 +16,12 @@ rehearsal-db/
 │   ├── source/            approved source access and refresh
 │   └── targets/           PostgreSQL and Supabase adapters
 ├── scripts/
-│   ├── runtime/           shipped internal runtime launcher
+│   ├── build/             clean TypeScript compilation helpers
+│   ├── install/           TypeScript install-hook source
+│   ├── runtime/           TypeScript runtime-launcher source
 │   └── verification/      repository-only package and fixture proofs
+├── dist/                   generated ESM and declaration output; never edit directly
+├── types/                  reviewed public root declaration contract
 ├── tests/
 │   ├── unit/              mirrors the `src/` domains
 │   ├── integration/       multi-module and terminal behavior
@@ -29,6 +33,7 @@ rehearsal-db/
 ## Boundaries
 
 - `src/` must never import from tests or repository-only verification scripts.
+- `dist/` is rebuilt from TypeScript before tests and packaging; never hand-edit it.
 - Database-specific lifecycle behavior belongs in `src/targets/`.
 - `scripts/verification/` is never included in the npm package.
 - Public consumers use only the paths declared in `package.json#exports`.
@@ -40,13 +45,13 @@ rehearsal-db/
 The executable is split by responsibility so no command file becomes a second
 application layer:
 
-- `rehearsal.mjs` starts the process and dispatches commands.
-- `arguments.mjs` owns the command-line contract and mutation classification.
-- `guided.mjs` owns the interactive home screen and first-run questions.
-- `runtime_commands.mjs` coordinates local runtimes and project proofs.
-- `source_commands.mjs` coordinates approved source access and refresh.
-- `renderers.mjs` formats human-readable results without changing state.
-- `terminal.mjs` owns prompts, colors, and terminal exit behavior.
+- `rehearsal.mts` starts the process and dispatches commands.
+- `arguments.mts` owns the command-line contract and mutation classification.
+- `guided.mts` owns the interactive home screen and first-run questions.
+- `runtime_commands.mts` coordinates local runtimes and project proofs.
+- `source_commands.mts` coordinates approved source access and refresh.
+- `renderers.mts` formats human-readable results without changing state.
+- `terminal.mts` owns prompts, colors, and terminal exit behavior.
 
 ## Adding something new
 
@@ -56,3 +61,6 @@ application layer:
 4. Add an integration or contract test only when behavior crosses domains or becomes a
    public promise.
 5. Update the documentation map when adding a new guide.
+
+Run `npm run build` after changing TypeScript source. Tests import the generated package
+code so the same JavaScript boundary consumers install is exercised locally.

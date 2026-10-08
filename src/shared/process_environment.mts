@@ -1,0 +1,77 @@
+/**
+ * Purpose: Build minimal child-process environments and validate loopback URLs for
+ * the project-neutral Rehearsal runtime. Do not run directly; this module is reusable
+ * script infrastructure.
+ */
+
+const SAFE_SYSTEM_ENVIRONMENT_KEYS = Object.freeze([
+  "CI",
+  "COLORTERM",
+  "FORCE_COLOR",
+  "HOME",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "LOGNAME",
+  "NO_COLOR",
+  "PATH",
+  "SHELL",
+  "TERM",
+  "TMP",
+  "TMPDIR",
+  "TEMP",
+  "USER",
+]);
+
+const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "[::1]", "localhost"]);
+
+export type ProcessEnvironment = Record<string, string | undefined>;
+
+export interface CleanProcessEnvironmentOptions {
+  inheritedEnvironment?: ProcessEnvironment;
+  overrides?: ProcessEnvironment;
+  passthroughKeys?: readonly string[];
+}
+
+export const isLoopbackUrl = (value: string): boolean => {
+  try {
+    const parsed = new URL(value);
+    return (
+      ["http:", "https:"].includes(parsed.protocol) &&
+      LOOPBACK_HOSTNAMES.has(parsed.hostname)
+    );
+  } catch {
+    return false;
+  }
+};
+
+export const assertLoopbackUrl = (label: string, value: string): void => {
+  if (!value || !isLoopbackUrl(value)) {
+    throw new Error(
+      `${label} must use a loopback URL; received a non-local target.`,
+    );
+  }
+};
+
+export const pickEnvironmentVariables = (
+  source: ProcessEnvironment,
+  keys: readonly string[],
+): Record<string, string> =>
+  Object.fromEntries(
+    keys.flatMap((key) => {
+      const value = source[key];
+      return value === undefined ? [] : [[key, value]];
+    }),
+  );
+
+export const createCleanProcessEnvironment = ({
+  inheritedEnvironment = process.env,
+  overrides = {},
+  passthroughKeys = [],
+}: CleanProcessEnvironmentOptions = {}): Record<string, string> => ({
+  ...pickEnvironmentVariables(inheritedEnvironment, [
+    ...SAFE_SYSTEM_ENVIRONMENT_KEYS,
+    ...passthroughKeys,
+  ]),
+  ...pickEnvironmentVariables(overrides, Object.keys(overrides)),
+});

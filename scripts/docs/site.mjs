@@ -34,6 +34,7 @@ export const groups = Object.freeze([
     pages: [
       "commands",
       "configuration",
+      "typescript",
       "runtime-policies",
       "adapters",
       "glossary",
@@ -121,6 +122,13 @@ export const pages = Object.freeze([
     title: "Configuration",
     description:
       "All supported rehearsal.config.mjs settings, grouped by purpose.",
+  },
+  {
+    slug: "typescript",
+    source: "typescript.md",
+    title: "TypeScript",
+    description:
+      "Use Rehearsal's public types without changing the generated configuration format.",
   },
   {
     slug: "runtime-policies",

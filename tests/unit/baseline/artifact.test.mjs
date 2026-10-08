@@ -18,7 +18,7 @@ import {
   pruneBaselineGenerations,
   removeBaselineArtifactRoot,
   verifyActiveBaseline,
-} from "../../../src/baseline/artifact.mjs";
+} from "../../../dist/src/baseline/artifact.mjs";
 
 const roots = [];
 const makeTreeWritable = async (path) => {

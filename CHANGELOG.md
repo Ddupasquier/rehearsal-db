@@ -5,6 +5,23 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Added
+
+- A strict, no-emit TypeScript gate now checks the first shared runtime utilities and
+  verifies that consumers can compile against Rehearsal's public configuration types.
+- The documentation site now explains the supported TypeScript surface with examples
+  that are compiled and checked against their rendered documentation source.
+- All shipped implementation and executable-helper source now uses TypeScript. Clean
+  builds emit Node-compatible ESM and declarations into the reviewed package boundary,
+  and tests exercise that compiled output rather than an alternate source path.
+- The published build omits repository-only JavaScript source maps while retaining
+  runtime JavaScript and declarations, keeping the installed package compact.
+
+### Fixed
+
+- Packed onboarding chooses an available local port block for preserved configuration
+  fixtures, so unrelated running Rehearsal projects cannot make the isolation test fail.
+
 ## [0.1.0-beta.14] - 2026-10-05
 
 ### Added

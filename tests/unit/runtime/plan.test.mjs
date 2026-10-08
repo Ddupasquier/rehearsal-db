@@ -11,15 +11,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAndActivateBaseline } from "../../../src/baseline/artifact.mjs";
+import { createAndActivateBaseline } from "../../../dist/src/baseline/artifact.mjs";
 import {
   buildRehearsalPlan,
   inspectRehearsalMigrations,
-} from "../../../src/runtime/plan.mjs";
+} from "../../../dist/src/runtime/plan.mjs";
 
 const roots = [];
 const configurationModuleUrl = pathToFileURL(
-  join(process.cwd(), "src/project/configuration.mjs"),
+  join(process.cwd(), "dist/src/project/configuration.mjs"),
 ).href;
 
 const makeTreeWritable = async (path) => {

@@ -15,14 +15,14 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAndActivateBaseline } from "../../src/baseline/artifact.mjs";
-import { readMigrationFileInventory } from "../../src/runtime/migration_history.mjs";
+import { createAndActivateBaseline } from "../../dist/src/baseline/artifact.mjs";
+import { readMigrationFileInventory } from "../../dist/src/runtime/migration_history.mjs";
 
 const execute = promisify(execFile);
 const fixtureRoot = join(process.cwd(), "tests/fixtures/rehearsal-project");
-const cliPath = join(process.cwd(), "src/cli/rehearsal.mjs");
+const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 const configurationUrl = pathToFileURL(
-  join(process.cwd(), "src/project/configuration.mjs"),
+  join(process.cwd(), "dist/src/project/configuration.mjs"),
 ).href;
 const roots = [];
 
@@ -64,7 +64,7 @@ const createProject = async () => {
   await writeFile(
     configPath,
     (await readFile(configPath, "utf8")).replace(
-      '"../../../src/project/configuration.mjs"',
+      '"../../../dist/src/project/configuration.mjs"',
       JSON.stringify(configurationUrl),
     ),
   );

@@ -7,7 +7,7 @@ import {
   redactDiagnosticValue,
   renderHumanError,
   serializeRehearsalError,
-} from "../../../src/shared/diagnostics.mjs";
+} from "../../../dist/src/shared/diagnostics.mjs";
 
 const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
 

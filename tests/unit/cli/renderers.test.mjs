@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderPlan } from "../../../src/cli/renderers.mjs";
+import { renderPlan } from "../../../dist/src/cli/renderers.mjs";
 
 describe("CLI renderers", () => {
   it("prints each declarative authentication callback in a multi-target plan", () => {

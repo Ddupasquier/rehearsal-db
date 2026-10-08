@@ -23,11 +23,11 @@ import {
   isRehearsalPortAvailable,
   planRehearsalSetup,
   renderSafeLocalSupabaseConfig,
-} from "../../../src/project/setup.mjs";
+} from "../../../dist/src/project/setup.mjs";
 
 const roots = [];
 const execute = promisify(execFile);
-const cliPath = join(process.cwd(), "src/cli/rehearsal.mjs");
+const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 
 const makeProject = async () => {
   const root = await mkdtemp(join(tmpdir(), "rehearsal-setup-test-"));

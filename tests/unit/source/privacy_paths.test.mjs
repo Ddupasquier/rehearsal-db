@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { resolvePrivacyMappedAssets } from "../../../src/source/privacy_paths.mjs";
+import { resolvePrivacyMappedAssets } from "../../../dist/src/source/privacy_paths.mjs";
 import {
   assetEndpointFingerprint,
   sourceTargetFingerprint,
-} from "../../../src/source/access.mjs";
+} from "../../../dist/src/source/access.mjs";
 
 const owner = "11111111-1111-4111-8111-111111111111";
 const environmentVariable = "REHEARSAL_APPROVED_OWNER_ID";

@@ -15,10 +15,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { spawn } from "@lydell/node-pty";
-import { createSyntheticBaselineFromFiles } from "../../src/baseline/builder.mjs";
+import { createSyntheticBaselineFromFiles } from "../../dist/src/baseline/builder.mjs";
 
 const roots = [];
-const cliPath = join(process.cwd(), "src/cli/rehearsal.mjs");
+const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 
 const makeTreeWritable = async (path) => {
   await chmod(path, 0o700).catch(() => undefined);
