@@ -2,8 +2,10 @@ import packageMetadata from "../../package.json" with { type: "json" };
 
 export const site = Object.freeze({
   name: "Rehearsal",
+  homeTitle: "Rehearsal · Test database migrations against real data",
   description:
-    "Friendly, safety-first documentation for local PostgreSQL and Supabase migration rehearsals.",
+    "Catch PostgreSQL and Supabase migrations that pass on empty databases but fail on real data—before deploy.",
+  url: "https://ddupasquier.github.io/rehearsal-db/",
   package: "https://www.npmjs.com/package/@rehearsal-db/core",
   downloadsBadge:
     "https://img.shields.io/npm/dm/%40rehearsal-db%2Fcore?style=for-the-badge&logo=npm&logoColor=white&label=npm%20downloads&labelColor=1c2a34&color=287b5c",
@@ -54,7 +56,7 @@ export const pages = Object.freeze([
     title: "Welcome",
     shortTitle: "Overview",
     description:
-      "Find the shortest safe path from install to a verified migration.",
+      "See why empty-database tests miss risky migration failures and rehearse the real change locally.",
   },
   {
     slug: "getting-started",

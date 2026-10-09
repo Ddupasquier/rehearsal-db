@@ -11,10 +11,10 @@ Doctor names each missing or unsafe item. If you still need help, run
 
 ## `npx rehearsal` cannot find the command
 
-Confirm you are in the project directory and install the beta locally:
+Confirm you are in the project directory and install the current release locally:
 
 ```bash
-npm install --save-dev @rehearsal-db/core@beta
+npm install --save-dev @rehearsal-db/core
 npx rehearsal --help
 ```
 

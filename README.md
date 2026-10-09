@@ -1,12 +1,39 @@
-# Rehearsal
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Ddupasquier/rehearsal-db/main/docs/site/logo-mark.svg" width="104" height="104" alt="Rehearsal logo" />
+</p>
 
-[![Monthly npm downloads](https://img.shields.io/npm/dm/%40rehearsal-db%2Fcore?style=flat-square&logo=npm&logoColor=white&label=npm%20downloads&labelColor=1c2a34&color=287b5c)](https://www.npmjs.com/package/@rehearsal-db/core)
+<h1 align="center">Rehearsal</h1>
 
-[Read the documentation](https://ddupasquier.github.io/rehearsal-db/) · [View on npm](https://www.npmjs.com/package/@rehearsal-db/core) · [Report a problem](https://github.com/Ddupasquier/rehearsal-db/issues)
+<p align="center"><strong>Your migration passed on an empty database. Production will not be empty.</strong></p>
 
-Rehearsal tests PostgreSQL and Supabase migrations on your computer before you run them
-anywhere important. It restores safe test data into a disposable local database, applies
-only the migrations you approve, and runs your project's own test command.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@rehearsal-db/core"><img alt="npm version" src="https://img.shields.io/npm/v/%40rehearsal-db%2Fcore?style=flat-square&logo=npm&logoColor=white&labelColor=1c2a34&color=287b5c" /></a>
+  <a href="https://www.npmjs.com/package/@rehearsal-db/core"><img alt="Monthly npm downloads" src="https://img.shields.io/npm/dm/%40rehearsal-db%2Fcore?style=flat-square&logo=npm&logoColor=white&label=downloads&labelColor=1c2a34&color=287b5c" /></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/npm/l/%40rehearsal-db%2Fcore?style=flat-square&labelColor=1c2a34&color=287b5c" /></a>
+  <a href="https://ddupasquier.github.io/rehearsal-db/"><img alt="Read the documentation" src="https://img.shields.io/badge/docs-read_the_guide-269fab?style=flat-square&labelColor=1c2a34" /></a>
+</p>
+
+<p align="center">
+  <a href="https://ddupasquier.github.io/rehearsal-db/">Read the documentation</a> ·
+  <a href="https://www.npmjs.com/package/@rehearsal-db/core">View on npm</a> ·
+  <a href="https://github.com/Ddupasquier/rehearsal-db/issues">Report a problem</a>
+</p>
+
+Most migration tests start with an empty database. Production does not.
+
+Existing rows, relationships, authentication identities, stored files, and migration
+history are where risky changes break. A migration can build successfully and still fail
+against the data and application behavior you actually have.
+
+**Rehearsal catches those problems before deployment.** It restores a reviewed,
+sanitized baseline into a disposable local PostgreSQL or Supabase environment, applies
+only the exact migrations you approve, and runs your application's own proof.
+
+| An empty database cannot prove…                      | Rehearsal lets you verify…                                   |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| old rows still satisfy new constraints               | the migration against a reviewed, production-shaped copy     |
+| relationships, identities, and stored files survive  | database, Auth, and Storage behavior in one local sandbox    |
+| the application still works after the schema changes | your own tests and hands-on flows before anything is shipped |
 
 Projects with a separate publication or read-model database can declare it as a
 dependent target. Rehearsal then manages the complete isolated runtime stack.
@@ -17,7 +44,7 @@ it through a reviewed privacy policy, and retire the access again. It is never p
 `run`, `reset`, `migrate`, or application launch. Rehearsal is not a backup system or a
 production deployment tool.
 
-> Rehearsal is in public beta. Use it on a branch and keep a working backup of your
+> **Pre-1.0 safety note:** use Rehearsal on a branch and keep a working backup of your
 > project.
 
 ## What you need
@@ -37,7 +64,7 @@ your migration is intended to change.
 From your project directory:
 
 ```bash
-npm install --save-dev @rehearsal-db/core@beta
+npm install --save-dev @rehearsal-db/core
 npx rehearsal
 ```
 
