@@ -129,7 +129,7 @@ describe("Rehearsal configuration", () => {
     expect(loaded.config.supabase.serviceEnvironmentFile).toBeNull();
     expect(loaded.config.supabase.serviceEnvironmentVariables).toEqual([]);
     expect(loaded.config.supabase.authentication).toBeNull();
-    expect(loaded.config.containerRuntime).toEqual({ autoStartColima: true });
+    expect(loaded.config.containerRuntime).toEqual({ autoStartColima: false });
     expect(loaded.config.cleanup).toEqual({ retainBaselineGenerations: 2 });
     expect(loaded.config.preparation).toBeNull();
     expect(loaded.config.dependentTargets).toEqual([]);
@@ -478,7 +478,7 @@ describe("Rehearsal configuration", () => {
     expect(source).toContain('hostedAccess: "disabled"');
     expect(source).toContain('outboundNetwork: "deny"');
     expect(source).toContain("containerRuntime:");
-    expect(source).toContain("autoStartColima: true");
+    expect(source).toContain("autoStartColima: false");
     expect(source).toContain("cleanup:");
     expect(source).toContain("retainBaselineGenerations: 2");
     expect(source).toContain("dependentTargets:");

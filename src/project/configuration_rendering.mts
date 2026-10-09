@@ -74,9 +74,10 @@ export default defineRehearsalConfig({
 	// After setup, run: npx rehearsal identity connect
 	// identityPolicy: "infrastructure/rehearsal/identity-policy.json",
 
-	// Reuse any running Docker-compatible engine; start Colima only when needed.
+	// Reuse any running Docker-compatible engine. Keep startup explicit so a
+	// Rehearsal command cannot wake unrelated containers after Docker was stopped.
 	containerRuntime: {
-		autoStartColima: true,
+		autoStartColima: false,
 	},
 
 	// Keep this many baseline generations, always including the active one.
@@ -184,9 +185,10 @@ export default defineRehearsalConfig({
 	// After setup, run: npx rehearsal identity connect
 	// identityPolicy: "infrastructure/rehearsal/identity-policy.json",
 
-	// Reuse any running Docker-compatible engine; start Colima only when needed.
+	// Reuse any running Docker-compatible engine. Keep startup explicit so a
+	// Rehearsal command cannot wake unrelated containers after Docker was stopped.
 	containerRuntime: {
-		autoStartColima: true,
+		autoStartColima: false,
 	},
 
 	// Keep this many baseline generations, always including the active one.

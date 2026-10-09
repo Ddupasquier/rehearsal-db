@@ -66,6 +66,10 @@ const execute = (id, command, args, environment = {}) => {
 };
 
 try {
+  // Build and validate before snapshotting the artifact. Version changes are reflected
+  // in dist/package.json only after the TypeScript build, and every consumer must test
+  // the same post-check bytes that the release workflow will pack.
+  execute("package", "npm", ["run", "check"]);
   const preparedArtifact = await prepareCandidateArtifact({
     repositoryRoot,
     outputDirectory: packingDirectory,
@@ -80,7 +84,6 @@ try {
     originalPath: preparedArtifact.path,
     path: artifactSnapshot,
   });
-  execute("package", "npm", ["run", "check"]);
   for (const { id, file } of verificationScenarios) {
     const stdout = execute(id, process.execPath, [file], {
       REHEARSAL_CANDIDATE_ARTIFACT: artifact.path,

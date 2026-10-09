@@ -161,7 +161,7 @@ export const localCommandSucceeds = (
 
 export const ensureLocalContainerRuntime = ({
   cwd = process.cwd(),
-  autoStartColima = true,
+  autoStartColima = false,
 }: {
   cwd?: string | undefined;
   autoStartColima?: boolean;
@@ -169,12 +169,47 @@ export const ensureLocalContainerRuntime = ({
   if (localCommandSucceeds("docker", ["info"], { cwd })) return;
   if (autoStartColima && localCommandSucceeds("colima", ["version"], { cwd })) {
     runLocalCommand("colima", ["start"], { cwd });
+    console.log(
+      "Started Colima because containerRuntime.autoStartColima is enabled. Rehearsal will not stop this shared Docker runtime automatically.",
+    );
   }
   if (!localCommandSucceeds("docker", ["info"], { cwd })) {
     throw new Error(
-      "A local Docker-compatible runtime is required. Install Docker or Colima, then rerun the command.",
+      autoStartColima
+        ? "A local Docker-compatible runtime is required. Install Docker or Colima, then rerun the command."
+        : "A local Docker-compatible runtime is stopped or unavailable. Start Docker or Colima explicitly, or opt in with containerRuntime.autoStartColima: true.",
     );
   }
+};
+
+export const preventOwnedSupabaseAutoRestart = ({
+  cwd = process.cwd(),
+  projectId,
+}: {
+  cwd?: string | undefined;
+  projectId: string;
+}): readonly string[] => {
+  if (!/^[a-z0-9][a-z0-9-]{1,62}$/u.test(projectId)) {
+    throw new Error(
+      "Refusing to change container restart policies without an exact safe Supabase project id.",
+    );
+  }
+  const label = `com.supabase.cli.project=${projectId}`;
+  const containers = runLocalCommand(
+    "docker",
+    ["ps", "--all", "--filter", `label=${label}`, "--format", "{{.ID}}"],
+    { capture: true, cwd },
+  )
+    .split("\n")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (containers.length) {
+    runLocalCommand("docker", ["update", "--restart=no", ...containers], {
+      capture: true,
+      cwd,
+    });
+  }
+  return Object.freeze(containers);
 };
 
 const withWorkdir = (
@@ -201,11 +236,13 @@ export const startLocalSupabase = ({
   exclude = [],
   environment = {},
   applyMigrations = true,
-  autoStartColima = true,
+  autoStartColima = false,
+  projectId,
 }: SupabaseCommandOptions & {
   exclude?: readonly string[];
   applyMigrations?: boolean;
   autoStartColima?: boolean;
+  projectId?: string | undefined;
 } = {}): LocalSupabaseEnvironment => {
   ensureLocalContainerRuntime({ cwd, autoStartColima });
   const startArguments = withWorkdir(
@@ -217,6 +254,7 @@ export const startLocalSupabase = ({
     cwd,
     environment,
   });
+  if (projectId) preventOwnedSupabaseAutoRestart({ cwd, projectId });
   if (applyMigrations) {
     runLocalCommand(
       "supabase",

@@ -150,6 +150,9 @@ const assertRuntimeConfigMatches = async ({
   config,
   paths,
 }: Pick<LoadedRehearsalConfig, "config" | "paths">): Promise<string> => {
+  const startupPolicy = config.containerRuntime.autoStartColima
+    ? "Colima auto-start is enabled and may wake shared Docker containers"
+    : "container-engine startup is explicit";
   if (config.runtime.target === "postgresql") {
     if (paths.rehearsalConfig !== null || paths.supabaseWorkdir !== null) {
       throw new Error(
@@ -159,7 +162,7 @@ const assertRuntimeConfigMatches = async ({
     if (!config.postgresql) {
       throw new Error("The PostgreSQL target is missing its configuration.");
     }
-    return `isolated PostgreSQL image ${config.postgresql.image} and a loopback database port are configured`;
+    return `isolated PostgreSQL image ${config.postgresql.image} and a loopback database port are configured; ${startupPolicy}`;
   }
   if (!paths.rehearsalConfig) {
     throw new Error(
@@ -183,7 +186,7 @@ const assertRuntimeConfigMatches = async ({
       "Local Supabase config unexpectedly enables a linked target.",
     );
   }
-  return "isolated Supabase project and ports match the project contract";
+  return `isolated Supabase project and ports match the project contract; ${startupPolicy}`;
 };
 
 const assertBaselinePermissions = async ({

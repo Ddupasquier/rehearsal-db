@@ -26,7 +26,7 @@ file names, and undocumented package paths are not compatibility promises.
 
 ## What blocks a release candidate
 
-An issue blocks `0.1.0-rc.1` when it can cause any of the following within a supported
+An issue blocks the active release candidate when it can cause any of the following within a supported
 configuration:
 
 - data loss, credential exposure, hosted-system access, or mutation outside resources
@@ -47,12 +47,13 @@ release.
 
 1. Ship beta.18 with only stability, release-safety, upgrade, and documentation work.
 2. Freeze broad feature development on the release branch.
-3. Publish `0.1.0-rc.1` from protected `main` through the reviewed npm environment.
+3. Publish a release candidate from protected `main` through the reviewed npm environment.
 4. Run the complete Rehearsal Test Lab gate twice from clean isolated workspaces.
 5. Perform one final package-only upgrade in a real consumer. The consumer must use the
    published package rather than duplicate Rehearsal machinery.
-6. Keep the candidate available for at least seven calendar days. Restart the window if
-   a blocking package change is required.
+6. Keep the current candidate available for at least seven calendar days. Restart the
+   window if a blocking package change is required. The container-lifecycle correction
+   in `0.1.0-rc.2` restarts this observation window.
 7. Publish `0.1.0` only when no blocking issue remains and the accepted registry artifact
    matches the tested artifact exactly.
 
