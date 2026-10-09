@@ -2,7 +2,7 @@
   "name": "@rehearsal-db/core",
   "version": "0.1.0-rc.1",
   "private": false,
-  "description": "Safely rehearse PostgreSQL and Supabase migrations against sanitized, production-shaped data.",
+  "description": "Catch PostgreSQL and Supabase migrations that pass on empty databases but fail on real data—before deploy.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Ddupasquier/rehearsal-db.git"

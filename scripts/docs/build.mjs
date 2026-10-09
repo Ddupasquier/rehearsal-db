@@ -143,9 +143,9 @@ const renderHeader = () => `<header class="site-header">
 
 const renderHero = () => `<section class="hero">
   <div class="hero-copy">
-    <p class="eyebrow"><span></span> Safe local migration testing</p>
-    <h1>Take database changes<br/><em>for a rehearsal.</em></h1>
-    <p class="hero-lede">Restore a safe copy. Apply only what you reviewed. Test the real application before anything important changes.</p>
+    <p class="eyebrow"><span></span> Beyond empty-database testing</p>
+    <h1>Your migration passed.<br/><em>Production still might not.</em></h1>
+    <p class="hero-lede">Existing rows, relationships, identities, files, and migration history are where risky changes break. Rehearse them locally before you deploy.</p>
     <div class="hero-actions">
       <a class="button primary" href="${hrefFor("getting-started")}">Get started ${icon("arrow")}</a>
       <a class="button secondary" href="${hrefFor("tutorial")}">Try the tutorial</a>
@@ -154,7 +154,7 @@ const renderHero = () => `<section class="hero">
       <img src="${site.downloadsBadge}" alt="Monthly downloads of @rehearsal-db/core from npm" />
     </a>
     <div class="hero-proof" aria-label="Rehearsal guarantees">
-      <span>✓ Local only</span><span>✓ Exact approvals</span><span>✓ Your real tests</span>
+      <span>✓ Reviewed baseline</span><span>✓ Exact migrations</span><span>✓ Your app proof</span>
     </div>
   </div>
   <div class="hero-art" aria-hidden="true">
@@ -163,7 +163,7 @@ const renderHero = () => `<section class="hero">
 </section>
 <section class="install-strip" aria-label="Quick install">
   <div><span>01</span><p>Install it</p></div>
-  <code>npm install --save-dev @rehearsal-db/core@beta</code>
+  <code>npm install --save-dev @rehearsal-db/core</code>
   <button type="button" class="copy-install">Copy</button>
 </section>`;
 
@@ -187,6 +187,8 @@ const renderSearch = () => `<dialog class="search-dialog">
 const renderPage = ({ page, content, headings }) => {
   const group = groupForPage(page.slug);
   const home = page.slug === "";
+  const pageTitle = home ? site.homeTitle : `${page.title} · ${site.name}`;
+  const canonicalUrl = new URL(page.slug ? `${page.slug}/` : "", site.url).href;
   const articleContent = home
     ? content.replace(/^<h1[^>]*>[\s\S]*?<\/h1>/u, "")
     : content;
@@ -197,7 +199,14 @@ const renderPage = ({ page, content, headings }) => {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="${escapeHtml(page.description)}" />
   <meta name="theme-color" content="#1c2a34" />
-  <title>${home ? site.name : `${page.title} · ${site.name}`}</title>
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="${escapeHtml(site.name)}" />
+  <meta property="og:title" content="${escapeHtml(pageTitle)}" />
+  <meta property="og:description" content="${escapeHtml(page.description)}" />
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />
+  <title>${escapeHtml(pageTitle)}</title>
   <link rel="icon" href="${base}assets/logo-mark.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="${base}assets/site.css" />
   <script>document.documentElement.dataset.theme = localStorage.getItem("rehearsal-docs-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");</script>

@@ -1,7 +1,14 @@
 # Rehearsal documentation
 
-Welcome. You do not need to read this documentation from top to bottom. Choose what you
-want to accomplish and follow that path.
+Most migration tests start with an empty database. Production does not. Existing rows,
+relationships, authentication identities, stored files, and migration history are where
+risky changes break.
+
+Rehearsal restores a reviewed, sanitized baseline into a disposable local environment,
+applies only the exact migrations you approve, and runs your application's own proof.
+
+You do not need to read this documentation from top to bottom. Choose what you want to
+accomplish and follow that path.
 
 ## Start here
 

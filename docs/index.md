@@ -1,5 +1,23 @@
 # Rehearsal documentation
 
+## Why an empty database is not enough
+
+Most migration tests start with an empty database. Production does not.
+
+Existing rows, relationships, authentication identities, stored files, and migration
+history are where risky changes break. A migration can build successfully and still fail
+against the data and application behavior you actually have.
+
+Rehearsal catches those problems before deployment. It restores a reviewed, sanitized
+baseline into a disposable local PostgreSQL or Supabase environment, applies only the
+exact migrations you approve, and runs your application's own proof.
+
+| Empty-database tests miss…                        | Rehearsal exercises…                                      |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| old rows and edge cases                           | a reviewed, production-shaped baseline                    |
+| relationships between data, identities, and files | database, Auth, and Storage in one local sandbox          |
+| whether the product still behaves correctly       | your automated proof and hands-on application walkthrough |
+
 ## Pick the path that fits today
 
 You do not need to read everything before your first rehearsal. Start with the outcome

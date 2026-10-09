@@ -35,7 +35,7 @@ Rehearsal will use that image with downloads disabled.
 Run these commands from the directory containing your project's `package.json`:
 
 ```bash
-npm install --save-dev @rehearsal-db/core@beta
+npm install --save-dev @rehearsal-db/core
 npx rehearsal
 ```
 

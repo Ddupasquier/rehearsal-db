@@ -57,4 +57,21 @@ describe("documentation site", () => {
       ),
     );
   });
+
+  it("leads with the problem and publishes complete sharing metadata", async () => {
+    const result = await buildDocs();
+    const home = await readFile(join(result.outputRoot, "index.html"), "utf8");
+
+    expect(home).toContain("Production still might not.");
+    expect(home).toContain("Why an empty database is not enough");
+    expect(home).toContain(
+      "<title>Rehearsal · Test database migrations against real data</title>",
+    );
+    expect(home).toContain('property="og:description"');
+    expect(home).toContain(
+      '<link rel="canonical" href="https://ddupasquier.github.io/rehearsal-db/" />',
+    );
+    expect(home).toContain("npm install --save-dev @rehearsal-db/core");
+    expect(home).not.toContain("@rehearsal-db/core@beta");
+  });
 });

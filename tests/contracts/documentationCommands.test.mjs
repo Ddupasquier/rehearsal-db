@@ -259,12 +259,12 @@ describe("documented CLI contract", () => {
     }
   });
 
-  it("installs the current prerelease through the beta distribution tag", async () => {
+  it("installs the current release through npm's default distribution tag", async () => {
     const [readme, gettingStarted] = await Promise.all([
       readFile(join(root, "README.md"), "utf8"),
       readFile(join(root, "docs/getting-started.md"), "utf8"),
     ]);
-    const installCommand = "npm install --save-dev @rehearsal-db/core@beta";
+    const installCommand = "npm install --save-dev @rehearsal-db/core";
 
     expect(readme).toContain(installCommand);
     expect(gettingStarted).toContain(installCommand);

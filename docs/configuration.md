@@ -4,7 +4,7 @@ An ordinary npm application install creates this file in the application root wh
 root can be identified safely:
 
 ```bash
-npm install --save-dev @rehearsal-db/core@beta
+npm install --save-dev @rehearsal-db/core
 ```
 
 The install hook detects the database type, project name, migration folder,
