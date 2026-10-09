@@ -50,4 +50,18 @@ describe("release channel policy", () => {
       'npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest',
     );
   });
+
+  it("builds and checks generated package metadata before packing release bytes", async () => {
+    const gate = await readFile(
+      join(root, "scripts/verification/release_gate.mjs"),
+      "utf8",
+    );
+    const check = gate.indexOf('execute("package", "npm", ["run", "check"])');
+    const pack = gate.indexOf(
+      "const preparedArtifact = await prepareCandidateArtifact",
+    );
+
+    expect(check).toBeGreaterThan(-1);
+    expect(pack).toBeGreaterThan(check);
+  });
 });

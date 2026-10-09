@@ -45,7 +45,13 @@ export const groups = Object.freeze([
   {
     label: "Project",
     eyebrow: "Behind the scenes",
-    pages: ["roadmap", "stability", "architecture", "releasing"],
+    pages: [
+      "roadmap",
+      "stability",
+      "runtime-lifecycle",
+      "architecture",
+      "releasing",
+    ],
   },
 ]);
 
@@ -166,6 +172,13 @@ export const pages = Object.freeze([
     title: "Stability contract",
     description:
       "The public compatibility promise and objective gate for leaving beta.",
+  },
+  {
+    slug: "runtime-lifecycle",
+    source: "runtime-lifecycle.md",
+    title: "Container runtime lifecycle",
+    description:
+      "Keep Docker and Supabase environments on demand without risking another project's data.",
   },
   {
     slug: "architecture",

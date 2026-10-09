@@ -31,6 +31,7 @@ accomplish and follow that path.
 
 - [CLI commands](commands.md)
 - [Configuration](configuration.md)
+- [Container runtime lifecycle](runtime-lifecycle.md)
 - [TypeScript](typescript.md)
 - [Runtime and identity policies](runtime-policies.md)
 - [Database adapters](adapters.md)

@@ -23,14 +23,15 @@ exact migrations you approve, and runs your application's own proof.
 You do not need to read everything before your first rehearsal. Start with the outcome
 you want, then follow the links when a term or safety check is new.
 
-| I want to…                            | Go here                                                           |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| Set up my own project                 | [Getting started](getting-started.md)                             |
-| Try Rehearsal without touching my app | [Hands-on tutorial](tutorial.md)                                  |
-| Understand what makes a copy safe     | [Baselines](baselines.md) and [Sanitization](sanitization.md)     |
-| Look up a command or setting          | [CLI commands](commands.md) and [Configuration](configuration.md) |
-| Add editor and compiler type checks   | [TypeScript](typescript.md)                                       |
-| Fix something that did not work       | [Troubleshooting](troubleshooting.md)                             |
+| I want to…                              | Go here                                                           |
+| --------------------------------------- | ----------------------------------------------------------------- |
+| Set up my own project                   | [Getting started](getting-started.md)                             |
+| Try Rehearsal without touching my app   | [Hands-on tutorial](tutorial.md)                                  |
+| Understand what makes a copy safe       | [Baselines](baselines.md) and [Sanitization](sanitization.md)     |
+| Look up a command or setting            | [CLI commands](commands.md) and [Configuration](configuration.md) |
+| Reduce Docker and Supabase resource use | [Container runtime lifecycle](runtime-lifecycle.md)               |
+| Add editor and compiler type checks     | [TypeScript](typescript.md)                                       |
+| Fix something that did not work         | [Troubleshooting](troubleshooting.md)                             |
 
 ## The short version
 

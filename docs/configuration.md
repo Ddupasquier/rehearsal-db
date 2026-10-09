@@ -82,7 +82,7 @@ export default defineRehearsalConfig({
   // After setup, run: npx rehearsal identity connect
   // identityPolicy: "infrastructure/rehearsal/identity-policy.json",
   containerRuntime: {
-    autoStartColima: true,
+    autoStartColima: false,
   },
   cleanup: {
     retainBaselineGenerations: 2,
@@ -227,7 +227,7 @@ SHA-256 receipts are tracked. See
 
 ```ts
 containerRuntime: {
-  autoStartColima: true,
+  autoStartColima: false,
 },
 cleanup: {
   retainBaselineGenerations: 2,
@@ -235,9 +235,17 @@ cleanup: {
 ```
 
 Rehearsal uses whichever Docker-compatible engine already answers `docker info`. If none
-is running and `autoStartColima` is `true`, Rehearsal may run `colima start`. It respects
-the user's Colima CPU, memory, and disk settings and never changes them. Set the field to
-`false` when you prefer to start Docker or Colima yourself.
+is running and `autoStartColima` is `true`, Rehearsal may run `colima start`. This is an
+explicit opt-in because starting a shared Docker engine can also restart unrelated
+containers whose restart policy is `always` or `unless-stopped`. Rehearsal respects the
+user's Colima CPU, memory, and disk settings and never changes them. The generated default
+is `false`: start Docker or Colima yourself before a mutating command. Rehearsal never
+stops a shared container engine automatically.
+
+After each Supabase start, Rehearsal changes only the exact target's containers to
+Docker's `no` restart policy. Its database and Storage volumes remain intact,
+`rehearsal start` can resume it, and restarting Docker does not silently wake stopped
+Rehearsal stacks.
 
 `retainBaselineGenerations` controls how many immutable baseline generations survive an
 approved `rehearsal refresh` or `rehearsal cleanup`; it must be at least 1. Refresh shows

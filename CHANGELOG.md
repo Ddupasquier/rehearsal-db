@@ -5,6 +5,27 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-rc.2] - 2026-10-09
+
+### Changed
+
+- Container-engine startup is now explicit by default. Rehearsal starts Colima only
+  when a project deliberately enables `containerRuntime.autoStartColima`, reports that
+  action, and never silently stops the shared engine.
+- Package-managed Supabase containers use Docker's non-resuming restart policy after
+  each start, preventing stopped Rehearsal stacks from waking merely because Docker or
+  Colima restarts. Exact Supabase project labels keep the change inside the selected
+  disposable target.
+- Runtime diagnostics and a new lifecycle guide explain which commands need Docker,
+  what remains running, and how to finish a low-memory local session without pruning or
+  deleting persistent data.
+
+### Fixed
+
+- A stopped Colima VM no longer restarts from a default Rehearsal configuration.
+- Independent Test Lab acceptance now reaps exact workspace-owned interactive children
+  after success, failure, interruption, and timeout.
+
 ## [0.1.0-rc.1] - 2026-10-08
 
 ### Changed
@@ -554,7 +575,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.1...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.2...HEAD
+[0.1.0-rc.2]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.1...v0.1.0-rc.2
 [0.1.0-rc.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.18...v0.1.0-rc.1
 [0.1.0-beta.18]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.17...v0.1.0-beta.18
 [0.1.0-beta.17]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.16...v0.1.0-beta.17

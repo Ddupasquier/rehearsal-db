@@ -172,6 +172,7 @@ Reference:
 
 - [CLI commands](docs/commands.md)
 - [Configuration](docs/configuration.md)
+- [Container runtime lifecycle](docs/runtime-lifecycle.md) — keep Docker and Supabase use on demand
 - [TypeScript types](docs/typescript.md)
 - [Baselines](docs/baselines.md)
 - [Sanitization](docs/sanitization.md)

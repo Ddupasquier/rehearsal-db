@@ -99,7 +99,7 @@ export const REHEARSAL_CONFIG_VERSION = 1;
 
 export const REHEARSAL_DEFAULTS = Object.freeze({
   baseline: Object.freeze({ artifactDirectory: ".rehearsal" }),
-  containerRuntime: Object.freeze({ autoStartColima: true }),
+  containerRuntime: Object.freeze({ autoStartColima: false }),
   cleanup: Object.freeze({ retainBaselineGenerations: 2 }),
   runtime: Object.freeze({
     applicationUrl: "http://localhost:5175",
