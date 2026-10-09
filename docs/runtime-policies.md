@@ -166,9 +166,18 @@ Authentication has three separate parts:
 3. The identity policy matches that verified local identity and transfers only the
    reviewed copied-account graph.
 
-The email stays in an environment variable; only its reviewed hash is committed. Run
-`rehearsal open`, complete the ordinary local sign-in, and stop the app with `Ctrl+C`.
-Then preview and confirm the association:
+The email stays in an environment variable; only its reviewed hash is committed. The
+guided command keeps the app available for ordinary sign-in, detects the reviewed local
+Auth match, presents a redacted preview, and supplies the exact plan fingerprint
+internally after one confirmation:
+
+```bash
+npx rehearsal identity connect
+```
+
+It never intercepts provider credentials or reads browser state. After connection it
+reopens the app; sign out and sign in once to receive fresh claims. Scripts may retain
+the explicit plan and claim sequence:
 
 ```bash
 npx rehearsal identity plan --identity=approved-owner

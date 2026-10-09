@@ -21,6 +21,7 @@ Commands:
   refresh [--confirm-refresh=] Replace the database copy, reset locally, and remove old copies
   identity plan --identity=   Preview an approved local identity association
   identity claim --identity= --confirm-identity= Apply the exact local association
+  identity connect [--identity=] Keep the app open, detect sign-in, and connect once
   doctor                     Check whether Rehearsal is safe and ready
   support                    Print a safe, copy-ready support report
   explain                    Show the immutable execution plan

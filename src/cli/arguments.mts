@@ -149,6 +149,7 @@ export const commandMutatesProject = ({
     return Boolean(flags.sourceRetirementConfirmation);
   if (command === "refresh") return Boolean(flags.refreshConfirmation);
   if (command === "identity claim") return Boolean(flags.identityConfirmation);
+  if (command === "identity connect") return true;
   if (command === "run") return !flags.dryRun;
   return [
     "baseline create",

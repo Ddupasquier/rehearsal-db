@@ -26,6 +26,7 @@ const documentedCommands = [
   "refresh",
   "identity plan --identity=",
   "identity claim --identity=",
+  "identity connect",
   "doctor",
   "support",
   "explain",

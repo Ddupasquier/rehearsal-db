@@ -142,3 +142,203 @@ export const openApplicationTerminalSession = async ({ cwd, url }) => {
   await assertClosed(url);
   return output;
 };
+
+const waitForTerminalText = async ({
+  output,
+  childExited,
+  text,
+  timeoutMs = 30_000,
+}) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (output().includes(text)) return;
+    if (childExited()) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(
+    `Interactive identity connection did not reach ${text}: ${output() || "no output"}`,
+  );
+};
+
+export const connectIdentityTerminalSession = async ({
+  cwd,
+  url,
+  environment,
+  alreadyConnected = false,
+  confirm = true,
+}) => {
+  const terminal = spawnTerminal(
+    "npx",
+    [
+      "--no-install",
+      "rehearsal",
+      "identity",
+      "connect",
+      "--identity=approved-owner",
+      "--plain",
+    ],
+    {
+      name: "xterm-256color",
+      cols: 110,
+      rows: 40,
+      cwd,
+      env: createCleanProcessEnvironment({ overrides: environment }),
+    },
+  );
+  let output = "";
+  let exited = false;
+  terminal.onData((chunk) => {
+    output += chunk;
+  });
+  const exit = new Promise((resolve) =>
+    terminal.onExit((result) => {
+      exited = true;
+      resolve(result);
+    }),
+  );
+  try {
+    if (alreadyConnected) {
+      await waitForTerminalText({
+        output: () => output,
+        childExited: () => exited,
+        text: "COPIED ACCOUNT — ALREADY CONNECTED",
+        timeoutMs: 60_000,
+      });
+    } else {
+      await waitForTerminalText({
+        output: () => output,
+        childExited: () => exited,
+        text: "Connect my copied account using exactly this plan? (y/N)",
+        timeoutMs: 60_000,
+      });
+      terminal.write(confirm ? "y\r" : "n\r");
+      await waitForTerminalText({
+        output: () => output,
+        childExited: () => exited,
+        text: confirm
+          ? "COPIED ACCOUNT — CONNECTED"
+          : "COPIED ACCOUNT — CANCELLED",
+        timeoutMs: 90_000,
+      });
+    }
+    if (!confirm) {
+      const ended = await exit;
+      if (ended.exitCode !== 0 || !output.includes("Nothing was changed")) {
+        throw new Error(
+          `Declined identity connection was unsafe: ${output || `exit ${ended.exitCode}`}`,
+        );
+      }
+      await assertClosed(url);
+      return output;
+    }
+    const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+    if (response.status !== 200) {
+      throw new Error(
+        `Connected application returned HTTP ${response.status}.`,
+      );
+    }
+  } catch (error) {
+    terminal.kill();
+    await exit;
+    throw error;
+  }
+  terminal.write("\u0003");
+  let exitTimeout;
+  const ended = await Promise.race([
+    exit,
+    new Promise((_, reject) => {
+      exitTimeout = setTimeout(
+        () =>
+          reject(new Error(`Identity connection Ctrl+C timed out: ${output}`)),
+        10_000,
+      );
+    }),
+  ]).finally(() => clearTimeout(exitTimeout));
+  if (ended.exitCode !== 0) {
+    throw new Error(
+      `Interactive identity connection exited ${ended.exitCode}: ${output || "no output"}`,
+    );
+  }
+  await assertClosed(url);
+  return output;
+};
+
+export const cancelIdentityTerminalSession = async ({
+  cwd,
+  url,
+  environment,
+  control = "z",
+}) => {
+  const terminal = spawnTerminal(
+    "npx",
+    [
+      "--no-install",
+      "rehearsal",
+      "identity",
+      "connect",
+      "--identity=approved-owner",
+      "--plain",
+    ],
+    {
+      name: "xterm-256color",
+      cols: 110,
+      rows: 40,
+      cwd,
+      env: createCleanProcessEnvironment({ overrides: environment }),
+    },
+  );
+  let output = "";
+  let exited = false;
+  terminal.onData((chunk) => {
+    output += chunk;
+  });
+  const exit = new Promise((resolve) =>
+    terminal.onExit((result) => {
+      exited = true;
+      resolve(result);
+    }),
+  );
+  try {
+    await waitForTerminalText({
+      output: () => output,
+      childExited: () => exited,
+      text: "SIGN IN TO THE SANDBOX",
+      timeoutMs: 60_000,
+    });
+    const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+    if (response.status !== 200) {
+      throw new Error(
+        `Identity connection application returned HTTP ${response.status}.`,
+      );
+    }
+  } catch (error) {
+    terminal.kill();
+    await exit;
+    throw error;
+  }
+  terminal.write(control === "c" ? "\u0003" : "\u001a");
+  let exitTimeout;
+  const ended = await Promise.race([
+    exit,
+    new Promise((_, reject) => {
+      exitTimeout = setTimeout(
+        () =>
+          reject(
+            new Error(`Identity connection cancellation timed out: ${output}`),
+          ),
+        10_000,
+      );
+    }),
+  ]).finally(() => clearTimeout(exitTimeout));
+  if (
+    ended.exitCode !== 0 ||
+    !output.includes("COPIED ACCOUNT CONNECTION CANCELLED") ||
+    !output.includes("Nothing was changed")
+  ) {
+    throw new Error(
+      `Interactive identity cancellation was unsafe: ${output || `exit ${ended.exitCode}`}`,
+    );
+  }
+  await assertClosed(url);
+  return output;
+};

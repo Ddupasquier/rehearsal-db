@@ -81,6 +81,7 @@ interface GuidedState {
   readonly policyAbsolutePath?: string;
   readonly migrationSummary?: TopologySummary;
   readonly refreshConfigured?: boolean;
+  readonly identityConfigured?: boolean;
   readonly dependentCount?: number;
   readonly runtime: boolean;
 }
@@ -203,6 +204,7 @@ const inspectGuidedProject = async ({
     policyAbsolutePath: loaded.paths.sanitizationPolicy,
     ...(migrationSummary === undefined ? {} : { migrationSummary }),
     refreshConfigured: Boolean(loaded.config.preparation),
+    identityConfigured: Boolean(loaded.paths.identityPolicy),
     dependentCount: topology?.dependents.length ?? 0,
     runtime: topology
       ? (
@@ -483,6 +485,13 @@ const guidedOptions = (
     options.push({ label: "Check readiness", command: "doctor" });
   }
   if (state.node.supported && state.runtime) {
+    if (state.identityConfigured) {
+      options.push({
+        label: "Connect my copied account",
+        hint: "Sign in normally, review once, then open the copied profile",
+        command: "identity connect",
+      });
+    }
     options.push({
       label: "Open the sandbox app",
       hint: "Keep it running for hands-on testing",

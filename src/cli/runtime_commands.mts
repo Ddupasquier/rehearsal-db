@@ -689,16 +689,14 @@ export const createRuntimeCommands = ({
     return { applicationProof, dependentProofs };
   };
 
-  const openRuntimeApplication = async ({
+  const startRuntimeApplication = async ({
     flags,
     planOptions,
     session: commandSession,
-    onReady = () => undefined,
   }: {
     flags: RehearsalCliFlags;
     planOptions: RehearsalConfigPathOptions;
     session: CliSessionState;
-    onReady?: Parameters<typeof holdApplicationSession>[0]["onReady"];
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
     const application = topology.primary.config.application;
@@ -745,22 +743,50 @@ export const createRuntimeCommands = ({
       topology,
       environment: topologyCommandEnvironment(topology),
     });
-    const session = await startApplicationSession({
+    const applicationSession = await startApplicationSession({
       command: application.startCommand,
       cwd: topology.projectRoot,
       files: topologyEnvironmentFiles(topology),
       mappings: application.environmentVariables,
       readiness: application.readiness,
     });
-    const closed = await holdApplicationSession({ session, onReady });
     return {
-      action: "open",
       started: started.runtime,
       verified: verified.runtime,
       preparations,
+      command: application.startCommand,
+      session: applicationSession,
+    };
+  };
+
+  const openRuntimeApplication = async ({
+    flags,
+    planOptions,
+    session: commandSession,
+    onReady = () => undefined,
+  }: {
+    flags: RehearsalCliFlags;
+    planOptions: RehearsalConfigPathOptions;
+    session: CliSessionState;
+    onReady?: Parameters<typeof holdApplicationSession>[0]["onReady"];
+  }) => {
+    const active = await startRuntimeApplication({
+      flags,
+      planOptions,
+      session: commandSession,
+    });
+    const closed = await holdApplicationSession({
+      session: active.session,
+      onReady,
+    });
+    return {
+      action: "open",
+      started: active.started,
+      verified: active.verified,
+      preparations: active.preparations,
       application: {
-        command: application.startCommand,
-        readiness: session.ready,
+        command: active.command,
+        readiness: active.session.ready,
         stoppedBy: closed.signal,
         diagnostics: closed.diagnostics,
       },
@@ -848,6 +874,7 @@ export const createRuntimeCommands = ({
 
   return {
     openRuntimeApplication,
+    startRuntimeApplication,
     prepareCandidateConfirmation,
     prepareDependentTargets,
     proveRuntimeStack,

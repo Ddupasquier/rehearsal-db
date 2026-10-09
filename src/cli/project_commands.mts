@@ -247,20 +247,30 @@ export const createProjectCommands = ({
     return { mode: "written", plan, applied };
   };
 
-  const loadIdentityClaimPlan = async ({
-    flags,
-    planOptions,
-  }: ProjectCommandInput) => {
+  const loadIdentityPolicy = async ({ planOptions }: ProjectCommandInput) => {
     const loaded = await loadRehearsalConfig(planOptions);
     if (!loaded.paths.identityPolicy) {
       throw new Error("No config.identityPolicy is configured.");
     }
-    if (!flags.identityName) {
-      throw new Error("Choose a declared identity with --identity=<name>.");
-    }
     const policy = validateIdentityPolicy(
       JSON.parse(await readFile(loaded.paths.identityPolicy, "utf8")),
     );
+    return { loaded, policy };
+  };
+
+  const loadIdentityClaimPlan = async ({
+    flags,
+    planOptions,
+    session,
+  }: ProjectCommandInput) => {
+    const { loaded, policy } = await loadIdentityPolicy({
+      flags,
+      planOptions,
+      ...(session === undefined ? {} : { session }),
+    });
+    if (!flags.identityName) {
+      throw new Error("Choose a declared identity with --identity=<name>.");
+    }
     return {
       loaded,
       plan: createIdentityClaimPlan({
@@ -272,6 +282,7 @@ export const createProjectCommands = ({
 
   return Object.freeze({
     loadIdentityClaimPlan,
+    loadIdentityPolicy,
     planRuntimeStackCleanup,
     runBaselinePreparation,
     runCleanup,

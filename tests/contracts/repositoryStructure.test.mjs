@@ -139,6 +139,7 @@ describe("repository structure", () => {
       "claim_identity_lookup.mts",
       "claim_verification.mts",
       "claim_executor.mts",
+      "connect.mts",
     ];
     for (const stage of stages) {
       const source = await readFile(join(identityDirectory, stage), "utf8");
