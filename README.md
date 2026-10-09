@@ -155,6 +155,7 @@ Reference:
 - [Runtime and local identity policies](docs/runtime-policies.md)
 - [Glossary](docs/glossary.md)
 - [Repository architecture](docs/architecture.md)
+- [Stability and the first stable release](docs/stability.md)
 - [Release process](docs/releasing.md)
 
 ## Getting support

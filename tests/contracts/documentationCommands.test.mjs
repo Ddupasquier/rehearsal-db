@@ -356,9 +356,13 @@ describe("documented CLI contract", () => {
     expect(workflow).toContain("sha256sum --check --strict");
     expect(workflow).toContain("git merge-base --is-ancestor HEAD origin/main");
     expect(workflow).toContain('test "$RELEASE_TAG" = "v$PACKAGE_VERSION"');
-    expect(workflow).toContain('test "$RELEASE_PRERELEASE" = "true"');
+    expect(workflow).toContain(
+      'scripts/release/channel.mjs "$PACKAGE_VERSION" "$RELEASE_PRERELEASE"',
+    );
     expect(workflow).toContain('test "$PACKAGE_PRIVATE" = "false"');
-    expect(workflow).toContain("--access public --tag beta --provenance");
+    expect(workflow).toContain(
+      '--access public --tag "$PUBLISH_TAG" --provenance',
+    );
     expect(workflow).toContain("workflow_dispatch:");
     expect(workflow).toContain("npm install --global npm@11.21.0");
     expect(workflow).toContain(
@@ -368,7 +372,7 @@ describe("documented CLI contract", () => {
       'npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest',
     );
     expect(workflow).toContain(
-      "tags.beta === version && tags.latest === version",
+      'const stableLatest=typeof tags.latest === "string"',
     );
     expect(syncTagsJob).toContain("github.ref == 'refs/heads/main'");
     expect(syncTagsJob).toContain(
@@ -381,7 +385,6 @@ describe("documented CLI contract", () => {
     expect(prepareJob).not.toContain("npm publish");
     expect(manifest.publishConfig).toEqual({
       access: "public",
-      tag: "beta",
       provenance: true,
     });
     expect(manifest.private).toBe(false);

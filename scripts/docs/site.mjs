@@ -43,7 +43,7 @@ export const groups = Object.freeze([
   {
     label: "Project",
     eyebrow: "Behind the scenes",
-    pages: ["roadmap", "architecture", "releasing"],
+    pages: ["roadmap", "stability", "architecture", "releasing"],
   },
 ]);
 
@@ -157,6 +157,13 @@ export const pages = Object.freeze([
     title: "Roadmap",
     description:
       "What Rehearsal is proving next and what intentionally comes later.",
+  },
+  {
+    slug: "stability",
+    source: "stability.md",
+    title: "Stability contract",
+    description:
+      "The public compatibility promise and objective gate for leaving beta.",
   },
   {
     slug: "architecture",
