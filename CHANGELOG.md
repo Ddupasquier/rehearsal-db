@@ -5,6 +5,16 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-rc.1] - 2026-10-08
+
+### Changed
+
+- Promotes the exact beta.18 behavior and documented compatibility surface to the first
+  release candidate. No runtime, configuration, policy, CLI, or public TypeScript
+  capability changed after beta.18.
+- Broad feature work is frozen while the release candidate completes two independent
+  Test Lab passes, one final package-only consumer upgrade, and its observation window.
+
 ## [0.1.0-beta.18] - 2026-10-08
 
 ### Added
@@ -544,7 +554,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.18...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.1...HEAD
+[0.1.0-rc.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.18...v0.1.0-rc.1
 [0.1.0-beta.18]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.17...v0.1.0-beta.18
 [0.1.0-beta.17]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.16...v0.1.0-beta.17
 [0.1.0-beta.16]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.15...v0.1.0-beta.16

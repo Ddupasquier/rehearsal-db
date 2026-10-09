@@ -1,5 +1,6 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
+import packageMetadata from "../../../package.json" with { type: "json" };
 import { parseArguments } from "../../../dist/src/cli/arguments.mjs";
 import { createApplicationCommandHandlers } from "../../../dist/src/cli/application_command_handlers.mjs";
 import { createBasicCommandHandlers } from "../../../dist/src/cli/basic_command_handlers.mjs";
@@ -52,7 +53,7 @@ describe("typed CLI command registry", () => {
     expect(version?.kind).toBe("text");
     expect(JSON.parse(version.output)).toMatchObject({
       name: "@rehearsal-db/core",
-      version: expect.stringMatching(/^0\.1\.0-beta\./u),
+      version: packageMetadata.version,
     });
 
     const help = await registry.execute(context("help"));
