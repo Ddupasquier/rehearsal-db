@@ -18,6 +18,7 @@ jobs:
       tarball: ${{ steps.candidate.outputs.tarball }}
       sha1: ${{ steps.candidate.outputs.sha1 }}
       sha256: ${{ steps.candidate.outputs.sha256 }}
+      publish_tag: ${{ steps.candidate.outputs.publish_tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -44,12 +45,10 @@ jobs:
           PACKAGE_PRIVATE="$(node -p "require('./package.json').private")"
 
           test "$RELEASE_TAG" = "v$PACKAGE_VERSION"
-          test "$RELEASE_PRERELEASE" = "true"
           test "$PACKAGE_PRIVATE" = "false"
-          case "$PACKAGE_VERSION" in
-            *-*) ;;
-            *) echo "The beta workflow refuses a stable version." >&2; exit 1 ;;
-          esac
+
+          RELEASE_CHANNEL="$(node scripts/release/channel.mjs "$PACKAGE_VERSION" "$RELEASE_PRERELEASE")"
+          PUBLISH_TAG="$(node -e 'const channel=JSON.parse(process.argv[1]); process.stdout.write(channel.npmTag)' "$RELEASE_CHANNEL")"
 
           npm pack --json --ignore-scripts > pack-result.json
           TARBALL="$(node -p "JSON.parse(require('fs').readFileSync('pack-result.json', 'utf8'))[0].filename")"
@@ -63,6 +62,7 @@ jobs:
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
           echo "sha1=$SHA1" >> "$GITHUB_OUTPUT"
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "publish_tag=$PUBLISH_TAG" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
         with:
           name: npm-release-candidate
@@ -85,6 +85,7 @@ jobs:
       TARBALL: ${{ needs.prepare.outputs.tarball }}
       EXPECTED_SHA1: ${{ needs.prepare.outputs.sha1 }}
       EXPECTED_SHA256: ${{ needs.prepare.outputs.sha256 }}
+      PUBLISH_TAG: ${{ needs.prepare.outputs.publish_tag }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -104,7 +105,7 @@ jobs:
         run: |
           REGISTRY_SHA1="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.shasum 2>/dev/null || true)"
           if test -z "$REGISTRY_SHA1"; then
-            npm publish "$TARBALL" --access public --tag beta --provenance
+            npm publish "$TARBALL" --access public --tag "$PUBLISH_TAG" --provenance
           elif test "$REGISTRY_SHA1" = "$EXPECTED_SHA1"; then
             echo "The exact approved candidate is already published; continuing verification."
           else
@@ -140,18 +141,28 @@ jobs:
             fi
             sleep 10
           done
-      - name: Make this beta the default npm release
+      - name: Update the reviewed npm release channel
         run: |
-          npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta
-          npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest
+          if test "$PUBLISH_TAG" = "beta"; then
+            npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta
+
+            DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
+            CURRENT_LATEST="$(node -e 'const tags=JSON.parse(process.argv[1]); process.stdout.write(tags.latest ?? "")' "$DIST_TAGS")"
+            case "$CURRENT_LATEST" in
+              ""|*-*) npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest ;;
+              *) echo "Stable latest tag remains on $CURRENT_LATEST." ;;
+            esac
+          else
+            npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest
+          fi
 
           for attempt in {1..12}; do
             DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
-            if node -e 'const tags=JSON.parse(process.argv[1]); const version=process.argv[2]; process.exit(tags.beta === version && tags.latest === version ? 0 : 1)' "$DIST_TAGS" "$PACKAGE_VERSION"; then
+            if node -e 'const tags=JSON.parse(process.argv[1]); const version=process.argv[2]; const channel=process.argv[3]; const stableLatest=typeof tags.latest === "string" && !tags.latest.includes("-"); const valid=channel === "beta" ? tags.beta === version && (tags.latest === version || stableLatest) : tags.latest === version; process.exit(valid ? 0 : 1)' "$DIST_TAGS" "$PACKAGE_VERSION" "$PUBLISH_TAG"; then
               exit 0
             fi
             if test "$attempt" = "12"; then
-              echo "The beta and latest tags did not update after one minute." >&2
+              echo "The $PUBLISH_TAG release tag did not update after one minute." >&2
               exit 1
             fi
             sleep 5
@@ -177,25 +188,33 @@ jobs:
         run: |
           PACKAGE_NAME="$(node -p "require('./package.json').name")"
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-
-          case "$PACKAGE_VERSION" in
-            *-*) ;;
-            *) echo "The beta workflow refuses a stable version." >&2; exit 1 ;;
-          esac
+          PACKAGE_PRERELEASE="$(node -e 'process.stdout.write(process.argv[1].includes("-") ? "true" : "false")' "$PACKAGE_VERSION")"
+          RELEASE_CHANNEL="$(node scripts/release/channel.mjs "$PACKAGE_VERSION" "$PACKAGE_PRERELEASE")"
+          PUBLISH_TAG="$(node -e 'const channel=JSON.parse(process.argv[1]); process.stdout.write(channel.npmTag)' "$RELEASE_CHANNEL")"
 
           REGISTRY_VERSION="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version)"
           test "$REGISTRY_VERSION" = "$PACKAGE_VERSION"
 
-          npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta
-          npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest
+          if test "$PUBLISH_TAG" = "beta"; then
+            npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta
+
+            DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
+            CURRENT_LATEST="$(node -e 'const tags=JSON.parse(process.argv[1]); process.stdout.write(tags.latest ?? "")' "$DIST_TAGS")"
+            case "$CURRENT_LATEST" in
+              ""|*-*) npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest ;;
+              *) echo "Stable latest tag remains on $CURRENT_LATEST." ;;
+            esac
+          else
+            npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest
+          fi
 
           for attempt in {1..12}; do
             DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
-            if node -e 'const tags=JSON.parse(process.argv[1]); const version=process.argv[2]; process.exit(tags.beta === version && tags.latest === version ? 0 : 1)' "$DIST_TAGS" "$PACKAGE_VERSION"; then
+            if node -e 'const tags=JSON.parse(process.argv[1]); const version=process.argv[2]; const channel=process.argv[3]; const stableLatest=typeof tags.latest === "string" && !tags.latest.includes("-"); const valid=channel === "beta" ? tags.beta === version && (tags.latest === version || stableLatest) : tags.latest === version; process.exit(valid ? 0 : 1)' "$DIST_TAGS" "$PACKAGE_VERSION" "$PUBLISH_TAG"; then
               exit 0
             fi
             if test "$attempt" = "12"; then
-              echo "The beta and latest tags did not update after one minute." >&2
+              echo "The $PUBLISH_TAG release tag did not update after one minute." >&2
               exit 1
             fi
             sleep 5

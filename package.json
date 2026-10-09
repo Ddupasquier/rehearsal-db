@@ -13,7 +13,6 @@
   "homepage": "https://ddupasquier.github.io/rehearsal-db/",
   "publishConfig": {
     "access": "public",
-    "tag": "beta",
     "provenance": true
   },
   "type": "module",
