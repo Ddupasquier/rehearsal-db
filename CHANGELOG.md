@@ -5,6 +5,25 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.18] - 2026-10-08
+
+### Added
+
+- A concise stability contract now defines the supported public surface, defects that
+  block the first stable release, and the exact beta-to-RC-to-stable promotion gate.
+- Automated release-policy tests cover beta, release-candidate, stable, malformed, and
+  mismatched GitHub release metadata.
+
+### Changed
+
+- Protected OIDC publication now supports both prerelease and stable versions. Beta and
+  release-candidate versions update `beta`; once a stable version exists they cannot
+  replace `latest`. Stable publication updates `latest` without rewriting `beta`.
+- npm channel selection lives only in the protected release workflow instead of static
+  package metadata, and missing beta.16 and beta.17 changelog comparisons are restored.
+- Vitest's locked patch release is updated from 5.0.2 to 5.0.3 after the complete CI
+  matrix passed.
+
 ## [0.1.0-beta.17] - 2026-10-08
 
 ### Added
@@ -525,7 +544,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.17...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.18...HEAD
+[0.1.0-beta.18]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.17...v0.1.0-beta.18
 [0.1.0-beta.17]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.16...v0.1.0-beta.17
 [0.1.0-beta.16]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.15...v0.1.0-beta.16
 [0.1.0-beta.15]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.14...v0.1.0-beta.15
