@@ -172,6 +172,23 @@ need; skipping nonce validation reduces replay protection. Otherwise keep using 
 documented legacy configuration.
 Never paste provider secrets into tracked config or terminal output.
 
+For the shortest supported copied-account flow, run:
+
+```bash
+npx rehearsal identity connect
+```
+
+Leave that terminal open, then sign in through the sandbox application normally. Rehearsal
+waits for one verified match and shows a redacted plan before it changes anything. If it
+keeps waiting, finish the provider callback and confirm the reviewed matcher environment
+value is available in the terminal that started Rehearsal. `Ctrl+C`, `Ctrl+Z`, or choosing
+**Not now** stops only the owned application and leaves the database unchanged.
+
+After a successful connection, sign out and sign in once so the application receives
+fresh role claims. Rehearsal remembers the connection in the current disposable runtime;
+`reset` deliberately removes that receipt, so the next copied-account connection requires
+review again.
+
 If `identity plan` refuses the matcher, read the message literally:
 
 - **Provider or matcher type is unsupported:** use only the combinations documented in

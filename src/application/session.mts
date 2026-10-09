@@ -15,6 +15,8 @@ const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
 const SESSION_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGTSTP"];
 type SessionSignal = (typeof SESSION_SIGNALS)[number];
 
+export type ApplicationSessionSignal = SessionSignal;
+
 export interface ApplicationReadiness {
   readonly url: string;
   readonly expectedStatus?: number;

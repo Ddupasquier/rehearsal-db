@@ -82,14 +82,34 @@ export interface VerifiedLocalIdentity {
   readonly provider: IdentityProvider;
 }
 
+export class IdentityLookupError extends Error {
+  readonly reason: "none" | "ambiguous" | "conflict" | "invalid";
+
+  constructor(
+    reason: "none" | "ambiguous" | "conflict" | "invalid",
+    message: string,
+  ) {
+    super(message);
+    this.name = "IdentityLookupError";
+    this.reason = reason;
+  }
+}
+
+export const isIdentityNotFoundError = (
+  error: unknown,
+): error is IdentityLookupError =>
+  error instanceof IdentityLookupError && error.reason === "none";
+
 export const findVerifiedLocalIdentity = async ({
   client,
   plan,
   matchValue,
+  lock = true,
 }: {
   client: IdentityDatabaseClient;
   plan: IdentityClaimPlan;
   matchValue: string;
+  lock?: boolean;
 }): Promise<VerifiedLocalIdentity> => {
   const matcher = plan.identity.matcher;
   if (matcher.type === "verified-email") {
@@ -103,18 +123,23 @@ export const findVerifiedLocalIdentity = async ({
            coalesce((i.identity_data->>'email_verified')::boolean, false)
            or u.email_confirmed_at is not null
          )
-       for update of u`,
+         ${lock ? "for update of u" : ""}`,
       [matchValue, matcher.providers],
     );
     if (match.rows.length !== 1) {
-      throw new Error(
+      throw new IdentityLookupError(
+        match.rows.length === 0 ? "none" : "ambiguous",
         match.rows.length === 0
           ? "No verified local identity matches the reviewed email and provider allowlist."
           : "More than one verified local identity matches the reviewed email and provider allowlist.",
       );
     }
     const matchedRow = match.rows[0];
-    if (!matchedRow) throw new Error("Matched local identity is invalid.");
+    if (!matchedRow)
+      throw new IdentityLookupError(
+        "invalid",
+        "Matched local identity is invalid.",
+      );
     const matchedProvider =
       matchedRow.provider ??
       (matcher.providers.length === 1 ? matcher.providers[0] : null);
@@ -122,10 +147,16 @@ export const findVerifiedLocalIdentity = async ({
       typeof matchedProvider !== "string" ||
       !matcher.providers.includes(matchedProvider as IdentityProvider)
     ) {
-      throw new Error("Matched local identity provider is invalid.");
+      throw new IdentityLookupError(
+        "invalid",
+        "Matched local identity provider is invalid.",
+      );
     }
     if (typeof matchedRow.id !== "string") {
-      throw new Error("Matched local identity is invalid.");
+      throw new IdentityLookupError(
+        "invalid",
+        "Matched local identity is invalid.",
+      );
     }
     return {
       id: matchedRow.id,
@@ -150,7 +181,7 @@ export const findVerifiedLocalIdentity = async ({
          coalesce((i.identity_data->>'email_verified')::boolean, false)
          or u.email_confirmed_at is not null
        )
-     for update of u`,
+     ${lock ? "for update of u" : ""}`,
     [matcher.provider],
   );
   const matches: VerifiedLocalIdentity[] = [];
@@ -168,7 +199,8 @@ export const findVerifiedLocalIdentity = async ({
       )
     ) {
       if (uniqueSubjects.length !== 1) {
-        throw new Error(
+        throw new IdentityLookupError(
+          "conflict",
           "The matched local provider identity has conflicting stable subjects.",
         );
       }
@@ -176,13 +208,17 @@ export const findVerifiedLocalIdentity = async ({
         typeof candidate.id !== "string" ||
         candidate.provider !== matcher.provider
       ) {
-        throw new Error("Matched local identity provider is invalid.");
+        throw new IdentityLookupError(
+          "invalid",
+          "Matched local identity provider is invalid.",
+        );
       }
       matches.push({ id: candidate.id, provider: matcher.provider });
     }
   }
   if (matches.length !== 1) {
-    throw new Error(
+    throw new IdentityLookupError(
+      matches.length === 0 ? "none" : "ambiguous",
       matches.length === 0
         ? "No verified local identity matches the reviewed provider subject."
         : "More than one verified local identity matches the reviewed provider subject.",
@@ -190,7 +226,10 @@ export const findVerifiedLocalIdentity = async ({
   }
   const match = matches[0];
   if (!match || match.provider !== matcher.provider) {
-    throw new Error("Matched local identity provider is invalid.");
+    throw new IdentityLookupError(
+      "invalid",
+      "Matched local identity provider is invalid.",
+    );
   }
   return match;
 };

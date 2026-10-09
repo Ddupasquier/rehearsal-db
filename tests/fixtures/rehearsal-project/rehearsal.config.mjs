@@ -16,6 +16,11 @@ export default {
   application: {
     startCommand: "npm run dev",
     proofCommand: "npm run proof",
+    readiness: {
+      url: "http://127.0.0.1:5275",
+      expectedStatus: 200,
+      timeoutSeconds: 10,
+    },
   },
   runtime: {
     target: "supabase",

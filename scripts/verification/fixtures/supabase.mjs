@@ -35,6 +35,10 @@ import {
   prepareCandidateArtifact,
 } from "../scenarios/artifact.mjs";
 import { executeInstalledCli } from "../scenarios/process.mjs";
+import {
+  cancelIdentityTerminalSession,
+  connectIdentityTerminalSession,
+} from "../scenarios/application_session.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/rehearsal-project");
@@ -640,6 +644,30 @@ from public.widgets;`,
       );
     }
     commandsProven.push("recursive Supabase Storage inventory");
+    const identityEnvironment = {
+      REHEARSAL_APPROVED_OWNER_EMAIL: approvedEmail,
+    };
+    await cancelIdentityTerminalSession({
+      cwd,
+      url: "http://127.0.0.1:5275",
+      environment: identityEnvironment,
+      control: "z",
+    });
+    await cancelIdentityTerminalSession({
+      cwd,
+      url: "http://127.0.0.1:5275",
+      environment: identityEnvironment,
+      control: "c",
+    });
+    const cancelledClaimState = runPsql({
+      cwd,
+      sql: "select to_regclass('rehearsal_internal.identity_claims') is null;",
+    }).trim();
+    if (cancelledClaimState !== "t") {
+      throw new Error(
+        "Ctrl+Z during guided sign-in changed identity association state.",
+      );
+    }
     const signupResponse = await fetch(
       `${fixtureEnvironment.apiUrl}/auth/v1/admin/users`,
       {
@@ -723,9 +751,6 @@ where bucket_id = 'fixture-assets'
         "The identity fixture did not preserve the restored NULL Storage owner case.",
       );
     }
-    const identityEnvironment = {
-      REHEARSAL_APPROVED_OWNER_EMAIL: approvedEmail,
-    };
     const identityPlan = JSON.parse(
       executeCliOrThrow({
         cwd,
@@ -742,44 +767,59 @@ where bucket_id = 'fixture-assets'
         "The installed legacy email policy exposed or misclassified its matcher value.",
       );
     }
-    const identityClaim = JSON.parse(
-      executeCliOrThrow({
-        cwd,
-        label: "identity claim",
-        args: [
-          "identity",
-          "claim",
-          "--identity=approved-owner",
-          `--confirm-identity=${identityPlan.digest}`,
-          "--json",
-        ],
-        environment: identityEnvironment,
-      }).stdout,
-    ).data.result;
+    const declinedOutput = await connectIdentityTerminalSession({
+      cwd,
+      url: "http://127.0.0.1:5275",
+      environment: identityEnvironment,
+      confirm: false,
+    });
+    const declinedClaimState = runPsql({
+      cwd,
+      sql: `select
+  to_regclass('rehearsal_internal.identity_claims') is null
+  and exists (
+    select 1 from public.profiles
+    where id = '11111111-1111-4111-8111-111111111111'
+      and display_name = 'Synthetic owner'
+  )
+  and exists (
+    select 1 from public.profiles
+    where id = '${localUserId}'
+      and display_name = 'New account'
+  );`,
+    }).trim();
     if (
-      identityClaim.storageObjectsTransferred !== 1 ||
-      identityClaim.placeholderRetainedForAudit !== true
+      declinedClaimState !== "t" ||
+      !declinedOutput.includes("Nothing was changed")
     ) {
       throw new Error(
-        "The installed identity claim omitted a safe transfer step.",
+        "Declining the installed guided identity connection changed account state.",
       );
     }
-    const repeatedIdentity = JSON.parse(
-      executeCliOrThrow({
-        cwd,
-        label: "repeated identity claim",
-        args: [
-          "identity",
-          "claim",
-          "--identity=approved-owner",
-          `--confirm-identity=${identityPlan.digest}`,
-          "--json",
-        ],
-        environment: identityEnvironment,
-      }).stdout,
-    ).data.result;
-    if (!repeatedIdentity.idempotent) {
-      throw new Error("The installed identity claim was not idempotent.");
+    const connectedOutput = await connectIdentityTerminalSession({
+      cwd,
+      url: "http://127.0.0.1:5275",
+      environment: identityEnvironment,
+    });
+    if (
+      connectedOutput.includes(approvedEmail) ||
+      !connectedOutput.includes("Transferred images: 1") ||
+      !connectedOutput.includes("Immutable history: 1 reference group")
+    ) {
+      throw new Error(
+        "The installed guided identity connection exposed private identity data or omitted a safe transfer receipt.",
+      );
+    }
+    const repeatedOutput = await connectIdentityTerminalSession({
+      cwd,
+      url: "http://127.0.0.1:5275",
+      environment: identityEnvironment,
+      alreadyConnected: true,
+    });
+    if (!repeatedOutput.includes("No transfer was repeated.")) {
+      throw new Error(
+        "The installed guided identity connection did not recognize its local receipt.",
+      );
     }
     const transferredAsset = await fetch(
       `${fixtureEnvironment.apiUrl}/storage/v1/object/fixture-assets/${localUserId}/avatar.txt`,
@@ -834,7 +874,9 @@ where bucket_id = 'fixture-assets'
         "The installed identity claim did not preserve its database invariants.",
       );
     }
-    commandsProven.push("identity claim with physical Storage transfer");
+    commandsProven.push(
+      "guided identity connection with physical Storage transfer",
+    );
     const appliedInspection = await inspectRehearsalMigrations({
       projectRoot: cwd,
     });

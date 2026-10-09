@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node -e \"console.log('synthetic fixture app')\"",
+    "dev": "node app.mjs",
     "proof": "node -e \"console.log('synthetic fixture proof passed')\""
   }
 }

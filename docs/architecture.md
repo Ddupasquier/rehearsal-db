@@ -142,6 +142,8 @@ and confirmed execution while keeping those responsibilities separate:
 6. `claim_verification.mts` checks signup defaults and token-hook claim shapes.
 7. `claim_executor.mts` alone owns the database transaction, Storage staging, rollback,
    commit, old-object cleanup, and final receipt.
+8. `connect.mts` performs read-only, provider-neutral sign-in discovery and produces the
+   redacted preview used by the interactive copied-account connection.
 
 Repository contracts keep the facade at 50 lines or fewer and every identity-claim
 stage at 600 lines or fewer. Provider callbacks and consumer application behavior stay

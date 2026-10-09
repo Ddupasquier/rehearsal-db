@@ -38,6 +38,8 @@ export const createCliCommandRegistry = ({
     ...createSourceCommandHandlers({ runRefreshWorkflow }),
     ...createIdentityCommandHandlers({
       loadIdentityClaimPlan: projectCommands.loadIdentityClaimPlan,
+      loadIdentityPolicy: projectCommands.loadIdentityPolicy,
+      startRuntimeApplication: runtimeCommands.startRuntimeApplication,
     }),
     ...createInspectionCommandHandlers(),
     ...createApplicationCommandHandlers({

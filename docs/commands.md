@@ -73,20 +73,26 @@ In short: `refresh` gets a new source copy; `reset` restores the copy you alread
 
 ## Local identity association
 
-For a reviewed Google, GitHub, or email identity, use this sequence:
+For a reviewed Google, GitHub, or email identity, use the guided connection:
 
-1. Run a successful rehearsal, then start the persistent app:
+```bash
+npx rehearsal identity connect
+```
 
-   ```bash
-   npx rehearsal open
-   ```
+Rehearsal starts and checks the local runtime, keeps the configured application open,
+and waits for an ordinary provider sign-in. It reads only the local Auth database—not
+browser cookies, passwords, passkeys, MFA secrets, or session tokens. When exactly one
+approved verified identity matches, it stops the owned app, shows a redacted preview,
+and offers **Connect my copied account**. One confirmation binds the exact current plan.
+After the verified transfer, Rehearsal reopens the app and asks for one sign-out/sign-in
+so the application receives fresh role claims.
 
-2. Open the printed local URL and complete the normal provider sign-in. Press `Ctrl+C`
-   after the callback returns. This closes only the app; the databases and Storage stay
-   running with their current data. Provider setup and credentials belong to the local
-   Supabase runtime, not the identity policy.
+If the policy declares more than one copied identity, choose one with
+`--identity=<reviewed-name>`. The interactive guide presents the reviewed names. A
+completed connection is recognized from its local runtime receipt and is not repeated.
+Resetting the runtime removes that receipt and requires a fresh review and connection.
 
-3. Preview and confirm the reviewed association:
+For automation or detailed inspection, keep using the explicit commands:
 
 ```bash
 npx rehearsal identity plan --identity=approved-owner
@@ -94,14 +100,11 @@ npx rehearsal identity claim --identity=approved-owner \
   --confirm-identity=<sha256>
 ```
 
-4. Run `npx rehearsal open` again. Sign out and sign in again so the browser receives a
-   fresh session, then check the copied account. Rehearsal does not bypass application
-   role checks, account blocks, RLS, or MFA.
-
 The first command shows only hashes and declared reference counts. The second updates
 only the reviewed local relational, JSON, Storage-owner, and claim locations in one
 transaction. It rejects hosted database URLs, wrong or unverified people, ambiguity, and
-stale confirmation digests.
+stale confirmation digests. Reopen the application and sign in again afterward to obtain
+fresh claims. Neither flow bypasses application roles, account blocks, RLS, or MFA.
 
 If a runtime-policy seed moves with that identity, declare its `identityAssociation` in
 the runtime policy. Later `verify` calls then require the transferred row instead of the

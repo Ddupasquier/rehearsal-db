@@ -5,6 +5,15 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Added
+
+- `rehearsal identity connect` and the guided home screen now keep the sandbox app
+  available during ordinary provider sign-in, detect exactly one approved verified local
+  identity, show a redacted copied-account preview, and apply the existing exact claim
+  after one deliberate confirmation. The app is reopened automatically with an honest
+  fresh-session instruction; explicit `identity plan` and `identity claim` commands remain
+  available for scripts.
+
 ### Changed
 
 - The CLI now routes guided and scripted requests through focused typed command

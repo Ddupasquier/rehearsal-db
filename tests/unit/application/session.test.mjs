@@ -11,6 +11,7 @@ import {
   startApplicationSession,
   summarizeProjectCommandFailure,
 } from "../../../dist/src/application/session.mjs";
+import { runApplicationSessionTask } from "../../../dist/src/application/interactive_task.mjs";
 
 const roots = [];
 const servers = [];
@@ -158,6 +159,74 @@ server.listen(Number(process.env.PORT), "127.0.0.1");
     await expect(held).resolves.toMatchObject({ signal: "SIGINT" });
     expect(signals.listenerCount("SIGINT")).toBe(0);
   });
+
+  it("runs identity discovery while the application stays available", async () => {
+    const signals = new EventEmitter();
+    const stop = vi.fn(async () => undefined);
+    const session = {
+      ready: { url: "http://127.0.0.1:5175", status: 200 },
+      wait: () => new Promise(() => undefined),
+      stop,
+      diagnostics: () => ({ stdoutBytes: 0, stderrBytes: 0 }),
+    };
+    const task = vi.fn(async (signal) => {
+      expect(signal.aborted).toBe(false);
+      return { provider: "google" };
+    });
+
+    await expect(
+      runApplicationSessionTask({
+        session,
+        task,
+        signalTarget: signals,
+        input: null,
+      }),
+    ).resolves.toMatchObject({
+      completed: true,
+      value: { provider: "google" },
+    });
+    expect(stop).not.toHaveBeenCalled();
+    expect(signals.listenerCount("SIGINT")).toBe(0);
+  });
+
+  it.each([
+    ["SIGINT", "SIGINT"],
+    ["SIGTSTP", "SIGTSTP"],
+  ])(
+    "aborts identity discovery and stops the app on %s",
+    async (event, signal) => {
+      const signals = new EventEmitter();
+      let observedSignal;
+      const session = {
+        ready: { url: "http://127.0.0.1:5175", status: 200 },
+        wait: () => new Promise(() => undefined),
+        stop: vi.fn(async () => undefined),
+        diagnostics: () => ({ stdoutBytes: 0, stderrBytes: 0 }),
+      };
+      const task = (signal) =>
+        new Promise((_resolve, reject) => {
+          observedSignal = signal;
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        });
+      const running = runApplicationSessionTask({
+        session,
+        task,
+        signalTarget: signals,
+        input: null,
+      });
+      signals.emit(event);
+
+      await expect(running).resolves.toMatchObject({
+        completed: false,
+        signal,
+      });
+      expect(observedSignal.aborted).toBe(true);
+      expect(session.stop).toHaveBeenCalledOnce();
+      expect(signals.listenerCount(event)).toBe(0);
+    },
+  );
 
   it("reports an application that exits during an open session without leaking output", async () => {
     const root = await mkdtemp(join(tmpdir(), "rehearsal-application-"));

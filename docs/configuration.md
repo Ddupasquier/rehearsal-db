@@ -79,6 +79,7 @@ export default defineRehearsalConfig({
   // runtimePolicy: "infrastructure/rehearsal/runtime-policy.json",
   // Optional copied-account association. The JSON stores reviewed matcher hashes only;
   // raw emails/subjects and provider credentials stay in ignored environment files.
+  // After setup, run: npx rehearsal identity connect
   // identityPolicy: "infrastructure/rehearsal/identity-policy.json",
   containerRuntime: {
     autoStartColima: true,
