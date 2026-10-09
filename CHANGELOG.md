@@ -5,6 +5,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-beta.17] - 2026-10-08
+
 ### Added
 
 - `rehearsal identity connect` and the guided home screen now keep the sandbox app
@@ -13,6 +15,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   after one deliberate confirmation. The app is reopened automatically with an honest
   fresh-session instruction; explicit `identity plan` and `identity claim` commands remain
   available for scripts.
+
+## [0.1.0-beta.16] - 2026-10-08
 
 ### Changed
 
