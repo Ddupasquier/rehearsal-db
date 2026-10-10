@@ -270,8 +270,11 @@ reordering, or editing a migration changes that digest.
 configured database target, runs dependent preparation commands, and launches
 `application.startCommand` with the declared local environment mappings. It waits for
 `application.readiness`, then stays attached until `Ctrl+C` or `Ctrl+Z`. On exit it stops
-only the application process group it launched. Use `stop` separately when you also want
-to stop the databases; a later `open` preserves their database and Storage changes.
+only the application process group it launched, then applies `lifecycle.open`. The
+default `keep-until-stop` leaves databases running; `stop-on-application-exit` stops them
+with database and Storage changes preserved. Likewise, `lifecycle.run` can remain
+`keep-until-stop` or use `stop-after-run` for bounded automation. JSON results include
+the selected mode, final runtime state, and preserved-data guarantee.
 
 ## Clean up disk space
 

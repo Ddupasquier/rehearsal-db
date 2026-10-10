@@ -30,6 +30,17 @@ import {
 const LOOPBACK_HOSTS = new Set(REHEARSAL_DEFAULTS.safety.allowedHosts);
 const SUPPORTED_SUPABASE_OAUTH_PROVIDERS = new Set(["github", "google"]);
 
+const assertChoice = <Choice extends string>(
+  value: unknown,
+  choices: readonly Choice[],
+  path: string,
+): Choice => {
+  if (typeof value !== "string" || !choices.includes(value as Choice)) {
+    throw new Error(`${path} must be one of: ${choices.join(", ")}.`);
+  }
+  return value as Choice;
+};
+
 const normalizeApplicationEnvironmentMappings = (
   value: unknown = {},
 ): Readonly<Record<string, string>> => {
@@ -58,6 +69,7 @@ export const normalizeRehearsalConfig = (input: unknown) => {
     postgresql,
     baseline,
     containerRuntime,
+    lifecycle,
     cleanup,
     preparation,
     dependentTargets,
@@ -361,6 +373,18 @@ export const normalizeRehearsalConfig = (input: unknown) => {
         containerRuntime.autoStartColima ??
           REHEARSAL_DEFAULTS.containerRuntime.autoStartColima,
         "config.containerRuntime.autoStartColima",
+      ),
+    }),
+    lifecycle: Object.freeze({
+      run: assertChoice(
+        lifecycle.run ?? REHEARSAL_DEFAULTS.lifecycle.run,
+        ["keep-until-stop", "stop-after-run"],
+        "config.lifecycle.run",
+      ),
+      open: assertChoice(
+        lifecycle.open ?? REHEARSAL_DEFAULTS.lifecycle.open,
+        ["keep-until-stop", "stop-on-application-exit"],
+        "config.lifecycle.open",
       ),
     }),
     cleanup: Object.freeze({

@@ -71,7 +71,11 @@ const main = async () => {
     startCommand: "npm run dev",
     proofCommand: "npm run proof",
   },`,
-          `  application: {
+          `  lifecycle: {
+    run: "stop-after-run",
+    open: "stop-on-application-exit",
+  },
+  application: {
     startCommand: "node app.mjs ${ports.api}",
     proofCommand: "npm run proof",
     readiness: {
@@ -171,16 +175,27 @@ const main = async () => {
     if (plan.environment?.target !== "postgresql") {
       throw new Error("The plan did not select PostgreSQL.");
     }
-    executeCliOrThrow({
-      cwd,
-      label: "run",
-      args: [
-        "run",
-        `--confirm-candidates=${plan.migrations.candidateSha256}`,
-        "--json",
-        "--debug",
-      ],
-    });
+    const runResult = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        label: "run",
+        args: [
+          "run",
+          `--confirm-candidates=${plan.migrations.candidateSha256}`,
+          "--json",
+          "--debug",
+        ],
+      }).stdout,
+    ).data;
+    if (
+      runResult.lifecycle?.mode !== "stop-after-run" ||
+      runResult.lifecycle?.runtimeState !== "stopped" ||
+      runResult.lifecycle?.dataState !== "preserved"
+    ) {
+      throw new Error(
+        "The packed run command did not apply bounded persistence.",
+      );
+    }
     const environment = await readFile(
       join(cwd, ".rehearsal/runtime.env"),
       "utf8",
@@ -197,7 +212,7 @@ const main = async () => {
       );
     }
     const applicationUrl = `http://localhost:${ports.api}`;
-    await openApplicationSession({
+    const firstOpenOutput = await openApplicationSession({
       cwd,
       url: applicationUrl,
       whileReady: async () => {
@@ -245,6 +260,31 @@ const main = async () => {
         );
       },
     });
+    if (
+      !firstOpenOutput.includes(
+        "Lifecycle stop-on-application-exit stopped the database runtime",
+      )
+    ) {
+      throw new Error(
+        "The packed open command omitted its bounded lifecycle receipt.",
+      );
+    }
+    const runningAfterFirstOpen = run(
+      "docker",
+      [
+        "ps",
+        "--filter",
+        `label=com.rehearsal-db.project=${projectId}`,
+        "--format",
+        "{{.Names}}",
+      ],
+      { cwd },
+    ).trim();
+    if (runningAfterFirstOpen) {
+      throw new Error(
+        "The PostgreSQL target remained running after bounded open.",
+      );
+    }
     const idleActivity = JSON.parse(
       executeCliOrThrow({
         cwd,
@@ -257,7 +297,22 @@ const main = async () => {
         "Activity did not return to idle after application exit.",
       );
     }
-    await openApplicationTerminalSession({ cwd, url: applicationUrl });
+    const terminalOpenOutput = await openApplicationTerminalSession({
+      cwd,
+      url: applicationUrl,
+    });
+    if (
+      !terminalOpenOutput.includes(
+        "Lifecycle stop-on-application-exit stopped the database runtime",
+      )
+    ) {
+      throw new Error("Terminal open omitted its bounded lifecycle receipt.");
+    }
+    executeCliOrThrow({
+      cwd,
+      label: "resume after bounded open",
+      args: ["start", "--json"],
+    });
     const container = run(
       "docker",
       [

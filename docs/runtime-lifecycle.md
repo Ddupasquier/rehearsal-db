@@ -28,12 +28,36 @@ reports it. Rehearsal does not resize Colima and does not stop the shared engine
 automatically. Starting Docker can also wake unrelated containers that use Docker's
 `always` or `unless-stopped` restart policy.
 
+## Choose when database targets stop
+
+The root config makes persistence explicit while preserving the existing behavior by
+default:
+
+```js
+lifecycle: {
+  run: "keep-until-stop",
+  open: "keep-until-stop",
+},
+```
+
+`run` accepts `keep-until-stop` or `stop-after-run`. `open` accepts
+`keep-until-stop` or `stop-on-application-exit`. The bounded choices stop every
+configured Rehearsal target in reverse dependency order after the command finishes,
+fails after startup, times out, or is interrupted. They never stop the shared Docker
+engine.
+
+Stopping is non-destructive: database and Storage volumes, applied migrations, and
+sandbox edits remain available to `start` or `open`. Only the existing explicit `reset`
+and `discard` commands replace or remove runtime state. `explain --json`, `run --json`,
+and `open --json` report the selected mode and whether the target was left running or
+stopped.
+
 ## What remains after a command?
 
-- `run` stops the application proof process but keeps the database target available for
-  hands-on testing.
+- `run` always stops its transient application proof process. Its configured lifecycle
+  either keeps the database target available or stops it with data preserved.
 - `open` keeps the application and databases available until the application session is
-  interrupted. The database target remains available afterward.
+  interrupted. Its configured lifecycle then keeps or stops the database targets.
 - `stop` stops every configured Rehearsal target in reverse dependency order and retains
   its local data.
 - `start` resumes a stopped target, reusing compatible state.
@@ -49,8 +73,10 @@ stacks; `rehearsal start` still resumes them normally.
 ## A low-memory daily workflow
 
 1. Start your Docker-compatible engine.
-2. Run `rehearsal run` or `rehearsal open`.
-3. When finished, run `rehearsal stop` from the project root.
+2. Set `lifecycle.run` to `stop-after-run` for automation or
+   `lifecycle.open` to `stop-on-application-exit` for bounded hands-on sessions.
+3. Run `rehearsal run` or `rehearsal open`. With `keep-until-stop`, run
+   `rehearsal stop` when finished.
 4. Check other projects before stopping the shared engine:
 
    ```bash

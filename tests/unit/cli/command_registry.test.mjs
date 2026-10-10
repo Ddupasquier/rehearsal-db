@@ -94,6 +94,12 @@ describe("typed CLI command registry", () => {
         verified: { output: "verified" },
         preparations: [],
         application: { stoppedBy: "SIGINT" },
+        lifecycle: {
+          mode: "stop-on-application-exit",
+          runtimeState: "stopped",
+          dataState: "preserved",
+          stop: { output: "stopped" },
+        },
       };
     });
     const [handler] = createApplicationCommandHandlers({
@@ -107,7 +113,9 @@ describe("typed CLI command registry", () => {
     try {
       const result = await handler.handle(commandContext);
       expect(openRuntimeApplication).toHaveBeenCalledOnce();
-      expect(commandContext.state.lastGuidedDetails).toBe("started\nverified");
+      expect(commandContext.state.lastGuidedDetails).toBe(
+        "started\nverified\nstopped",
+      );
       expect(result.kind).toBe("rendered");
       expect(result.render("normal")).toContain("SANDBOX APP CLOSED");
     } finally {

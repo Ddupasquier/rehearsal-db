@@ -80,6 +80,13 @@ export default defineRehearsalConfig({
 		autoStartColima: false,
 	},
 
+	// Choose when Rehearsal stops its database targets. Stopping preserves all
+	// database and Storage changes; only reset or discard removes runtime state.
+	lifecycle: {
+		run: "keep-until-stop", // Or "stop-after-run" for bounded automated checks.
+		open: "keep-until-stop", // Or "stop-on-application-exit" after Ctrl+C/Ctrl+Z.
+	},
+
 	// Keep this many baseline generations, always including the active one.
 	cleanup: {
 		retainBaselineGenerations: 2,
@@ -189,6 +196,13 @@ export default defineRehearsalConfig({
 	// Rehearsal command cannot wake unrelated containers after Docker was stopped.
 	containerRuntime: {
 		autoStartColima: false,
+	},
+
+	// Choose when Rehearsal stops its database targets. Stopping preserves all
+	// database changes; only reset or discard removes runtime state.
+	lifecycle: {
+		run: "keep-until-stop", // Or "stop-after-run" for bounded automated checks.
+		open: "keep-until-stop", // Or "stop-on-application-exit" after Ctrl+C/Ctrl+Z.
 	},
 
 	// Keep this many baseline generations, always including the active one.

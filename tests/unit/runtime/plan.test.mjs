@@ -131,6 +131,11 @@ describe("Rehearsal plan", () => {
     expect(first.baseline.rowCount).toBe(1);
     expect(first.migrations.representedCount).toBe(1);
     expect(first.migrations.candidateCount).toBe(0);
+    expect(first.lifecycle).toEqual({
+      run: "keep-until-stop",
+      open: "keep-until-stop",
+      dataOnStop: "preserved",
+    });
     expect(first.guarantee).toBe("No production resources will be contacted.");
   });
 

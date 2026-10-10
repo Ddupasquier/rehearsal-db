@@ -17,6 +17,7 @@ export interface ValidatedConfigurationSchema {
   postgresql: PlainObject | null;
   baseline: PlainObject;
   containerRuntime: PlainObject;
+  lifecycle: PlainObject;
   cleanup: PlainObject;
   preparation: PlainObject | null;
   dependentTargets: PlainObject[];
@@ -48,6 +49,7 @@ export const validateConfigurationSchema = (
       "postgresql",
       "baseline",
       "containerRuntime",
+      "lifecycle",
       "cleanup",
       "preparation",
       "runtimePolicy",
@@ -139,6 +141,8 @@ export const validateConfigurationSchema = (
     ["autoStartColima"],
     "config.containerRuntime",
   );
+  const lifecycle = assertPlainObject(root.lifecycle ?? {}, "config.lifecycle");
+  assertKnownKeys(lifecycle, ["run", "open"], "config.lifecycle");
   const cleanup = assertPlainObject(root.cleanup ?? {}, "config.cleanup");
   assertKnownKeys(cleanup, ["retainBaselineGenerations"], "config.cleanup");
   const preparation =
@@ -281,6 +285,7 @@ export const validateConfigurationSchema = (
     postgresql,
     baseline,
     containerRuntime,
+    lifecycle,
     cleanup,
     preparation,
     dependentTargets,

@@ -342,6 +342,11 @@ export const buildRehearsalPlan = async (
         sha256: entry.fileSha256,
       })),
     },
+    lifecycle: {
+      run: config.lifecycle.run,
+      open: config.lifecycle.open,
+      dataOnStop: "preserved",
+    },
     execution: [
       "verify the sanitized baseline and immutable migration prefix",
       "replace the disposable local Rehearsal runtime",
@@ -351,6 +356,9 @@ export const buildRehearsalPlan = async (
         : ["confirm that no candidate migrations are pending"]),
       "verify the resulting migration ledger and database state",
       `run application proof: ${config.application.proofCommand}`,
+      config.lifecycle.run === "stop-after-run"
+        ? "stop the database runtime after proofs while preserving its data"
+        : "keep the database runtime available until an explicit stop",
     ],
     guarantee: config.safety.authenticationProviders.length
       ? "No hosted application or database resources will be contacted; the declared identity-provider exchange creates state only in local Auth."

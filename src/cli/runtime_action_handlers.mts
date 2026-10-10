@@ -6,6 +6,7 @@ import {
   runHttpProofs,
   startApplicationSession,
 } from "../application/session.mjs";
+import { applyRuntimePersistence } from "../runtime/persistence.mjs";
 import {
   exactCommands,
   renderedCommand,
@@ -92,12 +93,8 @@ export const createRuntimeActionHandlers = ({
       });
       const { runtime, topology } = stack;
       const stackEnvironment = topologyCommandEnvironment(topology);
-      const preparations = ["run", "reset", "migrate"].includes(command)
-        ? await prepareDependentTargets({
-            topology,
-            environment: stackEnvironment,
-          })
-        : [];
+      let preparations: Awaited<ReturnType<typeof prepareDependentTargets>> =
+        [];
       let applicationProof:
         | Awaited<ReturnType<typeof proveRuntimeStack>>["applicationProof"]
         | undefined;
@@ -108,7 +105,14 @@ export const createRuntimeActionHandlers = ({
       let applicationReadiness:
         | Awaited<ReturnType<typeof startApplicationSession>>["ready"]
         | undefined;
-      if (command === "run") {
+      const completeFollowups = async (): Promise<void> => {
+        preparations = ["run", "reset", "migrate"].includes(command)
+          ? await prepareDependentTargets({
+              topology,
+              environment: stackEnvironment,
+            })
+          : [];
+        if (command !== "run") return;
         const applicationConfig = topology.primary.config.application;
         const mappedApplicationEnvironment = Object.keys(
           applicationConfig.environmentVariables,
@@ -170,7 +174,23 @@ export const createRuntimeActionHandlers = ({
             `${terminalStyle(flags, "32", "✓")} Project proofs passed.`,
           );
         }
-      }
+      };
+      const persistence =
+        command === "run"
+          ? await applyRuntimePersistence({
+              mode: topology.primary.config.lifecycle.run,
+              operation: completeFollowups,
+              stop: async () =>
+                (
+                  await runRuntimeStack({
+                    command: "stop",
+                    flags,
+                    planOptions,
+                    session: state,
+                  })
+                ).runtime,
+            })
+          : (await completeFollowups(), null);
       const data =
         command === "run"
           ? {
@@ -180,6 +200,7 @@ export const createRuntimeActionHandlers = ({
               applicationProof,
               applicationReadiness,
               httpProofResults,
+              lifecycle: persistence!.lifecycle,
             }
           : preparations.length
             ? { ...runtime, preparations }
@@ -190,6 +211,7 @@ export const createRuntimeActionHandlers = ({
           ...preparations.map((preparation) => preparation.output),
           ...dependentProofs.map((proof) => proof.output),
           applicationProof?.output,
+          persistence?.lifecycle.stop?.output,
         ]
           .filter(Boolean)
           .join("\n");
@@ -210,8 +232,13 @@ export const createRuntimeActionHandlers = ({
               : undefined;
           const renderedHttpProofResults =
             "httpProofResults" in value ? value.httpProofResults : [];
+          const renderedLifecycle =
+            "lifecycle" in value ? value.lifecycle : undefined;
           const nextAction = {
-            run: "Next: run rehearsal open for hands-on testing, then rehearsal verify.",
+            run:
+              renderedLifecycle?.runtimeState === "stopped"
+                ? "The runtime was stopped with its database and Storage changes preserved. Run rehearsal start or rehearsal open to resume."
+                : "Next: run rehearsal open for hands-on testing, then rehearsal verify.",
             start:
               "Next: run rehearsal open for hands-on testing or rehearsal status.",
             migrate: "Next: run rehearsal verify to prove the current runtime.",
@@ -247,6 +274,9 @@ export const createRuntimeActionHandlers = ({
               ...renderedHttpProofResults.map(
                 (proof) => `✓ ${proof.kind} HTTP proof passed: ${proof.name}`,
               ),
+              renderedLifecycle
+                ? `✓ Lifecycle ${renderedLifecycle.mode}: runtime ${renderedLifecycle.runtimeState}; data preserved`
+                : null,
               "",
               "Technical output is available from Show details in the guide.",
             ]
@@ -272,6 +302,9 @@ export const createRuntimeActionHandlers = ({
             ...renderedHttpProofResults.map(
               (proof) => `${proof.kind} HTTP proof passed: ${proof.name}`,
             ),
+            renderedLifecycle
+              ? `Lifecycle ${renderedLifecycle.mode}: runtime ${renderedLifecycle.runtimeState}; data preserved.`
+              : null,
             nextAction ? "" : null,
             nextAction,
           ]

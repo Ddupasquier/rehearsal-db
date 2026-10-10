@@ -116,7 +116,9 @@ source-owner approval; see [Standalone workflow](docs/standalone-workflow.md).
 
 `npx rehearsal open` starts and verifies the existing local runtime, keeps the configured
 app available until you press `Ctrl+C`, and preserves database and Storage changes for
-the next session.
+the next session. Set `lifecycle.open` to `stop-on-application-exit` when you also want
+its database targets stopped afterward; `lifecycle.run: "stop-after-run"` gives automated
+checks the same bounded, non-destructive behavior.
 
 For an approved production-shaped copy, the optional sequence is `source plan`, `source
 apply`, `refresh`, and `source retire`. `refresh` verifies the replacement before it

@@ -27,10 +27,10 @@ export const createApplicationCommandHandlers = ({
         onReady: (ready) => {
           const lines = [
             `Application: ${ready.url}`,
-            "The verified database runtime stays running and keeps your local changes.",
+            "The configured lifecycle policy will preserve your local database and Storage changes.",
             guided
               ? "Press Ctrl+C to close the app and return here, or Ctrl+Z to exit Rehearsal."
-              : "Press Ctrl+C or Ctrl+Z to close the app. Rehearsal will leave the database runtime running.",
+              : "Press Ctrl+C or Ctrl+Z to close the app. Rehearsal will then apply the configured lifecycle policy.",
           ];
           if (useStyledPrompts(flags)) {
             prompts.note(lines.join("\n"), "SANDBOX READY");
@@ -47,6 +47,7 @@ export const createApplicationCommandHandlers = ({
           data.started.output,
           data.verified.output,
           ...data.preparations.map((preparation) => preparation.output),
+          data.lifecycle.stop?.output,
         ]
           .filter(Boolean)
           .join("\n");
@@ -57,8 +58,12 @@ export const createApplicationCommandHandlers = ({
           [
             "SANDBOX APP CLOSED",
             `Application stopped after ${result.application.stoppedBy}.`,
-            "The database runtime and its local database and Storage changes were preserved.",
-            "Run rehearsal open to return, rehearsal verify to check it, or rehearsal stop to stop the databases.",
+            result.lifecycle.runtimeState === "stopped"
+              ? `Lifecycle ${result.lifecycle.mode} stopped the database runtime; its local database and Storage changes were preserved.`
+              : `Lifecycle ${result.lifecycle.mode} left the database runtime running; its local database and Storage changes were preserved.`,
+            result.lifecycle.runtimeState === "stopped"
+              ? "Run rehearsal start or rehearsal open to resume."
+              : "Run rehearsal open to return, rehearsal verify to check it, or rehearsal stop to stop the databases.",
           ].join("\n"),
       });
     },
