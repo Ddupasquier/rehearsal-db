@@ -71,7 +71,11 @@ const main = async () => {
     startCommand: "npm run dev",
     proofCommand: "npm run proof",
   },`,
-          `  application: {
+          `  lifecycle: {
+    run: "stop-after-run",
+    open: "stop-on-application-exit",
+  },
+  application: {
     startCommand: "node app.mjs ${ports.api}",
     proofCommand: "npm run proof",
     readiness: {

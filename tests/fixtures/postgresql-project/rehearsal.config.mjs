@@ -14,10 +14,6 @@ export default defineRehearsalConfig({
     artifactDirectory: ".rehearsal",
     sanitizationPolicy: "rehearsal/sanitization-policy.json",
   },
-  lifecycle: {
-    run: "stop-after-run",
-    open: "stop-on-application-exit",
-  },
   application: {
     startCommand: "npm run dev",
     proofCommand: "npm run proof",
