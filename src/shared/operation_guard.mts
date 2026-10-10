@@ -15,8 +15,32 @@ import {
 import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
+import { REHEARSAL_VERSION } from "./diagnostics.mjs";
 
 const LOCK_ROOT = join(tmpdir(), "rehearsal-db-operation-locks");
+const OPERATION_KINDS = new Set([
+  "baseline create",
+  "baseline prepare",
+  "baseline refresh",
+  "cleanup",
+  "discard",
+  "guide",
+  "help",
+  "identity claim",
+  "identity connect",
+  "init",
+  "migrate",
+  "open",
+  "privacy key",
+  "refresh",
+  "reset",
+  "run",
+  "setup",
+  "source apply",
+  "source retire",
+  "start",
+  "stop",
+]);
 
 export interface InstalledPackageFingerprint {
   readonly files: number;
@@ -36,7 +60,18 @@ interface LockOwner {
   projectHash: string;
   token: string;
   startedAt: string;
+  rehearsalVersion?: string;
 }
+
+export type ProjectOperationState = Readonly<{
+  schemaVersion: 1;
+  state: "idle" | "busy" | "stale" | "invalid";
+  operation: Readonly<{
+    kind: string;
+    startedAt: string;
+    rehearsalVersion: string | null;
+  }> | null;
+}>;
 
 const hasErrorCode = (error: unknown, code: string): boolean =>
   typeof error === "object" &&
@@ -49,10 +84,29 @@ const parseLockOwner = (source: string): LockOwner => {
   if (
     typeof value !== "object" ||
     value === null ||
+    !("formatVersion" in value) ||
+    !Number.isSafeInteger(value.formatVersion) ||
+    ![1, 2].includes(value.formatVersion as number) ||
     !("pid" in value) ||
     !Number.isSafeInteger(value.pid) ||
+    Number(value.pid) < 1 ||
+    !("command" in value) ||
+    typeof value.command !== "string" ||
+    !OPERATION_KINDS.has(value.command) ||
+    !("projectHash" in value) ||
+    typeof value.projectHash !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(value.projectHash) ||
     !("token" in value) ||
-    typeof value.token !== "string"
+    typeof value.token !== "string" ||
+    !/^[a-f0-9]{32}$/u.test(value.token) ||
+    !("startedAt" in value) ||
+    typeof value.startedAt !== "string" ||
+    !Number.isFinite(Date.parse(value.startedAt)) ||
+    new Date(value.startedAt).toISOString() !== value.startedAt ||
+    ("rehearsalVersion" in value &&
+      (typeof value.rehearsalVersion !== "string" ||
+        value.rehearsalVersion.length === 0 ||
+        value.rehearsalVersion.length > 64))
   ) {
     throw new Error("The Rehearsal operation-lock owner is invalid.");
   }
@@ -137,6 +191,9 @@ export const acquireProjectOperation = async ({
   projectRoot: string;
   command: string;
 }): Promise<ProjectOperation> => {
+  if (!OPERATION_KINDS.has(command)) {
+    throw new Error("The Rehearsal operation kind is unsupported.");
+  }
   await assertPrivateLockRoot();
   const canonicalRoot = await realpath(projectRoot);
   const projectHash = digest(canonicalRoot);
@@ -144,12 +201,13 @@ export const acquireProjectOperation = async ({
   const ownerPath = join(lockDirectory, "owner.json");
   const token = randomBytes(16).toString("hex");
   const owner = {
-    formatVersion: 1,
+    formatVersion: 2,
     pid: process.pid,
     command,
     projectHash,
     token,
     startedAt: new Date().toISOString(),
+    rehearsalVersion: REHEARSAL_VERSION,
   };
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -209,6 +267,53 @@ export const acquireProjectOperation = async ({
     }
   }
   throw new Error("Rehearsal could not acquire its project operation lock.");
+};
+
+const operationState = (
+  state: ProjectOperationState["state"],
+  owner: LockOwner | null = null,
+): ProjectOperationState =>
+  Object.freeze({
+    schemaVersion: 1,
+    state,
+    operation: owner
+      ? Object.freeze({
+          kind: owner.command,
+          startedAt: owner.startedAt,
+          rehearsalVersion: owner.rehearsalVersion ?? null,
+        })
+      : null,
+  });
+
+export const inspectProjectOperationState = async ({
+  projectRoot,
+}: {
+  projectRoot: string;
+}): Promise<ProjectOperationState> => {
+  await assertPrivateLockRoot();
+  const canonicalRoot = await realpath(projectRoot);
+  const projectHash = digest(canonicalRoot);
+  const lockDirectory = join(LOCK_ROOT, projectHash);
+  const ownerPath = join(lockDirectory, "owner.json");
+  let details;
+  try {
+    details = await lstat(lockDirectory);
+  } catch (error) {
+    if (hasErrorCode(error, "ENOENT")) return operationState("idle");
+    throw error;
+  }
+  if (!details.isDirectory() || details.isSymbolicLink()) {
+    return operationState("invalid");
+  }
+  let owner: LockOwner;
+  try {
+    owner = parseLockOwner(await readFile(ownerPath, "utf8"));
+  } catch (error) {
+    if (hasErrorCode(error, "ENOENT")) return operationState("idle");
+    return operationState("invalid");
+  }
+  if (owner.projectHash !== projectHash) return operationState("invalid");
+  return operationState(processIsAlive(owner.pid) ? "busy" : "stale", owner);
 };
 
 export const inspectProjectOperationLocks = async (): Promise<string[]> =>

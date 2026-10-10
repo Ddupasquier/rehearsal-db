@@ -116,6 +116,7 @@ obsolete placeholder key.
 | ---------------------------------- | ----------------------------------------------------- |
 | `npx rehearsal doctor`             | Check dependencies, inputs, and safety rules.         |
 | `npx rehearsal support`            | Print a privacy-safe report for a support request.    |
+| `npx rehearsal activity`           | Report whether another Rehearsal operation is active. |
 | `npx rehearsal explain`            | Show the exact plan without changing anything.        |
 | `npx rehearsal run --dry-run`      | Show the same non-mutating plan.                      |
 | `npx rehearsal candidates`         | List pending migrations and their approval digest.    |
@@ -208,8 +209,14 @@ only `kind`, loopback `host`, `port`, and database name; credentials are never i
 An unknown status schema version, state, reason, target, remote endpoint, or malformed
 digest is rejected before it reaches the public result.
 
-The current contract still does not report a structured active-operation lock. A client
-must display that detail as unavailable instead of inspecting private lock files.
+`activity --json` reports a separate privacy-safe operation snapshot. `state` is `idle`,
+`busy`, `stale`, or `invalid`. `operation` is `null` for idle and invalid states. For a
+busy or stale state it contains only the broad operation `kind`, ISO `startedAt` time,
+and owning `rehearsalVersion` when the lock format provides one. It never exposes the
+PID, arguments, lock path, token, credentials, URLs, or raw lock contents. `activity`
+does not remove a stale or malformed lock, stop a process, or mutate runtime resources.
+Clients should disable conflicting actions unless the state is `idle`.
+
 Mutating editor actions also remain out of scope until their cancellation and owned-child
 cleanup behavior is documented. These limits do not affect ordinary terminal use.
 

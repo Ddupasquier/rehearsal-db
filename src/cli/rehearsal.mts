@@ -139,7 +139,10 @@ const main = async () => {
   const guided = command === "guide" || wantsAutomaticGuide;
   const mutating = commandMutatesProject({ command, flags, guided });
   const operation: ProjectOperation | null = mutating
-    ? await acquireProjectOperation({ projectRoot, command })
+    ? await acquireProjectOperation({
+        projectRoot,
+        command: guided ? "guide" : command,
+      })
     : null;
   if (operation) {
     activePackageFingerprint = createInstalledPackageFingerprint({

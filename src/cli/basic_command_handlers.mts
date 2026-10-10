@@ -24,6 +24,7 @@ Commands:
   identity connect [--identity=] Keep the app open, detect sign-in, and connect once
   doctor                     Check whether Rehearsal is safe and ready
   support                    Print a safe, copy-ready support report
+  activity                   Report idle, busy, stale, or invalid operation state
   explain                    Show the immutable execution plan
   run --dry-run              Alias the exact explain plan without mutations
   run --confirm-candidates=  Execute reset, migration, and verification locally
