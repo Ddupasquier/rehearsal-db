@@ -69,6 +69,8 @@ import {
   writeRuntimeMarker,
 } from "../runtime/lifecycle_engine.mjs";
 import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
+import { emitRuntimeStatusSnapshot } from "../runtime/status.mjs";
+import { inspectSupabaseRuntimeStatus } from "./supabase_status.mjs";
 
 const repositoryRoot = process.cwd();
 const invocation = parseRuntimeInvocation();
@@ -846,28 +848,18 @@ await runRuntimeLifecycle({
     status: async () => {
       const baseline = await verifyActiveBaseline({ artifactRoot });
       const receipt = await readCandidateReceipt(baseline);
-      const serviceEnvironment = await readServiceEnvironment();
-      const runtimeIsRunning = localCommandSucceeds(
-        "supabase",
-        ["status", "--workdir", runtimeWorkdir],
-        { cwd: repositoryRoot, environment: serviceEnvironment },
-      );
-      if (runtimeIsRunning) {
-        const environment = readLocalSupabaseEnvironment({
+      emitRuntimeStatusSnapshot({
+        structured: invocation.structuredResult,
+        status: await inspectSupabaseRuntimeStatus({
           cwd: repositoryRoot,
-          workdir: runtimeWorkdir,
-          environment: serviceEnvironment,
-        });
-        console.log(
-          `Local Rehearsal Supabase: running at ${environment.apiUrl}`,
-        );
-      } else {
-        console.log("Local Rehearsal Supabase: stopped");
-      }
-      console.log(`Active sanitized baseline: ${baseline.generationId}`);
-      console.log(
-        `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
-      );
+          runtimeWorkdir,
+          projectId,
+          loadServiceEnvironment: readServiceEnvironment,
+          baselineGenerationId: baseline.generationId,
+          candidateSha256: receipt.candidateSha256,
+          candidates: receipt.candidates.map((candidate) => candidate.filename),
+        }),
+      });
     },
     candidates: async () => {
       const baseline = await verifyActiveBaseline({ artifactRoot });

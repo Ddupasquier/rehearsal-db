@@ -31,6 +31,7 @@ describe("Rehearsal runtime target", () => {
       action: "migrate",
       configPath: "rehearsal.alternate.config.mjs",
       confirmation: "a".repeat(64),
+      structuredResult: true,
     });
 
     expect(arguments_).toEqual([
@@ -38,11 +39,13 @@ describe("Rehearsal runtime target", () => {
       "migrate",
       "--config=rehearsal.alternate.config.mjs",
       `--confirm-candidates=${"a".repeat(64)}`,
+      "--structured-result",
     ]);
     expect(parseRuntimeInvocation(arguments_.slice(1))).toEqual({
       action: "migrate",
       configPath: "rehearsal.alternate.config.mjs",
       confirmation: "a".repeat(64),
+      structuredResult: true,
     });
   });
 });

@@ -31,6 +31,11 @@ import { assertInstalledPackageFingerprint } from "../shared/operation_guard.mjs
 import type { InstalledPackageFingerprint } from "../shared/operation_guard.mjs";
 import { buildRuntimeManagerArguments } from "../targets/target.mjs";
 import {
+  parseRuntimeStatusSnapshot,
+  renderRuntimeStatusSnapshot,
+} from "../runtime/status.mjs";
+import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
+import {
   formatDuration,
   isHumanTerminal,
   promptForConfirmation,
@@ -57,6 +62,7 @@ interface ManagerReceipt {
   readonly target: string;
   readonly durationMs: number;
   readonly output: string;
+  readonly runtimeStatus?: RuntimeStatusSnapshot;
 }
 
 interface RuntimeStackResult {
@@ -460,6 +466,7 @@ export const createRuntimeCommands = ({
       action,
       ...(configPath === undefined ? {} : { configPath }),
       ...(confirmation === undefined ? {} : { confirmation }),
+      structuredResult: action === "status",
     });
     const runtimeStartedMs = performance.now();
     const actionDescription = {
@@ -561,11 +568,18 @@ export const createRuntimeCommands = ({
         `${terminalStyle(flags, "32", "✓")} Local runtime step completed in ${formatDuration(durationMs)}.`,
       );
     }
+    const runtimeStatus =
+      action === "status"
+        ? parseRuntimeStatusSnapshot(JSON.parse(String(result.stdout ?? "")))
+        : undefined;
     return {
       action,
       target: targetName ?? "primary",
       durationMs: Math.round(durationMs * 100) / 100,
-      output: String(redactDiagnosticValue(String(result.stdout ?? "").trim())),
+      output: runtimeStatus
+        ? renderRuntimeStatusSnapshot(runtimeStatus)
+        : String(redactDiagnosticValue(String(result.stdout ?? "").trim())),
+      ...(runtimeStatus ? { runtimeStatus } : {}),
     };
   };
 
