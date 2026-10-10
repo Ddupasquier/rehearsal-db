@@ -182,6 +182,18 @@ describe("documented CLI contract", () => {
       expect(commandReference).toContain(command);
     }
 
+    for (const machineContract of [
+      '"schemaVersion": 1',
+      '"status": "success"',
+      "Invalid configuration",
+      "Runtime dependency failure",
+      "project's installed `@rehearsal-db/core`",
+      "does not provide running/stopped state as a",
+      "cancellation and owned-child",
+    ]) {
+      expect(commandReference).toContain(machineContract);
+    }
+
     for (const command of [
       "setup",
       "doctor",

@@ -126,6 +126,60 @@ obsolete placeholder key.
 State-reporting commands accept `--json` for scripts. Scripts should use the JSON fields
 and process exit code, not parse human-facing text.
 
+### Machine-readable contract
+
+`--json` returns one JSON object and no decorative terminal output. Successful and
+not-ready results use this versioned envelope:
+
+```json
+{
+  "schemaVersion": 1,
+  "rehearsalVersion": "0.1.0",
+  "command": "doctor",
+  "status": "success",
+  "startedAt": "2026-10-09T12:00:00.000Z",
+  "durationMs": 12,
+  "warnings": [],
+  "data": {}
+}
+```
+
+Treat `schemaVersion`, `command`, `status`, and each command's documented `data` fields
+as the interface. Reject an unknown schema version. Do not infer state from prose in a
+`data.output` field. `--version --json` is intentionally smaller and returns only
+`name` and `version`.
+
+| Exit | Meaning                                        |
+| ---- | ---------------------------------------------- |
+| `0`  | Success                                        |
+| `1`  | A check completed but the project is not ready |
+| `2`  | Invalid configuration                          |
+| `3`  | Unsafe environment                             |
+| `4`  | Invalid baseline                               |
+| `5`  | Baseline checksum mismatch                     |
+| `6`  | Candidate migration failure                    |
+| `7`  | Migration verification failure                 |
+| `8`  | Application proof failure                      |
+| `9`  | Runtime dependency failure                     |
+| `10` | Internal failure                               |
+
+An error result keeps `schemaVersion`, `rehearsalVersion`, and `status: "error"`, then
+provides a stable category, code, safe message, suggestions, diagnostic ID, and redacted
+context under `error`. Callers should use the category and code for decisions and show
+the message and suggestions to people.
+
+Editor integrations should resolve the project's installed `@rehearsal-db/core`
+manifest and its declared `rehearsal` binary. They should not import private package
+files, search for a global installation, invoke through a shell, or parse styled output.
+Keep each workspace folder isolated, pass an explicit project-relative `--config` when
+needed, and run nothing until the workspace is trusted.
+
+In the current contract, `status --json` does not provide running/stopped state as a
+structured field, and it does not report a structured active-operation lock. A client
+must display that detail as unavailable instead of parsing the human `data.output` text.
+Mutating editor actions also remain out of scope until their cancellation and owned-child
+cleanup behavior is documented. These limits do not affect ordinary terminal use.
+
 ## Run and manage the local sandbox
 
 | Command                                               | What it does                                                        |
