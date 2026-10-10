@@ -15,6 +15,10 @@ import type { RuntimeSanitizationPolicy } from "../baseline/sanitization_policy.
 import { readMigrationFileInventory } from "./migration_history.mjs";
 import type { MigrationFileEntry } from "./migration_history.mjs";
 import { createCandidateMigrationReceipt } from "./restore.mjs";
+import {
+  reachOperationCancellationCheckpoint,
+  withOperationCancellationShield,
+} from "../shared/cancellation.mjs";
 
 export type RuntimeLifecycleAction =
   | "reset"
@@ -187,9 +191,18 @@ export const withOwnedRuntimeRollback = async <Result,>({
   rollback: () => Promise<unknown>;
 }): Promise<Result> => {
   try {
-    return await operation();
+    const result = await operation();
+    await reachOperationCancellationCheckpoint();
+    return result;
   } catch (error) {
-    await rollback().catch(() => undefined);
+    try {
+      await withOperationCancellationShield(rollback);
+    } catch (rollbackError) {
+      throw new AggregateError(
+        [error, rollbackError],
+        "The runtime operation failed and its owned runtime could not be removed automatically.",
+      );
+    }
     throw error;
   }
 };

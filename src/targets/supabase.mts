@@ -71,6 +71,12 @@ import {
 import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
 import { emitRuntimeStatusSnapshot } from "../runtime/status.mjs";
 import { inspectSupabaseRuntimeStatus } from "./supabase_status.mjs";
+import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
+import {
+  bindOwnedProcessCancellation,
+  signalOwnedProcessGroup,
+} from "../shared/owned_process.mjs";
+import { runOwnedSupabaseMigration } from "./supabase_process.mjs";
 
 const repositoryRoot = process.cwd();
 const invocation = parseRuntimeInvocation();
@@ -288,6 +294,7 @@ const restoreBaselineRows = async ({
     ],
     {
       cwd: repositoryRoot,
+      detached: process.platform !== "win32",
       env: createCleanProcessEnvironment(),
       stdio: ["pipe", "ignore", "pipe"],
     },
@@ -300,6 +307,11 @@ const restoreBaselineRows = async ({
   const completion = new Promise<number | null>((complete, reject) => {
     child.once("error", reject);
     child.once("close", complete);
+  });
+  const cancellationSignal = getOperationCancellationSignal();
+  const unbindCancellation = bindOwnedProcessCancellation({
+    child,
+    ...(cancellationSignal ? { signal: cancellationSignal } : {}),
   });
   child.stdin.on("error", () => undefined);
   try {
@@ -333,12 +345,14 @@ const restoreBaselineRows = async ({
       );
     }
   } catch (error) {
-    if (child.exitCode === null) child.kill("SIGTERM");
+    if (child.exitCode === null) signalOwnedProcessGroup(child, "SIGTERM");
     await completion.catch(() => undefined);
     throw new Error(
       `The local Rehearsal restore failed. ${summarizeRestoreError(stderr)}`,
       { cause: error },
     );
+  } finally {
+    unbindCancellation();
   }
 };
 
@@ -803,11 +817,11 @@ const migrateRuntime = async () => {
           join(runtimeSupabaseDirectory, "migrations", candidate.filename),
         );
       }
-      runLocalCommand(
-        "supabase",
-        ["migration", "up", "--local", "--workdir", runtimeWorkdir],
-        { cwd: repositoryRoot, environment: serviceEnvironment },
-      );
+      await runOwnedSupabaseMigration({
+        environment: serviceEnvironment,
+        repositoryRoot,
+        runtimeWorkdir,
+      });
       const comparison = await verifyRuntimeMigrationHistory({
         baseline,
         currentFiles: receipt.currentFiles,

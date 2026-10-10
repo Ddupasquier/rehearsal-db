@@ -89,7 +89,7 @@ describe("shared runtime lifecycle engine", () => {
     ).rejects.toThrow("Unknown Rehearsal database action: unknown");
   });
 
-  it("rolls back exactly once and preserves the original failure", async () => {
+  it("rolls back exactly once and preserves cleanup failures", async () => {
     const failure = new Error("restore failed");
     const rollback = vi.fn(async () => undefined);
     await expect(
@@ -102,7 +102,8 @@ describe("shared runtime lifecycle engine", () => {
     ).rejects.toBe(failure);
     expect(rollback).toHaveBeenCalledOnce();
 
-    rollback.mockRejectedValueOnce(new Error("cleanup failed"));
+    const cleanupFailure = new Error("cleanup failed");
+    rollback.mockRejectedValueOnce(cleanupFailure);
     await expect(
       withOwnedRuntimeRollback({
         operation: async () => {
@@ -110,7 +111,11 @@ describe("shared runtime lifecycle engine", () => {
         },
         rollback,
       }),
-    ).rejects.toBe(failure);
+    ).rejects.toMatchObject({
+      message:
+        "The runtime operation failed and its owned runtime could not be removed automatically.",
+      errors: [failure, cleanupFailure],
+    });
   });
 
   it("binds confirmation and the persisted receipt to the exact candidate digest", async () => {

@@ -32,6 +32,7 @@ describe("Rehearsal diagnostics", () => {
       application_proof_failure: 8,
       runtime_dependency_failure: 9,
       internal_failure: 10,
+      operation_cancelled: 130,
     });
   });
 

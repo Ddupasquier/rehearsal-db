@@ -93,7 +93,7 @@ export const createRuntimeActionHandlers = ({
       const { runtime, topology } = stack;
       const stackEnvironment = topologyCommandEnvironment(topology);
       const preparations = ["run", "reset", "migrate"].includes(command)
-        ? prepareDependentTargets({
+        ? await prepareDependentTargets({
             topology,
             environment: stackEnvironment,
           })

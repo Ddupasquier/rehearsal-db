@@ -8,6 +8,7 @@ import {
   createCleanProcessEnvironment,
   type ProcessEnvironment,
 } from "../shared/process_environment.mjs";
+import { throwIfOperationCancelled } from "../shared/cancellation.mjs";
 
 export interface LocalSupabaseEnvironment {
   readonly apiUrl: string;
@@ -132,6 +133,7 @@ export const runLocalCommand = (
     maxBuffer,
     stdio: shouldPipe ? ["pipe", "pipe", "pipe"] : "inherit",
   });
+  throwIfOperationCancelled();
   if (result.error) throw result.error;
   if (result.status !== 0) {
     const detail = [result.stdout, result.stderr]

@@ -29,6 +29,11 @@ import {
 } from "../shared/diagnostics.mjs";
 import { assertInstalledPackageFingerprint } from "../shared/operation_guard.mjs";
 import type { InstalledPackageFingerprint } from "../shared/operation_guard.mjs";
+import {
+  getOperationCancellationSignal,
+  throwIfOperationCancelled,
+} from "../shared/cancellation.mjs";
+import { runOwnedProcess } from "../shared/owned_process.mjs";
 import { buildRuntimeManagerArguments } from "../targets/target.mjs";
 import {
   parseRuntimeStatusSnapshot,
@@ -387,7 +392,7 @@ export const topologyEnvironmentFiles = (
   ),
 });
 
-const runProjectCommand = ({
+const runProjectCommand = async ({
   source,
   configuredRoot,
   label,
@@ -401,13 +406,16 @@ const runProjectCommand = ({
   environment?: NodeJS.ProcessEnv;
 }) => {
   const [command, ...args] = parseCommand(source);
-  const result = spawnSync(command, args, {
+  const cancellationSignal = getOperationCancellationSignal();
+  const result = await runOwnedProcess({
+    command,
+    args,
     cwd: configuredRoot,
-    encoding: "utf8",
     env: projectCommandEnvironment(environment),
-    stdio: ["ignore", "pipe", "pipe"],
-    maxBuffer: 16 * 1024 * 1024,
+    stdin: "ignore",
+    ...(cancellationSignal ? { signal: cancellationSignal } : {}),
   });
+  throwIfOperationCancelled();
   if (result.error || result.status !== 0) {
     throw new RehearsalError({
       category: "application_proof_failure",
@@ -441,7 +449,7 @@ export const createRuntimeCommands = ({
   managerPath: string;
   getActivePackageFingerprint: () => InstalledPackageFingerprint | undefined;
 }) => {
-  const runManager = ({
+  const runManager = async ({
     action,
     flags,
     configPath = flags.configPath,
@@ -453,7 +461,7 @@ export const createRuntimeCommands = ({
     configPath?: string;
     confirmation?: string;
     targetName?: string;
-  }): ManagerReceipt => {
+  }): Promise<ManagerReceipt> => {
     const fingerprint = getActivePackageFingerprint();
     if (fingerprint) {
       assertInstalledPackageFingerprint({
@@ -490,13 +498,17 @@ export const createRuntimeCommands = ({
         `\n${terminalStyle(flags, "1;36", action === "run" ? "REHEARSING" : "REHEARSAL")}\n${terminalStyle(flags, "36", "→")} ${describedAction}. This can take a moment.`,
       );
     }
-    const result = spawnSync(process.execPath, args, {
+    const cancellationSignal = getOperationCancellationSignal();
+    const result = await runOwnedProcess({
+      command: process.execPath,
+      args,
       cwd: projectRoot,
-      encoding: "utf8",
-      env: projectCommandEnvironment(),
-      stdio: ["inherit", "pipe", "pipe"],
-      maxBuffer: 16 * 1024 * 1024,
+      env: projectCommandEnvironment(
+        cancellationSignal ? { REHEARSAL_CANCELLABLE_OPERATION: "1" } : {},
+      ),
+      ...(cancellationSignal ? { signal: cancellationSignal } : {}),
     });
+    throwIfOperationCancelled();
     const currentFingerprint = getActivePackageFingerprint();
     if (currentFingerprint) {
       assertInstalledPackageFingerprint({
@@ -601,18 +613,21 @@ export const createRuntimeCommands = ({
     const targets = reverse
       ? [...topology.targets].reverse()
       : topology.targets;
-    const results = targets.map((target) => {
+    const results: ManagerReceipt[] = [];
+    for (const target of targets) {
       const confirmation = (
         session.targetConfirmations as Map<string, string> | undefined
       )?.get(target.configPath);
-      return runManager({
-        action: command,
-        flags,
-        configPath: target.configPath,
-        ...(confirmation === undefined ? {} : { confirmation }),
-        ...(topology.targets.length > 1 ? { targetName: target.name } : {}),
-      });
-    });
+      results.push(
+        await runManager({
+          action: command,
+          flags,
+          configPath: target.configPath,
+          ...(confirmation === undefined ? {} : { confirmation }),
+          ...(topology.targets.length > 1 ? { targetName: target.name } : {}),
+        }),
+      );
+    }
     if (results.length === 1) return { topology, runtime: results[0]! };
     return {
       topology,
@@ -650,28 +665,33 @@ export const createRuntimeCommands = ({
     });
   };
 
-  const prepareDependentTargets = ({
+  const prepareDependentTargets = async ({
     topology,
     environment,
   }: {
     topology: RuntimeTopology;
     environment: NodeJS.ProcessEnv;
-  }) =>
-    topology.dependents.flatMap((target) => {
-      if (!target.declaration?.prepareCommand) return [];
-      return [
-        {
-          target: target.name,
-          ...runProjectCommand({
-            source: target.declaration.prepareCommand,
-            configuredRoot: topology.projectRoot,
-            label: `preparation command for ${target.name}`,
-            project: topology.primary.config.project.name,
-            environment,
-          }),
-        },
-      ];
-    });
+  }) => {
+    const preparations: Array<{
+      target: string;
+      command: string;
+      output: string;
+    }> = [];
+    for (const target of topology.dependents) {
+      if (!target.declaration?.prepareCommand) continue;
+      preparations.push({
+        target: target.name,
+        ...(await runProjectCommand({
+          source: target.declaration.prepareCommand,
+          configuredRoot: topology.projectRoot,
+          label: `preparation command for ${target.name}`,
+          project: topology.primary.config.project.name,
+          environment,
+        })),
+      });
+    }
+    return preparations;
+  };
 
   const proveRuntimeStack = async ({
     topology,
@@ -753,7 +773,7 @@ export const createRuntimeCommands = ({
       planOptions,
       session: commandSession,
     });
-    const preparations = prepareDependentTargets({
+    const preparations = await prepareDependentTargets({
       topology,
       environment: topologyCommandEnvironment(topology),
     });

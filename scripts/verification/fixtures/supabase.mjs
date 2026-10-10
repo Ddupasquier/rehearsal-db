@@ -4,7 +4,7 @@
  * Run: `npm run rehearsal:fixture:prove`. Uses only disposable local Docker state.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   cp,
   mkdir,
@@ -260,6 +260,7 @@ const main = async () => {
   const packageOutput = join(temporaryRoot, "packed");
   const runtimeWorkdir = join(cwd, ".rehearsal/runtime");
   const validFilename = "20260101000100_add_widget_description.sql";
+  const slowFilename = "20260101000200_slow_candidate.sql";
   const invalidFilename = "20260101000200_invalid_candidate.sql";
   const timings = {};
   const commandsProven = [];
@@ -900,11 +901,155 @@ where bucket_id = 'fixture-assets'
       label: "migrate",
     });
     commandsProven.push("migrate");
+
+    const slowMigrationPath = join(cwd, "supabase/migrations", slowFilename);
+    await writeFile(slowMigrationPath, "select pg_sleep(30);\n");
+    const cancellationPlan = await buildRehearsalPlan({ projectRoot: cwd });
+    const cancellationChild = spawn(
+      join(cwd, "node_modules/.bin/rehearsal"),
+      [
+        "migrate",
+        `--confirm-candidates=${cancellationPlan.migrations.candidateSha256}`,
+        "--json",
+      ],
+      {
+        cwd,
+        env: createCleanProcessEnvironment(),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let cancellationStdout = "";
+    let cancellationStderr = "";
+    cancellationChild.stdout.on("data", (chunk) => {
+      cancellationStdout += chunk;
+    });
+    cancellationChild.stderr.on("data", (chunk) => {
+      cancellationStderr += chunk;
+    });
+    const cancellationExit = new Promise((resolve) =>
+      cancellationChild.once("exit", (status, signal) =>
+        resolve({ status, signal }),
+      ),
+    );
+    let slowMigrationObserved = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (cancellationChild.exitCode !== null) break;
+      const activity = JSON.parse(
+        executeCliOrThrow({
+          cwd,
+          args: ["activity", "--json"],
+          label: "Supabase cancellable migration activity",
+        }).stdout,
+      ).data;
+      if (activity.state === "busy" && activity.operation?.kind === "migrate") {
+        const active = runPsql({
+          cwd,
+          sql: "select exists(select 1 from pg_stat_activity where pid <> pg_backend_pid() and state = 'active' and query ilike '%pg_sleep(30)%');",
+        }).trim();
+        if (active === "t") {
+          slowMigrationObserved = true;
+          break;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!slowMigrationObserved) {
+      cancellationChild.kill("SIGTERM");
+      await cancellationExit;
+      throw new Error(
+        `The Supabase migration did not reach its controlled wait: ${cancellationStdout || cancellationStderr}`,
+      );
+    }
+    const cancellationRequestedAt = performance.now();
+    cancellationChild.kill("SIGTSTP");
+    cancellationChild.kill("SIGTSTP");
+    const cancelled = await cancellationExit;
+    const cancellationLatencyMs = performance.now() - cancellationRequestedAt;
+    if (cancelled.status !== 130 || cancellationLatencyMs > 10_000) {
+      throw new Error(
+        `The Supabase cancellation exited ${cancelled.status ?? cancelled.signal} after ${Math.round(cancellationLatencyMs)}ms: ${cancellationStdout || cancellationStderr}`,
+      );
+    }
+    const cancellationFailure = JSON.parse(cancellationStdout).error;
+    if (
+      cancellationFailure?.category !== "operation_cancelled" ||
+      cancellationFailure?.code !== "OPERATION_CANCELLED" ||
+      cancellationFailure?.context?.signal !== "SIGTSTP"
+    ) {
+      throw new Error(
+        `The Supabase migration returned an invalid cancellation envelope: ${cancellationStdout}`,
+      );
+    }
+    const postCancellationActivity = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        args: ["activity", "--json"],
+        label: "post-cancellation activity",
+      }).stdout,
+    ).data;
+    if (postCancellationActivity.state !== "idle") {
+      throw new Error(
+        "The cancelled Supabase migration did not release its operation lock.",
+      );
+    }
+    const remainingContainers = runLocalCommand(
+      "docker",
+      [
+        "ps",
+        "--all",
+        "--filter",
+        `label=com.supabase.cli.project=${projectId}`,
+        "--format",
+        "{{.Names}}",
+      ],
+      { capture: true, cwd },
+    ).trim();
+    const remainingVolumes = runLocalCommand(
+      "docker",
+      [
+        "volume",
+        "ls",
+        "--filter",
+        `label=com.supabase.cli.project=${projectId}`,
+        "--format",
+        "{{.Name}}",
+      ],
+      { capture: true, cwd },
+    ).trim();
+    if (remainingContainers || remainingVolumes) {
+      throw new Error(
+        "The cancelled Supabase migration left disposable runtime resources behind.",
+      );
+    }
+    await rm(slowMigrationPath);
+    commandsProven.push("prompt Supabase mutation cancellation");
     timings.validCliRunAndProofMs = Math.round(performance.now() - startedAt);
 
     startedAt = performance.now();
     executeCliOrThrow({ cwd, args: ["reset", "--json"], label: "reset" });
     commandsProven.push("reset");
+    const recoveredEnvironment = readLocalSupabaseEnvironment({
+      cwd,
+      workdir: runtimeWorkdir,
+    });
+    const recoveredAsset = await fetch(
+      `${recoveredEnvironment.apiUrl}/storage/v1/object/fixture-assets/proof/exact-byte.txt`,
+      {
+        headers: {
+          apikey: recoveredEnvironment.serviceRoleKey,
+          authorization: `Bearer ${recoveredEnvironment.serviceRoleKey}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    if (
+      !recoveredAsset.ok ||
+      (await recoveredAsset.text()) !== "independent Rehearsal Storage proof\n"
+    ) {
+      throw new Error(
+        "The reset after cancellation did not restore the verified Storage baseline.",
+      );
+    }
     executeCliOrThrow({ cwd, args: ["stop", "--json"], label: "stop" });
     commandsProven.push("stop");
     executeCliOrThrow({ cwd, args: ["start", "--json"], label: "start" });
