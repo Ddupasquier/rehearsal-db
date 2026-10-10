@@ -355,6 +355,8 @@ describe("documented CLI contract", () => {
     expect(cleanupSource).not.toContain('"--force"');
     expect(cleanupSource).toContain("exact --confirm-cleanup digest");
     expect(configuration).toContain("autoStartColima");
+    expect(configuration).toContain("stop-after-run");
+    expect(configuration).toContain("stop-on-application-exit");
     expect(configuration).toContain("retainBaselineGenerations");
   });
 

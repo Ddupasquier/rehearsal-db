@@ -5,6 +5,21 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+### Added
+
+- Root configuration can now choose `stop-after-run` for bounded automated checks and
+  `stop-on-application-exit` for bounded hands-on sessions. Both modes stop only the
+  configured Rehearsal targets while preserving database and Storage volumes, applied
+  migrations, and sandbox edits for the next `start` or `open`.
+- Plans, JSON results, terminal receipts, generated configuration comments, and the
+  lifecycle guide now report the selected persistence mode and resulting runtime state.
+
+### Changed
+
+- Transient application and helper processes are cleaned up before an opted-in runtime
+  stop after success, proof failure, readiness timeout, or supported interruption. The
+  compatibility default remains `keep-until-stop` for both `run` and `open`.
+
 ## [0.1.0-rc.2] - 2026-10-09
 
 ### Changed

@@ -40,6 +40,7 @@ import {
   renderRuntimeStatusSnapshot,
 } from "../runtime/status.mjs";
 import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
+import { applyRuntimePersistence } from "../runtime/persistence.mjs";
 import {
   formatDuration,
   isHumanTerminal,
@@ -112,6 +113,11 @@ export const buildRuntimeStackPlan = async (
       candidateCount: candidates.candidateCount,
       candidateSha256: candidates.candidateSha256,
     },
+    lifecycle: {
+      run: topology.primary.config.lifecycle.run,
+      open: topology.primary.config.lifecycle.open,
+      dataOnStop: "preserved",
+    },
     execution: [
       "verify every immutable baseline and migration prefix",
       "restore and migrate the primary runtime",
@@ -133,6 +139,9 @@ export const buildRuntimeStackPlan = async (
           `run ${target.name} proof: ${target.config.application.proofCommand}`,
       ),
       `run primary proof: ${topology.primary.config.application.proofCommand}`,
+      topology.primary.config.lifecycle.run === "stop-after-run"
+        ? "stop every database target after proofs while preserving its data"
+        : "keep every database target available until an explicit stop",
     ],
     guarantee:
       "Every database target is isolated by its own project ID, ports, artifact directory, and local-only safety policy. No production resources will be contacted.",
@@ -727,10 +736,12 @@ export const createRuntimeCommands = ({
     flags,
     planOptions,
     session: commandSession,
+    onRuntimeStarted = () => undefined,
   }: {
     flags: RehearsalCliFlags;
     planOptions: RehearsalConfigPathOptions;
     session: CliSessionState;
+    onRuntimeStarted?: () => void;
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
     const application = topology.primary.config.application;
@@ -767,6 +778,7 @@ export const createRuntimeCommands = ({
       planOptions,
       session: commandSession,
     });
+    onRuntimeStarted();
     const verified = await runRuntimeStack({
       command: "verify",
       flags,
@@ -804,15 +816,37 @@ export const createRuntimeCommands = ({
     session: CliSessionState;
     onReady?: Parameters<typeof holdApplicationSession>[0]["onReady"];
   }) => {
-    const active = await startRuntimeApplication({
-      flags,
-      planOptions,
-      session: commandSession,
+    const topology = await loadRuntimeTopology(planOptions);
+    let runtimeStarted = false;
+    const { result, lifecycle } = await applyRuntimePersistence({
+      mode: topology.primary.config.lifecycle.open,
+      canStop: () => runtimeStarted,
+      operation: async () => {
+        const active = await startRuntimeApplication({
+          flags,
+          planOptions,
+          session: commandSession,
+          onRuntimeStarted: () => {
+            runtimeStarted = true;
+          },
+        });
+        const closed = await holdApplicationSession({
+          session: active.session,
+          onReady,
+        });
+        return { active, closed };
+      },
+      stop: async () =>
+        (
+          await runRuntimeStack({
+            command: "stop",
+            flags,
+            planOptions,
+            session: commandSession,
+          })
+        ).runtime,
     });
-    const closed = await holdApplicationSession({
-      session: active.session,
-      onReady,
-    });
+    const { active, closed } = result;
     return {
       action: "open",
       started: active.started,
@@ -824,6 +858,7 @@ export const createRuntimeCommands = ({
         stoppedBy: closed.signal,
         diagnostics: closed.diagnostics,
       },
+      lifecycle,
     };
   };
 

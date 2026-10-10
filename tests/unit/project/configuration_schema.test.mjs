@@ -32,8 +32,18 @@ describe("configuration schema", () => {
     expect(validated.root).toBe(raw);
     expect(validated.runtimeTarget).toBe("supabase");
     expect(validated.cleanup).toEqual({});
+    expect(validated.lifecycle).toEqual({});
     expect(validated.root).not.toHaveProperty("cleanup");
     expect(validated.application).not.toHaveProperty("environmentFile");
+  });
+
+  it("rejects unknown lifecycle properties before normalization", () => {
+    const raw = rawConfiguration();
+    raw.lifecycle = { typo: "stop-everything" };
+
+    expect(() => validateConfigurationSchema(raw)).toThrow(
+      "Unknown Rehearsal configuration property: config.lifecycle.typo",
+    );
   });
 
   it("rejects unknown nested keys before normalization", () => {

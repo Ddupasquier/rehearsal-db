@@ -2,6 +2,10 @@
 
 export type RehearsalConfigVersion = 1;
 
+export type RunPersistenceMode = "keep-until-stop" | "stop-after-run";
+export type OpenPersistenceMode =
+  "keep-until-stop" | "stop-on-application-exit";
+
 export interface RehearsalConfig {
   schemaVersion: RehearsalConfigVersion;
   project: { name: string };
@@ -36,6 +40,10 @@ export interface RehearsalConfig {
     sanitizationPolicy: string;
   };
   containerRuntime?: { autoStartColima?: boolean };
+  lifecycle?: {
+    run?: RunPersistenceMode;
+    open?: OpenPersistenceMode;
+  };
   cleanup?: { retainBaselineGenerations?: number };
   preparation?: {
     sourcePolicy: string;
@@ -100,6 +108,10 @@ export const REHEARSAL_CONFIG_VERSION = 1;
 export const REHEARSAL_DEFAULTS = Object.freeze({
   baseline: Object.freeze({ artifactDirectory: ".rehearsal" }),
   containerRuntime: Object.freeze({ autoStartColima: false }),
+  lifecycle: Object.freeze({
+    run: "keep-until-stop" as RunPersistenceMode,
+    open: "keep-until-stop" as OpenPersistenceMode,
+  }),
   cleanup: Object.freeze({ retainBaselineGenerations: 2 }),
   runtime: Object.freeze({
     applicationUrl: "http://localhost:5175",

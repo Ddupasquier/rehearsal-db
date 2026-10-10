@@ -130,9 +130,41 @@ describe("Rehearsal configuration", () => {
     expect(loaded.config.supabase.serviceEnvironmentVariables).toEqual([]);
     expect(loaded.config.supabase.authentication).toBeNull();
     expect(loaded.config.containerRuntime).toEqual({ autoStartColima: false });
+    expect(loaded.config.lifecycle).toEqual({
+      run: "keep-until-stop",
+      open: "keep-until-stop",
+    });
     expect(loaded.config.cleanup).toEqual({ retainBaselineGenerations: 2 });
     expect(loaded.config.preparation).toBeNull();
     expect(loaded.config.dependentTargets).toEqual([]);
+  });
+
+  it("loads explicit bounded runtime lifecycle modes", async () => {
+    const root = await makeProject();
+    await writeFile(
+      join(root, "rehearsal.config.mjs"),
+      configSource(
+        'lifecycle: { run: "stop-after-run", open: "stop-on-application-exit" },',
+      ),
+    );
+
+    const loaded = await loadRehearsalConfig({ projectRoot: root });
+    expect(loaded.config.lifecycle).toEqual({
+      run: "stop-after-run",
+      open: "stop-on-application-exit",
+    });
+  });
+
+  it("rejects unsupported runtime lifecycle modes", async () => {
+    const root = await makeProject();
+    await writeFile(
+      join(root, "rehearsal.config.mjs"),
+      configSource('lifecycle: { run: "discard-after-run" },'),
+    );
+
+    await expect(loadRehearsalConfig({ projectRoot: root })).rejects.toThrow(
+      "config.lifecycle.run must be one of: keep-until-stop, stop-after-run",
+    );
   });
 
   it("loads declarative local OAuth providers and derives their credential allowlist", async () => {
@@ -479,6 +511,10 @@ describe("Rehearsal configuration", () => {
     expect(source).toContain('outboundNetwork: "deny"');
     expect(source).toContain("containerRuntime:");
     expect(source).toContain("autoStartColima: false");
+    expect(source).toContain('run: "keep-until-stop"');
+    expect(source).toContain('open: "keep-until-stop"');
+    expect(source).toContain('"stop-after-run"');
+    expect(source).toContain('"stop-on-application-exit"');
     expect(source).toContain("cleanup:");
     expect(source).toContain("retainBaselineGenerations: 2");
     expect(source).toContain("dependentTargets:");

@@ -229,6 +229,10 @@ SHA-256 receipts are tracked. See
 containerRuntime: {
   autoStartColima: false,
 },
+lifecycle: {
+  run: "keep-until-stop",
+  open: "keep-until-stop",
+},
 cleanup: {
   retainBaselineGenerations: 2,
 },
@@ -246,6 +250,14 @@ After each Supabase start, Rehearsal changes only the exact target's containers 
 Docker's `no` restart policy. Its database and Storage volumes remain intact,
 `rehearsal start` can resume it, and restarting Docker does not silently wake stopped
 Rehearsal stacks.
+
+`lifecycle.run` controls what happens to database targets after `run` finishes:
+`keep-until-stop` preserves today's interactive behavior, while `stop-after-run` stops
+the targets after proofs, proof failures, or interruption. `lifecycle.open` uses
+`keep-until-stop` or `stop-on-application-exit` after the app closes. Every mode stops
+only Rehearsal's configured targets, never the shared engine. Ordinary stopping keeps
+database and Storage volumes and all sandbox edits; it does not reset or discard them.
+See [Container runtime lifecycle](runtime-lifecycle.md).
 
 `retainBaselineGenerations` controls how many immutable baseline generations survive an
 approved `rehearsal refresh` or `rehearsal cleanup`; it must be at least 1. Refresh shows
