@@ -5,8 +5,17 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-rc.3] - 2026-10-10
+
 ### Added
 
+- `status --json` now exposes bounded, target-scoped runtime state without requiring
+  editor clients to parse human-formatted process output.
+- `activity --json` reports idle, busy, stale, invalid, and unavailable project-operation
+  state without exposing lock tokens, process arguments, credentials, or private paths.
+- Supported mutating operations now have an explicit cancellation contract: owned child
+  groups receive one bounded shutdown request, rollback and lock cleanup complete before
+  exit `130`, and unrelated processes and Docker resources remain untouched.
 - Root configuration can now choose `stop-after-run` for bounded automated checks and
   `stop-on-application-exit` for bounded hands-on sessions. Both modes stop only the
   configured Rehearsal targets while preserving database and Storage volumes, applied
@@ -19,6 +28,12 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - Transient application and helper processes are cleaned up before an opted-in runtime
   stop after success, proof failure, readiness timeout, or supported interruption. The
   compatibility default remains `keep-until-stop` for both `run` and `open`.
+
+### Fixed
+
+- Read-only runtime inspection now works when a VS Code extension launches the CLI
+  through Electron's executable in Node mode. That mode is preserved only for
+  Rehearsal's nested runtime manager and is not exposed to project-owned commands.
 
 ## [0.1.0-rc.2] - 2026-10-09
 
@@ -590,7 +605,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.2...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.3...HEAD
+[0.1.0-rc.3]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.2...v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.1...v0.1.0-rc.2
 [0.1.0-rc.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.18...v0.1.0-rc.1
 [0.1.0-beta.18]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.17...v0.1.0-beta.18

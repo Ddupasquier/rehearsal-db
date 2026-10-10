@@ -54,6 +54,43 @@ describe("runtime command diagnostics", () => {
     }
   });
 
+  it("preserves Electron Node mode for its nested runtime manager", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "rehearsal-electron-node-"));
+    const managerPath = join(directory, "manager.mjs");
+    const previousElectronMode = process.env.ELECTRON_RUN_AS_NODE;
+    await writeFile(
+      managerPath,
+      `if (process.env.ELECTRON_RUN_AS_NODE !== "1") process.exit(42);\nconsole.log(JSON.stringify({ schemaVersion: 1, state: "stopped", reason: "runtime_not_running", runtimeTarget: "postgresql", projectId: "fixture-rehearsal", endpoint: null, baselineGenerationId: "20261010T120000Z-example", candidateSha256: "${"a".repeat(64)}", candidates: [] }));\n`,
+    );
+
+    try {
+      process.env.ELECTRON_RUN_AS_NODE = "1";
+      const commands = createRuntimeCommands({
+        packageRoot: directory,
+        projectRoot: directory,
+        managerPath,
+        getActivePackageFingerprint: () => null,
+      });
+      const receipt = await commands.runManager({
+        action: "status",
+        flags: { json: true, plain: true },
+        configPath: "rehearsal.config.mjs",
+      });
+
+      expect(receipt.runtimeStatus).toMatchObject({
+        state: "stopped",
+        runtimeTarget: "postgresql",
+      });
+    } finally {
+      if (previousElectronMode === undefined) {
+        delete process.env.ELECTRON_RUN_AS_NODE;
+      } else {
+        process.env.ELECTRON_RUN_AS_NODE = previousElectronMode;
+      }
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("classifies container startup failures as runtime dependencies before migrations", () => {
     expect(
       classifyManagerFailure({

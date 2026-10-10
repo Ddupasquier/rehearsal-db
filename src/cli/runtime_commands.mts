@@ -508,13 +508,21 @@ export const createRuntimeCommands = ({
       );
     }
     const cancellationSignal = getOperationCancellationSignal();
+    // VS Code extensions launch the package CLI through Electron's executable in
+    // Node mode. Preserve that mode only for Rehearsal's nested Node manager;
+    // project-owned application commands continue to receive the reduced
+    // project environment above.
+    const managerEnvironment: NodeJS.ProcessEnv = {
+      ...(cancellationSignal ? { REHEARSAL_CANCELLABLE_OPERATION: "1" } : {}),
+      ...(process.env.ELECTRON_RUN_AS_NODE === "1"
+        ? { ELECTRON_RUN_AS_NODE: "1" }
+        : {}),
+    };
     const result = await runOwnedProcess({
       command: process.execPath,
       args,
       cwd: projectRoot,
-      env: projectCommandEnvironment(
-        cancellationSignal ? { REHEARSAL_CANCELLABLE_OPERATION: "1" } : {},
-      ),
+      env: projectCommandEnvironment(managerEnvironment),
       ...(cancellationSignal ? { signal: cancellationSignal } : {}),
     });
     throwIfOperationCancelled();

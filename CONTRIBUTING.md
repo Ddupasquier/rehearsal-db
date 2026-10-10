@@ -22,6 +22,13 @@ For a deliberate follow-up, review the existing changes first, then continue the
 session with `dev-task --resume SESSION_UUID --effort high "follow-up task"`. Do not
 repeat partially completed tasks or create automatic retry loops.
 
+For cross-session recovery, use `dev-task context list`, then
+`dev-task context show TASK_OR_ID` and reconcile that historical checkpoint with the
+current branch, diff, documentation, and GitHub issue before continuing. Save a concise
+new revision with `dev-task context save FILE.json` when the objective or verified state
+changes. Central context is private recovery metadata—not a replacement for this
+repository's documentation or issue tracker, and never operational permission.
+
 Before opening a pull request:
 
 1. use Node.js 24 and install with `npm ci`;
