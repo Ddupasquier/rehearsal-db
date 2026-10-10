@@ -2,6 +2,26 @@
 
 Thank you for helping make database migration rehearsal safer.
 
+## Adaptive Codex workflow
+
+Start future tasks with `dev-task "task"`, or run VS Code's global
+**dev-task: adaptive Codex** user task. Global defaults and the Rehearsal profile apply
+automatically; this repository needs no router installation or registration. Routing is
+automatic only through those entry points. Direct Codex CLI/sidebar use and sessions
+already running do not inherit per-task effort, and documentation cannot change an
+active session's reasoning setting.
+
+Authentication, permission, sanitization, and migration-source changes may be
+implemented locally at high reasoning effort. Destructive database operations,
+production work, deployment, commits, and pushes are restricted to read-only planning.
+Use the default interactive mode when approval prompts may be needed, or `--exec` for
+headless sandboxed work with escalation denied. For measurable validation, pass
+`--validate '["npm","test"]'`.
+
+For a deliberate follow-up, review the existing changes first, then continue the exact
+session with `dev-task --resume SESSION_UUID --effort high "follow-up task"`. Do not
+repeat partially completed tasks or create automatic retry loops.
+
 Before opening a pull request:
 
 1. use Node.js 24 and install with `npm ci`;
