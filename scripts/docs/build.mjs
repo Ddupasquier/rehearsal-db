@@ -145,7 +145,7 @@ const renderHero = () => `<section class="hero">
   <div class="hero-copy">
     <p class="eyebrow"><span></span> Beyond empty-database testing</p>
     <h1>Your migration passed.<br/><em>Production still might not.</em></h1>
-    <p class="hero-lede">Existing rows, relationships, identities, files, and migration history are where risky changes break. Rehearse them locally before you deploy.</p>
+    <p class="hero-lede">Empty-database tests miss the rows that break your migration. Rehearsal restores a reviewed, sanitized baseline into a disposable local database, runs your approved migrations, and checks your app before you deploy.</p>
     <div class="hero-actions">
       <a class="button primary" href="${hrefFor("getting-started")}">Get started ${icon("arrow")}</a>
       <a class="button secondary" href="${hrefFor("tutorial")}">Try the tutorial</a>
@@ -153,13 +153,38 @@ const renderHero = () => `<section class="hero">
     <a class="download-count" href="${site.package}" target="_blank" rel="noreferrer">
       <img src="${site.downloadsBadge}" alt="Monthly downloads of @rehearsal-db/core from npm" />
     </a>
-    <div class="hero-proof" aria-label="Rehearsal guarantees">
+    <div class="hero-proof" aria-label="Rehearsal workflow">
       <span>✓ Reviewed baseline</span><span>✓ Exact migrations</span><span>✓ Your app proof</span>
     </div>
   </div>
   <div class="hero-art" aria-hidden="true">
     <img src="${base}assets/hero-stage.svg" alt="" />
   </div>
+</section>
+<section class="migration-story" aria-labelledby="migration-story-title">
+  <p class="eyebrow">One migration. Two very different outcomes.</p>
+  <h2 id="migration-story-title">An empty table passes. Your existing rows don't.</h2>
+  <p class="story-intro">You make an email column required. Your local database has no rows, so the migration passes. But older accounts still have missing emails.</p>
+  <pre aria-label="Example PostgreSQL migration"><code>ALTER TABLE accounts ALTER COLUMN email SET NOT NULL;</code></pre>
+  <ol class="story-steps">
+    <li>
+      <span class="story-label">01 · The surprise</span>
+      <h3>Find out during deployment</h3>
+      <p>On a database containing those older accounts, PostgreSQL rejects the change: the column still contains null values. Now you're fixing a migration during a release.</p>
+    </li>
+    <li>
+      <span class="story-label">02 · The rehearsal path</span>
+      <h3>Catch it in a disposable database</h3>
+      <p>Include the missing-email case in your reviewed, sanitized baseline. Rehearsal restores it locally and applies the migration there. The same failure happens before deployment.</p>
+    </li>
+    <li>
+      <span class="story-label">03 · Fix, reset, repeat</span>
+      <h3>Test the change and your app</h3>
+      <p>Decide how your app should handle older accounts, update the migration, and rehearse again from the baseline. Run your app's checks and walk through the sandbox before releasing.</p>
+    </li>
+  </ol>
+  <p class="story-limit">Illustrative PostgreSQL scenario. A rehearsal can only catch cases represented in its baseline and checks; passing is evidence, not a guarantee of production safety.</p>
+  <a class="button secondary" href="${hrefFor("tutorial")}">Try the hands-on tutorial ${icon("arrow")}</a>
 </section>
 <section class="install-strip" aria-label="Quick install">
   <div><span>01</span><p>Install it</p></div>
