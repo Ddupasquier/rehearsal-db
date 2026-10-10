@@ -20,6 +20,12 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   stop after success, proof failure, readiness timeout, or supported interruption. The
   compatibility default remains `keep-until-stop` for both `run` and `open`.
 
+### Fixed
+
+- Read-only runtime inspection now works when a VS Code extension launches the CLI
+  through Electron's executable in Node mode. That mode is preserved only for
+  Rehearsal's nested runtime manager and is not exposed to project-owned commands.
+
 ## [0.1.0-rc.2] - 2026-10-09
 
 ### Changed
