@@ -20,9 +20,35 @@ import {
 } from "./renderers.mjs";
 import { exactCommands, renderedCommand } from "./command_contract.mjs";
 import type { CommandDefinition } from "./command_contract.mjs";
+import { inspectProjectOperationState } from "../shared/operation_guard.mjs";
 
 export const createInspectionCommandHandlers =
   (): readonly CommandDefinition[] => [
+    exactCommands("activity", ["activity"], async ({ planOptions }) => {
+      const data = await inspectProjectOperationState({
+        projectRoot: planOptions.projectRoot ?? process.cwd(),
+      });
+      return renderedCommand({
+        data,
+        render: (result) => {
+          if (result.state === "idle") return "Rehearsal activity: idle.";
+          if (result.state === "invalid") {
+            return "Rehearsal activity: invalid lock state. No lock was changed; finish or diagnose the owning operation before retrying a mutation.";
+          }
+          const label = result.state === "busy" ? "busy" : "stale";
+          return [
+            `Rehearsal activity: ${label}.`,
+            `Operation: ${result.operation!.kind}`,
+            `Started: ${result.operation!.startedAt}`,
+            result.operation!.rehearsalVersion
+              ? `Rehearsal: ${result.operation!.rehearsalVersion}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join("\n");
+        },
+      });
+    }),
     exactCommands(
       "doctor",
       ["doctor"],

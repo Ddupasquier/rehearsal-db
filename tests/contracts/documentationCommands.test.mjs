@@ -29,6 +29,7 @@ const documentedCommands = [
   "identity connect",
   "doctor",
   "support",
+  "activity",
   "explain",
   "run --dry-run",
   "run --confirm-candidates=",
@@ -191,6 +192,8 @@ describe("documented CLI contract", () => {
       "runtimeStatus",
       "container_engine_unavailable",
       "health_check_failed",
+      "activity --json",
+      "stale",
       "cancellation and owned-child",
     ]) {
       expect(commandReference).toContain(machineContract);
@@ -221,6 +224,7 @@ describe("documented CLI contract", () => {
 
     expect(standaloneFixtureProof).toContain('"refresh"');
     expect(postgresqlFixtureProof).toContain("openApplicationSession");
+    expect(postgresqlFixtureProof).toContain('["activity", "--json"]');
     expect(applicationSessionProof).toContain('["open", "--plain"]');
   });
 

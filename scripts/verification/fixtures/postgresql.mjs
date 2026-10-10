@@ -199,6 +199,22 @@ const main = async () => {
       cwd,
       url: applicationUrl,
       whileReady: async () => {
+        const activity = JSON.parse(
+          executeCliOrThrow({
+            cwd,
+            args: ["activity", "--json"],
+            label: "busy operation activity",
+          }).stdout,
+        ).data;
+        if (
+          activity.state !== "busy" ||
+          activity.operation?.kind !== "open" ||
+          !activity.operation?.startedAt ||
+          !activity.operation?.rehearsalVersion ||
+          "pid" in activity.operation
+        ) {
+          throw new Error("Activity omitted its safe structured busy state.");
+        }
         const container = run(
           "docker",
           [
@@ -227,6 +243,18 @@ const main = async () => {
         );
       },
     });
+    const idleActivity = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        args: ["activity", "--json"],
+        label: "idle operation activity",
+      }).stdout,
+    ).data;
+    if (idleActivity.state !== "idle" || idleActivity.operation !== null) {
+      throw new Error(
+        "Activity did not return to idle after application exit.",
+      );
+    }
     await openApplicationTerminalSession({ cwd, url: applicationUrl });
     const container = run(
       "docker",
