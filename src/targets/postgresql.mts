@@ -37,6 +37,8 @@ import {
   writeRuntimeMarker,
 } from "../runtime/lifecycle_engine.mjs";
 import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
+import { emitRuntimeStatusSnapshot } from "../runtime/status.mjs";
+import { inspectPostgresqlRuntimeStatus } from "./postgresql_status.mjs";
 import { ensureLocalContainerRuntime } from "./supabase_environment.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
 import {
@@ -840,21 +842,20 @@ await runRuntimeLifecycle({
     status: async () => {
       const baseline = await verifyActiveBaseline({ artifactRoot });
       const receipt = await readCandidateReceipt(baseline);
-      const running =
-        commandSucceeds("docker", ["info"]) &&
-        resourceExists("container", containerName) &&
-        runCommand(
-          "docker",
-          ["inspect", "--format", "{{.State.Running}}", containerName],
-          { capture: true },
-        ).stdout.trim() === "true";
-      console.log(
-        `Local Rehearsal PostgreSQL: ${running ? `running on 127.0.0.1:${databasePort}` : "stopped"}`,
-      );
-      console.log(`Active sanitized baseline: ${baseline.generationId}`);
-      console.log(
-        `Candidate migrations (${receipt.candidateSha256}): ${receipt.candidates.map((candidate) => candidate.filename).join(", ") || "none"}`,
-      );
+      emitRuntimeStatusSnapshot({
+        structured: invocation.structuredResult,
+        status: inspectPostgresqlRuntimeStatus({
+          runCommand,
+          containerName,
+          databaseUser,
+          database,
+          databasePort,
+          projectId,
+          baselineGenerationId: baseline.generationId,
+          candidateSha256: receipt.candidateSha256,
+          candidates: receipt.candidates.map((candidate) => candidate.filename),
+        }),
+      });
     },
     candidates: async () => {
       const baseline = await verifyActiveBaseline({ artifactRoot });

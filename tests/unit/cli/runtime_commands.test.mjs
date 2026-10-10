@@ -10,6 +10,50 @@ import {
 } from "../../../dist/src/cli/runtime_commands.mjs";
 
 describe("runtime command diagnostics", () => {
+  it("returns validated structured runtime state without parsing human prose", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "rehearsal-status-"));
+    const managerPath = join(directory, "manager.mjs");
+    await writeFile(
+      managerPath,
+      `console.log(JSON.stringify({
+        schemaVersion: 1,
+        state: "running",
+        reason: null,
+        runtimeTarget: "supabase",
+        projectId: "fixture-rehearsal",
+        endpoint: { kind: "http", url: "http://127.0.0.1:54321" },
+        baselineGenerationId: "baseline-example",
+        candidateSha256: "${"a".repeat(64)}",
+        candidates: []
+      }));\n`,
+    );
+
+    try {
+      const commands = createRuntimeCommands({
+        packageRoot: directory,
+        projectRoot: directory,
+        managerPath,
+        getActivePackageFingerprint: () => null,
+      });
+      const receipt = commands.runManager({
+        action: "status",
+        flags: { json: true, plain: true },
+        configPath: "rehearsal.config.mjs",
+      });
+
+      expect(receipt.runtimeStatus).toMatchObject({
+        state: "running",
+        runtimeTarget: "supabase",
+        endpoint: { kind: "http", url: "http://127.0.0.1:54321" },
+      });
+      expect(receipt.output).toContain(
+        "Local Rehearsal Supabase: running at http://127.0.0.1:54321",
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("classifies container startup failures as runtime dependencies before migrations", () => {
     expect(
       classifyManagerFailure({

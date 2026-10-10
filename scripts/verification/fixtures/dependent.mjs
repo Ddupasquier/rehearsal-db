@@ -234,6 +234,19 @@ const main = async () => {
     });
     if (status.targets?.length !== 2)
       throw new Error("Status omitted a runtime target.");
+    if (
+      status.targets.some(
+        (target) =>
+          target.runtimeStatus?.schemaVersion !== 1 ||
+          target.runtimeStatus?.state !== "running" ||
+          target.runtimeStatus?.runtimeTarget !== "postgresql" ||
+          target.runtimeStatus?.endpoint?.kind !== "postgresql" ||
+          target.runtimeStatus?.endpoint?.host !== "127.0.0.1" ||
+          "password" in target.runtimeStatus.endpoint,
+      )
+    ) {
+      throw new Error("Status omitted a safe structured running state.");
+    }
     executeCliOrThrow({ cwd, label: "stack reset", args: ["reset", "--json"] });
     const stopped = executeCliOrThrow({
       cwd,
@@ -245,6 +258,21 @@ const main = async () => {
       "publication,primary"
     ) {
       throw new Error("The stack did not stop dependent runtimes first.");
+    }
+    const stoppedStatus = executeCliOrThrow({
+      cwd,
+      label: "stopped stack status",
+      args: ["status", "--json"],
+    });
+    if (
+      stoppedStatus.targets?.some(
+        (target) =>
+          target.runtimeStatus?.state !== "stopped" ||
+          target.runtimeStatus?.reason !== "runtime_not_running" ||
+          target.runtimeStatus?.endpoint !== null,
+      )
+    ) {
+      throw new Error("Status did not report every stopped runtime safely.");
     }
     executeCliOrThrow({ cwd, label: "stack start", args: ["start", "--json"] });
     const cleanup = executeCliOrThrow({

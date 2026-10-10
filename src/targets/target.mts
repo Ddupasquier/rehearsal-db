@@ -22,6 +22,7 @@ export interface RuntimeInvocation {
   readonly action: string;
   readonly configPath: string | undefined;
   readonly confirmation: string | undefined;
+  readonly structuredResult: boolean;
 }
 
 export interface RuntimeManagerArguments {
@@ -29,6 +30,7 @@ export interface RuntimeManagerArguments {
   action: string;
   configPath?: string;
   confirmation?: string;
+  structuredResult?: boolean;
 }
 
 export const REHEARSAL_RUNTIME_TARGETS = Object.freeze(
@@ -47,6 +49,7 @@ export const parseRuntimeInvocation = (
     action: action ?? "status",
     configPath: valueAfter("--config="),
     confirmation: valueAfter("--confirm-candidates="),
+    structuredResult: arguments_.includes("--structured-result"),
   });
 };
 
@@ -55,11 +58,13 @@ export const buildRuntimeManagerArguments = ({
   action,
   configPath,
   confirmation,
+  structuredResult = false,
 }: RuntimeManagerArguments): string[] => [
   managerPath,
   action,
   ...(configPath ? [`--config=${configPath}`] : []),
   ...(confirmation ? [`--confirm-candidates=${confirmation}`] : []),
+  ...(structuredResult ? ["--structured-result"] : []),
 ];
 
 export const resolveRuntimeTarget = (

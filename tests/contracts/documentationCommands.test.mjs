@@ -188,7 +188,9 @@ describe("documented CLI contract", () => {
       "Invalid configuration",
       "Runtime dependency failure",
       "project's installed `@rehearsal-db/core`",
-      "does not provide running/stopped state as a",
+      "runtimeStatus",
+      "container_engine_unavailable",
+      "health_check_failed",
       "cancellation and owned-child",
     ]) {
       expect(commandReference).toContain(machineContract);

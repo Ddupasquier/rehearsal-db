@@ -174,9 +174,42 @@ files, search for a global installation, invoke through a shell, or parse styled
 Keep each workspace folder isolated, pass an explicit project-relative `--config` when
 needed, and run nothing until the workspace is trusted.
 
-In the current contract, `status --json` does not provide running/stopped state as a
-structured field, and it does not report a structured active-operation lock. A client
-must display that detail as unavailable instead of parsing the human `data.output` text.
+`status --json` reports a `runtimeStatus` object for one target. A multi-target project
+reports the same object under every entry in `data.targets`. Clients should read these
+fields and ignore the compatibility-only human `output` string:
+
+```json
+{
+  "schemaVersion": 1,
+  "state": "running",
+  "reason": null,
+  "runtimeTarget": "supabase",
+  "projectId": "example-rehearsal",
+  "endpoint": {
+    "kind": "http",
+    "url": "http://127.0.0.1:54321"
+  },
+  "baselineGenerationId": "20261009T120000Z-example",
+  "candidateSha256": "…",
+  "candidates": []
+}
+```
+
+| Runtime state | Meaning                                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| `running`     | The target is running and its health check passed. A credential-free loopback endpoint is present.   |
+| `stopped`     | No target workload is running. Existing local state may still be retained.                           |
+| `unavailable` | The shared container engine cannot currently be inspected. Rehearsal does not start it for `status`. |
+| `unhealthy`   | Target workloads are running, but the target health check did not pass.                              |
+
+`reason` is respectively `null`, `runtime_not_running`,
+`container_engine_unavailable`, or `health_check_failed`. PostgreSQL endpoints contain
+only `kind`, loopback `host`, `port`, and database name; credentials are never included.
+An unknown status schema version, state, reason, target, remote endpoint, or malformed
+digest is rejected before it reaches the public result.
+
+The current contract still does not report a structured active-operation lock. A client
+must display that detail as unavailable instead of inspecting private lock files.
 Mutating editor actions also remain out of scope until their cancellation and owned-child
 cleanup behavior is documented. These limits do not affect ordinary terminal use.
 
