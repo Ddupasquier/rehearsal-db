@@ -150,19 +150,20 @@ as the interface. Reject an unknown schema version. Do not infer state from pros
 `data.output` field. `--version --json` is intentionally smaller and returns only
 `name` and `version`.
 
-| Exit | Meaning                                        |
-| ---- | ---------------------------------------------- |
-| `0`  | Success                                        |
-| `1`  | A check completed but the project is not ready |
-| `2`  | Invalid configuration                          |
-| `3`  | Unsafe environment                             |
-| `4`  | Invalid baseline                               |
-| `5`  | Baseline checksum mismatch                     |
-| `6`  | Candidate migration failure                    |
-| `7`  | Migration verification failure                 |
-| `8`  | Application proof failure                      |
-| `9`  | Runtime dependency failure                     |
-| `10` | Internal failure                               |
+| Exit  | Meaning                                        |
+| ----- | ---------------------------------------------- |
+| `0`   | Success                                        |
+| `1`   | A check completed but the project is not ready |
+| `2`   | Invalid configuration                          |
+| `3`   | Unsafe environment                             |
+| `4`   | Invalid baseline                               |
+| `5`   | Baseline checksum mismatch                     |
+| `6`   | Candidate migration failure                    |
+| `7`   | Migration verification failure                 |
+| `8`   | Application proof failure                      |
+| `9`   | Runtime dependency failure                     |
+| `10`  | Internal failure                               |
+| `130` | A supported mutating operation was cancelled   |
 
 An error result keeps `schemaVersion`, `rehearsalVersion`, and `status: "error"`, then
 provides a stable category, code, safe message, suggestions, diagnostic ID, and redacted
@@ -217,8 +218,35 @@ PID, arguments, lock path, token, credentials, URLs, or raw lock contents. `acti
 does not remove a stale or malformed lock, stop a process, or mutate runtime resources.
 Clients should disable conflicting actions unless the state is `idle`.
 
-Mutating editor actions also remain out of scope until their cancellation and owned-child
-cleanup behavior is documented. These limits do not affect ordinary terminal use.
+### Cancelling a mutation
+
+`run`, `reset`, `migrate`, and confirmed `refresh` support package-owned cancellation.
+Send `SIGINT`, `SIGTERM`, `SIGHUP`, or `SIGTSTP` to the Rehearsal CLI process. Rehearsal
+handles repeated delivery as one request, forwards it only to the detached process group
+it launched, waits for package rollback and child cleanup, releases the project lock, and
+then returns exit `130`. With `--json`, the stable error category is
+`operation_cancelled`, the code is `OPERATION_CANCELLED`, and safe context identifies
+the first signal.
+
+For `reset` and `migrate`, an interrupted unverified runtime is removed while the
+immutable baseline remains available. For `refresh`, Rehearsal shields rollback from the
+cancellation request and restores the previous baseline and verified runtime before it
+reports cancellation. If `run` is interrupted after its runtime phase has already passed,
+the verified local runtime may remain; use `status` and `verify` before retrying. Candidate
+digests and confirmation requirements do not change.
+
+The CLI does not stop Docker itself, signal unrelated processes, prune shared resources,
+or delete unrelated volumes. `SIGTSTP` is treated as cancellation and becomes `SIGTERM`
+for the owned child group instead of suspending it mid-cleanup. Windows uses direct child
+signalling; the detached process-group guarantee is supported on macOS and Linux.
+
+`SIGKILL`, host shutdown, and a force-quit cannot produce a result or run cleanup. After
+one of those events, clients must not guess: run `activity --json`. A `stale` or `invalid`
+state is not permission to delete a lock or runtime. Run `status`, `doctor`, and `verify`,
+then let the next reviewed mutation use Rehearsal's existing stale-lock recovery.
+
+Other mutating commands remain terminal-only until they receive an equally specific
+transaction and cancellation contract. The first editor prototype remains read-only.
 
 ## Run and manage the local sandbox
 

@@ -37,6 +37,11 @@ import {
 } from "../source/postgresql_access.mjs";
 import { loadRuntimeTopology } from "../runtime/topology.mjs";
 import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
+import {
+  isOperationCancelled,
+  throwIfOperationCancelled,
+  withOperationCancellationShield,
+} from "../shared/cancellation.mjs";
 
 interface SourceAccessReceipt {
   readonly targetFingerprint: string;
@@ -332,6 +337,7 @@ export const createRefreshWorkflow =
     topologyCommandEnvironment,
     buildPlan = buildRefreshWorkflowPlan,
     refreshBaseline = runSourceBaselineRefresh,
+    activateBaseline = activateBaselineGeneration,
   }: {
     runRuntimeStack: (input: {
       command: "reset";
@@ -342,7 +348,7 @@ export const createRefreshWorkflow =
     prepareDependentTargets: (input: {
       topology: RuntimeTopology;
       environment: NodeJS.ProcessEnv;
-    }) => unknown[];
+    }) => Promise<unknown[]>;
     topologyCommandEnvironment: (
       topology: RuntimeTopology,
     ) => NodeJS.ProcessEnv;
@@ -350,6 +356,7 @@ export const createRefreshWorkflow =
       options: RehearsalConfigPathOptions,
     ) => Promise<RefreshPlanContext>;
     refreshBaseline?: typeof runSourceBaselineRefresh;
+    activateBaseline?: typeof activateBaselineGeneration;
   }) =>
   async ({
     flags,
@@ -370,34 +377,40 @@ export const createRefreshWorkflow =
     let runtime: unknown;
     let preparations: unknown[] = [];
     try {
+      throwIfOperationCancelled();
       refreshed = await refreshBaseline({ planOptions });
+      throwIfOperationCancelled();
       const stack = await runRuntimeStack({
         command: "reset",
         flags,
         planOptions,
         session,
       });
+      throwIfOperationCancelled();
       runtime = stack.runtime;
-      preparations = prepareDependentTargets({
+      preparations = await prepareDependentTargets({
         topology: stack.topology,
         environment: topologyCommandEnvironment(stack.topology),
       });
+      throwIfOperationCancelled();
     } catch (error) {
       if (refreshed) {
-        await activateBaselineGeneration({
-          artifactRoot: context.loaded.paths.artifactDirectory,
-          generationId: context.plan.review.currentBaseline,
-        });
         try {
-          const rollback = await runRuntimeStack({
-            command: "reset",
-            flags,
-            planOptions,
-            session,
-          });
-          prepareDependentTargets({
-            topology: rollback.topology,
-            environment: topologyCommandEnvironment(rollback.topology),
+          await withOperationCancellationShield(async () => {
+            await activateBaseline({
+              artifactRoot: context.loaded.paths.artifactDirectory,
+              generationId: context.plan.review.currentBaseline,
+            });
+            const rollback = await runRuntimeStack({
+              command: "reset",
+              flags,
+              planOptions,
+              session,
+            });
+            await prepareDependentTargets({
+              topology: rollback.topology,
+              environment: topologyCommandEnvironment(rollback.topology),
+            });
           });
         } catch (rollbackError) {
           throw new AggregateError(
@@ -405,6 +418,7 @@ export const createRefreshWorkflow =
             "The refreshed runtime failed and the previous local runtime could not be restored automatically. The previous immutable baseline is active; run rehearsal reset after correcting the reported problem.",
           );
         }
+        if (isOperationCancelled(error)) throw error;
         throw new Error(
           "The refreshed runtime failed verification. Rehearsal restored the previous baseline and local runtime.",
           { cause: error },

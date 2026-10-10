@@ -51,6 +51,10 @@ import {
   createRefreshWorkflow,
 } from "./source_commands.mjs";
 import { installGuidedExitShortcut, useStyledPrompts } from "./terminal.mjs";
+import {
+  runWithOperationCancellation,
+  supportsOperationCancellation,
+} from "../shared/cancellation.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = process.cwd();
@@ -144,76 +148,83 @@ const main = async () => {
         command: guided ? "guide" : command,
       })
     : null;
-  if (operation) {
-    activePackageFingerprint = createInstalledPackageFingerprint({
-      packageRoot,
-    });
-  }
-  try {
-    if (!guided) {
-      await executeCommand({ command, flags, planOptions, guided: false });
-      return;
-    }
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
-      throw new Error(
-        "The guided home screen requires an interactive terminal. Run rehearsal --help to list scriptable commands.",
-      );
-    }
-    flags.guided = true;
-    const installExitShortcut = () =>
-      installGuidedExitShortcut(flags, {
-        beforeExit: () => operation?.releaseSync(),
+  const run = async () => {
+    if (operation) {
+      activePackageFingerprint = createInstalledPackageFingerprint({
+        packageRoot,
       });
-    let removeGuidedExitShortcut: (() => void) | null = installExitShortcut();
-    if (useStyledPrompts(flags)) {
-      prompts.intro("REHEARSAL · Safe local migration testing");
     }
     try {
-      while (true) {
-        resetGuidedFlags(flags);
-        resetCommandSessionState(state);
-        const selected = await runGuidedHome({ flags, planOptions });
-        if (!selected) break;
-        if (selected === "home") continue;
-        const opensApplication = selected === "open";
-        if (opensApplication) {
-          removeGuidedExitShortcut?.();
-          removeGuidedExitShortcut = null;
-        }
-        try {
-          await executeCommand({
-            command: selected,
-            flags,
-            planOptions,
-            guided: true,
-          });
-        } finally {
+      if (!guided) {
+        await executeCommand({ command, flags, planOptions, guided: false });
+        return;
+      }
+      if (!process.stdin.isTTY || !process.stdout.isTTY) {
+        throw new Error(
+          "The guided home screen requires an interactive terminal. Run rehearsal --help to list scriptable commands.",
+        );
+      }
+      flags.guided = true;
+      const installExitShortcut = () =>
+        installGuidedExitShortcut(flags, {
+          beforeExit: () => operation?.releaseSync(),
+        });
+      let removeGuidedExitShortcut: (() => void) | null = installExitShortcut();
+      if (useStyledPrompts(flags)) {
+        prompts.intro("REHEARSAL · Safe local migration testing");
+      }
+      try {
+        while (true) {
+          resetGuidedFlags(flags);
+          resetCommandSessionState(state);
+          const selected = await runGuidedHome({ flags, planOptions });
+          if (!selected) break;
+          if (selected === "home") continue;
+          const opensApplication = selected === "open";
           if (opensApplication) {
-            removeGuidedExitShortcut = installExitShortcut();
+            removeGuidedExitShortcut?.();
+            removeGuidedExitShortcut = null;
           }
+          try {
+            await executeCommand({
+              command: selected,
+              flags,
+              planOptions,
+              guided: true,
+            });
+          } finally {
+            if (opensApplication) {
+              removeGuidedExitShortcut = installExitShortcut();
+            }
+          }
+          if (flags.exitGuidedSession) break;
         }
-        if (flags.exitGuidedSession) break;
+      } finally {
+        removeGuidedExitShortcut?.();
+      }
+      if (useStyledPrompts(flags)) {
+        prompts.outro("See you at the next rehearsal.");
+      } else {
+        console.log("See you at the next rehearsal.");
       }
     } finally {
-      removeGuidedExitShortcut?.();
-    }
-    if (useStyledPrompts(flags)) {
-      prompts.outro("See you at the next rehearsal.");
-    } else {
-      console.log("See you at the next rehearsal.");
-    }
-  } finally {
-    if (operation) {
-      try {
-        assertInstalledPackageFingerprint({
-          packageRoot,
-          expected: activePackageFingerprint!,
-        });
-      } finally {
-        activePackageFingerprint = null;
-        await operation.release();
+      if (operation) {
+        try {
+          assertInstalledPackageFingerprint({
+            packageRoot,
+            expected: activePackageFingerprint!,
+          });
+        } finally {
+          activePackageFingerprint = null;
+          await operation.release();
+        }
       }
     }
+  };
+  if (operation && !guided && supportsOperationCancellation(command)) {
+    await runWithOperationCancellation({ task: run });
+  } else {
+    await run();
   }
 };
 

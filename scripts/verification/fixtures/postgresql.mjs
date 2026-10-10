@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
 import { removeBaselineArtifactRoot } from "../../../dist/src/baseline/artifact.mjs";
 import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
 import {
@@ -29,6 +30,7 @@ import {
   executeInstalledCli,
   runScenarioCommand,
 } from "../scenarios/process.mjs";
+import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");
@@ -298,6 +300,137 @@ const main = async () => {
     ]) {
       executeCliOrThrow({ cwd, label, args });
     }
+    const slowMigrationPath = join(
+      cwd,
+      "database/migrations/20260101000200_slow_candidate.sql",
+    );
+    await writeFile(slowMigrationPath, "select pg_sleep(30);\n");
+    const cancellationPlan = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        label: "cancellation plan",
+        args: ["explain", "--json"],
+      }).stdout,
+    ).data;
+    const cancellationChild = spawn(
+      join(cwd, "node_modules/.bin/rehearsal"),
+      [
+        "migrate",
+        `--confirm-candidates=${cancellationPlan.migrations.candidateSha256}`,
+        "--json",
+      ],
+      {
+        cwd,
+        env: createCleanProcessEnvironment(),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let cancellationStdout = "";
+    let cancellationStderr = "";
+    cancellationChild.stdout.on("data", (chunk) => {
+      cancellationStdout += chunk;
+    });
+    cancellationChild.stderr.on("data", (chunk) => {
+      cancellationStderr += chunk;
+    });
+    const cancellationExit = new Promise((resolve) =>
+      cancellationChild.once("exit", (status, signal) =>
+        resolve({ status, signal }),
+      ),
+    );
+    let migrationObserved = false;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (cancellationChild.exitCode !== null) break;
+      const activity = JSON.parse(
+        executeCliOrThrow({
+          cwd,
+          args: ["activity", "--json"],
+          label: "cancellable migration activity",
+        }).stdout,
+      ).data;
+      if (activity.state === "busy" && activity.operation?.kind === "migrate") {
+        const active = run(
+          "docker",
+          [
+            "exec",
+            container,
+            "psql",
+            "--quiet",
+            "--no-align",
+            "--tuples-only",
+            "--username",
+            "postgres",
+            "--dbname",
+            "postgres",
+            "--command",
+            "select exists(select 1 from pg_stat_activity where pid <> pg_backend_pid() and state = 'active' and query = 'select pg_sleep(30);');",
+          ],
+          { cwd },
+        ).trim();
+        if (active === "t") {
+          migrationObserved = true;
+          break;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!migrationObserved) {
+      cancellationChild.kill("SIGTERM");
+      await cancellationExit;
+      throw new Error(
+        `The cancellable migration did not reach its controlled wait: ${cancellationStdout || cancellationStderr}`,
+      );
+    }
+    const cancellationRequestedAt = performance.now();
+    cancellationChild.kill("SIGINT");
+    cancellationChild.kill("SIGINT");
+    const cancelled = await cancellationExit;
+    const cancellationLatencyMs = performance.now() - cancellationRequestedAt;
+    if (cancelled.status !== 130 || cancellationLatencyMs > 10_000) {
+      throw new Error(
+        `The cancellable migration exited ${cancelled.status ?? cancelled.signal} after ${Math.round(cancellationLatencyMs)}ms: ${cancellationStdout || cancellationStderr}`,
+      );
+    }
+    const cancellationFailure = JSON.parse(cancellationStdout).error;
+    if (
+      cancellationFailure?.category !== "operation_cancelled" ||
+      cancellationFailure?.code !== "OPERATION_CANCELLED" ||
+      cancellationFailure?.context?.signal !== "SIGINT"
+    ) {
+      throw new Error(
+        `The migration returned an invalid cancellation envelope: ${cancellationStdout}`,
+      );
+    }
+    const afterCancellation = JSON.parse(
+      executeCliOrThrow({
+        cwd,
+        args: ["activity", "--json"],
+        label: "post-cancellation activity",
+      }).stdout,
+    ).data;
+    if (afterCancellation.state !== "idle") {
+      throw new Error(
+        "The cancelled migration did not release its operation lock.",
+      );
+    }
+    const cancelledContainers = run(
+      "docker",
+      [
+        "ps",
+        "--all",
+        "--filter",
+        `label=com.rehearsal-db.project=${projectId}`,
+        "--format",
+        "{{.Names}}",
+      ],
+      { cwd },
+    ).trim();
+    if (cancelledContainers) {
+      throw new Error(
+        `The cancelled migration left an unverified runtime behind: ${cancelledContainers}`,
+      );
+    }
+    await rm(slowMigrationPath);
     const cleanupPlan = JSON.parse(
       executeCliOrThrow({
         cwd,

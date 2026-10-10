@@ -44,7 +44,7 @@ type RunManager = (input: {
   flags: RehearsalCliFlags;
   configPath?: string;
   targetName?: string;
-}) => unknown;
+}) => Promise<unknown>;
 
 interface ProjectCommandInput {
   readonly flags: RehearsalCliFlags;
@@ -218,7 +218,7 @@ export const createProjectCommands = ({
             projectRoot,
             configPath: target.configPath,
             removeRuntime: async () => {
-              runManager({
+              await runManager({
                 action: "discard",
                 flags,
                 configPath: target.configPath,
@@ -241,7 +241,7 @@ export const createProjectCommands = ({
         : { confirmation: flags.cleanupConfirmation }),
       ...planOptions,
       removeRuntime: async () => {
-        runManager({ action: "discard", flags });
+        await runManager({ action: "discard", flags });
       },
     });
     return { mode: "written", plan, applied };

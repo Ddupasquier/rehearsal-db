@@ -35,7 +35,7 @@ describe("runtime command diagnostics", () => {
         managerPath,
         getActivePackageFingerprint: () => null,
       });
-      const receipt = commands.runManager({
+      const receipt = await commands.runManager({
         action: "status",
         flags: { json: true, plain: true },
         configPath: "rehearsal.config.mjs",
@@ -119,7 +119,7 @@ Swap: 0 0 0
       });
       let failure;
       try {
-        commands.runManager({
+        await commands.runManager({
           action: "run",
           flags: { json: true, plain: true },
           configPath: "rehearsal.config.mjs",

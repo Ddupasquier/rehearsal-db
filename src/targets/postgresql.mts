@@ -1,8 +1,3 @@
-/**
- * Purpose: Restore and manage a disposable, loopback-only PostgreSQL runtime from
- * the active verified Rehearsal baseline.
- */
-
 import { spawn, spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -40,6 +35,15 @@ import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
 import { emitRuntimeStatusSnapshot } from "../runtime/status.mjs";
 import { inspectPostgresqlRuntimeStatus } from "./postgresql_status.mjs";
 import { ensureLocalContainerRuntime } from "./supabase_environment.mjs";
+import {
+  getOperationCancellationSignal,
+  throwIfOperationCancelled,
+} from "../shared/cancellation.mjs";
+import {
+  bindOwnedProcessCancellation,
+  signalOwnedProcessGroup,
+} from "../shared/owned_process.mjs";
+import { runOwnedPostgresqlSql } from "./postgresql_process.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
 import {
   buildRuntimeFinalizationSql,
@@ -148,6 +152,7 @@ const runCommand = (
     maxBuffer: 16 * 1024 * 1024,
     stdio: piped ? ["pipe", "pipe", "pipe"] : "inherit",
   });
+  throwIfOperationCancelled();
   if (!allowFailure && result.error) throw result.error;
   if (!allowFailure && result.status !== 0) {
     const detail = [result.stdout, result.stderr]
@@ -329,7 +334,13 @@ const applyMigration = async ({
   directory: string;
 }): Promise<void> => {
   const source = await readFile(join(directory, migration.filename), "utf8");
-  runPsql(source, { capture: false });
+  await runOwnedPostgresqlSql({
+    containerName,
+    database,
+    databaseUser,
+    repositoryRoot,
+    sql: source,
+  });
   runPsql(`insert into rehearsal_internal.schema_migrations
   (version, name, file_sha256)
 values (
@@ -421,6 +432,7 @@ const restoreBaselineRows = async ({
     ],
     {
       cwd: repositoryRoot,
+      detached: process.platform !== "win32",
       env: createCleanProcessEnvironment(),
       stdio: ["pipe", "ignore", "pipe"],
     },
@@ -433,6 +445,11 @@ const restoreBaselineRows = async ({
   const completion = new Promise<number | null>((complete, reject) => {
     child.once("error", reject);
     child.once("close", complete);
+  });
+  const cancellationSignal = getOperationCancellationSignal();
+  const unbindCancellation = bindOwnedProcessCancellation({
+    child,
+    ...(cancellationSignal ? { signal: cancellationSignal } : {}),
   });
   child.stdin.on("error", () => undefined);
   try {
@@ -467,9 +484,11 @@ const restoreBaselineRows = async ({
       );
     }
   } catch (error) {
-    if (child.exitCode === null) child.kill("SIGTERM");
+    if (child.exitCode === null) signalOwnedProcessGroup(child, "SIGTERM");
     await completion.catch(() => undefined);
     throw error;
+  } finally {
+    unbindCancellation();
   }
 };
 
