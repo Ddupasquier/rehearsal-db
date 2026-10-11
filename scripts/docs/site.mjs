@@ -17,7 +17,7 @@ export const groups = Object.freeze([
   {
     label: "Start here",
     eyebrow: "First steps",
-    pages: ["", "getting-started", "tutorial", "troubleshooting"],
+    pages: ["", "getting-started", "vscode", "tutorial", "troubleshooting"],
   },
   {
     label: "Work safely",
@@ -69,6 +69,13 @@ export const pages = Object.freeze([
     source: "getting-started.md",
     title: "Getting started",
     description: "Install Rehearsal and prepare your first local sandbox.",
+  },
+  {
+    slug: "vscode",
+    source: "vscode.md",
+    title: "VS Code extension",
+    description:
+      "Use Rehearsal through a project-aware visual database-change workbench.",
   },
   {
     slug: "tutorial",

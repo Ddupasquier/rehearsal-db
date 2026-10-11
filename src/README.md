@@ -12,7 +12,9 @@ declarations into `dist/`; edit this source tree, never the generated output.
 - `identity/` associates copied data with verified local users.
 - `project/` owns configuration, setup, and support reporting. Configuration discovery,
   raw schema validation, normalization, owned-path resolution, project detection, and
-  starter rendering stay in separate typed modules behind one stable facade.
+  starter rendering stay in separate typed modules behind one stable facade. The
+  Project Profile is a separate, versioned read-only discovery contract; it never imports
+  project code or reads private environment values.
 - `runtime/` plans, verifies, resets, migrates, and cleans local runtimes.
 - `shared/` contains small target-neutral infrastructure.
 - `source/` controls approved source access and baseline refresh.

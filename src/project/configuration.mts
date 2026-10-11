@@ -19,6 +19,22 @@ export type { NormalizedRehearsalConfig } from "./configuration_resolution.mjs";
 export { inspectDetectedProject } from "./project_detection.mjs";
 export type { DetectedProject } from "./project_detection.mjs";
 export {
+  discoverProjectProfile,
+  probeContainerEngineWithoutStarting,
+  PROJECT_DISCOVERY_SCHEMA_VERSION,
+} from "./project_discovery.mjs";
+export type {
+  ContainerEngineProbe,
+  DecisionDiscoveryItem,
+  DetectedDiscoveryItem,
+  DiscoveredConfigurationField,
+  DiscoveryConfidence,
+  DiscoveryEvidence,
+  DiscoveryValue,
+  ProjectDiscoveryResult,
+  SuggestedDiscoveryItem,
+} from "./project_discovery.mjs";
+export {
   renderDetectedConfig,
   renderDetectedPostgresqlConfig,
 } from "./configuration_rendering.mjs";

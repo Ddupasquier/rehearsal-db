@@ -82,6 +82,14 @@ configuration work moves through explicit phases:
 4. `configuration_resolution.mts` resolves owned paths from the project root and checks
    destructive-operation boundaries.
 
+The `project_discovery.mts` facade orchestrates the separate read-only Project Profile.
+Its versioned contract, bounded metadata access, and application inference live in
+focused `project_discovery_*` modules. They never import project modules and classify
+output as detected, suggested, or requiring a human decision. Discovery may report
+proposed configuration fields, but setup and configuration rendering remain the only
+owners that can prepare writes. Editor clients consume `rehearsal discover --json`;
+they do not reproduce comprehensive discovery rules.
+
 The public contract/defaults, primitive validators, project detection, and starter
 rendering have their own focused modules. `NormalizedRehearsalConfig` is inferred from
 the normalizer, while the package's public declarations are emitted from the same

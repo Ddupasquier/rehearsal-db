@@ -93,6 +93,18 @@ export interface BaselinePrunePlan {
   readonly removed: string[];
 }
 
+export interface BaselineGenerationSummary {
+  readonly generationId: string;
+  readonly createdAt: string | null;
+  readonly active: boolean;
+  readonly formatVersion: 1 | 2;
+  readonly rowCount: number;
+  readonly tableCount: number;
+  readonly migrationCount: number;
+  readonly migrationCutoff: string;
+  readonly storageAssetCount: number;
+}
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -146,6 +158,15 @@ const assertGenerationId = (value: unknown): string => {
     );
   }
   return value;
+};
+
+const generationCreatedAt = (generationId: string): string | null => {
+  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z-/u.exec(
+    generationId,
+  );
+  return match
+    ? `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}Z`
+    : null;
 };
 
 const assertArtifactRoot = (artifactRoot: string): string => {
@@ -594,6 +615,73 @@ export const resolveActiveBaselinePaths = async ({
     migrationsDirectory: join(generationDirectory, "migrations"),
     schemaPath: join(generationDirectory, "production-schema.sql"),
   };
+};
+
+export const inspectBaselineGenerations = async ({
+  artifactRoot,
+}: {
+  artifactRoot: string;
+}): Promise<readonly BaselineGenerationSummary[]> => {
+  const root = assertArtifactRoot(artifactRoot);
+  const active = basename(
+    (await resolveActiveBaselinePaths({ artifactRoot: root }))
+      .generationDirectory,
+  );
+  const generationsRoot = join(root, generationsDirectoryName);
+  await verifyNoSymlink(generationsRoot, "The Rehearsal generations directory");
+  const entries = await readdir(generationsRoot, { withFileTypes: true });
+  if (entries.length > 1_000) {
+    throw new Error("The Rehearsal baseline generation limit was exceeded.");
+  }
+  const summaries: BaselineGenerationSummary[] = [];
+  for (const entry of entries.sort((left, right) =>
+    right.name.localeCompare(left.name),
+  )) {
+    if (!entry.isDirectory() || !generationPattern.test(entry.name)) continue;
+    const generationDirectory = assertInsideRoot(
+      root,
+      join(generationsRoot, entry.name),
+    );
+    await verifyNoSymlink(
+      generationDirectory,
+      "A Rehearsal baseline generation",
+    );
+    const manifest = parseManifest(
+      await readFile(
+        join(generationDirectory, "baseline-manifest.json"),
+        "utf8",
+      ),
+    );
+    if (
+      manifest.generationId !== entry.name ||
+      ![1, 2].includes(manifest.formatVersion) ||
+      !Number.isSafeInteger(manifest.rowCount) ||
+      manifest.rowCount < 0 ||
+      !isObject(manifest.tableCounts) ||
+      !isObject(manifest.migrations) ||
+      !isObject(manifest.storageAssets) ||
+      typeof manifest.migrationCutoff !== "string"
+    ) {
+      throw new Error(
+        `Rehearsal baseline generation ${entry.name} has an invalid manifest.`,
+      );
+    }
+    summaries.push({
+      generationId: entry.name,
+      createdAt: generationCreatedAt(entry.name),
+      active: entry.name === active,
+      formatVersion: manifest.formatVersion,
+      rowCount: manifest.rowCount,
+      tableCount: Object.keys(manifest.tableCounts).length,
+      migrationCount: Object.keys(manifest.migrations).length,
+      migrationCutoff: manifest.migrationCutoff,
+      storageAssetCount: Object.keys(manifest.storageAssets).length,
+    });
+  }
+  if (!summaries.some(({ active: isActive }) => isActive)) {
+    throw new Error("The active Rehearsal baseline generation is unavailable.");
+  }
+  return Object.freeze(summaries.map((summary) => Object.freeze(summary)));
 };
 
 export const verifyActiveBaseline = async ({

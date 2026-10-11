@@ -136,6 +136,12 @@ describe("Rehearsal plan", () => {
       open: "keep-until-stop",
       dataOnStop: "preserved",
     });
+    expect(first.application).toEqual({
+      startCommand: "npm run dev",
+      proofCommand: "npm test",
+      readiness: null,
+    });
+    expect(first.cleanup).toEqual({ retainBaselineGenerations: 2 });
     expect(first.guarantee).toBe("No production resources will be contacted.");
   });
 

@@ -183,6 +183,28 @@ export const readMatchingRuntimeMarker = async ({
   return marker as Readonly<Record<string, unknown>>;
 };
 
+/** Read-only status helper: missing, malformed, or stale receipts are unavailable. */
+export const hasMatchingRuntimeMarker = async ({
+  path,
+  expected,
+  validate = () => true,
+}: {
+  path: PathLike;
+  expected: Readonly<Record<string, unknown>>;
+  validate?: (marker: Readonly<Record<string, unknown>>) => boolean;
+}): Promise<boolean> => {
+  try {
+    const marker = await readMatchingRuntimeMarker({
+      path,
+      expected,
+      mismatchMessage: "Runtime receipt does not match.",
+    });
+    return validate(marker);
+  } catch {
+    return false;
+  }
+};
+
 export const withOwnedRuntimeRollback = async <Result,>({
   operation,
   rollback,

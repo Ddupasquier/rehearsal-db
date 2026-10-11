@@ -21,6 +21,7 @@ describe("runtime command diagnostics", () => {
         reason: null,
         runtimeTarget: "supabase",
         projectId: "fixture-rehearsal",
+        verifiedRuntimeAvailable: true,
         endpoint: { kind: "http", url: "http://127.0.0.1:54321" },
         baselineGenerationId: "baseline-example",
         candidateSha256: "${"a".repeat(64)}",
@@ -60,7 +61,7 @@ describe("runtime command diagnostics", () => {
     const previousElectronMode = process.env.ELECTRON_RUN_AS_NODE;
     await writeFile(
       managerPath,
-      `if (process.env.ELECTRON_RUN_AS_NODE !== "1") process.exit(42);\nconsole.log(JSON.stringify({ schemaVersion: 1, state: "stopped", reason: "runtime_not_running", runtimeTarget: "postgresql", projectId: "fixture-rehearsal", endpoint: null, baselineGenerationId: "20261010T120000Z-example", candidateSha256: "${"a".repeat(64)}", candidates: [] }));\n`,
+      `if (process.env.ELECTRON_RUN_AS_NODE !== "1") process.exit(42);\nconsole.log(JSON.stringify({ schemaVersion: 1, state: "stopped", reason: "runtime_not_running", runtimeTarget: "postgresql", projectId: "fixture-rehearsal", verifiedRuntimeAvailable: true, endpoint: null, baselineGenerationId: "20261010T120000Z-example", candidateSha256: "${"a".repeat(64)}", candidates: [] }));\n`,
     );
 
     try {

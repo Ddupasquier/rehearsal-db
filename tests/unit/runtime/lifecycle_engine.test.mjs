@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertCandidateConfirmation,
+  hasMatchingRuntimeMarker,
   readMatchingRuntimeMarker,
   runRuntimeLifecycle,
   withOwnedRuntimeRollback,
@@ -177,6 +178,35 @@ describe("shared runtime lifecycle engine", () => {
         mismatchMessage: "reset required",
       }),
     ).rejects.toThrow("reset required");
+    await fixture.cleanup();
+  });
+
+  it("reports matching runtime receipts without throwing or repairing them", async () => {
+    const fixture = await createFixture();
+    const path = join(fixture.root, "marker.json");
+    await writeRuntimeMarker({
+      path,
+      marker: { target: "postgresql", generationId: "baseline-1" },
+    });
+
+    await expect(
+      hasMatchingRuntimeMarker({
+        path,
+        expected: { target: "postgresql", generationId: "baseline-1" },
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      hasMatchingRuntimeMarker({
+        path,
+        expected: { target: "supabase" },
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      hasMatchingRuntimeMarker({
+        path: join(fixture.root, "missing.json"),
+        expected: { target: "postgresql" },
+      }),
+    ).resolves.toBe(false);
     await fixture.cleanup();
   });
 });

@@ -1,6 +1,7 @@
 /** Read-only readiness, support, planning, and inspection command handlers. */
 
 import { collectRehearsalSupportReport } from "../project/support_report.mjs";
+import { discoverProjectProfile } from "../project/project_discovery.mjs";
 import {
   inspectRehearsalBaseline,
   inspectRehearsalMigrations,
@@ -24,6 +25,24 @@ import { inspectProjectOperationState } from "../shared/operation_guard.mjs";
 
 export const createInspectionCommandHandlers =
   (): readonly CommandDefinition[] => [
+    exactCommands("discover", ["discover"], async ({ planOptions }) => {
+      const data = await discoverProjectProfile({
+        projectRoot: planOptions.projectRoot ?? process.cwd(),
+      });
+      return renderedCommand({
+        data,
+        render: (result) =>
+          [
+            `PROJECT PROFILE — READ ONLY`,
+            `Detected: ${result.detected.length}`,
+            `Suggested: ${result.suggested.length}`,
+            `Your decision: ${result.decisions.length}`,
+            `Configuration: ${result.configuration.state.replaceAll("_", " ")}`,
+            "",
+            "Run rehearsal discover --json for evidence and proposed configuration fields.",
+          ].join("\n"),
+      });
+    }),
     exactCommands("activity", ["activity"], async ({ planOptions }) => {
       const data = await inspectProjectOperationState({
         projectRoot: planOptions.projectRoot ?? process.cwd(),

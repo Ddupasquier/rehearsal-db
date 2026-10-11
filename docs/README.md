@@ -15,6 +15,7 @@ accomplish and follow that path.
 | Your goal                           | Best next page                        |
 | ----------------------------------- | ------------------------------------- |
 | Add Rehearsal to a project          | [Getting started](getting-started.md) |
+| Use the visual database workbench   | [VS Code extension](vscode.md)        |
 | Try it in a disposable project      | [Hands-on tutorial](tutorial.md)      |
 | Fix a setup or runtime problem      | [Troubleshooting](troubleshooting.md) |
 | Browse the friendlier web-docs home | [Documentation home](index.md)        |

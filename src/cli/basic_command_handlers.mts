@@ -23,6 +23,7 @@ Commands:
   identity claim --identity= --confirm-identity= Apply the exact local association
   identity connect [--identity=] Keep the app open, detect sign-in, and connect once
   doctor                     Check whether Rehearsal is safe and ready
+  discover                   Inspect project metadata and explain setup suggestions
   support                    Print a safe, copy-ready support report
   activity                   Report idle, busy, stale, or invalid operation state
   explain                    Show the immutable execution plan

@@ -180,7 +180,6 @@ const pathExists = async (path: string): Promise<boolean> =>
         return false;
       throw error;
     });
-
 const hasProjectRuntimeResources = () => {
   const containers = runLocalCommand(
     "docker",
@@ -868,6 +867,10 @@ await runRuntimeLifecycle({
           cwd: repositoryRoot,
           runtimeWorkdir,
           projectId,
+          runtimeMarkerPath,
+          baselineDataSha256: readBaselineDataSha256(baseline),
+          baselineSchemaSha256:
+            baseline.files?.["production-schema.sql"]?.sha256 ?? null,
           loadServiceEnvironment: readServiceEnvironment,
           baselineGenerationId: baseline.generationId,
           candidateSha256: receipt.candidateSha256,
