@@ -119,6 +119,10 @@ describe("repository structure", () => {
       "configuration_rendering.mts",
       "configuration_validation.mts",
       "project_detection.mts",
+      "project_discovery.mts",
+      "project_discovery_application.mts",
+      "project_discovery_contract.mts",
+      "project_discovery_metadata.mts",
     ];
     for (const phase of phases) {
       const source = await readFile(join(projectDirectory, phase), "utf8");

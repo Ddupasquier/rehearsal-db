@@ -10,7 +10,10 @@ import { createConnection } from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
-import { verifyActiveBaseline } from "../baseline/artifact.mjs";
+import {
+  inspectBaselineGenerations,
+  verifyActiveBaseline,
+} from "../baseline/artifact.mjs";
 import {
   applySupabaseAuthenticationProviders,
   inspectSupabaseAuthenticationProviderTransition,
@@ -347,6 +350,20 @@ export const buildRehearsalPlan = async (
       open: config.lifecycle.open,
       dataOnStop: "preserved",
     },
+    application: {
+      startCommand: config.application.startCommand,
+      proofCommand: config.application.proofCommand,
+      readiness: config.application.readiness
+        ? {
+            url: config.application.readiness.url,
+            expectedStatus: config.application.readiness.expectedStatus,
+            timeoutSeconds: config.application.readiness.timeoutSeconds,
+          }
+        : null,
+    },
+    cleanup: {
+      retainBaselineGenerations: config.cleanup.retainBaselineGenerations,
+    },
     execution: [
       "verify the sanitized baseline and immutable migration prefix",
       "replace the disposable local Rehearsal runtime",
@@ -375,8 +392,12 @@ export const inspectRehearsalBaseline = async (
   options: RehearsalConfigPathOptions = {},
 ) => {
   const plan = await buildRehearsalPlan(options);
+  const generations = await inspectBaselineGenerations({
+    artifactRoot: plan.paths.artifactDirectory,
+  });
   return {
     ...plan.baseline,
+    generations,
     project: plan.config.project,
     provenance: {
       configVersion: plan.config.schemaVersion,

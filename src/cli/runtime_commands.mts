@@ -107,7 +107,12 @@ export const buildRuntimeStackPlan = async (
     });
   }
   const candidates = await inspectRuntimeTopologyCandidates(planOptions);
+  const primaryPlan = targets[0]!.plan;
   return {
+    config: primaryPlan.config,
+    environment: primaryPlan.environment,
+    application: primaryPlan.application,
+    cleanup: primaryPlan.cleanup,
     targets,
     migrations: {
       candidateCount: candidates.candidateCount,

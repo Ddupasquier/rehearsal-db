@@ -28,6 +28,7 @@ const documentedCommands = [
   "identity claim --identity=",
   "identity connect",
   "doctor",
+  "discover",
   "support",
   "activity",
   "explain",

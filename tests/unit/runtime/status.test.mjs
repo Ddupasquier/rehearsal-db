@@ -10,6 +10,7 @@ const runningSupabase = {
   reason: null,
   runtimeTarget: "supabase",
   projectId: "fixture-rehearsal",
+  verifiedRuntimeAvailable: true,
   endpoint: { kind: "http", url: "http://127.0.0.1:54321" },
   baselineGenerationId: "20261009T120000Z-example",
   candidateSha256: "a".repeat(64),
@@ -51,6 +52,13 @@ describe("structured runtime status", () => {
         endpoint: { kind: "http", url: "https://database.example.com" },
       }),
     ).toThrow("non-loopback");
+  });
+
+  it("requires an explicit verified-runtime availability signal", () => {
+    const { verifiedRuntimeAvailable: _omitted, ...missing } = runningSupabase;
+    expect(() => parseRuntimeStatusSnapshot(missing)).toThrow(
+      "verifiedRuntimeAvailable must be a boolean",
+    );
   });
 
   it("requires endpoints only for running runtimes", () => {

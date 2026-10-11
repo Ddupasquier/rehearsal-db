@@ -18,6 +18,8 @@ export interface RuntimeStatusSnapshot {
   readonly reason: RuntimeStateReason | null;
   readonly runtimeTarget: RehearsalRuntimeTargetId;
   readonly projectId: string;
+  /** Whether a current, verified runtime receipt exists for the active baseline. */
+  readonly verifiedRuntimeAvailable: boolean;
   readonly endpoint:
     | Readonly<{ kind: "http"; url: string }>
     | Readonly<{
@@ -119,6 +121,11 @@ export const parseRuntimeStatusSnapshot = (
   ) {
     throw new Error("Runtime status target is unsupported.");
   }
+  if (typeof value.verifiedRuntimeAvailable !== "boolean") {
+    throw new Error(
+      "Runtime status verifiedRuntimeAvailable must be a boolean.",
+    );
+  }
   const candidateSha256 = requiredString(value, "candidateSha256");
   if (!SHA256_PATTERN.test(candidateSha256)) {
     throw new Error("Runtime status candidate digest is invalid.");
@@ -164,6 +171,7 @@ export const parseRuntimeStatusSnapshot = (
     reason: value.reason as RuntimeStateReason | null,
     runtimeTarget: value.runtimeTarget as RehearsalRuntimeTargetId,
     projectId: requiredString(value, "projectId"),
+    verifiedRuntimeAvailable: value.verifiedRuntimeAvailable,
     endpoint,
     baselineGenerationId: requiredString(value, "baselineGenerationId"),
     candidateSha256,
@@ -191,6 +199,7 @@ export const renderRuntimeStatusSnapshot = (
           : "stopped";
   return [
     `Local Rehearsal ${label}: ${state}`,
+    `Verified runtime receipt: ${status.verifiedRuntimeAvailable ? "available" : "not available"}`,
     `Active sanitized baseline: ${status.baselineGenerationId}`,
     `Candidate migrations (${status.candidateSha256}): ${status.candidates.join(", ") || "none"}`,
   ].join("\n");

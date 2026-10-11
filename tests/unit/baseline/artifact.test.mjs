@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createAndActivateBaseline,
   createBaselineGenerationId,
+  inspectBaselineGenerations,
   listIncompleteBaselineBuilds,
   planBaselineReplacementPrune,
   pruneBaselineGenerations,
@@ -94,6 +95,47 @@ describe("Rehearsal baseline artifacts", () => {
       bytes: expect.any(Number),
     });
     expect(await listIncompleteBaselineBuilds({ artifactRoot })).toEqual([]);
+  });
+
+  it("lists privacy-safe retained generation summaries newest first", async () => {
+    const artifactRoot = await createArtifactRoot();
+    for (const generationId of [
+      "20260912T120000Z-aaaaaaaaaaaa",
+      "20260912T120100Z-bbbbbbbbbbbb",
+    ]) {
+      await createAndActivateBaseline({
+        artifactRoot,
+        generationId,
+        metadata,
+        expectedTables: ["profiles"],
+        records: [{ table: "profiles", row: { id: "synthetic" } }],
+      });
+    }
+
+    expect(await inspectBaselineGenerations({ artifactRoot })).toEqual([
+      {
+        generationId: "20260912T120100Z-bbbbbbbbbbbb",
+        createdAt: "2026-09-12T12:01:00Z",
+        active: true,
+        formatVersion: 1,
+        rowCount: 1,
+        tableCount: 1,
+        migrationCount: 0,
+        migrationCutoff: metadata.migrationCutoff,
+        storageAssetCount: 0,
+      },
+      {
+        generationId: "20260912T120000Z-aaaaaaaaaaaa",
+        createdAt: "2026-09-12T12:00:00Z",
+        active: false,
+        formatVersion: 1,
+        rowCount: 1,
+        tableCount: 1,
+        migrationCount: 0,
+        migrationCutoff: metadata.migrationCutoff,
+        storageAssetCount: 0,
+      },
+    ]);
   });
 
   it("keeps the previous active generation when a later build fails", async () => {

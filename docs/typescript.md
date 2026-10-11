@@ -48,6 +48,7 @@ from compiled JavaScript and do not start Rehearsal.
 ```ts
 import type {
   NormalizedRehearsalConfig,
+  ProjectDiscoveryResult,
   RehearsalConfig,
   RehearsalConfigVersion,
 } from "@rehearsal-db/core";
@@ -61,6 +62,9 @@ export const application = {
 
 export const localDatabasePort = (config: NormalizedRehearsalConfig): number =>
   config.runtime.ports.database;
+
+export const unresolvedChoices = (profile: ProjectDiscoveryResult): number =>
+  profile.decisions.length;
 ```
 
 ## Exported configuration types
@@ -71,6 +75,13 @@ export const localDatabasePort = (config: NormalizedRehearsalConfig): number =>
 | `RehearsalConfig`           | The reviewed input shape of `rehearsal.config.mjs`.                       |
 | `NormalizedRehearsalConfig` | The immutable, defaulted configuration returned by Rehearsal's loader.    |
 | `defineRehearsalConfig()`   | Checks a config while preserving its more specific inferred value types.  |
+| `ProjectDiscoveryResult`    | Versioned read-only facts, suggestions, decisions, and field states.      |
+
+`discoverProjectProfile()` and its result types are exported for trusted local tooling.
+The function has the same privacy boundary as `rehearsal discover`: it does not import
+project modules, read environment files, contact a database, or start Docker. Most editor
+clients should prefer the public CLI JSON contract so package execution and version
+validation stay in one place.
 
 Nested sections are available through indexed access types such as
 `RehearsalConfig["application"]`, `RehearsalConfig["runtime"]`, and

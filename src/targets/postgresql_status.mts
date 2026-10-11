@@ -5,19 +5,23 @@ import {
   RUNTIME_STATUS_SCHEMA_VERSION,
 } from "../runtime/status.mjs";
 import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
+import { hasMatchingRuntimeMarker } from "../runtime/lifecycle_engine.mjs";
 
 interface CommandResult {
   readonly status: number | null;
   readonly stdout: string;
 }
 
-export const inspectPostgresqlRuntimeStatus = ({
+export const inspectPostgresqlRuntimeStatus = async ({
   runCommand,
   containerName,
   databaseUser,
   database,
   databasePort,
   projectId,
+  runtimeMarkerPath,
+  baselineDataSha256,
+  image,
   baselineGenerationId,
   candidateSha256,
   candidates,
@@ -32,10 +36,25 @@ export const inspectPostgresqlRuntimeStatus = ({
   database: string;
   databasePort: number;
   projectId: string;
+  runtimeMarkerPath: string;
+  baselineDataSha256: string;
+  image: string;
   baselineGenerationId: string;
   candidateSha256: string;
   candidates: readonly string[];
-}): RuntimeStatusSnapshot => {
+}): Promise<RuntimeStatusSnapshot> => {
+  const verifiedRuntimeAvailable = await hasMatchingRuntimeMarker({
+    path: runtimeMarkerPath,
+    expected: {
+      target: "postgresql",
+      generationId: baselineGenerationId,
+      dataSha256: baselineDataSha256,
+      image,
+    },
+    validate: (marker) =>
+      typeof marker.databasePassword === "string" &&
+      marker.databasePassword.length >= 32,
+  });
   const succeeds = (command: string, args: readonly string[]): boolean =>
     runCommand(command, args, { allowFailure: true }).status === 0;
   const engineAvailable = succeeds("docker", ["info"]);
@@ -80,6 +99,7 @@ export const inspectPostgresqlRuntimeStatus = ({
             : null,
     runtimeTarget: "postgresql",
     projectId,
+    verifiedRuntimeAvailable,
     endpoint:
       state === "running"
         ? {

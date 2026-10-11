@@ -166,6 +166,7 @@ Start here:
 
 - [Documentation home](docs/index.md) — choose the shortest path for your goal
 - [Getting started](docs/getting-started.md) — set up your own project
+- [VS Code extension](docs/vscode.md) — use the project-aware visual workbench
 - [Safe hands-on tutorial](docs/tutorial.md) — try the full flow in a disposable project
 - [Troubleshooting](docs/troubleshooting.md) — fix common setup problems
 - [Next steps](docs/roadmap.md) — see the current product sequence

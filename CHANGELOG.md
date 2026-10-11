@@ -5,6 +5,28 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## Unreleased
 
+## [0.1.0-rc.4] - 2026-10-11
+
+### Added
+
+- `discover --json` exposes a versioned, read-only Project Profile for editor clients,
+  separating proven facts, evidence-backed suggestions, and decisions that remain with
+  the user.
+- Project discovery reports bounded application, package-manager, migration, target,
+  runtime, baseline-retention, configuration, and local-address metadata without reading
+  environment files, contacting databases, starting containers, or executing project code.
+- Public TypeScript contracts now cover discovery results, retained baseline generations,
+  application readiness, cleanup policy, and structured PostgreSQL and Supabase runtime
+  state consumed by the Rehearsal VS Code extension.
+
+### Changed
+
+- Plans and status results expose the additional bounded metadata required for a
+  project-aware editor experience while retaining core ownership of all safety checks and
+  mutating operations.
+- Documentation now includes the supported VS Code integration boundary, privacy model,
+  compatibility floor, and safe automatic-refresh behavior.
+
 ## [0.1.0-rc.3] - 2026-10-10
 
 ### Added
@@ -605,7 +627,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.3...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.4...HEAD
+[0.1.0-rc.4]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.3...v0.1.0-rc.4
 [0.1.0-rc.3]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.2...v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.1...v0.1.0-rc.2
 [0.1.0-rc.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-beta.18...v0.1.0-rc.1

@@ -1,5 +1,6 @@
 import type {
   NormalizedRehearsalConfig,
+  ProjectDiscoveryResult,
   RehearsalConfig,
   RehearsalConfigVersion,
 } from "@rehearsal-db/core";
@@ -13,3 +14,6 @@ export const application = {
 
 export const localDatabasePort = (config: NormalizedRehearsalConfig): number =>
   config.runtime.ports.database;
+
+export const unresolvedChoices = (profile: ProjectDiscoveryResult): number =>
+  profile.decisions.length;

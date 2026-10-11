@@ -5,6 +5,7 @@ import {
   RUNTIME_STATUS_SCHEMA_VERSION,
 } from "../runtime/status.mjs";
 import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
+import { hasMatchingRuntimeMarker } from "../runtime/lifecycle_engine.mjs";
 import type { ProcessEnvironment } from "../shared/process_environment.mjs";
 import {
   localCommandSucceeds,
@@ -16,6 +17,9 @@ export const inspectSupabaseRuntimeStatus = async ({
   cwd,
   runtimeWorkdir,
   projectId,
+  runtimeMarkerPath,
+  baselineDataSha256,
+  baselineSchemaSha256,
   loadServiceEnvironment,
   baselineGenerationId,
   candidateSha256,
@@ -24,11 +28,22 @@ export const inspectSupabaseRuntimeStatus = async ({
   cwd: string;
   runtimeWorkdir: string;
   projectId: string;
+  runtimeMarkerPath: string;
+  baselineDataSha256: string;
+  baselineSchemaSha256: string | null;
   loadServiceEnvironment: () => Promise<ProcessEnvironment>;
   baselineGenerationId: string;
   candidateSha256: string;
   candidates: readonly string[];
 }): Promise<RuntimeStatusSnapshot> => {
+  const verifiedRuntimeAvailable = await hasMatchingRuntimeMarker({
+    path: runtimeMarkerPath,
+    expected: {
+      generationId: baselineGenerationId,
+      dataSha256: baselineDataSha256,
+      schemaSha256: baselineSchemaSha256,
+    },
+  });
   const engineAvailable = localCommandSucceeds("docker", ["info"], { cwd });
   const serviceEnvironment = engineAvailable
     ? await loadServiceEnvironment()
@@ -81,6 +96,7 @@ export const inspectSupabaseRuntimeStatus = async ({
             : null,
     runtimeTarget: "supabase",
     projectId,
+    verifiedRuntimeAvailable,
     endpoint:
       state === "running" && local ? { kind: "http", url: local.apiUrl } : null,
     baselineGenerationId,

@@ -112,20 +112,61 @@ obsolete placeholder key.
 
 ## Check and inspect
 
-| Command                            | What it does                                          |
-| ---------------------------------- | ----------------------------------------------------- |
-| `npx rehearsal doctor`             | Check dependencies, inputs, and safety rules.         |
-| `npx rehearsal support`            | Print a privacy-safe report for a support request.    |
-| `npx rehearsal activity`           | Report whether another Rehearsal operation is active. |
-| `npx rehearsal explain`            | Show the exact plan without changing anything.        |
-| `npx rehearsal run --dry-run`      | Show the same non-mutating plan.                      |
-| `npx rehearsal candidates`         | List pending migrations and their approval digest.    |
-| `npx rehearsal inspect baseline`   | Show baseline metadata without row values.            |
-| `npx rehearsal inspect migrations` | Classify every historical and candidate migration.    |
-| `npx rehearsal status`             | Report baseline, candidates, and local runtime state. |
+| Command                            | What it does                                                   |
+| ---------------------------------- | -------------------------------------------------------------- |
+| `npx rehearsal doctor`             | Check dependencies, inputs, and safety rules.                  |
+| `npx rehearsal discover`           | Explain detected facts, suggestions, and decisions.            |
+| `npx rehearsal support`            | Print a privacy-safe report for a support request.             |
+| `npx rehearsal activity`           | Report whether another Rehearsal operation is active.          |
+| `npx rehearsal explain`            | Show the exact plan without changing anything.                 |
+| `npx rehearsal run --dry-run`      | Show the same non-mutating plan.                               |
+| `npx rehearsal candidates`         | List pending migrations and their approval digest.             |
+| `npx rehearsal inspect baseline`   | Show active and retained baseline metadata without row values. |
+| `npx rehearsal inspect migrations` | Classify every historical and candidate migration.             |
+| `npx rehearsal status`             | Report baseline, candidates, and local runtime state.          |
 
 State-reporting commands accept `--json` for scripts. Scripts should use the JSON fields
 and process exit code, not parse human-facing text.
+
+`explain --json` includes the validated application start, proof, and readiness settings,
+the lifecycle modes, and the retained-baseline count. These are safe configuration facts
+for editor review; environment-file values and credentials are never included.
+
+`inspect baseline --json` includes a `generations` array for the active and retained
+immutable copies. Each entry contains only the generation identifier, derived creation
+time, active flag, format, aggregate row/table/migration/Storage counts, and migration
+cutoff. It never reads or returns database row values, credentials, source URLs, or
+environment-file contents. Listing generations does not activate, restore, remove, or
+start anything.
+
+### Smart project discovery
+
+```bash
+npx rehearsal discover --json
+```
+
+`discover` inspects bounded project metadata and returns three deliberately separate
+collections:
+
+- `detected` contains facts supported by project-local files or a read-only runtime
+  probe;
+- `suggested` contains a confidence level, evidence, and the configuration field that a
+  person should review;
+- `decisions` contains privacy, security, destructive, or genuinely ambiguous choices
+  that Rehearsal refuses to settle automatically.
+
+The result also includes proposed configuration-field states and the detected config
+paths. A present JavaScript or TypeScript configuration is reported as
+`present_unvalidated`: discovery never imports it just to inspect the project. The
+ordinary `doctor` command remains the authority for validating an explicitly selected
+configuration.
+
+Discovery reads `package.json`, runtime selector files, lockfile names, known config and
+policy filenames, and conventional migration directories. Script names may be returned,
+but script bodies are not. It may run `docker info` as a bounded reachability probe; it
+never starts Docker, Colima, a database, or an application. It does not read `.env`
+files, follow project-file symlinks, inspect private rows, contact a database, or execute
+project code. No configuration is written by this command.
 
 ### Machine-readable contract
 
@@ -176,6 +217,11 @@ files, search for a global installation, invoke through a shell, or parse styled
 Keep each workspace folder isolated, pass an explicit project-relative `--config` when
 needed, and run nothing until the workspace is trusted.
 
+Use `discover --json` as the public editor contract for a project profile. Keep evidence
+and confidence visible, and require explicit approval before a separate mutating flow
+writes any proposed configuration. The presence of a suggestion is never permission to
+copy production data, select an identity policy, or clean local resources.
+
 `status --json` reports a `runtimeStatus` object for one target. A multi-target project
 reports the same object under every entry in `data.targets`. Clients should read these
 fields and ignore the compatibility-only human `output` string:
@@ -187,6 +233,7 @@ fields and ignore the compatibility-only human `output` string:
   "reason": null,
   "runtimeTarget": "supabase",
   "projectId": "example-rehearsal",
+  "verifiedRuntimeAvailable": true,
   "endpoint": {
     "kind": "http",
     "url": "http://127.0.0.1:54321"
@@ -207,6 +254,10 @@ fields and ignore the compatibility-only human `output` string:
 `reason` is respectively `null`, `runtime_not_running`,
 `container_engine_unavailable`, or `health_check_failed`. PostgreSQL endpoints contain
 only `kind`, loopback `host`, `port`, and database name; credentials are never included.
+`verifiedRuntimeAvailable` reports whether a current runtime receipt matches the active
+verified baseline. It stays `true` when a prepared runtime is safely stopped, and is
+`false` when a client must create or reset the disposable runtime before opening it.
+Checking this field never starts Docker or repairs runtime state.
 An unknown status schema version, state, reason, target, remote endpoint, or malformed
 digest is rejected before it reaches the public result.
 

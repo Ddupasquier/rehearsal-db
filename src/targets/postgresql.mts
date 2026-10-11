@@ -168,7 +168,6 @@ const runCommand = (
 
 const commandSucceeds = (command: string, args: readonly string[]): boolean =>
   runCommand(command, args, { allowFailure: true }).status === 0;
-
 const pathExists = async (path: string): Promise<boolean> =>
   stat(path)
     .then(() => true)
@@ -182,7 +181,6 @@ const pathExists = async (path: string): Promise<boolean> =>
         return false;
       throw error;
     });
-
 const assertRuntimePath = () => {
   if (resolve(runtimeWorkdir) !== join(resolve(artifactRoot), "runtime")) {
     throw new Error("Refusing an unsafe Rehearsal runtime path.");
@@ -863,13 +861,16 @@ await runRuntimeLifecycle({
       const receipt = await readCandidateReceipt(baseline);
       emitRuntimeStatusSnapshot({
         structured: invocation.structuredResult,
-        status: inspectPostgresqlRuntimeStatus({
+        status: await inspectPostgresqlRuntimeStatus({
           runCommand,
           containerName,
           databaseUser,
           database,
           databasePort,
           projectId,
+          runtimeMarkerPath,
+          baselineDataSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
+          image,
           baselineGenerationId: baseline.generationId,
           candidateSha256: receipt.candidateSha256,
           candidates: receipt.candidates.map((candidate) => candidate.filename),
