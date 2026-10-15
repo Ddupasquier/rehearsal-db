@@ -6,28 +6,39 @@ import {
   RELEASE_POLICY,
   verifyReleaseSettings,
 } from "../../../scripts/release/preflight.mjs";
+import {
+  approvalComment,
+  controlsWitnessDigest,
+  createControlsWitness,
+} from "../../../scripts/release/controls_witness.mjs";
 
 const base = "/repos/Ddupasquier/rehearsal-db";
 const sha = "a".repeat(40);
 const mainSha = "b".repeat(40);
+const now = Date.parse("2026-10-15T23:00:00.000Z");
+const dispatch = (mode) => ["sync-tags", "prepare-tags"].includes(mode);
 const context = (mode = "prepare") => ({
   GITHUB_ACTIONS: "true",
   GITHUB_REPOSITORY: RELEASE_POLICY.repository,
   GITHUB_API_URL: "https://api.github.com",
   GITHUB_SERVER_URL: "https://github.com",
   GITHUB_JOB: mode,
-  GITHUB_EVENT_NAME: mode === "sync-tags" ? "workflow_dispatch" : "release",
-  GITHUB_REF:
-    mode === "sync-tags" ? "refs/heads/main" : "refs/tags/v0.1.0-rc.5",
+  GITHUB_EVENT_NAME: dispatch(mode) ? "workflow_dispatch" : "release",
+  GITHUB_REF: dispatch(mode) ? "refs/heads/main" : "refs/tags/v0.1.0-rc.5",
   GITHUB_SHA: sha,
   GITHUB_WORKFLOW_SHA: sha,
-  GITHUB_WORKFLOW_REF: `${RELEASE_POLICY.repository}/${RELEASE_POLICY.workflow}@${mode === "sync-tags" ? "refs/heads/main" : "refs/tags/v0.1.0-rc.5"}`,
+  GITHUB_WORKFLOW_REF: `${RELEASE_POLICY.repository}/${RELEASE_POLICY.workflow}@${dispatch(mode) ? "refs/heads/main" : "refs/tags/v0.1.0-rc.5"}`,
+  GITHUB_RUN_ID: "12345",
+  GITHUB_RUN_ATTEMPT: "1",
+  EXPECTED_SHA256: "d".repeat(64),
   GITHUB_TOKEN: "private-test-sentinel",
 });
 
 function fixture(mode = "prepare") {
   const ruleset = (id, target, reference, rules) => ({
     id,
+    created_at: "2026-10-15T20:00:00.000Z",
+    updated_at: "2026-10-15T20:01:00.000Z",
     target,
     source_type: "Repository",
     source: RELEASE_POLICY.repository,
@@ -60,6 +71,8 @@ function fixture(mode = "prepare") {
       base,
       {
         full_name: RELEASE_POLICY.repository,
+        id: 456,
+        owner: { id: 123, type: "User" },
         visibility: "public",
         private: false,
         archived: false,
@@ -71,13 +84,14 @@ function fixture(mode = "prepare") {
       {
         name: "main",
         protected: true,
-        commit: { sha: mode === "sync-tags" ? sha : mainSha },
+        commit: { sha: dispatch(mode) ? sha : mainSha },
       },
     ],
     [
       `${base}/environments/npm`,
       {
         name: "npm",
+        id: 789,
         can_admins_bypass: false,
         protection_rules: [
           {
@@ -119,6 +133,31 @@ function fixture(mode = "prepare") {
       { status: "ahead", behind_by: 0, merge_base_commit: { sha } },
     ],
   ]);
+  const controlsWitness = createControlsWitness({
+    repository: RELEASE_POLICY.repository,
+    repositoryId: 456,
+    ownerId: 123,
+    environmentId: 789,
+    observedAt: "2026-10-15T21:00:00.000Z",
+    rulesets: [branch, tag],
+  });
+  if (["publish", "sync-tags"].includes(mode)) {
+    values.set(`${base}/actions/runs/12345/approvals`, [
+      {
+        state: "approved",
+        user: { id: 123, type: "User" },
+        environments: [{ id: 789, name: "npm" }],
+        comment: approvalComment({
+          operation: mode,
+          runId: "12345",
+          attempt: "1",
+          sourceSha: sha,
+          artifactSha256: "d".repeat(64),
+          witnessSha256: controlsWitnessDigest(controlsWitness),
+        }),
+      },
+    ]);
+  }
   const calls = [];
   const fetcher = async (url, options) => {
     calls.push({ url, options });
@@ -126,7 +165,7 @@ function fixture(mode = "prepare") {
     if (!values.has(path)) return new Response("unavailable", { status: 404 });
     return Response.json(values.get(path));
   };
-  return { branch, tag, values, calls, fetcher };
+  return { branch, tag, values, calls, fetcher, controlsWitness };
 }
 
 describe("release protection preflight", () => {
@@ -160,7 +199,7 @@ describe("release protection preflight", () => {
       );
     },
   );
-  it.each(["prepare", "publish", "sync-tags"])(
+  it.each(["prepare", "publish", "prepare-tags", "sync-tags"])(
     "validates %s using only bounded read-only GitHub metadata",
     async (mode) => {
       const f = fixture(mode);
@@ -168,6 +207,8 @@ describe("release protection preflight", () => {
         mode,
         environment: context(mode),
         fetcher: f.fetcher,
+        controlsWitness: f.controlsWitness,
+        now,
       });
       expect(result.status).toBe("passed");
       expect(result.limitations.join(" ")).toContain(
@@ -184,7 +225,7 @@ describe("release protection preflight", () => {
             call.url.startsWith(`https://api.github.com${base}`),
         ),
       ).toBe(true);
-      expect(f.calls.length).toBeLessThanOrEqual(10);
+      expect(f.calls.length).toBeLessThanOrEqual(11);
       expect(
         f.calls.every(
           (call) =>
@@ -535,4 +576,144 @@ describe("release protection preflight", () => {
       "invalid_execution",
     );
   });
+
+  it("uses an exact witness for hidden bypass fields but labels preparation as not authorization", async () => {
+    const f = fixture();
+    delete f.branch.bypass_actors;
+    delete f.tag.bypass_actors;
+    const input = {
+      mode: "prepare",
+      environment: context(),
+      fetcher: f.fetcher,
+      controlsWitness: f.controlsWitness,
+      now,
+    };
+    await expect(releasePreflight(input)).resolves.toMatchObject({
+      status: "passed",
+    });
+    await expect(
+      releasePreflight({ ...input, controlsWitness: undefined }),
+    ).rejects.toThrow("main_ruleset_not_proven");
+    f.branch.updated_at = "2026-10-15T20:01:00.001Z";
+    await expect(releasePreflight(input)).rejects.toThrow(
+      "main_ruleset_not_proven",
+    );
+  });
+
+  it.each([null, "", {}, [123]])(
+    "refuses explicit malformed or nonempty bypass despite witness (%j)",
+    async (value) => {
+      const f = fixture();
+      f.branch.bypass_actors = value;
+      await expect(
+        releasePreflight({
+          mode: "prepare",
+          environment: context(),
+          fetcher: f.fetcher,
+          controlsWitness: f.controlsWitness,
+          now,
+        }),
+      ).rejects.toThrow("main_ruleset_not_proven");
+    },
+  );
+
+  it.each([
+    [
+      "repository",
+      (f) => {
+        f.values.get(base).id = 999;
+      },
+    ],
+    [
+      "owner",
+      (f) => {
+        f.values.get(base).owner.id = 999;
+      },
+    ],
+    [
+      "environment",
+      (f) => {
+        f.values.get(`${base}/environments/npm`).id = 999;
+      },
+    ],
+    [
+      "public rules",
+      (f) => {
+        f.branch.rules[2].parameters.required_approving_review_count = 1;
+      },
+    ],
+  ])("refuses witnessed %s drift", async (_name, mutate) => {
+    const f = fixture();
+    mutate(f);
+    await expect(
+      releasePreflight({
+        mode: "prepare",
+        environment: context(),
+        fetcher: f.fetcher,
+        controlsWitness: f.controlsWitness,
+        now,
+      }),
+    ).rejects.toThrow("Release preflight refused:");
+  });
+
+  it.each([now - 3 * 60 * 60 * 1000, now + 8 * 24 * 60 * 60 * 1000])(
+    "refuses future or stale release witness",
+    async (time) => {
+      const f = fixture();
+      await expect(
+        releasePreflight({
+          mode: "prepare",
+          environment: context(),
+          fetcher: f.fetcher,
+          controlsWitness: f.controlsWitness,
+          now: time,
+        }),
+      ).rejects.toThrow("main_ruleset_not_proven");
+    },
+  );
+
+  it.each(["publish", "sync-tags"])(
+    "requires authenticated exact owner approval before %s",
+    async (mode) => {
+      const f = fixture(mode);
+      const input = {
+        mode,
+        environment: context(mode),
+        fetcher: f.fetcher,
+        controlsWitness: f.controlsWitness,
+        now,
+      };
+      await expect(releasePreflight(input)).resolves.toMatchObject({
+        status: "passed",
+      });
+      const reviews = f.values.get(`${base}/actions/runs/12345/approvals`);
+      for (const key of ["GITHUB_RUN_ATTEMPT", "EXPECTED_SHA256"]) {
+        await expect(
+          releasePreflight({
+            ...input,
+            environment: {
+              ...input.environment,
+              [key]: key === "EXPECTED_SHA256" ? "e".repeat(64) : "2",
+            },
+          }),
+        ).rejects.toThrow("owner_approval_not_proven");
+      }
+      reviews[0].user.id = 999;
+      await expect(releasePreflight(input)).rejects.toThrow(
+        "owner_approval_not_proven",
+      );
+      reviews[0].user.id = 123;
+      reviews[0].environments[0].id = 999;
+      await expect(releasePreflight(input)).rejects.toThrow(
+        "owner_approval_not_proven",
+      );
+      f.values.set(`${base}/actions/runs/12345/approvals`, []);
+      await expect(releasePreflight(input)).rejects.toThrow(
+        "invalid_approval_metadata",
+      );
+      await expect(
+        releasePreflight({ ...input, controlsWitness: undefined }),
+      ).rejects.toThrow("controls_witness_missing");
+    },
+  );
 });

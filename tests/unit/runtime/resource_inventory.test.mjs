@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -207,6 +207,16 @@ describe("resource inventory", () => {
       state: "unavailable",
       containerCount: 0,
       cleanupEligibility: "inspection-unavailable",
+      provenance: {
+        schemaVersion: 1,
+        verification: "recorded-not-reverified",
+        runtime: null,
+        runtimeReason: "receipt-unavailable",
+        configuredPorts: [
+          { service: "database", host: "127.0.0.1", port: 58322 },
+          { service: "application", host: "localhost", port: 5175 },
+        ],
+      },
     });
     expect(calls).toEqual([
       ["docker", "info"],
@@ -236,6 +246,93 @@ describe("resource inventory", () => {
     expect(
       calls.every(([, action]) => ["context", "info"].includes(action)),
     ).toBe(true);
+  });
+
+  it("keeps same-label configured providers' provenance isolated when the engine is unavailable", async () => {
+    const projectRoot = await makeProject();
+    const configPath = join(projectRoot, "rehearsal.config.mjs");
+    await writeFile(
+      configPath,
+      (await readFile(configPath, "utf8")).replace(
+        "runtime: { target:",
+        'dependentTargets: [{ name: "publication", configPath: "publication.config.mjs" }], runtime: { displayName: "Same friendly label", target:',
+      ),
+    );
+    await writeFile(
+      join(projectRoot, "publication.config.mjs"),
+      `export default {
+      schemaVersion: 1, project: { name: "publication" },
+      supabase: { workdir: "supabase", migrationDirectory: "database/migrations", rehearsalConfig: "rehearsal/config.toml", runtimeWorkdir: "publication/.rehearsal/runtime" },
+      baseline: { artifactDirectory: "publication/.rehearsal", sanitizationPolicy: "rehearsal/policy.json" },
+      application: { startCommand: "npm run dev", proofCommand: "npm test", environmentFile: "publication/.rehearsal/runtime.env" },
+      runtime: { displayName: "Same friendly label", target: "supabase", projectId: "inventory-publication", apiPort: 58421, databasePort: 58422, studioPort: 58423 }
+    };`,
+    );
+    for (const [path, target, generationId, dataSha256] of [
+      [
+        ".rehearsal/runtime",
+        "postgresql",
+        "20261015T120000Z-aaaaaaaaaaaa",
+        "a".repeat(64),
+      ],
+      [
+        "publication/.rehearsal/runtime",
+        "supabase",
+        "20261015T120001Z-bbbbbbbbbbbb",
+        "b".repeat(64),
+      ],
+    ]) {
+      await mkdir(join(projectRoot, path), { recursive: true });
+      await writeFile(
+        join(projectRoot, path, "baseline.json"),
+        JSON.stringify({
+          formatVersion: 1,
+          target,
+          generationId,
+          dataSha256,
+          databasePassword: "PRIVATE-CANARY",
+        }),
+      );
+    }
+    const calls = [];
+    const inventory = await inspectRehearsalResources(
+      { projectRoot },
+      {
+        run: (command, args) => {
+          calls.push([command, ...args]);
+          return args[0] === "context" ? result(0, "default\n") : result(1);
+        },
+      },
+    );
+    expect(
+      inventory.environments.map((entry) => ({
+        target: entry.target,
+        name: entry.displayName,
+        provider: entry.provider,
+        generation: entry.provenance.runtime.baselineGenerationId,
+      })),
+    ).toEqual([
+      {
+        target: "primary",
+        name: "Same friendly label",
+        provider: "postgresql",
+        generation: "20261015T120000Z-aaaaaaaaaaaa",
+      },
+      {
+        target: "publication",
+        name: "Same friendly label",
+        provider: "supabase",
+        generation: "20261015T120001Z-bbbbbbbbbbbb",
+      },
+    ]);
+    expect(
+      inventory.environments.every((entry) => entry.state === "unavailable"),
+    ).toBe(true);
+    expect(JSON.stringify(inventory)).not.toContain("PRIVATE-CANARY");
+    expect(calls).toEqual([
+      ["docker", "info"],
+      ["docker", "context", "show"],
+    ]);
   });
 
   it("reports bounded live CPU and memory only for verified running containers", async () => {

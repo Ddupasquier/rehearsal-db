@@ -218,6 +218,17 @@ Other projects' resource names and container references are visible for capacity
 their environment variables, credentials, database rows, and configuration are never returned.
 Other projects' containers and volumes remain read-only.
 
+Environment inspection also reports optional, versioned provenance from bounded
+target-local receipts: the recorded baseline generation/data checksum, migration-set
+digest and last restore writer's Rehearsal version. Older receipts may not contain a
+writer version; that value stays unknown rather than borrowing the inspector's version.
+These are recorded facts, not a fresh database or migration verification. Configured
+loopback ports are not proof of listening services. Missing or unsafe receipts report
+an unavailable reason without exposing their contents or starting a runtime.
+
+Saved profiles organize views of existing targets. They do not clone databases,
+select historical runtime copies or change the target a command will execute against.
+
 Each environment can have a friendly name and protection policy in its own config:
 
 ```js

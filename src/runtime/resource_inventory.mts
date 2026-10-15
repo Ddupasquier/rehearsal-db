@@ -17,6 +17,10 @@ import {
 } from "./resource_catalog.mjs";
 import type { ResourceCatalog, CatalogContainer } from "./resource_catalog.mjs";
 import {
+  inspectEnvironmentProvenance,
+  type EnvironmentProvenance,
+} from "./resource_provenance.mjs";
+import {
   assertLocalDockerContext,
   runtimeDockerEnvironment,
   runtimeDockerContext,
@@ -67,6 +71,8 @@ export interface RehearsalEnvironmentInventoryEntry {
   readonly cleanupEligibility:
     "running" | "preview-required" | "not-present" | "inspection-unavailable";
   readonly restartPolicies: readonly string[];
+  /** Recorded local receipts and configured endpoints; not fresh database verification. */
+  readonly provenance?: EnvironmentProvenance;
 }
 
 export interface RehearsalResourceInventory {
@@ -491,6 +497,17 @@ export const inspectRehearsalResources = async (
   const run = dependencies.run ?? defaultCommandRunner;
   const now = dependencies.now ?? (() => new Date());
   const cwd = topology.projectRoot;
+  const provenance = await Promise.all(
+    topology.targets.map((target) =>
+      inspectEnvironmentProvenance({
+        projectRoot: cwd,
+        runtimeWorkdir: target.paths.runtimeWorkdir,
+        provider: target.config.runtime.target,
+        ports: target.config.runtime.ports,
+        applicationUrl: target.config.runtime.applicationUrl,
+      }),
+    ),
+  );
   const withPolicy = async (
     inventory: RehearsalResourceInventory,
   ): Promise<RehearsalResourceInventory> => {
@@ -529,7 +546,7 @@ export const inspectRehearsalResources = async (
         }),
         ...(dependencies.includeDetails ? { catalog: null } : {}),
         environments: Object.freeze(
-          topology.targets.map((target) =>
+          topology.targets.map((target, index) =>
             Object.freeze({
               target: target.name,
               displayName: target.config.runtime.displayName,
@@ -553,6 +570,7 @@ export const inspectRehearsalResources = async (
                   : ("persistent" as const),
               cleanupEligibility: "inspection-unavailable" as const,
               restartPolicies: Object.freeze([]),
+              provenance: provenance[index]!,
             }),
           ),
         ),
@@ -591,7 +609,7 @@ export const inspectRehearsalResources = async (
         : [];
     }),
   );
-  const environments = topology.targets.map((target) => {
+  const environments = topology.targets.map((target, index) => {
     const provider = target.config.runtime.target;
     const projectId = target.config.runtime.projectId;
     const labelName =
@@ -719,6 +737,7 @@ export const inspectRehearsalResources = async (
           ),
         ].sort(),
       ),
+      provenance: provenance[index]!,
     });
   });
   const digest = staleDigest(environments);

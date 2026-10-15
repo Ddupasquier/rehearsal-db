@@ -322,6 +322,21 @@ export const releaseOwnedColimaWhenIdle = ({
         "Shared container engine preserved: the engine context or boot changed during idle shutdown review.",
     };
   }
+  // Identity probes take time: another project may start a workload after the
+  // first idle observation. Make the final observation immediately before stop.
+  // This narrows the race; it is not an atomic lease over external Docker clients.
+  const finalRunning = run(
+    "docker",
+    ["container", "ls", "--quiet"],
+    projectRoot,
+  );
+  if (finalRunning.status !== 0 || finalRunning.stdout.trim() !== "") {
+    return {
+      state: "preserved",
+      message:
+        "Shared container engine preserved: container activity changed or became unavailable during idle shutdown review.",
+    };
+  }
   const stopped = run("colima", ["stop"], projectRoot);
   if (stopped.status !== 0) {
     return {
@@ -330,9 +345,17 @@ export const releaseOwnedColimaWhenIdle = ({
         "Shared container engine preserved: Colima did not stop successfully. No container or volume was removed.",
     };
   }
-  for (const { path } of valid) {
+  for (const { path, receipt } of valid) {
     try {
-      unlinkSync(path);
+      const status = lstatSync(path);
+      if (
+        status.isFile() &&
+        !status.isSymbolicLink() &&
+        status.size <= MAX_RECEIPT_BYTES &&
+        JSON.stringify(JSON.parse(readFileSync(path, "utf8"))) ===
+          JSON.stringify(receipt)
+      )
+        unlinkSync(path);
     } catch {
       // A stale retained receipt is safe: a stopped engine cannot satisfy it.
     }

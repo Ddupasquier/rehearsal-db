@@ -2,6 +2,13 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./channel.mjs";
+import {
+  approvalComment,
+  assertWitnessApproval,
+  controlsWitnessDigest,
+  witnessRulesetProof,
+} from "./controls_witness.mjs";
+import { readControlsWitness } from "./settings_witness.mjs";
 
 export const RELEASE_POLICY = Object.freeze({
   repository: "Ddupasquier/rehearsal-db",
@@ -41,6 +48,7 @@ export function releaseExecution(mode, environment) {
   const names = {
     prepare: "release",
     publish: "release",
+    "prepare-tags": "workflow_dispatch",
     "sync-tags": "workflow_dispatch",
   };
   if (
@@ -57,7 +65,7 @@ export function releaseExecution(mode, environment) {
   )
     fail("untrusted_workflow_identity");
   const reference = environment.GITHUB_REF;
-  if (mode === "sync-tags") {
+  if (mode === "sync-tags" || mode === "prepare-tags") {
     if (reference !== "refs/heads/main") fail("unapproved_branch");
   } else {
     if (typeof reference !== "string" || !reference.startsWith("refs/tags/v"))
@@ -143,14 +151,16 @@ const refConditions = (ruleset, reference) => {
   return exactList(names.include, [reference]) && exactList(names.exclude, []);
 };
 
-function protectedRuleset(raw, target, reference) {
+function protectedRuleset(raw, target, reference, witnessContext) {
   const ruleset = object(raw);
   if (
     ruleset.source_type !== "Repository" ||
     ruleset.source !== RELEASE_POLICY.repository ||
     ruleset.target !== target ||
     ruleset.enforcement !== "active" ||
-    !exactList(ruleset.bypass_actors, []) ||
+    !(witnessContext
+      ? witnessRulesetProof(witnessContext.witness, ruleset, witnessContext)
+      : exactList(ruleset.bypass_actors, [])) ||
     !refConditions(ruleset, reference) ||
     !Array.isArray(ruleset.rules)
   )
@@ -186,7 +196,10 @@ function protectedRuleset(raw, target, reference) {
   );
 }
 
-export async function verifyReleaseSettings(read) {
+export async function verifyReleaseSettings(
+  read,
+  { controlsWitness, now = Date.now(), maximumAgeMs } = {},
+) {
   const base = `/repos/${RELEASE_POLICY.repository}`;
   const repository = object(await read(base));
   if (
@@ -227,6 +240,26 @@ export async function verifyReleaseSettings(read) {
     )
   )
     fail("human_approval_missing");
+  let witnessContext;
+  if (controlsWitness) {
+    const ownerId = object(repository.owner).id;
+    if (
+      repository.owner.type !== "User" ||
+      !reviewers.some(
+        (entry) => entry.type === "User" && entry.reviewer.id === ownerId,
+      )
+    )
+      fail("witness_owner_not_reviewer");
+    witnessContext = {
+      witness: controlsWitness,
+      repository: RELEASE_POLICY.repository,
+      repositoryId: repository.id,
+      ownerId,
+      environmentId: environment.id,
+      now,
+      maximumAgeMs,
+    };
+  }
   const deployment = object(environment.deployment_branch_policy);
   if (
     deployment.protected_branches !== false ||
@@ -276,11 +309,15 @@ export async function verifyReleaseSettings(read) {
   }
   if (
     !rulesets.some((rule) =>
-      protectedRuleset(rule, "branch", "refs/heads/main"),
+      protectedRuleset(rule, "branch", "refs/heads/main", witnessContext),
     )
   )
     fail("main_ruleset_not_proven");
-  if (!rulesets.some((rule) => protectedRuleset(rule, "tag", "refs/tags/v*")))
+  if (
+    !rulesets.some((rule) =>
+      protectedRuleset(rule, "tag", "refs/tags/v*", witnessContext),
+    )
+  )
     fail("tag_ruleset_not_proven");
   return { mainSha: branch.commit.sha };
 }
@@ -289,15 +326,21 @@ export async function releasePreflight({
   mode,
   environment = process.env,
   fetcher = fetch,
+  controlsWitness,
+  now = Date.now(),
 }) {
   const execution = releaseExecution(mode, environment);
   const read = githubReleaseReader({
     fetcher,
     token: environment.GITHUB_TOKEN,
   });
-  const settings = await verifyReleaseSettings(read);
+  const settings = await verifyReleaseSettings(read, {
+    controlsWitness,
+    now,
+    maximumAgeMs: 7 * 24 * 60 * 60 * 1000,
+  });
   const base = `/repos/${RELEASE_POLICY.repository}`;
-  if (mode === "sync-tags") {
+  if (mode === "sync-tags" || mode === "prepare-tags") {
     if (settings.mainSha !== execution.sha) fail("main_moved_since_dispatch");
   } else {
     const tag = execution.reference.slice("refs/tags/".length);
@@ -328,6 +371,25 @@ export async function releasePreflight({
     )
       fail("release_not_on_reviewed_main");
   }
+  if (mode === "publish" || mode === "sync-tags") {
+    if (!controlsWitness) fail("controls_witness_missing");
+    const comment = approvalComment({
+      operation: mode,
+      runId: environment.GITHUB_RUN_ID,
+      attempt: environment.GITHUB_RUN_ATTEMPT,
+      sourceSha: execution.sha,
+      artifactSha256: environment.EXPECTED_SHA256,
+      witnessSha256: controlsWitnessDigest(controlsWitness),
+    });
+    assertWitnessApproval(
+      await read(`${base}/actions/runs/${environment.GITHUB_RUN_ID}/approvals`),
+      {
+        comment,
+        ownerId: controlsWitness.ownerId,
+        environmentId: controlsWitness.environmentId,
+      },
+    );
+  }
   return {
     status: "passed",
     operation: mode,
@@ -350,7 +412,10 @@ if (
     if (process.argv.length !== 3) fail("expected_one_operation");
     console.log(
       JSON.stringify(
-        await releasePreflight({ mode: process.argv[2] }),
+        await releasePreflight({
+          mode: process.argv[2],
+          controlsWitness: await readControlsWitness(),
+        }),
         null,
         2,
       ),

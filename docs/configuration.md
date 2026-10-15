@@ -272,6 +272,10 @@ enabled, Rehearsal writes an owner-only receipt only after it actually starts Co
 later `stop` or `discard` may stop that same Colima boot only after every selected target
 has stopped and Docker reports zero running containers across the shared engine. A
 missing, malformed, permissive, wrong-project, or prior-boot receipt preserves Colima.
+Rehearsal rechecks for running containers immediately before shutdown and preserves a
+receipt replaced by another operation. External Docker clients are not coordinated
+atomically with that final check; leave engine shutdown disabled when sharing a VM
+with other tools.
 Docker Desktop and other Docker-compatible engines are never stopped. Containers,
 images, networks, volumes, databases, and Storage are never deleted by engine shutdown.
 

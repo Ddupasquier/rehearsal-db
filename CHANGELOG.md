@@ -14,6 +14,9 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
   review schedules, with validated configuration metadata and fingerprint-bound proposals.
 - Ordered migration review, baseline/privacy/authentication summaries, and bounded
   operation stages and recent receipts through public JSON contracts.
+- Optional target-local resource provenance reports recorded baseline and migration
+  digests, restore-writer version, and configured ports without claiming fresh
+  verification, listening services or activity. Legacy receipts remain explicitly unknown.
 - Opt-in, bounded graph sampling and measured distribution goals, with immutable
   post-sanitization fidelity evidence and required-goal refusal before activation.
 - Lightweight Supabase service profiles and explicit required-service checks.
@@ -26,6 +29,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 - Partial startup and interrupted work clean up only workloads proved owned by the
   operation, preserving existing running environments, data and shared engines.
+- Opted-in owned-engine shutdown checks for newly appeared workloads immediately before
+  stopping and preserves a replacement ownership receipt from a later operation.
 - Application startup refuses occupied local ports without replacing another process.
 - Application and profile ports are checked across the complete configured topology;
   configuration proposals can explicitly bind a dependent edit to its parent graph.
@@ -39,6 +44,9 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - Release preparation, publication and tag repair now refuse missing or ambiguous live
   repository/environment controls; prereleases preserve a stable `latest` version even
   when that version has build metadata.
+- Read-only release CI drift-checks an owner-observed settings record when GitHub hides
+  bypass metadata. Publication still requires an actual owner deployment review bound
+  to the exact run, attempt, source, artifact and settings-record checksums.
 
 These changes belong to rc.5, not the existing rc.4 artifact. Scheduled review is
 not unattended cleanup, and container age is not proof of user inactivity.

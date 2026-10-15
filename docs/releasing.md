@@ -56,7 +56,7 @@ publishing or repairing dist-tags. It must verify:
   protected release tags;
 - the `npm` environment's configured human reviewer and exact allowed branch/tag
   policies; and
-- complete, bounded API responses, with no missing or unknown control accepted.
+- complete, bounded API responses, with no unaccounted-for control accepted.
 
 These checks use read-only metadata and the workflow's short-lived GitHub token, not
 an administrative PAT. They cannot prove that a human actually inspected an artifact,
@@ -65,6 +65,41 @@ correct. Demonstrate a held approval, refusal without approval, and successful e
 artifact verification before enabling a new publisher. For a solo maintainer, the
 configured owner can approve a deployment; do not call this independent two-person
 review or require an unavailable second person without a separate decision.
+
+### Hidden ruleset metadata and owner attestation
+
+GitHub omits ruleset `bypass_actors` for a read-only workflow token. Granting it
+`contents: write` does not solve this limitation, and the release does not use an
+administrative token. Instead, `.github/release-controls.json` records a bounded,
+unsigned owner observation of the two required rulesets. To refresh it, run
+`node scripts/release/observe_controls.mjs` with the existing owner-authenticated
+GitHub CLI, review its public JSON output, and explicitly replace the tracked file.
+This command changes no GitHub settings. It refuses hidden or nonempty bypass actors
+and requires that the repository owner is a configured npm reviewer.
+
+CI compares live repository/environment identities, required public controls, ruleset
+IDs, creation/update timestamps and hashes with that record. This is a drift check,
+not authenticated human approval. Release preparation also rejects observations older
+than seven days or in the future. Public fields and timestamps must still match when
+bypass metadata is hidden; an explicitly malformed or nonempty bypass list always
+refuses publication.
+
+The prepare job prints an exact approval comment in its summary. Independently check
+the live no-bypass settings and accepted artifact checksum, then paste the comment into
+**Review deployments → npm** and approve manually. Before publishing or repairing
+tags, the workflow reads GitHub's actual approval history and requires the configured
+owner's authenticated review for that npm environment. The comment binds the operation,
+run ID, run attempt, source commit, artifact SHA-256 and settings-record SHA-256.
+An approval copied from another artifact, run or attempt is refused. Rerun the whole
+workflow after failure so preparation prints a new attempt-bound comment; do not reuse
+an earlier comment when rerunning only the mutation job.
+
+The record alone is never authorization. This mechanism relies on the owner's fresh
+settings review and GitHub's reported timestamps; timestamps are not cryptographic
+proof of every hidden setting change. No settings check eliminates a subsequent
+administrator change or check-to-use race. Keep the npm environment's no-bypass human
+gate enforced. See [GitHub's ruleset metadata boundary](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset)
+and [workflow approval history](https://docs.github.com/en/rest/actions/workflow-runs#get-the-review-history-for-a-workflow-run).
 
 Keep customer evidence, credentials, runtime data and the internal tracker out of public
 source and package artifacts. Preserve existing MIT notices and source/build inputs
@@ -93,7 +128,7 @@ release-source migration.
 8. Merge the approved release commit through protected `main` and create the exact
    `v<package-version>` tag and GitHub release.
 9. Review and approve the protected `npm` deployment only after its prepare job matches
-   the approved version and checksum.
+   the approved version and checksum, using its exact approval comment.
 10. Verify public visibility, ownership, provenance, registry SHA-1, README rendering,
     exact-version clean installation, CLI execution, signatures, and the unrelated
     installed Docker fixture. Allow up to six minutes for a first package to propagate

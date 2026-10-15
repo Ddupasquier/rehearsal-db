@@ -193,9 +193,39 @@ describe("release channel policy", () => {
       expect(body).toContain("environment: npm");
       expect(body).toContain("actions: read");
       expect(body).toContain("id-token: write");
+      expect(body.indexOf("preflight.mjs")).toBeLessThan(
+        body.indexOf("npm install --global"),
+      );
     }
     expect(publish).toContain('--tag "$PUBLISH_TAG" --provenance');
     expect(workflow).not.toMatch(/secrets\.(?:NPM|NODE_AUTH|GH|GITHUB)_TOKEN/u);
+  });
+
+  it("binds tag repair to freshly checked registry bytes and publishes an owner review comment before the gate", async () => {
+    const workflow = await readFile(
+      join(root, ".github/workflows/publish.yml"),
+      "utf8",
+    );
+    const sync = workflow.slice(workflow.indexOf("\n  sync-tags:"));
+    expect(sync).toContain("needs: prepare-tags");
+    expect(sync).toContain(
+      "EXPECTED_SHA256: ${{ needs.prepare-tags.outputs.sha256 }}",
+    );
+    expect(sync).toContain(
+      'echo "$EXPECTED_SHA256  $RUNNER_TEMP/$TARBALL" | sha256sum --check --strict',
+    );
+    expect(sync.indexOf("sha256sum --check --strict")).toBeLessThan(
+      sync.indexOf("npm dist-tag add"),
+    );
+    expect(workflow).toContain(
+      "run: node scripts/release/approval_summary.mjs publish",
+    );
+    expect(workflow).toContain(
+      "run: node scripts/release/approval_summary.mjs sync-tags",
+    );
+    expect(workflow).toContain(
+      "run: node scripts/release/preflight.mjs prepare-tags",
+    );
   });
 
   it("uses the shared SemVer authority for both mutation paths and post-update checks", async () => {

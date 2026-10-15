@@ -61,6 +61,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { githubReleaseReader, RELEASE_POLICY, verifyReleaseSettings } from "./scripts/release/preflight.mjs";
+          import { readControlsWitness } from "./scripts/release/settings_witness.mjs";
           const read = githubReleaseReader({ token: process.env.GITHUB_TOKEN });
           const rulesetPrefix = `/repos/${RELEASE_POLICY.repository}/rulesets/`;
           const observed = async (path) => {
@@ -84,8 +85,8 @@ jobs:
             }
             return value;
           };
-          const settings = await verifyReleaseSettings(observed);
-          console.log(JSON.stringify({ status: "passed", operation: "read-only-release-settings", ...settings }));
+          const settings = await verifyReleaseSettings(observed, { controlsWitness: await readControlsWitness() });
+          console.log(JSON.stringify({ status: "passed", operation: "read-only-release-settings-drift-check", approval: "not-observed-not-authorized", ...settings }));
           NODE
       - run: npm ci --ignore-scripts
       - run: npm run test:fixture:onboarding

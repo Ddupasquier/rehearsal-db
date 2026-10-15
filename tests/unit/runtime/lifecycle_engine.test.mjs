@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { REHEARSAL_VERSION } from "../../../dist/src/shared/diagnostics.mjs";
 import {
   assertCandidateConfirmation,
   hasMatchingRuntimeMarker,
@@ -178,6 +179,7 @@ describe("shared runtime lifecycle engine", () => {
       target: "postgresql",
       generationId: "baseline-1",
       dataSha256: "c".repeat(64),
+      rehearsalVersion: "caller-supplied-version-must-not-win",
       secret: "preserved-but-not-compared",
     };
     await writeRuntimeMarker({ path, marker });
@@ -191,7 +193,8 @@ describe("shared runtime lifecycle engine", () => {
         },
         mismatchMessage: "reset required",
       }),
-    ).resolves.toEqual(marker);
+    ).resolves.toEqual({ ...marker, rehearsalVersion: REHEARSAL_VERSION });
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
     await writeFile(path, "{}\n");
     await expect(
       readMatchingRuntimeMarker({

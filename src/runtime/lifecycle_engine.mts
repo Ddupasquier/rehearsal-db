@@ -2,6 +2,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import type { PathLike } from "node:fs";
+import { REHEARSAL_VERSION } from "../shared/diagnostics.mjs";
 import {
   resolveActiveBaselinePaths,
   verifyActiveBaseline,
@@ -149,9 +150,13 @@ export const writeRuntimeMarker = async ({
   path: PathLike;
   marker: Readonly<Record<string, unknown>>;
 }): Promise<void> => {
-  await writeFile(path, `${JSON.stringify(marker, null, "\t")}\n`, {
-    mode: 0o600,
-  });
+  await writeFile(
+    path,
+    `${JSON.stringify({ ...marker, rehearsalVersion: REHEARSAL_VERSION }, null, "\t")}\n`,
+    {
+      mode: 0o600,
+    },
+  );
 };
 
 export const readMatchingRuntimeMarker = async ({

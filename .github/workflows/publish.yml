@@ -69,6 +69,10 @@ jobs:
           echo "sha1=$SHA1" >> "$GITHUB_OUTPUT"
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "publish_tag=$PUBLISH_TAG" >> "$GITHUB_OUTPUT"
+      - name: Prepare the exact owner approval comment
+        env:
+          EXPECTED_SHA256: ${{ steps.candidate.outputs.sha256 }}
+        run: node scripts/release/approval_summary.mjs publish
       - uses: actions/upload-artifact@v7
         with:
           name: npm-release-candidate
@@ -109,8 +113,6 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Install npm with OIDC dist-tag support
-        run: npm install --global npm@11.21.0
       - name: Verify the approved artifact
         run: |
           echo "$EXPECTED_SHA1  $TARBALL" | sha1sum --check --strict
@@ -119,6 +121,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/release/preflight.mjs publish
+      - name: Install npm with OIDC dist-tag support
+        run: npm install --global npm@11.21.0
       - name: Publish with trusted OIDC
         run: |
           REGISTRY_SHA1="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.shasum 2>/dev/null || true)"
@@ -186,7 +190,42 @@ jobs:
             sleep 5
           done
 
+  prepare-tags:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha256: ${{ steps.registry.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Verify the read-only tag-repair boundary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release/preflight.mjs prepare-tags
+      - name: Download and hash the published artifact without running scripts
+        id: registry
+        run: |
+          PACKAGE_NAME="$(node -p "require('./package.json').name")"
+          PACKAGE_VERSION="$(node -p "require('./package.json').version")"
+          npm pack "$PACKAGE_NAME@$PACKAGE_VERSION" --ignore-scripts --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/registry-pack.json"
+          TARBALL="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/registry-pack.json")"
+          REGISTRY_SHA1="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.shasum)"
+          echo "$REGISTRY_SHA1  $RUNNER_TEMP/$TARBALL" | sha1sum --check --strict
+          SHA256="$(sha256sum "$RUNNER_TEMP/$TARBALL" | cut -d' ' -f1)"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+      - name: Prepare the exact owner approval comment
+        env:
+          EXPECTED_SHA256: ${{ steps.registry.outputs.sha256 }}
+        run: node scripts/release/approval_summary.mjs sync-tags
+
   sync-tags:
+    needs: prepare-tags
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -198,6 +237,8 @@ jobs:
       contents: read
       actions: read
       id-token: write
+    env:
+      EXPECTED_SHA256: ${{ needs.prepare-tags.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -207,12 +248,12 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - name: Install npm with OIDC dist-tag support
-        run: npm install --global npm@11.21.0
       - name: Refuse unverified tag-repair protections
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/release/preflight.mjs sync-tags
+      - name: Install npm with OIDC dist-tag support
+        run: npm install --global npm@11.21.0
       - name: Repair tags for the current package version
         run: |
           PACKAGE_NAME="$(node -p "require('./package.json').name")"
@@ -223,6 +264,9 @@ jobs:
 
           REGISTRY_VERSION="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version)"
           test "$REGISTRY_VERSION" = "$PACKAGE_VERSION"
+          npm pack "$PACKAGE_NAME@$PACKAGE_VERSION" --ignore-scripts --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/approved-registry-pack.json"
+          TARBALL="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$RUNNER_TEMP/approved-registry-pack.json")"
+          echo "$EXPECTED_SHA256  $RUNNER_TEMP/$TARBALL" | sha256sum --check --strict
 
           if test "$PUBLISH_TAG" = "beta"; then
             DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
