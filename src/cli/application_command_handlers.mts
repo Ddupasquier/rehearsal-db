@@ -26,7 +26,7 @@ export const createApplicationCommandHandlers = ({
         session: state,
         onReady: (ready) => {
           const lines = [
-            `Application: ${ready.url}`,
+            `Application: ${ready.applicationUrl}`,
             "The configured lifecycle policy will preserve your local database and Storage changes.",
             guided
               ? "Press Ctrl+C to close the app and return here, or Ctrl+Z to exit Rehearsal."

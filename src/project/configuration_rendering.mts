@@ -33,6 +33,9 @@ export default defineRehearsalConfig({
 		migrationDirectory: "supabase/migrations",
 		rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml",
 		runtimeWorkdir: ".rehearsal/runtime",
+		// "application" omits development-only services. Choose "full" only when
+		// Studio, Realtime, Edge Functions, analytics, or image transforms are under test.
+		serviceProfile: "application",
 
 		// Optional local OAuth connection. Secrets stay in the ignored owner-only file.
 		// Register http://127.0.0.1:${ports.api}/auth/v1/callback with the provider.
@@ -61,6 +64,8 @@ export default defineRehearsalConfig({
 	// Credentials are read from the environment named by source-access-policy.json.
 	// preparation: {
 	// 	sourcePolicy: "infrastructure/rehearsal/source-access-policy.json",
+	// 	// Optional reviewed sampling/fidelity policy; omitted means full extraction.
+	// 	shapePolicy: "infrastructure/rehearsal/shape-policy.json",
 	// 	privacyKey: ".rehearsal/secrets/privacy.key",
 	// 	batchRows: 500,
 	// 	maximumRows: 1000000,
@@ -78,6 +83,9 @@ export default defineRehearsalConfig({
 	// Rehearsal command cannot wake unrelated containers after Docker was stopped.
 	containerRuntime: {
 		autoStartColima: false,
+		stopOwnedColimaWhenIdle: false, // Stops only Colima instances Rehearsal can prove it started.
+		diskWarningPercent: 80,
+		minimumFreeBytes: 8589934592, // 8 GiB before starting Supabase.
 	},
 
 	// Choose when Rehearsal stops its database targets. Stopping preserves all
@@ -85,12 +93,23 @@ export default defineRehearsalConfig({
 	lifecycle: {
 		run: "keep-until-stop", // Or "stop-after-run" for bounded automated checks.
 		open: "keep-until-stop", // Or "stop-on-application-exit" after Ctrl+C/Ctrl+Z.
+		openIdleTimeoutSeconds: null, // Optional 30–86400; requires an app-owned activity route and stop-on-application-exit.
 	},
 
 	// Keep this many baseline generations, always including the active one.
 	cleanup: {
 		retainBaselineGenerations: 2,
 	},
+
+	// Review policies, not an automatic data-deletion service. No background daemon.
+	resources: {
+		staleAfterSeconds: null, // Set a container start/stop age for reviewed stop-stale previews.
+		retainedEnvironmentCount: 2, // Advisory; exceeding it never deletes a sandbox.
+		maximumBytes: null, // Optional hard owned-volume budget; unknown measurement refuses startup.
+		cleanupSchedule: "manual", // Or "daily-preview" / "weekly-preview" on the next inspection.
+	},
+	// Optional named selections; only existing target names and local URLs are allowed.
+	// profiles: [{ name: "Primary sandbox", targets: ["primary"], applicationUrl: ${JSON.stringify(applicationUrl)} }],
 
 	// Optional: manage another isolated database as part of the same rehearsal.
 	// Give that database its own complete config, ports, project ID, and .rehearsal folder.
@@ -103,6 +122,8 @@ export default defineRehearsalConfig({
 	// ],
 
 	application: {
+		// Declare required services so an incompatible provider/profile is refused before startup.
+		requiredServices: ["database"],
 		// CHECK: commands detected from package.json. Change them if they are not correct.
 		startCommand: ${JSON.stringify(detected.applicationCommand)},
 		proofCommand: ${JSON.stringify(detected.verificationCommand)},
@@ -111,6 +132,7 @@ export default defineRehearsalConfig({
 		// environmentVariables: { DATABASE_URL: "primary:DATABASE_URL" },
 		// Required by \`rehearsal open\`; use a route that responds only when the app is ready.
 		readiness: { url: ${JSON.stringify(applicationUrl)}, expectedStatus: 200, timeoutSeconds: 30 },
+		activity: { url: null }, // Opt in only after your app implements the documented busy/activitySequence contract.
 		// Add at least one real positive and one negative before enabling HTTP proofs.
 		// httpProofs: [],
 		// Optional project-specific restore hook:
@@ -119,6 +141,8 @@ export default defineRehearsalConfig({
 
 	// Disposable local runtime identity, URL, and dedicated ports.
 	runtime: {
+		displayName: ${JSON.stringify(`${detected.projectName} sandbox`)}, // Friendly name; the projectId below stays unchanged.
+		protected: false, // Pin data against reset, run, migrate, discard, and runtime cleanup.
 		target: "supabase",
 		applicationUrl: ${JSON.stringify(applicationUrl)},
 		projectId: "${detected.projectName}-rehearsal",
@@ -179,6 +203,8 @@ export default defineRehearsalConfig({
 	// Credentials are read from the environment named by source-access-policy.json.
 	// preparation: {
 	// 	sourcePolicy: "infrastructure/rehearsal/source-access-policy.json",
+	// 	// Optional reviewed sampling/fidelity policy; omitted means full extraction.
+	// 	shapePolicy: "infrastructure/rehearsal/shape-policy.json",
 	// 	privacyKey: ".rehearsal/secrets/privacy.key",
 	// 	batchRows: 500,
 	// 	maximumRows: 1000000,
@@ -196,6 +222,9 @@ export default defineRehearsalConfig({
 	// Rehearsal command cannot wake unrelated containers after Docker was stopped.
 	containerRuntime: {
 		autoStartColima: false,
+		stopOwnedColimaWhenIdle: false, // Stops only Colima instances Rehearsal can prove it started.
+		diskWarningPercent: 80,
+		minimumFreeBytes: 2147483648, // 2 GiB before starting PostgreSQL.
 	},
 
 	// Choose when Rehearsal stops its database targets. Stopping preserves all
@@ -203,12 +232,23 @@ export default defineRehearsalConfig({
 	lifecycle: {
 		run: "keep-until-stop", // Or "stop-after-run" for bounded automated checks.
 		open: "keep-until-stop", // Or "stop-on-application-exit" after Ctrl+C/Ctrl+Z.
+		openIdleTimeoutSeconds: null, // Optional 30–86400; requires an app-owned activity route and stop-on-application-exit.
 	},
 
 	// Keep this many baseline generations, always including the active one.
 	cleanup: {
 		retainBaselineGenerations: 2,
 	},
+
+	// Review policies, not an automatic data-deletion service. No background daemon.
+	resources: {
+		staleAfterSeconds: null, // Set a container start/stop age for reviewed stop-stale previews.
+		retainedEnvironmentCount: 2, // Advisory; exceeding it never deletes a sandbox.
+		maximumBytes: null, // Optional hard owned-volume budget; unknown measurement refuses startup.
+		cleanupSchedule: "manual", // Or "daily-preview" / "weekly-preview" on the next inspection.
+	},
+	// Optional named selections; only existing target names and local URLs are allowed.
+	// profiles: [{ name: "Primary sandbox", targets: ["primary"], applicationUrl: ${JSON.stringify(applicationUrl)} }],
 
 	// Optional: manage another isolated database as part of the same rehearsal.
 	// Give that database its own complete config, ports, project ID, and .rehearsal folder.
@@ -221,6 +261,8 @@ export default defineRehearsalConfig({
 	// ],
 
 	application: {
+		// Ordinary PostgreSQL provides only the database service.
+		requiredServices: ["database"],
 		// CHECK: commands detected from package.json. Change them if they are not correct.
 		startCommand: ${JSON.stringify(detected.applicationCommand)},
 		proofCommand: ${JSON.stringify(detected.verificationCommand)},
@@ -229,6 +271,7 @@ export default defineRehearsalConfig({
 		// environmentVariables: { DATABASE_URL: "primary:DATABASE_URL" },
 		// Required by \`rehearsal open\`; use a route that responds only when the app is ready.
 		readiness: { url: ${JSON.stringify(applicationUrl)}, expectedStatus: 200, timeoutSeconds: 30 },
+		activity: { url: null }, // Opt in only after your app implements the documented busy/activitySequence contract.
 		// Add at least one real positive and one negative before enabling HTTP proofs.
 		// httpProofs: [],
 		// Optional project-specific restore hook:
@@ -237,6 +280,8 @@ export default defineRehearsalConfig({
 
 	// Disposable local runtime identity, URL, and dedicated database port.
 	runtime: {
+		displayName: ${JSON.stringify(`${detected.projectName} sandbox`)}, // Friendly name; the projectId below stays unchanged.
+		protected: false, // Pin data against reset, run, migrate, discard, and runtime cleanup.
 		target: "postgresql",
 		applicationUrl: ${JSON.stringify(applicationUrl)},
 		projectId: "${detected.projectName}-rehearsal",

@@ -2,100 +2,118 @@ import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Marked } from "marked";
-import { groupForPage, groups, pageBySlug, pages, site } from "./site.mjs";
+import {
+  groupForPage,
+  groups,
+  pageBySlug,
+  pages,
+  site as defaultSite,
+} from "./site.mjs";
 
-const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
-const docsRoot = join(repositoryRoot, "docs");
-const outputRoot = join(repositoryRoot, ".docs-site");
-const requestedBase = process.env.REHEARSAL_DOCS_BASE ?? "/rehearsal-db/";
-const baseSegments = requestedBase.split("/").filter(Boolean);
-const base = baseSegments.length === 0 ? "/" : `/${baseSegments.join("/")}/`;
+const defaultRepositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 
-const escapeHtml = (value) =>
-  String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+// A custom preview output is created exclusively; it can never erase an existing
+// directory or checkout.
+export const buildDocs = async (options = {}) => {
+  const repositoryRoot = options.repositoryRoot ?? defaultRepositoryRoot;
+  const docsRoot = options.docsRoot ?? join(repositoryRoot, "docs");
+  const outputRoot = options.outputRoot ?? join(repositoryRoot, ".docs-site");
+  const site = { ...defaultSite, ...options.site };
+  const requestedBase =
+    options.base ?? process.env.REHEARSAL_DOCS_BASE ?? "/rehearsal-db/";
+  if (!/^\/(?:[A-Za-z0-9_-]+\/)*$/u.test(requestedBase)) {
+    throw new Error(
+      "Documentation base must be a root-relative directory path.",
+    );
+  }
+  const baseSegments = requestedBase.split("/").filter(Boolean);
+  const base = baseSegments.length === 0 ? "/" : `/${baseSegments.join("/")}/`;
 
-const stripHtml = (value) =>
-  String(value)
-    .replaceAll(/<[^>]*>/gu, " ")
-    .replaceAll(/\s+/gu, " ")
-    .trim();
+  const escapeHtml = (value) =>
+    String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
 
-const slugify = (value) =>
-  stripHtml(value)
-    .toLowerCase()
-    .replaceAll(/[^a-z0-9\s-]/gu, "")
-    .trim()
-    .replaceAll(/\s+/gu, "-")
-    .replaceAll(/-+/gu, "-");
+  const stripHtml = (value) =>
+    String(value)
+      .replaceAll(/<[^>]*>/gu, " ")
+      .replaceAll(/\s+/gu, " ")
+      .trim();
 
-const hrefFor = (slug) => `${base}${slug ? `${slug}/` : ""}`;
+  const slugify = (value) =>
+    stripHtml(value)
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9\s-]/gu, "")
+      .trim()
+      .replaceAll(/\s+/gu, "-")
+      .replaceAll(/-+/gu, "-");
 
-const sourceToPage = new Map(pages.map((page) => [page.source, page]));
+  const hrefFor = (slug) => `${base}${slug ? `${slug}/` : ""}`;
 
-const rewriteHref = (href) => {
-  if (!href || /^(?:[a-z]+:|#|\/)/iu.test(href)) return href;
-  const [path, hash] = href.split("#", 2);
-  if (!path.endsWith(".md")) return href;
-  const page =
-    path === "README.md" ? pageBySlug.get("") : sourceToPage.get(path);
-  if (!page) return href;
-  return `${hrefFor(page.slug)}${hash ? `#${hash}` : ""}`;
-};
+  const sourceToPage = new Map(pages.map((page) => [page.source, page]));
 
-const renderMarkdown = (source) => {
-  const headings = [];
-  const usedIds = new Map();
-  const marked = new Marked({ gfm: true });
-  marked.use({
-    renderer: {
-      heading({ tokens, depth }) {
-        const content = this.parser.parseInline(tokens);
-        const baseId = slugify(content) || "section";
-        const occurrence = usedIds.get(baseId) ?? 0;
-        usedIds.set(baseId, occurrence + 1);
-        const id = occurrence === 0 ? baseId : `${baseId}-${occurrence + 1}`;
-        if (depth >= 2 && depth <= 3) {
-          headings.push({ id, depth, text: stripHtml(content) });
-        }
-        return `<h${depth} id="${id}">${content}<a class="heading-anchor" href="#${id}" aria-label="Link to ${escapeHtml(stripHtml(content))}">#</a></h${depth}>`;
-      },
-      link({ href, title, tokens }) {
-        const destination = rewriteHref(href);
-        const content = this.parser.parseInline(tokens);
-        const external = /^https?:/iu.test(destination);
-        return `<a href="${escapeHtml(destination)}"${title ? ` title="${escapeHtml(title)}"` : ""}${external ? ' target="_blank" rel="noreferrer"' : ""}>${content}${external ? '<span class="external-mark" aria-hidden="true">↗</span>' : ""}</a>`;
-      },
-      code({ text, lang }) {
-        const language = String(lang ?? "text").split(/\s/u)[0];
-        return `<div class="code-frame"><div class="code-label">${escapeHtml(language)}</div><button class="copy-code" type="button">Copy</button><pre><code class="language-${escapeHtml(language)}">${escapeHtml(text)}</code></pre></div>`;
-      },
-    },
-  });
-  return { html: marked.parse(source), headings };
-};
-
-const icon = (name) => {
-  const paths = {
-    menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
-    search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.2 4.2"/>',
-    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>',
-    github:
-      '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18.2.1 15 2a13.4 13.4 0 0 0-7 0C4.8.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.6 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
-    arrow: '<path d="M5 12h14M14 7l5 5-5 5"/>',
-    close: '<path d="m6 6 12 12M18 6 6 18"/>',
+  const rewriteHref = (href) => {
+    if (!href || /^(?:[a-z]+:|#|\/)/iu.test(href)) return href;
+    const [path, hash] = href.split("#", 2);
+    if (!path.endsWith(".md")) return href;
+    const page =
+      path === "README.md" ? pageBySlug.get("") : sourceToPage.get(path);
+    if (!page) return href;
+    return `${hrefFor(page.slug)}${hash ? `#${hash}` : ""}`;
   };
-  return `<svg class="icon icon-${name}" viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
-};
 
-const renderSidebar = (activeSlug) =>
-  groups
-    .map(
-      (group) => `<section class="sidebar-group">
+  const renderMarkdown = (source) => {
+    const headings = [];
+    const usedIds = new Map();
+    const marked = new Marked({ gfm: true });
+    marked.use({
+      renderer: {
+        heading({ tokens, depth }) {
+          const content = this.parser.parseInline(tokens);
+          const baseId = slugify(content) || "section";
+          const occurrence = usedIds.get(baseId) ?? 0;
+          usedIds.set(baseId, occurrence + 1);
+          const id = occurrence === 0 ? baseId : `${baseId}-${occurrence + 1}`;
+          if (depth >= 2 && depth <= 3) {
+            headings.push({ id, depth, text: stripHtml(content) });
+          }
+          return `<h${depth} id="${id}">${content}<a class="heading-anchor" href="#${id}" aria-label="Link to ${escapeHtml(stripHtml(content))}">#</a></h${depth}>`;
+        },
+        link({ href, title, tokens }) {
+          const destination = rewriteHref(href);
+          const content = this.parser.parseInline(tokens);
+          const external = /^https?:/iu.test(destination);
+          return `<a href="${escapeHtml(destination)}"${title ? ` title="${escapeHtml(title)}"` : ""}${external ? ' target="_blank" rel="noreferrer"' : ""}>${content}${external ? '<span class="external-mark" aria-hidden="true">↗</span>' : ""}</a>`;
+        },
+        code({ text, lang }) {
+          const language = String(lang ?? "text").split(/\s/u)[0];
+          return `<div class="code-frame"><div class="code-label">${escapeHtml(language)}</div><button class="copy-code" type="button">Copy</button><pre><code class="language-${escapeHtml(language)}">${escapeHtml(text)}</code></pre></div>`;
+        },
+      },
+    });
+    return { html: marked.parse(source), headings };
+  };
+
+  const icon = (name) => {
+    const paths = {
+      menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+      search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.2 4.2"/>',
+      sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/>',
+      github:
+        '<path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18.2.1 15 2a13.4 13.4 0 0 0-7 0C4.8.1 3.7.5 3.7.5A5 5 0 0 0 3.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.6 6.8 7A4.8 4.8 0 0 0 8 18v4"/><path d="M8 19c-3 .9-3-1.5-4-2"/>',
+      arrow: '<path d="M5 12h14M14 7l5 5-5 5"/>',
+      close: '<path d="m6 6 12 12M18 6 6 18"/>',
+    };
+    return `<svg class="icon icon-${name}" viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
+  };
+
+  const renderSidebar = (activeSlug) =>
+    groups
+      .map(
+        (group) => `<section class="sidebar-group">
         <p>${escapeHtml(group.label)}</p>
         ${group.pages
           .map((slug) => {
@@ -104,12 +122,12 @@ const renderSidebar = (activeSlug) =>
           })
           .join("")}
       </section>`,
-    )
-    .join("");
+      )
+      .join("");
 
-const renderOutline = (headings) => {
-  if (headings.length === 0) return "";
-  return `<aside class="page-outline" aria-label="On this page">
+  const renderOutline = (headings) => {
+    if (headings.length === 0) return "";
+    return `<aside class="page-outline" aria-label="On this page">
     <p>On this page</p>
     ${headings
       .filter((heading) => heading.depth === 2)
@@ -118,9 +136,9 @@ const renderOutline = (headings) => {
       )
       .join("")}
   </aside>`;
-};
+  };
 
-const renderHeader = () => `<header class="site-header">
+  const renderHeader = () => `<header class="site-header">
   <div class="header-inner">
     <button class="icon-button menu-button" type="button" aria-label="Open navigation" aria-expanded="false">${icon("menu")}</button>
     <a class="brand" href="${base}">
@@ -141,7 +159,7 @@ const renderHeader = () => `<header class="site-header">
   </div>
 </header>`;
 
-const renderHero = () => `<section class="hero">
+  const renderHero = () => `<section class="hero">
   <div class="hero-copy">
     <p class="eyebrow"><span></span> Beyond empty-database testing</p>
     <h1>Your migration passed.<br/><em>Production still might not.</em></h1>
@@ -167,32 +185,33 @@ const renderHero = () => `<section class="hero">
   <button type="button" class="copy-install">Copy</button>
 </section>`;
 
-const renderPager = (page) => {
-  const index = pages.findIndex(({ slug }) => slug === page.slug);
-  const previous = index > 0 ? pages[index - 1] : null;
-  const next = index < pages.length - 1 ? pages[index + 1] : null;
-  return `<nav class="page-pager" aria-label="Documentation pages">
+  const renderPager = (page) => {
+    const index = pages.findIndex(({ slug }) => slug === page.slug);
+    const previous = index > 0 ? pages[index - 1] : null;
+    const next = index < pages.length - 1 ? pages[index + 1] : null;
+    return `<nav class="page-pager" aria-label="Documentation pages">
     ${previous ? `<a class="pager previous" href="${hrefFor(previous.slug)}"><span>← Previous</span><strong>${escapeHtml(previous.shortTitle ?? previous.title)}</strong></a>` : "<span></span>"}
     ${next ? `<a class="pager next" href="${hrefFor(next.slug)}"><span>Next →</span><strong>${escapeHtml(next.shortTitle ?? next.title)}</strong></a>` : ""}
   </nav>`;
-};
+  };
 
-const renderSearch = () => `<dialog class="search-dialog">
+  const renderSearch = () => `<dialog class="search-dialog">
   <form method="dialog" class="search-shell">
     <div class="search-field">${icon("search")}<input type="search" autocomplete="off" placeholder="Search the docs…" aria-label="Search documentation"/><button value="close" aria-label="Close search">Esc</button></div>
     <div class="search-results" role="listbox"><p class="search-hint">Type a command, concept, or error message.</p></div>
   </form>
 </dialog>`;
 
-const renderPage = ({ page, content, headings }) => {
-  const group = groupForPage(page.slug);
-  const home = page.slug === "";
-  const pageTitle = home ? site.homeTitle : `${page.title} · ${site.name}`;
-  const canonicalUrl = new URL(page.slug ? `${page.slug}/` : "", site.url).href;
-  const articleContent = home
-    ? content.replace(/^<h1[^>]*>[\s\S]*?<\/h1>/u, "")
-    : content;
-  return `<!doctype html>
+  const renderPage = ({ page, content, headings }) => {
+    const group = groupForPage(page.slug);
+    const home = page.slug === "";
+    const pageTitle = home ? site.homeTitle : `${page.title} · ${site.name}`;
+    const canonicalUrl = new URL(page.slug ? `${page.slug}/` : "", site.url)
+      .href;
+    const articleContent = home
+      ? content.replace(/^<h1[^>]*>[\s\S]*?<\/h1>/u, "")
+      : content;
+    return `<!doctype html>
 <html lang="en" data-base="${base}">
 <head>
   <meta charset="utf-8" />
@@ -219,7 +238,7 @@ const renderPage = ({ page, content, headings }) => {
     <button class="sidebar-close icon-button" type="button" aria-label="Close navigation">${icon("close")}</button>
     <div class="sidebar-intro"><span>Documentation</span><strong>Find your next step</strong></div>
     ${renderSidebar(page.slug)}
-    <a class="sidebar-support" href="https://github.com/Ddupasquier/rehearsal-db/issues">Need help? <span>Open an issue ↗</span></a>
+    <a class="sidebar-support" href="${site.supportUrl ?? `${site.repository}/issues`}">Need help? <span>Open an issue ↗</span></a>
   </aside>
   <main id="content" class="page-shell">
     ${home ? renderHero() : `<div class="breadcrumb"><a href="${base}">Docs</a><span>/</span><span>${escapeHtml(group?.label ?? "Reference")}</span></div>`}
@@ -227,24 +246,28 @@ const renderPage = ({ page, content, headings }) => {
       <article class="prose${home ? " home-prose" : ""}">${articleContent}${renderPager(page)}</article>
       ${home ? "" : renderOutline(headings)}
     </div>
-    <footer class="site-footer"><p>Built for careful changes and calm launches.</p><div><a href="${site.repository}/edit/main/docs/${page.source}">Edit this page ↗</a><a href="${site.repository}">GitHub ↗</a></div></footer>
+    <footer class="site-footer"><p>Built for careful changes and calm launches.</p><div>${site.documentationSource === false ? "" : `<a href="${site.repository}/edit/main/docs/${page.source}">Edit this page ↗</a>`}${site.securityUrl ? `<a href="${site.securityUrl}">Report a security concern ↗</a>` : ""}<a href="${site.repository}">GitHub ↗</a></div></footer>
   </main>
   ${renderSearch()}
   <script type="module" src="${base}assets/site.js"></script>
 </body>
 </html>`;
-};
+  };
 
-const ensureParent = async (path) => mkdir(dirname(path), { recursive: true });
+  const ensureParent = async (path) =>
+    mkdir(dirname(path), { recursive: true });
 
-const copyAsset = async (source, destination) => {
-  await ensureParent(destination);
-  await copyFile(source, destination);
-};
+  const copyAsset = async (source, destination) => {
+    await ensureParent(destination);
+    await copyFile(source, destination);
+  };
 
-export const buildDocs = async () => {
-  await rm(outputRoot, { recursive: true, force: true });
-  await mkdir(outputRoot, { recursive: true });
+  if (options.outputRoot !== undefined) {
+    await mkdir(outputRoot);
+  } else {
+    await rm(outputRoot, { recursive: true, force: true });
+    await mkdir(outputRoot, { recursive: true });
+  }
   const searchIndex = [];
   for (const page of pages) {
     const source = await readFile(join(docsRoot, page.source), "utf8");
@@ -301,6 +324,18 @@ export const buildDocs = async () => {
     await copyAsset(
       join(repositoryRoot, "node_modules", source),
       join(assets, "fonts", destination),
+    );
+  }
+  for (const family of ["fraunces", "dm-sans"]) {
+    await copyAsset(
+      join(
+        repositoryRoot,
+        "node_modules",
+        "@fontsource-variable",
+        family,
+        "LICENSE",
+      ),
+      join(assets, "fonts", `${family}-LICENSE.txt`),
     );
   }
   await writeFile(

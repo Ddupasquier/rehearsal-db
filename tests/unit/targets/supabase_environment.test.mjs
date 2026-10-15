@@ -1,5 +1,12 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { promisify } from "node:util";
@@ -7,6 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   parseLocalSupabaseEnvironment,
   preventOwnedSupabaseAutoRestart,
+  supabaseExcludedServicesForProfile,
 } from "../../../dist/src/targets/supabase_environment.mjs";
 
 const execute = promisify(execFile);
@@ -20,7 +28,13 @@ afterEach(async () => {
   );
 });
 
-const fakeCommandEnvironment = async ({ dockerReady = false } = {}) => {
+const fakeCommandEnvironment = async ({
+  dockerReady = false,
+  remote = false,
+  colimaRunning = false,
+  exactIds = false,
+  conflictingOwnership = false,
+} = {}) => {
   const root = await mkdtemp(join(tmpdir(), "rehearsal-runtime-test-"));
   temporaryRoots.push(root);
   const log = join(root, "commands.log");
@@ -29,17 +43,22 @@ const fakeCommandEnvironment = async ({ dockerReady = false } = {}) => {
   const commands = {
     docker: `#!/bin/sh
 printf 'docker %s\\n' "$*" >> ${JSON.stringify(log)}
+if [ "$1" = context ] && [ "$2" = show ]; then printf 'colima\\n'; exit 0; fi
+if [ "$1" = context ] && [ "$2" = inspect ]; then printf '%s\\n' '${JSON.stringify(remote ? "ssh://production.example" : "unix:///tmp/rehearsal-test-docker.sock")}'; exit 0; fi
 if [ "$1" = info ]; then [ -f ${JSON.stringify(ready)} ]; exit; fi
-if [ "$1" = ps ]; then printf 'owned-one\\nowned-two\\n'; exit 0; fi
+if [ "$1" = ps ]; then printf '${exactIds ? `${"a".repeat(64)}\\n${"b".repeat(64)}\\n` : "owned-one\\nowned-two\\n"}'; exit 0; fi
+if [ "$1" = container ] && [ "$2" = inspect ]; then printf '%s\\n' '${JSON.stringify({ "com.supabase.cli.project": "safe-rehearsal", ...(conflictingOwnership ? { "com.rehearsal-db.project": "foreign-rehearsal" } : {}) })}' '{"com.supabase.cli.project":"safe-rehearsal"}'; exit 0; fi
 if [ "$1" = update ]; then exit 0; fi
 exit 1
 `,
     colima: `#!/bin/sh
 printf 'colima %s\\n' "$*" >> ${JSON.stringify(log)}
 if [ "$1" = version ]; then exit 0; fi
+if [ "$1" = list ]; then printf '%s\\n' '{"name":"default","status":"${colimaRunning ? "Running" : "Stopped"}"}'; exit 0; fi
 if [ "$1" = start ]; then printf 'ready\\n' > ${JSON.stringify(ready)}; exit 0; fi
 exit 1
 `,
+    supabase: `#!/bin/sh\nprintf 'supabase %s\\n' "$*" >> ${JSON.stringify(log)}\nexit 0\n`,
   };
   for (const [name, source] of Object.entries(commands)) {
     const path = join(root, name);
@@ -69,6 +88,49 @@ STUDIO_URL=http://127.0.0.1:58323
 `;
 
 describe("local Supabase environment", () => {
+  it("keeps safe provider failure evidence without exposing logs or starting an engine", async () => {
+    const fake = await fakeCommandEnvironment();
+    await writeFile(
+      join(fake.root, "supabase"),
+      `#!/bin/sh
+printf '%s\\n' 'DB_URL=postgresql://owner:private-password@localhost/private' 'private-row-canary' 'supabase_auth_private-project container is not ready: starting' >&2
+exit 1
+`,
+    );
+    const source = `import { runLocalCommand } from ${JSON.stringify(environmentModule)};
+try { runLocalCommand("supabase", ["start", "--workdir", "/private/candidate-acceptance/runtime"], { capture: true }); }
+catch (error) { console.log(error.message); }`;
+    const result = await execute(
+      process.execPath,
+      ["--input-type=module", "--eval", source],
+      { env: fake.env },
+    );
+    expect(result.stdout).toContain("Supabase startup failed (exit 1)");
+    expect(result.stdout).toContain("auth=starting");
+    for (const canary of [
+      "private-password",
+      "private-row-canary",
+      "private-project",
+      "candidate-acceptance",
+    ])
+      expect(result.stdout).not.toContain(canary);
+    expect(result.stderr).toBe("");
+    await expect(readFile(fake.log, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("keeps application and full service profiles explicit", () => {
+    expect(supabaseExcludedServicesForProfile("application")).toEqual([
+      "edge-runtime",
+      "logflare",
+      "vector",
+      "realtime",
+      "studio",
+      "imgproxy",
+    ]);
+    expect(supabaseExcludedServicesForProfile("full")).toEqual([]);
+  });
   it("keeps the validated local database connection for package-owned commands", () => {
     expect(parseLocalSupabaseEnvironment(localStatus)).toMatchObject({
       apiUrl: "http://127.0.0.1:58321",
@@ -152,5 +214,94 @@ describe("local Supabase environment", () => {
     expect(() =>
       preventOwnedSupabaseAutoRestart({ projectId: "../../unsafe" }),
     ).toThrow("exact safe Supabase project id");
+  });
+
+  it("refuses remote contexts before any daemon probe or Colima startup", async () => {
+    const fake = await fakeCommandEnvironment({ remote: true });
+    const source = `import { ensureLocalContainerRuntime } from ${JSON.stringify(environmentModule)}; ensureLocalContainerRuntime({ autoStartColima: true });`;
+    await expect(
+      execute(process.execPath, ["--input-type=module", "--eval", source], {
+        env: fake.env,
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("local Docker endpoint"),
+    });
+    const log = await readFile(fake.log, "utf8");
+    expect(log).not.toContain("docker info");
+    expect(log).not.toContain("colima start");
+  });
+
+  it("does not claim a manually running Colima VM when Docker is temporarily unavailable", async () => {
+    const fake = await fakeCommandEnvironment({ colimaRunning: true });
+    const source = `import { ensureLocalContainerRuntime } from ${JSON.stringify(environmentModule)}; ensureLocalContainerRuntime({ autoStartColima: true });`;
+    await expect(
+      execute(process.execPath, ["--input-type=module", "--eval", source], {
+        env: fake.env,
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        "cannot prove the default Colima VM is stopped",
+      ),
+    });
+    expect(await readFile(fake.log, "utf8")).not.toContain("colima start");
+  });
+
+  it.each([false, true])(
+    "ordinary stop rejects ambiguous ownership before Supabase executes (conflict=%s)",
+    async (conflict) => {
+      const fake = await fakeCommandEnvironment({
+        dockerReady: true,
+        exactIds: true,
+        conflictingOwnership: conflict,
+      });
+      const workdir = join(fake.root, "runtime");
+      await mkdir(join(workdir, "supabase"), { recursive: true });
+      await writeFile(
+        join(workdir, "supabase/config.toml"),
+        'project_id = "safe-rehearsal"\n',
+      );
+      const source = `import { stopLocalSupabase } from ${JSON.stringify(environmentModule)}; stopLocalSupabase({cwd:${JSON.stringify(fake.root)},workdir:${JSON.stringify(workdir)},projectId:"safe-rehearsal"});`;
+      if (conflict) {
+        await expect(
+          execute(process.execPath, ["--input-type=module", "--eval", source], {
+            env: fake.env,
+          }),
+        ).rejects.toMatchObject({
+          stderr: expect.stringContaining("conflicting"),
+        });
+        expect(await readFile(fake.log, "utf8")).not.toContain("supabase stop");
+      } else {
+        await execute(
+          process.execPath,
+          ["--input-type=module", "--eval", source],
+          { env: fake.env },
+        );
+        expect(await readFile(fake.log, "utf8")).toContain(
+          `supabase stop --workdir ${workdir}`,
+        );
+      }
+    },
+  );
+
+  it("refuses changed workdir identity without stopping another project", async () => {
+    const fake = await fakeCommandEnvironment({
+      dockerReady: true,
+      exactIds: true,
+    });
+    const workdir = join(fake.root, "runtime");
+    await mkdir(join(workdir, "supabase"), { recursive: true });
+    await writeFile(
+      join(workdir, "supabase/config.toml"),
+      'project_id = "other-rehearsal"\n',
+    );
+    const source = `import { stopLocalSupabase } from ${JSON.stringify(environmentModule)}; stopLocalSupabase({cwd:${JSON.stringify(fake.root)},workdir:${JSON.stringify(workdir)},projectId:"safe-rehearsal"});`;
+    await expect(
+      execute(process.execPath, ["--input-type=module", "--eval", source], {
+        env: fake.env,
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("workdir identity differs"),
+    });
+    expect(await readFile(fake.log, "utf8")).not.toContain("supabase stop");
   });
 });

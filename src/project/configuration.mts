@@ -9,6 +9,8 @@ export {
   REHEARSAL_DEFAULTS,
 } from "./configuration_contract.mjs";
 export type {
+  ApplicationRequiredService,
+  RehearsalResourcePolicy,
   RehearsalConfig,
   RehearsalConfigVersion,
 } from "./configuration_contract.mjs";

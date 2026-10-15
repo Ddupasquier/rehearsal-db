@@ -7,6 +7,7 @@ import {
   startApplicationSession,
 } from "../application/session.mjs";
 import { applyRuntimePersistence } from "../runtime/persistence.mjs";
+import { trackOperationStage } from "../shared/operation_progress.mjs";
 import {
   exactCommands,
   renderedCommand,
@@ -141,14 +142,19 @@ export const createRuntimeActionHandlers = ({
         let applicationSession:
           Awaited<ReturnType<typeof startApplicationSession>> | undefined;
         try {
-          if (applicationConfig.readiness) {
-            applicationSession = await startApplicationSession({
-              command: applicationConfig.startCommand,
-              cwd: topology.projectRoot,
-              files: topologyEnvironmentFiles(topology),
-              mappings: applicationConfig.environmentVariables,
-              readiness: applicationConfig.readiness,
-            });
+          const readiness = applicationConfig.readiness;
+          if (readiness) {
+            applicationSession = await trackOperationStage(
+              { phase: "application-start", target: "primary" },
+              () =>
+                startApplicationSession({
+                  command: applicationConfig.startCommand,
+                  cwd: topology.projectRoot,
+                  files: topologyEnvironmentFiles(topology),
+                  mappings: applicationConfig.environmentVariables,
+                  readiness,
+                }),
+            );
             applicationReadiness = applicationSession.ready;
           }
           ({ applicationProof, dependentProofs } = await proveRuntimeStack({
@@ -157,15 +163,24 @@ export const createRuntimeActionHandlers = ({
             environment: proofEnvironment,
           }));
           if (applicationConfig.httpProofs.length) {
-            httpProofResults = await runHttpProofs({
-              checks: applicationConfig.httpProofs,
-            });
+            httpProofResults = await trackOperationStage(
+              { phase: "http-proof", target: "primary" },
+              () =>
+                runHttpProofs({
+                  checks: applicationConfig.httpProofs,
+                }),
+            );
           }
         } catch (error) {
           if (proofSpinner) proofSpinner.stop("A project proof failed.");
           throw error;
         } finally {
-          await applicationSession?.stop();
+          const ownedSession = applicationSession;
+          if (ownedSession)
+            await trackOperationStage(
+              { phase: "cleanup", target: "primary" },
+              () => ownedSession.stop(),
+            );
         }
         if (proofSpinner) {
           proofSpinner.stop("Project proofs passed.");

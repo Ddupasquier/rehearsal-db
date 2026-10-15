@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { releaseChannel } from "../../scripts/release/channel.mjs";
+import {
+  releaseChannel,
+  releaseTagsMatch,
+  releaseVersion,
+  shouldUpdateLatest,
+} from "../../scripts/release/channel.mjs";
 
 const root = process.cwd();
 
@@ -21,6 +26,85 @@ describe("release channel policy", () => {
       prerelease: false,
       npmTag: "latest",
     });
+  });
+
+  it.each([
+    ["1.0.0+reviewed-build", false, "latest"],
+    ["1.0.0-rc.1+reviewed-build", true, "beta"],
+    ["1.0.0+001", false, "latest"],
+    ["1.0.0-alpha-1+build-2", true, "beta"],
+  ])(
+    "classifies %s by prerelease identifiers, never build-metadata hyphens",
+    (version, prerelease, npmTag) => {
+      expect(releaseVersion(version)).toEqual({ version, prerelease, npmTag });
+      expect(releaseChannel(version, prerelease).npmTag).toBe(npmTag);
+      expect(() => releaseChannel(version, !prerelease)).toThrow(
+        /must be published/u,
+      );
+    },
+  );
+
+  it("preserves stable latest with hyphenated build metadata while accepting the new beta tag", () => {
+    const tags = {
+      latest: "1.0.0+reviewed-build",
+      beta: "1.1.0-rc.1+reviewed-build",
+    };
+    expect(shouldUpdateLatest(tags)).toBe(false);
+    expect(releaseTagsMatch(tags, tags.beta, "beta")).toBe(true);
+    expect(releaseTagsMatch(tags, tags.latest, "latest")).toBe(true);
+    expect(
+      releaseTagsMatch({ ...tags, beta: "1.1.0-rc.0" }, tags.beta, "beta"),
+    ).toBe(false);
+  });
+
+  it("allows prereleases to follow only missing or prerelease latest values", () => {
+    expect(shouldUpdateLatest({})).toBe(true);
+    expect(shouldUpdateLatest({ latest: "1.0.0-rc.1+reviewed-build" })).toBe(
+      true,
+    );
+    expect(shouldUpdateLatest({ latest: "1.0.0" })).toBe(false);
+    expect(
+      releaseTagsMatch(
+        { latest: "1.0.0-rc.1", beta: "1.0.0-rc.2" },
+        "1.0.0-rc.2",
+        "beta",
+      ),
+    ).toBe(false);
+    expect(
+      releaseTagsMatch(
+        { latest: "1.0.0-rc.2", beta: "1.0.0-rc.2" },
+        "1.0.0-rc.2",
+        "beta",
+      ),
+    ).toBe(true);
+    expect(() =>
+      releaseTagsMatch({ latest: "1.0.0" }, "1.0.0", "beta"),
+    ).toThrow(/channel/u);
+  });
+
+  it.each([
+    undefined,
+    null,
+    10,
+    "",
+    "latest",
+    "1.0",
+    "01.0.0",
+    "1.0.0-01",
+    "1.0.0+build..invalid",
+    "1.0.0+build+again",
+  ])("refuses malformed versions and existing latest evidence: %s", (value) => {
+    expect(() => releaseVersion(value)).toThrow("Invalid package version");
+    expect(() => shouldUpdateLatest({ latest: value })).toThrow(
+      "Invalid package version",
+    );
+    expect(() =>
+      releaseTagsMatch(
+        { latest: value, beta: "1.0.0-rc.2" },
+        "1.0.0-rc.2",
+        "beta",
+      ),
+    ).toThrow("Invalid package version");
   });
 
   it("refuses malformed versions and mismatched GitHub release types", () => {
@@ -63,5 +147,97 @@ describe("release channel policy", () => {
 
     expect(check).toBeGreaterThan(-1);
     expect(pack).toBeGreaterThan(check);
+  });
+
+  it("checks current release protections before preparation and every privileged mutation path", async () => {
+    const workflow = await readFile(
+      join(root, ".github/workflows/publish.yml"),
+      "utf8",
+    );
+    const prepare = workflow.slice(
+      workflow.indexOf("\n  prepare:"),
+      workflow.indexOf("\n  publish:"),
+    );
+    const publish = workflow.slice(
+      workflow.indexOf("\n  publish:"),
+      workflow.indexOf("\n  sync-tags:"),
+    );
+    const sync = workflow.slice(workflow.indexOf("\n  sync-tags:"));
+    for (const [phase, body] of [
+      ["prepare", prepare],
+      ["publish", publish],
+      ["sync-tags", sync],
+    ]) {
+      expect(body).toContain("ref: ${{ github.sha }}");
+      expect(body).toContain("GITHUB_TOKEN: ${{ github.token }}");
+      expect(body).toContain(
+        `run: node scripts/release/preflight.mjs ${phase}`,
+      );
+    }
+    expect(prepare.indexOf("preflight.mjs prepare")).toBeLessThan(
+      prepare.indexOf("npm ci --ignore-scripts"),
+    );
+    expect(publish.indexOf("preflight.mjs publish")).toBeLessThan(
+      publish.indexOf('npm publish "$TARBALL"'),
+    );
+    expect(publish.indexOf("preflight.mjs publish")).toBeLessThan(
+      publish.indexOf("npm dist-tag add"),
+    );
+    expect(sync.indexOf("preflight.mjs sync-tags")).toBeLessThan(
+      sync.indexOf("npm dist-tag add"),
+    );
+    expect(prepare).toContain("timeout-minutes: 30");
+    expect(publish).toContain("timeout-minutes: 20");
+    expect(sync).toContain("timeout-minutes: 10");
+    for (const body of [publish, sync]) {
+      expect(body).toContain("environment: npm");
+      expect(body).toContain("actions: read");
+      expect(body).toContain("id-token: write");
+    }
+    expect(publish).toContain('--tag "$PUBLISH_TAG" --provenance');
+    expect(workflow).not.toMatch(/secrets\.(?:NPM|NODE_AUTH|GH|GITHUB)_TOKEN/u);
+  });
+
+  it("uses the shared SemVer authority for both mutation paths and post-update checks", async () => {
+    const workflow = await readFile(
+      join(root, ".github/workflows/publish.yml"),
+      "utf8",
+    );
+    expect(workflow.match(/import \{ shouldUpdateLatest \}/gu)).toHaveLength(2);
+    expect(workflow.match(/import \{ releaseTagsMatch \}/gu)).toHaveLength(2);
+    expect(workflow).toContain(
+      "String(releaseVersion(process.argv[1]).prerelease)",
+    );
+    expect(workflow).not.toContain("*-*");
+    expect(workflow).not.toContain('.includes("-")');
+    const publish = workflow.slice(
+      workflow.indexOf("\n  publish:"),
+      workflow.indexOf("\n  sync-tags:"),
+    );
+    const sync = workflow.slice(workflow.indexOf("\n  sync-tags:"));
+    for (const body of [publish, sync]) {
+      expect(
+        body.indexOf("shouldUpdateLatest(JSON.parse(process.argv[1]))"),
+      ).toBeLessThan(
+        body.indexOf('npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta'),
+      );
+    }
+  });
+
+  it("serializes publication and tag repair across versions without cancelling an active mutation", async () => {
+    const workflow = await readFile(
+      join(root, ".github/workflows/publish.yml"),
+      "utf8",
+    );
+    const publish = workflow.slice(
+      workflow.indexOf("\n  publish:"),
+      workflow.indexOf("\n  sync-tags:"),
+    );
+    const sync = workflow.slice(workflow.indexOf("\n  sync-tags:"));
+    for (const body of [publish, sync]) {
+      expect(body).toContain(
+        "    concurrency:\n      group: rehearsal-core-npm-mutations\n      cancel-in-progress: false\n",
+      );
+    }
   });
 });

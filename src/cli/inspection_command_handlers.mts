@@ -22,6 +22,10 @@ import {
 import { exactCommands, renderedCommand } from "./command_contract.mjs";
 import type { CommandDefinition } from "./command_contract.mjs";
 import { inspectProjectOperationState } from "../shared/operation_guard.mjs";
+import { inspectRehearsalResources } from "../runtime/resource_inventory.mjs";
+
+const formatBytes = (bytes: number): string =>
+  `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
 
 export const createInspectionCommandHandlers =
   (): readonly CommandDefinition[] => [
@@ -68,6 +72,71 @@ export const createInspectionCommandHandlers =
         },
       });
     }),
+    exactCommands(
+      "environments",
+      ["environments", "resources"],
+      async ({ planOptions, command }) => {
+        const data = await inspectRehearsalResources(planOptions, {
+          includeDetails: command === "resources",
+        });
+        return renderedCommand({
+          data,
+          render: (result) => {
+            const disk = result.engine.disk;
+            const lines = [
+              result.catalog === undefined
+                ? "REHEARSAL ENVIRONMENTS — READ ONLY"
+                : "REHEARSAL LOCAL RESOURCES — READ ONLY",
+              `Docker engine: ${result.engine.state}${result.engine.context ? ` (${result.engine.context})` : ""}`,
+              disk
+                ? `Docker disk: ${disk.usedPercent}% used · ${formatBytes(disk.availableBytes)} free of ${formatBytes(disk.totalBytes)}`
+                : "Docker disk: not measurable through this engine",
+              "",
+              ...result.environments.flatMap((entry) => [
+                `${entry.displayName} (${entry.target}) · ${entry.provider} · ${entry.state}${entry.protected ? " · protected" : ""}`,
+                `  Project ID: ${entry.projectId}`,
+                `  Containers: ${entry.runningContainerCount}/${entry.containerCount} running · volumes: ${entry.volumeCount} · ${entry.retention}`,
+                `  Owned disk: ${entry.diskUsageBytes === null ? "not measurable" : formatBytes(entry.diskUsageBytes)}${entry.lastActivityAt ? ` · last activity: ${entry.lastActivityAt}` : ""}`,
+                `  Live use: ${entry.cpuPercent === null ? "CPU unavailable" : `${entry.cpuPercent.toFixed(2)}% CPU`} · ${entry.memoryUsageBytes === null ? "memory unavailable" : `${formatBytes(entry.memoryUsageBytes)} memory`}`,
+                `  Cleanup: ${entry.cleanupEligibility.replaceAll("-", " ")}`,
+              ]),
+            ];
+            if (result.catalog) {
+              lines.push(
+                "",
+                "Images",
+                ...result.catalog.images.flatMap((image) => [
+                  `${image.service} · ${image.state} · ${formatBytes(image.bytes)}`,
+                  `  ${image.id}`,
+                  `  ${image.tags.join(", ")}`,
+                  `  ${image.reason}`,
+                ]),
+                "",
+                "Data volumes",
+                ...result.catalog.volumes.flatMap((volume) => [
+                  `${volume.name} · ${volume.purpose} · ${volume.state}`,
+                  `  ${volume.bytes === null ? "Size unavailable" : formatBytes(volume.bytes)} · ${volume.reason}`,
+                ]),
+                "",
+                "Other containers — read only",
+                ...result.catalog.otherContainers.map(
+                  (container) =>
+                    `${container.name} · ${container.running ? "running" : "stopped"} · ${container.reason}`,
+                ),
+              );
+            }
+            if (result.stale.digest) {
+              lines.push(
+                "",
+                `${result.stale.stoppedCount} stopped environment(s) can be reviewed with rehearsal cleanup --include-runtime.`,
+                "No container or volume was changed.",
+              );
+            }
+            return lines.join("\n");
+          },
+        });
+      },
+    ),
     exactCommands(
       "doctor",
       ["doctor"],

@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
+import { trackOperationStage } from "../shared/operation_progress.mjs";
 import {
   activateBaselineGeneration,
   planBaselineGenerationPrune,
@@ -28,6 +29,11 @@ import {
 } from "../source/access.mjs";
 import { streamApprovedSupabaseAssets } from "../source/asset_transfer.mjs";
 import { refreshPostgresqlBaseline } from "../source/baseline.mjs";
+import {
+  shapePolicySha256,
+  validateBaselineShapePolicy,
+} from "../source/shape_policy.mjs";
+import { readBoundedShapeJson } from "../source/shape_files.mjs";
 import { resolvePrivacyMappedAssets } from "../source/privacy_paths.mjs";
 import {
   applyPostgresqlSourceAccess,
@@ -85,7 +91,17 @@ export const loadPreparationContext = async (
   const sourcePolicy = validateSourceAccessPolicy(
     JSON.parse(sourcePolicyBytes.toString("utf8")),
   );
-  return { loaded, sourcePolicy, sourcePolicyBytes };
+  let shapePolicy = null;
+  if (loaded.paths.shapePolicy) {
+    shapePolicy = validateBaselineShapePolicy(
+      (
+        await readBoundedShapeJson(loaded.paths.shapePolicy, {
+          root: loaded.projectRoot,
+        })
+      ).value,
+    );
+  }
+  return { loaded, sourcePolicy, sourcePolicyBytes, shapePolicy };
 };
 
 export const runSourceAccess = async ({
@@ -160,7 +176,8 @@ const readSourceReaderCredential = async (path: string): Promise<string> => {
 export const runSourceBaselineRefresh = async ({
   planOptions,
 }: Pick<SourceCommandInput, "planOptions">) => {
-  const { loaded, sourcePolicy } = await loadPreparationContext(planOptions);
+  const { loaded, sourcePolicy, shapePolicy } =
+    await loadPreparationContext(planOptions);
   const preparation = loaded.config.preparation;
   const privacyKeyPath = loaded.paths.privacyKey;
   if (!preparation || !privacyKeyPath) {
@@ -194,43 +211,47 @@ export const runSourceBaselineRefresh = async ({
     sourcePolicy,
     privacyPolicy,
   });
-  return refreshPostgresqlBaseline({
-    connectionString,
-    sourcePolicy,
-    sourceAccessReceipt,
-    privacyPolicyBytes,
-    privacyKey,
-    artifactRoot: loaded.paths.artifactDirectory,
-    migrationDirectory: loaded.paths.migrationDirectory,
-    limits: {
-      batchRows: preparation.batchRows,
-      maximumRows: preparation.maximumRows,
-      maximumBytes: preparation.maximumBytes,
-      diskHeadroomBytes: preparation.diskHeadroomBytes,
-    },
-    assets: sourcePolicy.assetReader
-      ? streamApprovedSupabaseAssets({
-          baseUrl:
-            process.env[sourcePolicy.assetReader.baseUrlEnvironmentVariable] ??
-            "",
-          token:
-            process.env[sourcePolicy.assetReader.tokenEnvironmentVariable] ??
-            "",
-          declarations: assetDeclarations,
-          maximumObjects: sourcePolicy.assetReader.maximumObjects,
-          maximumObjectBytes: sourcePolicy.assetReader.maximumObjectBytes,
-          maximumTotalBytes: sourcePolicy.assetReader.maximumTotalBytes,
-          pathMapper: ({ mapping, value }) =>
-            assetPrivacyEngine.remapPath({ mapping, value }),
-        })
-      : [],
-  });
+  return trackOperationStage({ phase: "source-preparation" }, () =>
+    refreshPostgresqlBaseline({
+      connectionString,
+      sourcePolicy,
+      sourceAccessReceipt,
+      privacyPolicyBytes,
+      privacyKey,
+      artifactRoot: loaded.paths.artifactDirectory,
+      migrationDirectory: loaded.paths.migrationDirectory,
+      limits: {
+        batchRows: preparation.batchRows,
+        maximumRows: preparation.maximumRows,
+        maximumBytes: preparation.maximumBytes,
+        diskHeadroomBytes: preparation.diskHeadroomBytes,
+      },
+      ...(shapePolicy ? { shapePolicy } : {}),
+      assets: sourcePolicy.assetReader
+        ? streamApprovedSupabaseAssets({
+            baseUrl:
+              process.env[
+                sourcePolicy.assetReader.baseUrlEnvironmentVariable
+              ] ?? "",
+            token:
+              process.env[sourcePolicy.assetReader.tokenEnvironmentVariable] ??
+              "",
+            declarations: assetDeclarations,
+            maximumObjects: sourcePolicy.assetReader.maximumObjects,
+            maximumObjectBytes: sourcePolicy.assetReader.maximumObjectBytes,
+            maximumTotalBytes: sourcePolicy.assetReader.maximumTotalBytes,
+            pathMapper: ({ mapping, value }) =>
+              assetPrivacyEngine.remapPath({ mapping, value }),
+          })
+        : [],
+    }),
+  );
 };
 
 export const buildRefreshWorkflowPlan = async (
   planOptions: RehearsalConfigPathOptions,
 ) => {
-  const [{ loaded, sourcePolicy, sourcePolicyBytes }, topology] =
+  const [{ loaded, sourcePolicy, sourcePolicyBytes, shapePolicy }, topology] =
     await Promise.all([
       loadPreparationContext(planOptions),
       loadRuntimeTopology(planOptions),
@@ -297,6 +318,28 @@ export const buildRefreshWorkflowPlan = async (
         .update(sourcePolicyBytes)
         .digest("hex"),
       privacyPolicySha256,
+      shape: shapePolicy
+        ? {
+            policySha256: shapePolicySha256(shapePolicy),
+            fileSha256: await hashFile(loaded.paths.shapePolicy),
+            maximumSourceRows: shapePolicy.maximumSourceRows,
+            maximumSourceBytes: shapePolicy.maximumSourceBytes,
+            maximumRows: shapePolicy.maximumRows,
+            relationshipCount: shapePolicy.relationships.length,
+            requiredGoals: [
+              ...shapePolicy.distributions,
+              ...shapePolicy.jointDistributions,
+            ]
+              .filter((goal) => goal.required)
+              .map((goal) => goal.id),
+            advisoryGoals: [
+              ...shapePolicy.distributions,
+              ...shapePolicy.jointDistributions,
+            ]
+              .filter((goal) => !goal.required)
+              .map((goal) => goal.id),
+          }
+        : null,
     },
     runtimeConfigurations,
     runtimeTargets: topology.targets.map((target) => target.name),

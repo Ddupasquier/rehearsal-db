@@ -49,6 +49,12 @@ const assertShutdownReceipt = (output) => {
   }
 };
 
+const assertApplicationAddress = (output, url) => {
+  if (!output.split(/\r?\n/u).includes(`Application: ${url}`)) {
+    throw new Error(`Persistent application URL receipt is invalid: ${output}`);
+  }
+};
+
 export const openApplicationSession = async ({ cwd, url, whileReady }) => {
   const child = spawnProcess(
     join(cwd, "node_modules/.bin/rehearsal"),
@@ -90,9 +96,7 @@ export const openApplicationSession = async ({ cwd, url, whileReady }) => {
       `Persistent application session failed: ${stdout || stderr || `exit ${ended.status ?? ended.signal}`}`,
     );
   }
-  if (!stdout.includes(`Application: ${url}`)) {
-    throw new Error(`Persistent application URL receipt is invalid: ${stdout}`);
-  }
+  assertApplicationAddress(stdout, url);
   assertShutdownReceipt(stdout);
   await assertClosed(url);
   return stdout;
@@ -138,6 +142,7 @@ export const openApplicationTerminalSession = async ({ cwd, url }) => {
       `Terminal Ctrl+C exited ${ended.exitCode}: ${output || "no output"}`,
     );
   }
+  assertApplicationAddress(output, url);
   assertShutdownReceipt(output);
   await assertClosed(url);
   return output;

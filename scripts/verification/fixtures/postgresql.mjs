@@ -8,6 +8,8 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
+  readlink,
   rm,
   stat,
   writeFile,
@@ -16,6 +18,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  assertDemoObservation,
+  demoObservationSql,
+} from "../../../tests/fixtures/postgresql-project/demo/contract.mjs";
 import { removeBaselineArtifactRoot } from "../../../dist/src/baseline/artifact.mjs";
 import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
 import {
@@ -46,6 +53,405 @@ const executeCliOrThrow = ({ cwd, args, label }) => {
     );
   }
   return result;
+};
+
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+const immutableBaselineFingerprint = async (cwd) => {
+  const root = join(cwd, ".rehearsal");
+  const current = await readlink(join(root, "current"));
+  if (!/^generations\/\d{8}T\d{6}Z-[a-f0-9]{12}$/u.test(current)) {
+    throw new Error(
+      "The demo baseline has an unexpected active-generation path.",
+    );
+  }
+  const files = [];
+  const visit = async (relative) => {
+    for (const entry of await readdir(join(root, current, relative), {
+      withFileTypes: true,
+    })) {
+      const path = join(relative, entry.name);
+      if (entry.isDirectory()) await visit(path);
+      else if (entry.isFile()) {
+        const bytes = await readFile(join(root, current, path));
+        if (files.length >= 64 || bytes.length > 256 * 1024) {
+          throw new Error(
+            "The synthetic baseline exceeded its bounded evidence size.",
+          );
+        }
+        files.push([path, sha256(bytes)]);
+      } else
+        throw new Error("The demo baseline contains an unexpected file type.");
+    }
+  };
+  await visit("");
+  return JSON.stringify({
+    current,
+    files: files.sort(([a], [b]) => a.localeCompare(b)),
+  });
+};
+
+const ownedDemoContainers = (cwd, projectId) =>
+  run(
+    "docker",
+    [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      `label=com.rehearsal-db.project=${projectId}`,
+      "--format",
+      "{{.ID}}",
+    ],
+    { cwd },
+  ).trim();
+
+const assertDemoResourcesRemoved = (cwd, projectId) => {
+  if (
+    ownedDemoContainers(cwd, projectId) ||
+    run(
+      "docker",
+      [
+        "volume",
+        "ls",
+        "--filter",
+        `label=com.rehearsal-db.project=${projectId}`,
+        "--format",
+        "{{.Name}}",
+      ],
+      { cwd },
+    ).trim()
+  )
+    throw new Error("The data-shaped demo left owned Docker resources behind.");
+};
+
+const physicalDemoObservation = (cwd, projectId, expectations) => {
+  const container = ownedDemoContainers(cwd, projectId);
+  if (!/^[a-f0-9]{64}$/u.test(container)) {
+    throw new Error("The data-shaped demo needs one exact owned container.");
+  }
+  return assertDemoObservation(
+    JSON.parse(
+      run(
+        "docker",
+        [
+          "exec",
+          container,
+          "psql",
+          "--quiet",
+          "--no-align",
+          "--tuples-only",
+          "--username",
+          "postgres",
+          "--dbname",
+          "postgres",
+          "--command",
+          demoObservationSql,
+        ],
+        { cwd },
+      ).trim(),
+    ),
+    expectations,
+  );
+};
+
+const runDataSpecificMigrationDemo = async ({
+  artifact,
+  temporaryRoot,
+  originalCwd,
+  ports,
+  projectId,
+}) => {
+  const originalBaseline = await immutableBaselineFingerprint(originalCwd);
+  const originalInputs = await Promise.all(
+    [
+      "database/migrations/20260101000000_create_widgets.sql",
+      "database/migrations/20260101000100_add_widget_description.sql",
+      "rehearsal/migration-ledger.json",
+      "rehearsal/sanitized-data.ndjson",
+      "rehearsal/sanitization-policy.json",
+    ].map(async (path) => [
+      path,
+      sha256(await readFile(join(fixtureSource, path))),
+    ]),
+  );
+  const unrelatedContainers = run(
+    "docker",
+    ["ps", "--all", "--no-trunc", "--format", "{{.ID}}|{{.Names}}|{{.State}}"],
+    { cwd: originalCwd },
+  )
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  const unrelatedVolumes = run(
+    "docker",
+    ["volume", "ls", "--format", "{{.Name}}"],
+    { cwd: originalCwd },
+  )
+    .trim()
+    .split("\n")
+    .filter(Boolean);
+  const invalidBytes = await readFile(
+    join(fixtureSource, "demo/require-description.sql"),
+  );
+  const correctedBytes = await readFile(
+    join(fixtureSource, "demo/backfill-and-require-description.sql"),
+  );
+  const projects = [];
+  const observations = [];
+  let reviewedDigest;
+  let correctedDigest;
+  let operationFailure;
+  try {
+    for (const [name, expectedRows] of [
+      ["empty", 0],
+      ["populated", 1],
+    ]) {
+      const cwd = join(temporaryRoot, `data-demo-${name}`);
+      const id = `${projectId}-demo-${name}`;
+      await cp(fixtureSource, cwd, { recursive: true });
+      projects.push({ cwd, projectId: id, installed: false });
+      const configPath = join(cwd, "rehearsal.config.mjs");
+      const config = (await readFile(configPath, "utf8"))
+        .replaceAll("rehearsal-postgresql-fixture", id)
+        .replace("databasePort: 59422", `databasePort: ${ports.database}`)
+        .replace(
+          `  application: {\n    startCommand: "npm run dev",\n    proofCommand: "npm run proof",\n  },`,
+          `  lifecycle: { run: "stop-after-run", open: "stop-on-application-exit" },\n  application: {\n    startCommand: "node demo/app.mjs ${ports.api}",\n    proofCommand: "node demo/proof.mjs ${expectedRows} nullable",\n    readiness: { url: "http://localhost:${ports.api}/health", expectedStatus: 200, timeoutSeconds: 10 },\n  },`,
+        )
+        .replaceAll("5275", String(ports.api));
+      await writeFile(configPath, config);
+      if (name === "empty")
+        await cp(
+          join(cwd, "demo/empty-control.ndjson"),
+          join(cwd, "rehearsal/sanitized-data.ndjson"),
+        );
+      installCandidateArtifact(cwd, artifact);
+      projects.at(-1).installed = true;
+      const cli = (args, label) =>
+        JSON.parse(executeCliOrThrow({ cwd, args, label }).stdout).data;
+      const baseline = cli(
+        [
+          "baseline",
+          "create",
+          "--records=rehearsal/sanitized-data.ndjson",
+          "--ledger=rehearsal/migration-ledger.json",
+          "--json",
+        ],
+        `${name} demo baseline`,
+      );
+      if (baseline.rowCount !== expectedRows + 1)
+        throw new Error("The demo baseline has the wrong synthetic row count.");
+      const immutable = await immutableBaselineFingerprint(cwd);
+      const initial = cli(["explain", "--json"], `${name} nullable plan`);
+      const initialRun = cli(
+        [
+          "run",
+          `--confirm-candidates=${initial.migrations.candidateSha256}`,
+          "--json",
+        ],
+        `${name} nullable run`,
+      );
+      if (
+        !initialRun.applicationProof?.output?.includes(
+          "Data-shaped PostgreSQL application proof passed.",
+        )
+      )
+        throw new Error("The demo omitted its ordinary application proof.");
+      cli(["start", "--json"], `${name} precondition start`);
+      physicalDemoObservation(cwd, id, {
+        expectedRows,
+        descriptionRequired: false,
+      });
+      const candidatePath = join(
+        cwd,
+        "database/migrations/20260101000200_require_widget_description.sql",
+      );
+      await writeFile(candidatePath, invalidBytes);
+      await writeFile(
+        configPath,
+        config.replace(
+          `node demo/proof.mjs ${expectedRows} nullable`,
+          `node demo/proof.mjs ${expectedRows} required`,
+        ),
+      );
+      const plan = cli(["explain", "--json"], `${name} data-specific plan`);
+      const candidate = plan.migrations.candidates.find(
+        (entry) =>
+          entry.filename === "20260101000200_require_widget_description.sql",
+      );
+      if (
+        candidate?.sha256 !== sha256(invalidBytes) ||
+        !/^[a-f0-9]{64}$/u.test(plan.migrations.candidateSha256)
+      )
+        throw new Error(
+          "The data-specific candidate was not reviewed as exact bytes.",
+        );
+      if (reviewedDigest && reviewedDigest !== plan.migrations.candidateSha256)
+        throw new Error(
+          "The empty and populated controls did not review the same candidate set.",
+        );
+      reviewedDigest = plan.migrations.candidateSha256;
+      const result = executeCli({
+        cwd,
+        args: ["migrate", `--confirm-candidates=${reviewedDigest}`, "--json"],
+      });
+      if (name === "empty") {
+        if (result.status !== 0)
+          throw new Error(
+            "The identical constraint migration did not pass on the empty control.",
+          );
+        physicalDemoObservation(cwd, id, {
+          expectedRows,
+          descriptionRequired: true,
+        });
+        cli(["verify", "--json"], "empty control verify");
+        cli(["stop", "--json"], "empty control bounded stop");
+      } else {
+        if (
+          result.status === 0 ||
+          JSON.parse(result.stdout).error?.category !==
+            "migration_candidate_failure"
+        )
+          throw new Error(
+            "The null-bearing control did not fail with the safe migration category.",
+          );
+        if (
+          /null value in column|contains null values|alter table public\.widgets/iu.test(
+            `${result.stdout}\n${result.stderr}`,
+          )
+        )
+          throw new Error(
+            "The failed demo exposed raw provider SQL or output.",
+          );
+        assertDemoResourcesRemoved(cwd, id);
+        await writeFile(candidatePath, correctedBytes);
+        const corrected = cli(
+          ["explain", "--json"],
+          "corrected forward candidate plan",
+        );
+        if (
+          corrected.migrations.candidateSha256 === reviewedDigest ||
+          corrected.migrations.candidates.find(
+            (entry) =>
+              entry.filename ===
+              "20260101000200_require_widget_description.sql",
+          )?.sha256 !== sha256(correctedBytes)
+        )
+          throw new Error(
+            "The correction did not require review of changed candidate bytes.",
+          );
+        correctedDigest = corrected.migrations.candidateSha256;
+        const correctedRun = cli(
+          [
+            "run",
+            `--confirm-candidates=${corrected.migrations.candidateSha256}`,
+            "--json",
+          ],
+          "corrected data-shaped run",
+        );
+        if (
+          !correctedRun.applicationProof?.output?.includes(
+            "Data-shaped PostgreSQL application proof passed.",
+          )
+        )
+          throw new Error(
+            "The corrected rehearsal did not pass the ordinary HTTP application proof.",
+          );
+        cli(["start", "--json"], "corrected physical inspection start");
+        physicalDemoObservation(cwd, id, {
+          expectedRows,
+          descriptionRequired: true,
+        });
+        cli(["verify", "--json"], "corrected runtime verify");
+        cli(["stop", "--json"], "corrected bounded stop");
+      }
+      if ((await immutableBaselineFingerprint(cwd)) !== immutable)
+        throw new Error(
+          "The data-specific demo changed its immutable baseline.",
+        );
+      observations.push({
+        control: name,
+        rows: expectedRows,
+        knownNullsBefore: expectedRows,
+        outcome: name === "empty" ? "passed" : "migration_candidate_failure",
+      });
+    }
+  } catch (error) {
+    operationFailure = error;
+    throw error;
+  } finally {
+    const cleanupErrors = [];
+    for (const project of projects) {
+      if (!project.installed) continue;
+      try {
+        executeCliOrThrow({
+          cwd: project.cwd,
+          args: ["discard", "--json"],
+          label: "data-specific owned discard",
+        });
+        assertDemoResourcesRemoved(project.cwd, project.projectId);
+        await removeBaselineArtifactRoot({
+          artifactRoot: join(project.cwd, ".rehearsal"),
+        });
+      } catch (error) {
+        cleanupErrors.push(error);
+      }
+    }
+    if (cleanupErrors.length)
+      throw new AggregateError(
+        operationFailure ? [operationFailure, ...cleanupErrors] : cleanupErrors,
+        "The data-specific demo could not confirm cleanup of its owned resources.",
+      );
+  }
+  if ((await immutableBaselineFingerprint(originalCwd)) !== originalBaseline)
+    throw new Error(
+      "The data-specific demo changed the original scenario baseline.",
+    );
+  for (const [path, digest] of originalInputs) {
+    if (sha256(await readFile(join(fixtureSource, path))) !== digest)
+      throw new Error(
+        "The data-specific demo changed original fixture inputs or applied history.",
+      );
+  }
+  const afterContainers = new Set(
+    run(
+      "docker",
+      [
+        "ps",
+        "--all",
+        "--no-trunc",
+        "--format",
+        "{{.ID}}|{{.Names}}|{{.State}}",
+      ],
+      { cwd: originalCwd },
+    )
+      .trim()
+      .split("\n"),
+  );
+  const afterVolumes = new Set(
+    run("docker", ["volume", "ls", "--format", "{{.Name}}"], {
+      cwd: originalCwd,
+    })
+      .trim()
+      .split("\n"),
+  );
+  if (
+    unrelatedContainers.some((entry) => !afterContainers.has(entry)) ||
+    unrelatedVolumes.some((entry) => !afterVolumes.has(entry))
+  )
+    throw new Error(
+      "The data-specific demo did not preserve unrelated Docker resources.",
+    );
+  return {
+    candidateFileSha256: sha256(invalidBytes),
+    candidateSetSha256: reviewedDigest,
+    correctedCandidateSha256: correctedDigest,
+    observations,
+    immutableBaselinesPreserved: true,
+    unrelatedResourcesPreserved: true,
+    cleanup: "passed",
+  };
 };
 
 const main = async () => {
@@ -79,7 +485,7 @@ const main = async () => {
     startCommand: "node app.mjs ${ports.api}",
     proofCommand: "npm run proof",
     readiness: {
-      url: "http://localhost:${ports.api}",
+      url: "http://localhost:${ports.api}/health",
       expectedStatus: 200,
       timeoutSeconds: 10,
     },
@@ -566,6 +972,14 @@ const main = async () => {
       );
     }
 
+    const dataSpecificMigration = await runDataSpecificMigrationDemo({
+      artifact,
+      temporaryRoot,
+      originalCwd: cwd,
+      ports,
+      projectId,
+    });
+
     console.log(
       JSON.stringify(
         {
@@ -577,6 +991,7 @@ const main = async () => {
           target: "postgresql",
           validCandidate: "20260101000100_add_widget_description.sql",
           invalidCandidate: "20260101000200_invalid_candidate.sql",
+          dataSpecificMigration,
         },
         null,
         2,

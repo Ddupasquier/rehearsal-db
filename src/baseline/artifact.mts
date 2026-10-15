@@ -24,6 +24,9 @@ import {
   type MigrationLedgerEntry,
   type MigrationSourceEntry,
 } from "../runtime/migration_history.mjs";
+import { verifyBaselineShapeEvidence } from "../source/shape_evidence.mjs";
+import type { BaselineShapeEvidence } from "../source/shape_contract.mjs";
+import { readBoundedShapeJson } from "../source/shape_json.mjs";
 
 type ByteChunk = string | Uint8Array;
 type ByteStream = Iterable<ByteChunk> | AsyncIterable<ByteChunk>;
@@ -273,6 +276,7 @@ export const createAndActivateBaseline = async ({
   assets = [],
   schemaSql = null,
   activate = true,
+  shapeEvidence,
 }: {
   artifactRoot: string;
   generationId?: string;
@@ -288,6 +292,7 @@ export const createAndActivateBaseline = async ({
   assets?: Iterable<BaselineStorageAsset> | AsyncIterable<BaselineStorageAsset>;
   schemaSql?: string | null;
   activate?: boolean;
+  shapeEvidence?: BaselineShapeEvidence;
 }): Promise<BaselineManifest> => {
   const root = assertArtifactRoot(artifactRoot);
   assertGenerationId(generationId);
@@ -469,6 +474,27 @@ export const createAndActivateBaseline = async ({
       };
     }
 
+    const dataSha256 = dataHash.digest("hex");
+    let shapeReceipt: ContentReceipt | undefined;
+    if (shapeEvidence) {
+      verifyBaselineShapeEvidence(shapeEvidence, {
+        generationId,
+        baselineDataSha256: dataSha256,
+        privacyPolicySha256: metadata.sanitizationPolicySha256,
+        ...(typeof metadata.sourceSchemaSha256 === "string"
+          ? { sourceSchemaSha256: metadata.sourceSchemaSha256 }
+          : {}),
+      });
+      const content = canonicalJson(shapeEvidence);
+      shapeReceipt = {
+        sha256: createHash("sha256").update(content).digest("hex"),
+        bytes: Buffer.byteLength(content),
+      };
+      await writeImmutableFile(
+        join(buildDirectory, "shape-evidence.json"),
+        content,
+      );
+    }
     const manifest: BaselineManifest = {
       ...metadata,
       formatVersion: schemaReceipt ? 2 : 1,
@@ -477,10 +503,11 @@ export const createAndActivateBaseline = async ({
       tableCounts: Object.fromEntries([...tableCounts].sort()),
       files: {
         "sanitized-data.ndjson": {
-          sha256: dataHash.digest("hex"),
+          sha256: dataSha256,
           rows: rowCount,
         },
         ...(schemaReceipt ? { "production-schema.sql": schemaReceipt } : {}),
+        ...(shapeReceipt ? { "shape-evidence.json": shapeReceipt } : {}),
       },
       storageAssets: assetManifest,
       migrations: migrationManifest,
@@ -702,6 +729,31 @@ export const verifyActiveBaseline = async ({
   const actualHash = createHash("sha256").update(data).digest("hex");
   if (actualHash !== manifest.files?.["sanitized-data.ndjson"]?.sha256) {
     throw new Error("The active Rehearsal baseline data checksum is invalid.");
+  }
+  if (manifest.files?.["shape-evidence.json"]) {
+    const { bytes: shapeBytes, value: shapeValue } = await readBoundedShapeJson(
+      join(generationDirectory, "shape-evidence.json"),
+      { root: paths.artifactRoot },
+    );
+    const receipt = manifest.files["shape-evidence.json"];
+    if (
+      !receipt ||
+      shapeBytes.length > 1024 * 1024 ||
+      shapeBytes.length !== receipt.bytes ||
+      createHash("sha256").update(shapeBytes).digest("hex") !== receipt.sha256
+    ) {
+      throw new Error(
+        "The active Rehearsal shape-evidence checksum is invalid.",
+      );
+    }
+    verifyBaselineShapeEvidence(shapeValue, {
+      generationId: manifest.generationId,
+      baselineDataSha256: actualHash,
+      privacyPolicySha256: manifest.sanitizationPolicySha256,
+      ...(typeof manifest.sourceSchemaSha256 === "string"
+        ? { sourceSchemaSha256: manifest.sourceSchemaSha256 }
+        : {}),
+    });
   }
   if (manifest.files?.["production-schema.sql"]) {
     const schema = await readFile(paths.schemaPath);

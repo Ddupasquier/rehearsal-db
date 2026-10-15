@@ -42,6 +42,10 @@ Before opening a pull request:
    `npm run release:verify` so every scenario installs the same exact tarball;
 7. update public contracts and the changelog when behavior changes.
 
+The unit suite uses two workers to limit overlapping CLI imports and memory pressure.
+On a slow filesystem, `npm test -- --maxWorkers=1` runs the same checks serially;
+it does not relax timeouts or skip safety assertions. Keep live database scenarios serial.
+
 Never use real production data in an issue, test, fixture, or pull request. Use small
 synthetic examples. Security findings belong in private vulnerability reporting, not a
 public issue.

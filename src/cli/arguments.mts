@@ -18,7 +18,11 @@ export interface RehearsalCliFlags {
   target: string | undefined;
   includeRuntime: boolean;
   includeImages: boolean;
+  imageIds: string[] | undefined;
+  imagesOnly: boolean;
   cleanupConfirmation: string | undefined;
+  stopConfirmation: string | undefined;
+  proposalPath: string | undefined;
   sourceAccessConfirmation: string | undefined;
   sourceRetirementConfirmation: string | undefined;
   refreshConfirmation: string | undefined;
@@ -52,7 +56,11 @@ export const parseArguments = (
     target: undefined,
     includeRuntime: false,
     includeImages: false,
+    imageIds: undefined,
+    imagesOnly: false,
     cleanupConfirmation: undefined,
+    stopConfirmation: undefined,
+    proposalPath: undefined,
     sourceAccessConfirmation: undefined,
     sourceRetirementConfirmation: undefined,
     refreshConfirmation: undefined,
@@ -78,6 +86,10 @@ export const parseArguments = (
       flags.confirmation = argument.slice("--confirm-candidates=".length);
     else if (argument.startsWith("--confirm-cleanup="))
       flags.cleanupConfirmation = argument.slice("--confirm-cleanup=".length);
+    else if (argument.startsWith("--confirm-stop="))
+      flags.stopConfirmation = argument.slice("--confirm-stop=".length);
+    else if (argument.startsWith("--proposal="))
+      flags.proposalPath = argument.slice("--proposal=".length);
     else if (argument.startsWith("--confirm-source-access="))
       flags.sourceAccessConfirmation = argument.slice(
         "--confirm-source-access=".length,
@@ -102,6 +114,11 @@ export const parseArguments = (
       flags.target = argument.slice("--target=".length);
     else if (argument === "--include-runtime") flags.includeRuntime = true;
     else if (argument === "--include-images") flags.includeImages = true;
+    else if (argument === "--images-only") {
+      flags.imagesOnly = true;
+      flags.includeImages = true;
+    } else if (argument.startsWith("--image-id="))
+      (flags.imageIds ??= []).push(argument.slice("--image-id=".length));
     else if (argument.startsWith("--"))
       throw new Error(`Unknown Rehearsal option: ${argument}.`);
     else positionals.push(argument);
@@ -120,7 +137,11 @@ export const resetGuidedFlags = (flags: RehearsalCliFlags): void => {
     target: undefined,
     includeRuntime: false,
     includeImages: false,
+    imageIds: undefined,
+    imagesOnly: false,
     cleanupConfirmation: undefined,
+    stopConfirmation: undefined,
+    proposalPath: undefined,
     sourceAccessConfirmation: undefined,
     sourceRetirementConfirmation: undefined,
     refreshConfirmation: undefined,
@@ -143,6 +164,7 @@ export const commandMutatesProject = ({
   if (["setup", "init", "baseline prepare", "privacy key"].includes(command))
     return flags.write;
   if (command === "cleanup") return flags.write;
+  if (command === "stop-stale") return Boolean(flags.stopConfirmation);
   if (command === "source apply")
     return Boolean(flags.sourceAccessConfirmation);
   if (command === "source retire")

@@ -45,6 +45,10 @@ release.
 
 ## Promotion sequence
 
+The sequence below records the initial beta-to-stable policy, not current release
+progress. Historical version names explain that policy; they do not claim a candidate
+is ready or restart an observation window by themselves.
+
 1. Ship beta.18 with only stability, release-safety, upgrade, and documentation work.
 2. Freeze broad feature development on the release branch.
 3. Publish a release candidate from protected `main` through the reviewed npm environment.

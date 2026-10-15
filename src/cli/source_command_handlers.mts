@@ -80,6 +80,13 @@ export const createSourceCommandHandlers = ({
             `Activated refreshed baseline ${result.generationId}.`,
             `${formatCount(result.manifest.rowCount, "sanitized row")} across ${formatCount(Object.keys(result.manifest.tableCounts).length, "table")}.`,
             `Source estimate: ${formatCount(result.estimate.rows, "row")}, ${formatBytes(result.estimate.bytes)}.`,
+            ...(result.shape
+              ? [
+                  `Reviewed shape: ${result.shape.relationships.length} relationship(s) verified; ${result.shape.distributions.filter((goal) => goal.status === "passed").length}/${result.shape.distributions.length} distribution goal(s) proved.`,
+                  ...result.shape.warnings,
+                  "Shape is declared evidence, not a guarantee of production equivalence.",
+                ]
+              : []),
             "",
             "Next: run rehearsal source retire, then rehearsal doctor.",
           ].join("\n"),

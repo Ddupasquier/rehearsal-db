@@ -15,6 +15,7 @@ import { createAndActivateBaseline } from "../../../dist/src/baseline/artifact.m
 import {
   buildRehearsalPlan,
   inspectRehearsalMigrations,
+  inspectRehearsalBaseline,
 } from "../../../dist/src/runtime/plan.mjs";
 
 const roots = [];
@@ -33,7 +34,7 @@ const makeTreeWritable = async (path) => {
   }
 };
 
-const createFixture = async () => {
+const createFixture = async (metadata = {}) => {
   const root = await mkdtemp(join(tmpdir(), "rehearsal-plan-test-"));
   roots.push(root);
   await Promise.all([
@@ -106,6 +107,7 @@ export default defineRehearsalConfig({
       sanitizationPolicySha256: createHash("sha256")
         .update(policySource)
         .digest("hex"),
+      ...metadata,
     },
     expectedTables: ["widget"],
     migrationFiles: [historical],
@@ -121,6 +123,30 @@ afterEach(async () => {
 });
 
 describe("Rehearsal plan", () => {
+  it("exposes reviewed source-schema identity only when exact metadata exists", async () => {
+    const legacy = await createFixture();
+    expect(
+      (await buildRehearsalPlan({ projectRoot: legacy })).baseline
+        .sourceSchemaSha256,
+    ).toBeNull();
+    const sourceSchemaSha256 = "c".repeat(64);
+    const known = await createFixture({ sourceSchemaSha256 });
+    expect(
+      (await buildRehearsalPlan({ projectRoot: known })).baseline
+        .sourceSchemaSha256,
+    ).toBe(sourceSchemaSha256);
+    expect(
+      (await inspectRehearsalBaseline({ projectRoot: known }))
+        .sourceSchemaSha256,
+    ).toBe(sourceSchemaSha256);
+    const invalid = await createFixture({
+      sourceSchemaSha256: "PRIVATE_SCHEMA_CANARY",
+    });
+    expect(
+      (await buildRehearsalPlan({ projectRoot: invalid })).baseline
+        .sourceSchemaSha256,
+    ).toBeNull();
+  });
   it("builds deterministic plan semantics without mutating the project", async () => {
     const root = await createFixture();
     const first = await buildRehearsalPlan({ projectRoot: root });
@@ -132,11 +158,13 @@ describe("Rehearsal plan", () => {
     expect(first.migrations.representedCount).toBe(1);
     expect(first.migrations.candidateCount).toBe(0);
     expect(first.lifecycle).toEqual({
+      openIdleTimeoutSeconds: null,
       run: "keep-until-stop",
       open: "keep-until-stop",
       dataOnStop: "preserved",
     });
     expect(first.application).toEqual({
+      activity: null,
       startCommand: "npm run dev",
       proofCommand: "npm test",
       readiness: null,

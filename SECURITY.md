@@ -4,9 +4,10 @@ Rehearsal handles sensitive database topology and may process sanitized derivati
 production data. Do not include credentials, connection strings, raw data, or a real
 baseline in a public report.
 
-Report suspected vulnerabilities through GitHub's private vulnerability reporting for
-this repository. Do not open a public issue containing an exploit, secret, hosted
-target, or source record.
+Report suspected vulnerabilities through the
+[private security form](https://github.com/Ddupasquier/rehearsal-db/security/advisories/new)
+in this repository. A GitHub account is required. Do not open a
+public issue containing an exploit, secret, hosted target, or source record.
 
 Supported security updates cover the latest released 0.x minor during beta. A security
 fix may deliberately tighten configuration or refuse a workflow that an earlier beta

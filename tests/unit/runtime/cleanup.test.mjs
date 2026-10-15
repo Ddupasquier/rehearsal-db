@@ -95,6 +95,84 @@ afterEach(async () => {
 });
 
 describe("Rehearsal cleanup", () => {
+  it("reviews only explicitly selected images without selecting baselines or runtime data", async () => {
+    const projectRoot = await makeProject();
+    const id = `sha256:${"a".repeat(64)}`;
+    let candidates = [
+      {
+        id,
+        tags: ["public.ecr.aws/supabase/postgres:old"],
+        createdAt: "2026-09-01T00:00:00Z",
+        bytes: 100,
+      },
+    ];
+    const inspection = {
+      inspectDockerUsage: () => ({
+        available: true,
+        resources: [],
+        disk: null,
+      }),
+      runtimeDetected: async () => {
+        throw new Error("Image-only review must not inspect the runtime");
+      },
+      inspectUnusedImages: () => candidates,
+    };
+    const plan = await planRehearsalCleanup({
+      projectRoot,
+      imagesOnly: true,
+      includeImages: true,
+      selectedImageIds: [id],
+      inspection,
+    });
+    expect(plan.baselines.removed).toEqual([]);
+    expect(plan.runtime).toMatchObject({ included: false, detected: false });
+    expect(plan.images.candidates.map((i) => i.id)).toEqual([id]);
+    candidates = [];
+    await expect(
+      applyRehearsalCleanup({
+        projectRoot,
+        plan,
+        confirmation: plan.digest,
+        inspection,
+      }),
+    ).rejects.toThrow("no longer an eligible");
+    expect(
+      await readdir(join(projectRoot, ".rehearsal/generations")),
+    ).toHaveLength(3);
+    await expect(
+      planRehearsalCleanup({
+        projectRoot,
+        imagesOnly: true,
+        includeRuntime: true,
+        inspection,
+      }),
+    ).rejects.toThrow("cannot include a database");
+  });
+  it("rejects protected runtime cleanup while preserving ordinary baseline policy", async () => {
+    const projectRoot = await makeProject();
+    const source = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(projectRoot, "rehearsal.config.mjs"), "utf8"),
+    );
+    await writeFile(
+      join(projectRoot, "rehearsal.config.mjs"),
+      source.replace("runtime: {", "runtime: { protected: true,"),
+    );
+    await expect(
+      planRehearsalCleanup({
+        projectRoot,
+        includeRuntime: true,
+        inspection: isolatedInspection,
+      }),
+    ).rejects.toThrow("protected");
+    expect(
+      (
+        await planRehearsalCleanup({
+          projectRoot,
+          inspection: isolatedInspection,
+        })
+      ).runtime.protected,
+    ).toBe(true);
+  });
   it("parses container disk capacity without depending on localized labels", () => {
     expect(
       parsePosixDiskUsage(
@@ -248,6 +326,40 @@ describe("Rehearsal cleanup", () => {
         bytes: 100,
         tags: ["public.ecr.aws/supabase/studio:old"],
       },
+    ]);
+  });
+
+  it("selects the same newest tag when Docker returns equal timestamps in any order", () => {
+    const images = [
+      {
+        Id: "sha256:v16.1",
+        Created: "2026-08-02T15:45:07Z",
+        Size: 101,
+        RepoTags: ["public.ecr.aws/supabase/postgrest:v16.1"],
+      },
+      {
+        Id: "sha256:v16.4",
+        Created: "2026-08-02T15:45:07Z",
+        Size: 104,
+        RepoTags: ["public.ecr.aws/supabase/postgrest:v16.4"],
+      },
+      {
+        Id: "sha256:v16.2",
+        Created: "2026-08-02T15:45:07Z",
+        Size: 102,
+        RepoTags: ["public.ecr.aws/supabase/postgrest:v16.2"],
+      },
+    ];
+    const select = (input) =>
+      selectOlderUnusedSupabaseImages({
+        images: input,
+        usedImageIds: new Set(),
+      }).map(({ id }) => id);
+
+    expect(select(images)).toEqual(["sha256:v16.1", "sha256:v16.2"]);
+    expect(select([...images].reverse())).toEqual([
+      "sha256:v16.1",
+      "sha256:v16.2",
     ]);
   });
 });

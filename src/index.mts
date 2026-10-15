@@ -1,4 +1,5 @@
 /** Public Rehearsal package entry point. */
+export type { ApplicationActivitySample } from "./application/activity_contract.mjs";
 
 export {
   REHEARSAL_CONFIG_VERSION,
@@ -12,6 +13,7 @@ export {
   renderDetectedPostgresqlConfig,
 } from "./project/configuration.mjs";
 export type {
+  ApplicationRequiredService,
   DetectedProject,
   DecisionDiscoveryItem,
   DetectedDiscoveryItem,
@@ -22,6 +24,7 @@ export type {
   NormalizedRehearsalConfig,
   ProjectDiscoveryResult,
   RehearsalConfig,
+  RehearsalResourcePolicy,
   RehearsalConfigPathOptions,
   RehearsalConfigVersion,
 } from "./project/configuration.mjs";

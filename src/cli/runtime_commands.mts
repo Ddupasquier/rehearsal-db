@@ -1,10 +1,7 @@
-/**
- * CLI orchestration for one or more isolated database runtimes and their
- * project-owned proof commands.
- */
-
+/** Orchestrate isolated database runtimes and project-owned application proofs. */
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -14,12 +11,19 @@ import {
   startApplicationSession,
   summarizeProjectCommandFailure,
 } from "../application/session.mjs";
+import type { ApplicationSession } from "../application/session.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
-import { buildRehearsalPlan, runRehearsalDoctor } from "../runtime/plan.mjs";
+import { topologyCandidateSummary } from "./runtime_planning.mjs";
+export {
+  buildRuntimeStackPlan,
+  runRuntimeStackDoctor,
+  topologyCandidateSummary,
+} from "./runtime_planning.mjs";
 import {
   inspectRuntimeTopologyCandidates,
   loadRuntimeTopology,
+  selectRuntimeTargets,
 } from "../runtime/topology.mjs";
 import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
 import {
@@ -34,13 +38,30 @@ import {
   throwIfOperationCancelled,
 } from "../shared/cancellation.mjs";
 import { runOwnedProcess } from "../shared/owned_process.mjs";
+import {
+  getOwnedOperationProgressId,
+  trackOperationStage,
+} from "../shared/operation_progress.mjs";
 import { buildRuntimeManagerArguments } from "../targets/target.mjs";
 import {
   parseRuntimeStatusSnapshot,
   renderRuntimeStatusSnapshot,
 } from "../runtime/status.mjs";
 import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
-import { applyRuntimePersistence } from "../runtime/persistence.mjs";
+import {
+  applyRuntimePersistence,
+  shouldStopRuntime,
+} from "../runtime/persistence.mjs";
+import { executeRuntimeTargetStack } from "./runtime_stack_execution.mjs";
+import { summarizeRuntimeManagerFailure } from "./runtime_failure_summary.mjs";
+import { releaseOwnedColimaWhenIdle } from "../runtime/container_engine_ownership.mjs";
+import { inspectRehearsalResources } from "../runtime/resource_inventory.mjs";
+import { assertLocalDockerContext } from "../runtime/local_docker_context.mjs";
+import { runtimeConfigurationSha256 } from "../runtime/configuration_binding.mjs";
+import {
+  assertResourcePolicyAllowsStartup,
+  evaluateResourcePolicy,
+} from "../runtime/resource_policy.mjs";
 import {
   formatDuration,
   isHumanTerminal,
@@ -82,169 +103,6 @@ interface RuntimeStackResult {
         targets: readonly ManagerReceipt[];
       }>;
 }
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
-export const buildRuntimeStackPlan = async (
-  planOptions: RehearsalConfigPathOptions,
-) => {
-  const topology = await loadRuntimeTopology(planOptions);
-  if (topology.targets.length === 1) return buildRehearsalPlan(planOptions);
-  const targets: Array<{
-    name: string;
-    declaration: RuntimeTopologyTarget["declaration"];
-    plan: Awaited<ReturnType<typeof buildRehearsalPlan>>;
-  }> = [];
-  for (const target of topology.targets) {
-    targets.push({
-      name: target.name,
-      declaration: target.declaration,
-      plan: await buildRehearsalPlan({
-        projectRoot: topology.projectRoot,
-        configPath: target.configPath,
-      }),
-    });
-  }
-  const candidates = await inspectRuntimeTopologyCandidates(planOptions);
-  const primaryPlan = targets[0]!.plan;
-  return {
-    config: primaryPlan.config,
-    environment: primaryPlan.environment,
-    application: primaryPlan.application,
-    cleanup: primaryPlan.cleanup,
-    targets,
-    migrations: {
-      candidateCount: candidates.candidateCount,
-      candidateSha256: candidates.candidateSha256,
-    },
-    lifecycle: {
-      run: topology.primary.config.lifecycle.run,
-      open: topology.primary.config.lifecycle.open,
-      dataOnStop: "preserved",
-    },
-    execution: [
-      "verify every immutable baseline and migration prefix",
-      "restore and migrate the primary runtime",
-      "restore and migrate each dependent runtime in declared order",
-      ...topology.dependents
-        .filter(
-          (
-            target,
-          ): target is RuntimeTopologyTarget & {
-            declaration: NonNullable<RuntimeTopologyTarget["declaration"]>;
-          } => Boolean(target.declaration?.prepareCommand),
-        )
-        .map(
-          (target) =>
-            `run ${target.name} preparation: ${target.declaration.prepareCommand}`,
-        ),
-      ...topology.dependents.map(
-        (target) =>
-          `run ${target.name} proof: ${target.config.application.proofCommand}`,
-      ),
-      `run primary proof: ${topology.primary.config.application.proofCommand}`,
-      topology.primary.config.lifecycle.run === "stop-after-run"
-        ? "stop every database target after proofs while preserving its data"
-        : "keep every database target available until an explicit stop",
-    ],
-    guarantee:
-      "Every database target is isolated by its own project ID, ports, artifact directory, and local-only safety policy. No production resources will be contacted.",
-  };
-};
-
-export const runRuntimeStackDoctor = async (
-  planOptions: RehearsalConfigPathOptions,
-) => {
-  let topology;
-  try {
-    topology = await loadRuntimeTopology(planOptions);
-  } catch (error) {
-    if (
-      errorMessage(error).startsWith("No Rehearsal configuration was found")
-    ) {
-      return runRehearsalDoctor(planOptions);
-    }
-    return {
-      state: "NOT READY",
-      checks: [
-        {
-          id: "runtime-topology",
-          label: "Dependent runtime isolation",
-          status: "fail",
-          detail: String(redactDiagnosticValue(errorMessage(error))),
-          remediation:
-            "Give every target a readable config with unique ports, project ID, environment file, and .rehearsal artifact directory.",
-        },
-      ],
-      ambientHostedVariables: {
-        presentButQuarantined: [],
-        note: "Topology validation stopped before any runtime action.",
-      },
-    };
-  }
-  if (topology.targets.length === 1) return runRehearsalDoctor(planOptions);
-  const reports = [];
-  for (const target of topology.targets) {
-    reports.push({
-      target: target.name,
-      report: await runRehearsalDoctor({
-        projectRoot: topology.projectRoot,
-        configPath: target.configPath,
-      }),
-    });
-  }
-  return {
-    state: reports.every(({ report }) => report.state === "READY")
-      ? "READY"
-      : "NOT READY",
-    checks: reports.flatMap(({ target, report }) =>
-      report.checks.map((check) => ({
-        ...check,
-        id: `${target}:${check.id}`,
-        label: `${target}: ${check.label}`,
-      })),
-    ),
-    ambientHostedVariables: {
-      presentButQuarantined: [
-        ...new Set(
-          reports.flatMap(
-            ({ report }) =>
-              report.ambientHostedVariables?.presentButQuarantined ?? [],
-          ),
-        ),
-      ],
-      note: "Blocked ambient values are not inherited by Rehearsal child processes.",
-    },
-  };
-};
-
-export const topologyCandidateSummary = async (
-  planOptions: RehearsalConfigPathOptions,
-) => {
-  const inspection = await inspectRuntimeTopologyCandidates(planOptions);
-  const targets = inspection.targets.map((target) => ({
-    name: target.name,
-    configPath: target.configPath,
-    baselineGenerationId: target.summary.baselineGenerationId,
-    candidateSha256: target.summary.candidateSha256,
-    candidateCount: target.summary.candidateCount,
-    candidates: target.summary.candidates,
-  }));
-  return {
-    baselineGenerationId: targets[0]!.baselineGenerationId,
-    candidateSha256: inspection.candidateSha256,
-    candidateCount: inspection.candidateCount,
-    candidates: targets.flatMap((target) =>
-      target.candidates.map((candidate) => ({
-        ...candidate,
-        target: target.name,
-      })),
-    ),
-    targets,
-    topology: inspection.topology,
-  };
-};
 
 const parseCommand = (source: string): [string, ...string[]] => {
   const values: string[] = [];
@@ -304,7 +162,11 @@ export const classifyManagerFailure = ({
   output: string;
   inferredCategory: RehearsalErrorCategory;
 }): RehearsalErrorCategory => {
-  if (RUNTIME_STARTUP_FAILURE_PATTERN.test(output)) {
+  if (
+    RUNTIME_STARTUP_FAILURE_PATTERN.test(output) ||
+    /Supabase startup failed \(/u.test(output) ||
+    /^Error:\s*supabase start(?:\s|$)/imu.test(output)
+  ) {
     return "runtime_dependency_failure";
   }
   if (
@@ -463,19 +325,37 @@ export const createRuntimeCommands = ({
   managerPath: string;
   getActivePackageFingerprint: () => InstalledPackageFingerprint | undefined;
 }) => {
-  const runManager = async ({
+  const executeManager = async ({
     action,
     flags,
     configPath = flags.configPath,
     confirmation = flags.confirmation,
     targetName,
+    operationId,
+    dockerContext,
+    dockerIdentity,
+    configSha256,
   }: {
     action: RuntimeAction;
     flags: RehearsalCliFlags;
     configPath?: string;
     confirmation?: string;
     targetName?: string;
+    operationId?: string;
+    dockerContext?: string;
+    dockerIdentity?: string;
+    configSha256?: string;
   }): Promise<ManagerReceipt> => {
+    const configurationSha256 =
+      configSha256 ??
+      runtimeConfigurationSha256(
+        (
+          await loadRehearsalConfig({
+            projectRoot,
+            ...(configPath === undefined ? {} : { configPath }),
+          })
+        ).config,
+      );
     const fingerprint = getActivePackageFingerprint();
     if (fingerprint) {
       assertInstalledPackageFingerprint({
@@ -518,7 +398,14 @@ export const createRuntimeCommands = ({
     // project-owned application commands continue to receive the reduced
     // project environment above.
     const managerEnvironment: NodeJS.ProcessEnv = {
+      ...(getOwnedOperationProgressId()
+        ? { REHEARSAL_OWNER_OPERATION_ID: getOwnedOperationProgressId()! }
+        : {}),
       ...(cancellationSignal ? { REHEARSAL_CANCELLABLE_OPERATION: "1" } : {}),
+      ...(operationId ? { REHEARSAL_OPERATION_ID: operationId } : {}),
+      ...(dockerContext ? { REHEARSAL_DOCKER_CONTEXT: dockerContext } : {}),
+      ...(dockerIdentity ? { REHEARSAL_DOCKER_IDENTITY: dockerIdentity } : {}),
+      REHEARSAL_CONFIGURATION_SHA256: configurationSha256,
       ...(process.env.ELECTRON_RUN_AS_NODE === "1"
         ? { ELECTRON_RUN_AS_NODE: "1" }
         : {}),
@@ -529,6 +416,7 @@ export const createRuntimeCommands = ({
       cwd: projectRoot,
       env: projectCommandEnvironment(managerEnvironment),
       ...(cancellationSignal ? { signal: cancellationSignal } : {}),
+      cancellationGraceMs: 45_000,
     });
     throwIfOperationCancelled();
     const currentFingerprint = getActivePackageFingerprint();
@@ -551,26 +439,19 @@ export const createRuntimeCommands = ({
         .filter(Boolean)
         .join("\n")
         .trim();
+      const conciseOutput = summarizeRuntimeManagerFailure(completeOutput);
       const inferred = normalizeRehearsalError(
-        new Error(completeOutput || `Rehearsal ${action} failed.`),
+        new Error(conciseOutput || `Rehearsal ${action} failed.`),
       );
       const category = classifyManagerFailure({
         action,
-        output: completeOutput,
+        output: conciseOutput,
         inferredCategory: inferred.category,
       });
       const startupFailure = category === "runtime_dependency_failure";
       const engineCapacity = startupFailure
         ? inspectContainerCapacity()
         : undefined;
-      const conciseOutput = completeOutput
-        .replaceAll(String.fromCodePoint(27), "")
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .slice(-8)
-        .join("\n")
-        .slice(-2_000);
       throw new RehearsalError({
         category,
         code: `MANAGER_${action.toUpperCase()}_FAILED`,
@@ -589,7 +470,7 @@ export const createRuntimeCommands = ({
             : []),
           "Use --debug only when the safe diagnostic detail is needed.",
         ],
-        cause: new Error(completeOutput || `exit ${result.status}`),
+        cause: new Error(conciseOutput || `exit ${result.status}`),
       });
     }
     const durationMs = performance.now() - runtimeStartedMs;
@@ -617,6 +498,24 @@ export const createRuntimeCommands = ({
     };
   };
 
+  const runManager = (
+    options: Parameters<typeof executeManager>[0],
+  ): Promise<ManagerReceipt> =>
+    options.action === "status"
+      ? executeManager(options)
+      : trackOperationStage(
+          {
+            phase:
+              options.action === "verify"
+                ? "runtime-verification"
+                : ["stop", "discard"].includes(options.action)
+                  ? "cleanup"
+                  : "runtime-lifecycle",
+            target: options.targetName ?? "primary",
+          },
+          () => executeManager(options),
+        );
+
   const runRuntimeStack = async ({
     command,
     flags,
@@ -632,25 +531,81 @@ export const createRuntimeCommands = ({
       (session.runtimeTopology as RuntimeTopology | undefined) ??
       (await loadRuntimeTopology(planOptions));
     const reverse = ["stop", "discard"].includes(command);
-    const targets = reverse
-      ? [...topology.targets].reverse()
-      : topology.targets;
-    const results: ManagerReceipt[] = [];
-    for (const target of targets) {
-      const confirmation = (
-        session.targetConfirmations as Map<string, string> | undefined
-      )?.get(target.configPath);
-      results.push(
-        await runManager({
+    if (
+      ["start", "run", "reset"].includes(command) &&
+      topology.primary.config.resources.maximumBytes !== null
+    ) {
+      assertResourcePolicyAllowsStartup(
+        evaluateResourcePolicy({
+          inventory: await inspectRehearsalResources(planOptions),
+          policy: topology.primary.config.resources,
+        }),
+      );
+    }
+    const selectedTargets = selectRuntimeTargets(
+      topology.targets,
+      flags.target,
+      command,
+    );
+    const targets = reverse ? [...selectedTargets].reverse() : selectedTargets;
+    const engine =
+      command === "status"
+        ? null
+        : assertLocalDockerContext({ cwd: topology.projectRoot });
+    const engineBinding = engine
+      ? { dockerContext: engine.context, dockerIdentity: engine.identity }
+      : {};
+    const operationId = randomUUID();
+    const results = await executeRuntimeTargetStack({
+      targets,
+      cleanupOnFailure:
+        command === "run"
+          ? shouldStopRuntime(topology.primary.config.lifecycle.run)
+          : command === "start" &&
+            shouldStopRuntime(topology.primary.config.lifecycle.open),
+      execute: async (target) => {
+        const confirmation = (
+          session.targetConfirmations as Map<string, string> | undefined
+        )?.get(target.configPath);
+        return runManager({
           action: command,
           flags,
           configPath: target.configPath,
           ...(confirmation === undefined ? {} : { confirmation }),
           ...(topology.targets.length > 1 ? { targetName: target.name } : {}),
+          operationId,
+          ...engineBinding,
+          configSha256: runtimeConfigurationSha256(target.config),
+        });
+      },
+      stop: (target) =>
+        runManager({
+          action: "stop",
+          flags,
+          configPath: target.configPath,
+          targetName: target.name,
+          operationId,
+          ...engineBinding,
+          configSha256: runtimeConfigurationSha256(target.config),
         }),
-      );
-    }
-    if (results.length === 1) return { topology, runtime: results[0]! };
+    });
+    const release = ["stop", "discard"].includes(command)
+      ? releaseOwnedColimaWhenIdle({
+          projectRoot: topology.projectRoot,
+          targets: topology.targets,
+        })
+      : null;
+    const withRelease = (receipt: ManagerReceipt): ManagerReceipt =>
+      release
+        ? {
+            ...receipt,
+            output: [receipt.output, release.message]
+              .filter(Boolean)
+              .join("\n"),
+          }
+        : receipt;
+    if (results.length === 1)
+      return { topology, runtime: withRelease(results[0]!) };
     return {
       topology,
       runtime: {
@@ -660,8 +615,13 @@ export const createRuntimeCommands = ({
             results.reduce((total, result) => total + result.durationMs, 0) *
               100,
           ) / 100,
-        output: results
-          .map((result) => `[${result.target}]\n${result.output}`)
+        output: [
+          results
+            .map((result) => `[${result.target}]\n${result.output}`)
+            .join("\n\n"),
+          release?.message,
+        ]
+          .filter(Boolean)
           .join("\n\n"),
         targets: results,
       },
@@ -674,17 +634,21 @@ export const createRuntimeCommands = ({
   ) => {
     const { config, projectRoot: configuredRoot } =
       await loadRehearsalConfig(planOptions);
-    return runProjectCommand({
-      source: config.application.proofCommand,
-      configuredRoot,
-      label: options.targetName
-        ? `application proof for ${options.targetName}`
-        : "application proof",
-      project: config.project.name,
-      ...(options.environment === undefined
-        ? {}
-        : { environment: options.environment }),
-    });
+    return trackOperationStage(
+      { phase: "application-proof", target: options.targetName ?? "primary" },
+      () =>
+        runProjectCommand({
+          source: config.application.proofCommand,
+          configuredRoot,
+          label: options.targetName
+            ? `application proof for ${options.targetName}`
+            : "application proof",
+          project: config.project.name,
+          ...(options.environment === undefined
+            ? {}
+            : { environment: options.environment }),
+        }),
+    );
   };
 
   const prepareDependentTargets = async ({
@@ -700,16 +664,21 @@ export const createRuntimeCommands = ({
       output: string;
     }> = [];
     for (const target of topology.dependents) {
-      if (!target.declaration?.prepareCommand) continue;
+      const prepareCommand = target.declaration?.prepareCommand;
+      if (!prepareCommand) continue;
       preparations.push({
         target: target.name,
-        ...(await runProjectCommand({
-          source: target.declaration.prepareCommand,
-          configuredRoot: topology.projectRoot,
-          label: `preparation command for ${target.name}`,
-          project: topology.primary.config.project.name,
-          environment,
-        })),
+        ...(await trackOperationStage(
+          { phase: "dependent-preparation", target: target.name },
+          () =>
+            runProjectCommand({
+              source: prepareCommand,
+              configuredRoot: topology.projectRoot,
+              label: `preparation command for ${target.name}`,
+              project: topology.primary.config.project.name,
+              environment,
+            }),
+        )),
       });
     }
     return preparations;
@@ -758,7 +727,8 @@ export const createRuntimeCommands = ({
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
     const application = topology.primary.config.application;
-    if (!application.readiness) {
+    const readiness = application.readiness;
+    if (!readiness) {
       throw new Error(
         "rehearsal open requires config.application.readiness so it can confirm the local application is usable.",
       );
@@ -802,18 +772,23 @@ export const createRuntimeCommands = ({
       topology,
       environment: topologyCommandEnvironment(topology),
     });
-    const applicationSession = await startApplicationSession({
-      command: application.startCommand,
-      cwd: topology.projectRoot,
-      files: topologyEnvironmentFiles(topology),
-      mappings: application.environmentVariables,
-      readiness: application.readiness,
-    });
+    const applicationSession = await trackOperationStage(
+      { phase: "application-start", target: "primary" },
+      () =>
+        startApplicationSession({
+          command: application.startCommand,
+          cwd: topology.projectRoot,
+          files: topologyEnvironmentFiles(topology),
+          mappings: application.environmentVariables,
+          readiness,
+        }),
+    );
     return {
       started: started.runtime,
       verified: verified.runtime,
       preparations,
       command: application.startCommand,
+      applicationUrl: topology.primary.config.runtime.applicationUrl,
       session: applicationSession,
     };
   };
@@ -827,7 +802,9 @@ export const createRuntimeCommands = ({
     flags: RehearsalCliFlags;
     planOptions: RehearsalConfigPathOptions;
     session: CliSessionState;
-    onReady?: Parameters<typeof holdApplicationSession>[0]["onReady"];
+    onReady?: (
+      ready: ApplicationSession["ready"] & { readonly applicationUrl: string },
+    ) => void;
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
     let runtimeStarted = false;
@@ -843,10 +820,35 @@ export const createRuntimeCommands = ({
             runtimeStarted = true;
           },
         });
-        const closed = await holdApplicationSession({
-          session: active.session,
-          onReady,
-        });
+        const closed = await trackOperationStage(
+          { phase: "interactive-session", target: "primary" },
+          () =>
+            holdApplicationSession({
+              session: active.session,
+              onReady: (ready) => {
+                onReady({ ...ready, applicationUrl: active.applicationUrl });
+                if (
+                  isHumanTerminal(flags) &&
+                  topology.primary.config.lifecycle.openIdleTimeoutSeconds !==
+                    null
+                )
+                  console.log(
+                    `Idle shutdown is enabled after ${topology.primary.config.lifecycle.openIdleTimeoutSeconds}s of application-declared inactivity. Unknown activity preserves the running sandbox.`,
+                  );
+              },
+              activity: topology.primary.config.application.activity,
+              idleTimeoutSeconds:
+                topology.primary.config.lifecycle.openIdleTimeoutSeconds,
+              onActivityAvailability: (available) => {
+                if (isHumanTerminal(flags))
+                  console.log(
+                    available
+                      ? "Application activity is verified; foreground idle monitoring is active."
+                      : "Idle shutdown is paused: application activity is unavailable or invalid. The sandbox remains running; review the configured activity route.",
+                  );
+              },
+            }),
+        );
         return { active, closed };
       },
       stop: async () =>
@@ -868,7 +870,9 @@ export const createRuntimeCommands = ({
       application: {
         command: active.command,
         readiness: active.session.ready,
-        stoppedBy: closed.signal,
+        stoppedBy:
+          closed.reason === "idle-timeout" ? "idle-timeout" : closed.signal,
+        closeReason: closed.reason,
         diagnostics: closed.diagnostics,
       },
       lifecycle,
@@ -887,6 +891,11 @@ export const createRuntimeCommands = ({
     session: CliSessionState;
   }): Promise<boolean> => {
     if (!["run", "migrate"].includes(command) || flags.dryRun) return true;
+    selectRuntimeTargets(
+      (await loadRuntimeTopology(planOptions)).targets,
+      flags.target,
+      command,
+    );
     const summary = await topologyCandidateSummary(planOptions);
     session.runtimeTopology = summary.topology;
     session.targetConfirmations = new Map(

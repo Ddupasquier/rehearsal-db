@@ -7,11 +7,13 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   prepare:
     if: github.event_name == 'release'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     outputs:
       package_name: ${{ steps.candidate.outputs.package_name }}
       package_version: ${{ steps.candidate.outputs.package_version }}
@@ -22,12 +24,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           package-manager-cache: false
+      - name: Refuse unverified release protections before preparation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release/preflight.mjs prepare
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm audit --omit=dev --audit-level=high
@@ -75,9 +81,14 @@ jobs:
   publish:
     needs: prepare
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: rehearsal-core-npm-mutations
+      cancel-in-progress: false
     environment: npm
     permissions:
       contents: read
+      actions: read
       id-token: write
     env:
       PACKAGE_NAME: ${{ needs.prepare.outputs.package_name }}
@@ -87,6 +98,9 @@ jobs:
       EXPECTED_SHA256: ${{ needs.prepare.outputs.sha256 }}
       PUBLISH_TAG: ${{ needs.prepare.outputs.publish_tag }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/download-artifact@v8
         with:
           name: npm-release-candidate
@@ -101,6 +115,10 @@ jobs:
         run: |
           echo "$EXPECTED_SHA1  $TARBALL" | sha1sum --check --strict
           echo "$EXPECTED_SHA256  $TARBALL" | sha256sum --check --strict
+      - name: Revalidate the public publisher and approval boundary
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release/preflight.mjs publish
       - name: Publish with trusted OIDC
         run: |
           REGISTRY_SHA1="$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" dist.shasum 2>/dev/null || true)"
@@ -144,21 +162,21 @@ jobs:
       - name: Update the reviewed npm release channel
         run: |
           if test "$PUBLISH_TAG" = "beta"; then
-            npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta
-
             DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
-            CURRENT_LATEST="$(node -e 'const tags=JSON.parse(process.argv[1]); process.stdout.write(tags.latest ?? "")' "$DIST_TAGS")"
-            case "$CURRENT_LATEST" in
-              ""|*-*) npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest ;;
-              *) echo "Stable latest tag remains on $CURRENT_LATEST." ;;
-            esac
+            UPDATE_LATEST="$(node --input-type=module -e 'import { shouldUpdateLatest } from "./scripts/release/channel.mjs"; process.stdout.write(String(shouldUpdateLatest(JSON.parse(process.argv[1]))))' "$DIST_TAGS")"
+            npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta
+            if test "$UPDATE_LATEST" = "true"; then
+              npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest
+            else
+              echo "The existing stable latest tag is preserved."
+            fi
           else
             npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest
           fi
 
           for attempt in {1..12}; do
             DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
-            if node -e 'const tags=JSON.parse(process.argv[1]); const version=process.argv[2]; const channel=process.argv[3]; const stableLatest=typeof tags.latest === "string" && !tags.latest.includes("-"); const valid=channel === "beta" ? tags.beta === version && (tags.latest === version || stableLatest) : tags.latest === version; process.exit(valid ? 0 : 1)' "$DIST_TAGS" "$PACKAGE_VERSION" "$PUBLISH_TAG"; then
+            if node --input-type=module -e 'import { releaseTagsMatch } from "./scripts/release/channel.mjs"; process.exit(releaseTagsMatch(JSON.parse(process.argv[1]), process.argv[2], process.argv[3]) ? 0 : 1)' "$DIST_TAGS" "$PACKAGE_VERSION" "$PUBLISH_TAG"; then
               exit 0
             fi
             if test "$attempt" = "12"; then
@@ -171,12 +189,19 @@ jobs:
   sync-tags:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: rehearsal-core-npm-mutations
+      cancel-in-progress: false
     environment: npm
     permissions:
       contents: read
+      actions: read
       id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -184,11 +209,15 @@ jobs:
           package-manager-cache: false
       - name: Install npm with OIDC dist-tag support
         run: npm install --global npm@11.21.0
+      - name: Refuse unverified tag-repair protections
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/release/preflight.mjs sync-tags
       - name: Repair tags for the current package version
         run: |
           PACKAGE_NAME="$(node -p "require('./package.json').name")"
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
-          PACKAGE_PRERELEASE="$(node -e 'process.stdout.write(process.argv[1].includes("-") ? "true" : "false")' "$PACKAGE_VERSION")"
+          PACKAGE_PRERELEASE="$(node --input-type=module -e 'import { releaseVersion } from "./scripts/release/channel.mjs"; process.stdout.write(String(releaseVersion(process.argv[1]).prerelease))' "$PACKAGE_VERSION")"
           RELEASE_CHANNEL="$(node scripts/release/channel.mjs "$PACKAGE_VERSION" "$PACKAGE_PRERELEASE")"
           PUBLISH_TAG="$(node -e 'const channel=JSON.parse(process.argv[1]); process.stdout.write(channel.npmTag)' "$RELEASE_CHANNEL")"
 
@@ -196,21 +225,21 @@ jobs:
           test "$REGISTRY_VERSION" = "$PACKAGE_VERSION"
 
           if test "$PUBLISH_TAG" = "beta"; then
-            npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta
-
             DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
-            CURRENT_LATEST="$(node -e 'const tags=JSON.parse(process.argv[1]); process.stdout.write(tags.latest ?? "")' "$DIST_TAGS")"
-            case "$CURRENT_LATEST" in
-              ""|*-*) npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest ;;
-              *) echo "Stable latest tag remains on $CURRENT_LATEST." ;;
-            esac
+            UPDATE_LATEST="$(node --input-type=module -e 'import { shouldUpdateLatest } from "./scripts/release/channel.mjs"; process.stdout.write(String(shouldUpdateLatest(JSON.parse(process.argv[1]))))' "$DIST_TAGS")"
+            npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" beta
+            if test "$UPDATE_LATEST" = "true"; then
+              npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest
+            else
+              echo "The existing stable latest tag is preserved."
+            fi
           else
             npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest
           fi
 
           for attempt in {1..12}; do
             DIST_TAGS="$(npm view "$PACKAGE_NAME" dist-tags --json)"
-            if node -e 'const tags=JSON.parse(process.argv[1]); const version=process.argv[2]; const channel=process.argv[3]; const stableLatest=typeof tags.latest === "string" && !tags.latest.includes("-"); const valid=channel === "beta" ? tags.beta === version && (tags.latest === version || stableLatest) : tags.latest === version; process.exit(valid ? 0 : 1)' "$DIST_TAGS" "$PACKAGE_VERSION" "$PUBLISH_TAG"; then
+            if node --input-type=module -e 'import { releaseTagsMatch } from "./scripts/release/channel.mjs"; process.exit(releaseTagsMatch(JSON.parse(process.argv[1]), process.argv[2], process.argv[3]) ? 0 : 1)' "$DIST_TAGS" "$PACKAGE_VERSION" "$PUBLISH_TAG"; then
               exit 0
             fi
             if test "$attempt" = "12"; then

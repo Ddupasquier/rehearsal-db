@@ -1,5 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
-import type { SpawnSyncReturns } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createReadStream } from "node:fs";
 import type { Writable } from "node:stream";
@@ -34,7 +33,7 @@ import {
 import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
 import { emitRuntimeStatusSnapshot } from "../runtime/status.mjs";
 import { inspectPostgresqlRuntimeStatus } from "./postgresql_status.mjs";
-import { ensureLocalContainerRuntime } from "./supabase_environment.mjs";
+import { ensureConfiguredContainerRuntime } from "./supabase_environment.mjs";
 import {
   getOperationCancellationSignal,
   throwIfOperationCancelled,
@@ -43,8 +42,14 @@ import {
   bindOwnedProcessCancellation,
   signalOwnedProcessGroup,
 } from "../shared/owned_process.mjs";
-import { runOwnedPostgresqlSql } from "./postgresql_process.mjs";
+import {
+  runOwnedPostgresqlSql,
+  runPostgresqlCommand,
+} from "./postgresql_process.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
+import { guardRuntimeManagerAction } from "../runtime/runtime_manager_guards.mjs";
+import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
+import { assertDockerResourceLabels } from "./docker_resource_ownership.mjs";
 import {
   buildRuntimeFinalizationSql,
   buildRuntimePostSchemaSql,
@@ -52,7 +57,6 @@ import {
   buildRuntimeVerificationSql,
   validateRuntimePolicy,
 } from "../runtime/policy.mjs";
-
 const repositoryRoot = process.cwd();
 const invocation = parseRuntimeInvocation();
 const loadedConfiguration = await loadRehearsalConfig({
@@ -62,6 +66,7 @@ const loadedConfiguration = await loadRehearsalConfig({
     : { configPath: invocation.configPath }),
 });
 const { config, paths: configuredPaths } = loadedConfiguration;
+await guardRuntimeManagerAction(loadedConfiguration, invocation.action);
 if (!config.postgresql) {
   throw new Error("The PostgreSQL runtime requires config.postgresql.");
 }
@@ -141,30 +146,8 @@ interface RuntimeAdapter {
 const runCommand = (
   command: string,
   args: readonly string[],
-  { capture = false, input, allowFailure = false }: RunCommandOptions = {},
-): SpawnSyncReturns<string> => {
-  const piped = capture || input !== undefined || allowFailure;
-  const result = spawnSync(command, args, {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-    env: createCleanProcessEnvironment(),
-    input,
-    maxBuffer: 16 * 1024 * 1024,
-    stdio: piped ? ["pipe", "pipe", "pipe"] : "inherit",
-  });
-  throwIfOperationCancelled();
-  if (!allowFailure && result.error) throw result.error;
-  if (!allowFailure && result.status !== 0) {
-    const detail = [result.stdout, result.stderr]
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-    throw new Error(
-      `${command} ${args.join(" ")} failed${detail ? `:\n${detail}` : "."}`,
-    );
-  }
-  return result;
-};
+  options: RunCommandOptions = {},
+) => runPostgresqlCommand(command, args, { cwd: repositoryRoot, ...options });
 
 const commandSucceeds = (command: string, args: readonly string[]): boolean =>
   runCommand(command, args, { allowFailure: true }).status === 0;
@@ -186,11 +169,12 @@ const assertRuntimePath = () => {
     throw new Error("Refusing an unsafe Rehearsal runtime path.");
   }
 };
-
 const assertDocker = () => {
-  ensureLocalContainerRuntime({
+  ensureConfiguredContainerRuntime({
     cwd: repositoryRoot,
-    autoStartColima: config.containerRuntime.autoStartColima,
+    artifactDirectory: artifactRoot,
+    projectId,
+    policy: config.containerRuntime,
   });
 };
 
@@ -201,9 +185,7 @@ const inspectResourceLabel = (kind: "container" | "volume", name: string) =>
       kind,
       "inspect",
       "--format",
-      kind === "container"
-        ? '{{index .Config.Labels "com.rehearsal-db.project"}}'
-        : '{{index .Labels "com.rehearsal-db.project"}}',
+      kind === "container" ? "{{json .Config.Labels}}" : "{{json .Labels}}",
       name,
     ],
     { allowFailure: true },
@@ -219,23 +201,30 @@ const assertOwnedResource = (
 ): boolean => {
   if (!resourceExists(kind, name)) return false;
   const inspection = inspectResourceLabel(kind, name);
-  if (inspection.status !== 0 || inspection.stdout.trim() !== projectId) {
+  if (inspection.status !== 0) {
     throw new Error(
       `Refusing to manage Docker ${kind} ${name} because it is not owned by this Rehearsal project.`,
     );
   }
+  assertDockerResourceLabels({
+    labels: JSON.parse(inspection.stdout),
+    expectedLabel: "com.rehearsal-db.project",
+    projectId,
+  });
   return true;
 };
 
 const removeRuntime = async () => {
   assertRuntimePath();
   if (commandSucceeds("docker", ["info"])) {
-    if (assertOwnedResource("container", containerName)) {
+    const ownsContainer = assertOwnedResource("container", containerName);
+    const ownsVolume = assertOwnedResource("volume", volumeName);
+    if (ownsContainer) {
       runCommand("docker", ["container", "rm", "--force", containerName], {
         capture: true,
       });
     }
-    if (assertOwnedResource("volume", volumeName)) {
+    if (ownsVolume) {
       runCommand("docker", ["volume", "rm", "--force", volumeName], {
         capture: true,
       });
@@ -327,9 +316,11 @@ create table if not exists rehearsal_internal.schema_migrations (
 const applyMigration = async ({
   migration,
   directory,
+  kind,
 }: {
   migration: MigrationFileEntry;
   directory: string;
+  kind: "baseline" | "candidate";
 }): Promise<void> => {
   const source = await readFile(join(directory, migration.filename), "utf8");
   await runOwnedPostgresqlSql({
@@ -338,6 +329,7 @@ const applyMigration = async ({
     databaseUser,
     repositoryRoot,
     sql: source,
+    migrationKind: kind,
   });
   runPsql(`insert into rehearsal_internal.schema_migrations
   (version, name, file_sha256)
@@ -431,7 +423,9 @@ const restoreBaselineRows = async ({
     {
       cwd: repositoryRoot,
       detached: process.platform !== "win32",
-      env: createCleanProcessEnvironment(),
+      env: createCleanProcessEnvironment({
+        overrides: runtimeDockerEnvironment(),
+      }),
       stdio: ["pipe", "ignore", "pipe"],
     },
   );
@@ -679,6 +673,7 @@ const resetRuntime = async () => {
         await applyMigration({
           migration,
           directory: active.paths.migrationsDirectory,
+          kind: "baseline",
         });
       }
       prepareProjectSchema({ baseline: active.baseline, environment });
@@ -818,6 +813,7 @@ const migrateRuntime = async () => {
         await applyMigration({
           migration,
           directory: configuredPaths.migrationDirectory,
+          kind: "candidate",
         });
       }
       const verification = verifyMigrationLedger({
@@ -848,6 +844,7 @@ const migrateRuntime = async () => {
 
 await runRuntimeLifecycle({
   action,
+  protected: config.runtime.protected,
   operations: {
     reset: resetRuntime,
     start: async () => {

@@ -104,6 +104,9 @@ const redactString = (value: string): string =>
     .replace(SUPABASE_KEY_PATTERN, "[REDACTED_KEY]");
 
 export const redactDiagnosticValue = (value: unknown, key = ""): unknown => {
+  // A strictly false public privacy attestation contains no credential value.
+  // Other values (including true, null, objects, and strings) still fail closed.
+  if (key === "credentialsIncluded" && value === false) return false;
   if (SECRET_KEY_PATTERN.test(key)) return "[REDACTED]";
   if (typeof value === "string") return redactString(value);
   if (Array.isArray(value)) {

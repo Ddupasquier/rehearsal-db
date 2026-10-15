@@ -24,8 +24,12 @@ Commands:
   identity connect [--identity=] Keep the app open, detect sign-in, and connect once
   doctor                     Check whether Rehearsal is safe and ready
   discover                   Inspect project metadata and explain setup suggestions
+  configuration              Inspect the exact active config and editable field metadata
+  configuration review --proposal= Validate a fingerprint-bound proposal without writing
   support                    Print a safe, copy-ready support report
   activity                   Report idle, busy, stale, or invalid operation state
+  environments               List owned runtimes and Docker capacity without starting it
+  resources                  Browse individual images, volumes, and other local resources
   explain                    Show the immutable execution plan
   run --dry-run              Alias the exact explain plan without mutations
   run --confirm-candidates=  Execute reset, migration, and verification locally
@@ -33,18 +37,20 @@ Commands:
   candidates                 Show the exact pending migration digest
   inspect baseline           Show verified baseline provenance
   inspect migrations         Classify represented, applied, and candidate migrations
+  inspect plan               Review ordered migrations, required dependencies, and warnings
   start                      Start an existing verified local runtime
   migrate --confirm-candidates= Apply the exact candidate suffix without resetting
   reset                      Restore and verify the immutable local baseline
   status                     Report the disposable local runtime state
   stop                       Stop only this project's local runtime
+  stop-stale [--confirm-stop=] Preview or stop exact long-running owned environments
   discard                    Remove only this project's disposable runtime
   cleanup [--include-runtime] [--include-images] [--write] [--confirm-cleanup=]
                              Preview or apply conservative disk cleanup
   verify                     Verify the current local Rehearsal runtime
 
 Options: --help, -h --version, -V --json --verbose --debug --plain
-         --config=<path> --target=supabase|postgresql
+         --config=<path> --target=<provider for setup; configured name for runtime>
          --confirm-source-access=<digest> --confirm-source-retirement=<digest>
          --confirm-refresh=<digest>`;
 

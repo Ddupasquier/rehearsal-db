@@ -232,10 +232,20 @@ export const withOwnedRuntimeRollback = async <Result,>({
 export const runRuntimeLifecycle = async ({
   action,
   operations,
+  protected: protectedRuntime = false,
 }: {
   action: string;
   operations: RuntimeLifecycleOperations;
+  protected?: boolean;
 }): Promise<void> => {
+  if (
+    protectedRuntime &&
+    ["reset", "run", "migrate", "discard"].includes(action)
+  ) {
+    throw new Error(
+      "This environment is protected. Set runtime.protected to false in its reviewed configuration before replacing or deleting its data.",
+    );
+  }
   switch (action) {
     case "reset":
       await operations.reset();

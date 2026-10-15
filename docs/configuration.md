@@ -46,6 +46,7 @@ export default defineRehearsalConfig({
     migrationDirectory: "supabase/migrations",
     rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml",
     runtimeWorkdir: ".rehearsal/runtime",
+    serviceProfile: "application",
 
     // Optional local OAuth connection. Secrets stay in the ignored owner-only file.
     // Register http://127.0.0.1:58321/auth/v1/callback with the provider.
@@ -83,9 +84,18 @@ export default defineRehearsalConfig({
   // identityPolicy: "infrastructure/rehearsal/identity-policy.json",
   containerRuntime: {
     autoStartColima: false,
+    stopOwnedColimaWhenIdle: false,
+    diskWarningPercent: 80,
+    minimumFreeBytes: 8589934592,
   },
   cleanup: {
     retainBaselineGenerations: 2,
+  },
+  resources: {
+    staleAfterSeconds: null,
+    retainedEnvironmentCount: 2,
+    maximumBytes: null,
+    cleanupSchedule: "manual",
   },
   // Optional. Each dependent database uses another complete Rehearsal config.
   // dependentTargets: [
@@ -96,6 +106,7 @@ export default defineRehearsalConfig({
   //   },
   // ],
   application: {
+    requiredServices: ["database"],
     // CHECK: replace these when the detected package scripts are not correct.
     startCommand: "npm run dev:rehearsal",
     proofCommand: "npm run test:rehearsal",
@@ -110,6 +121,8 @@ export default defineRehearsalConfig({
     // httpProofs: [],
   },
   runtime: {
+    displayName: "My local sandbox",
+    protected: false,
     target: "supabase",
     applicationUrl: "http://localhost:5175",
     projectId: "example-app-rehearsal",
@@ -228,10 +241,14 @@ SHA-256 receipts are tracked. See
 ```ts
 containerRuntime: {
   autoStartColima: false,
+  stopOwnedColimaWhenIdle: false,
+  diskWarningPercent: 80,
+  minimumFreeBytes: 8589934592,
 },
 lifecycle: {
   run: "keep-until-stop",
   open: "keep-until-stop",
+  openIdleTimeoutSeconds: null,
 },
 cleanup: {
   retainBaselineGenerations: 2,
@@ -243,8 +260,32 @@ is running and `autoStartColima` is `true`, Rehearsal may run `colima start`. Th
 explicit opt-in because starting a shared Docker engine can also restart unrelated
 containers whose restart policy is `always` or `unless-stopped`. Rehearsal respects the
 user's Colima CPU, memory, and disk settings and never changes them. The generated default
-is `false`: start Docker or Colima yourself before a mutating command. Rehearsal never
-stops a shared container engine automatically.
+is `false`: start Docker or Colima yourself before a mutating command. Rehearsal preserves
+the shared container engine by default.
+
+Colima auto-start also requires its local Docker context and a provably stopped default
+profile. An already-running VM with an unavailable Docker daemon is not claimed by
+Rehearsal. All runtime actions refuse remote or unverified engine endpoints.
+
+`stopOwnedColimaWhenIdle` is also `false` by default. When both settings are explicitly
+enabled, Rehearsal writes an owner-only receipt only after it actually starts Colima. A
+later `stop` or `discard` may stop that same Colima boot only after every selected target
+has stopped and Docker reports zero running containers across the shared engine. A
+missing, malformed, permissive, wrong-project, or prior-boot receipt preserves Colima.
+Docker Desktop and other Docker-compatible engines are never stopped. Containers,
+images, networks, volumes, databases, and Storage are never deleted by engine shutdown.
+
+Before a runtime starts, Rehearsal measures the Docker VM disk when the active context is
+Colima. It warns at `diskWarningPercent` and refuses to start below
+`minimumFreeBytes`, before creating containers. Generated Supabase configs reserve 8 GiB;
+generated PostgreSQL configs reserve 2 GiB. Engines that do not expose a portable disk
+measurement continue normally and report capacity as unavailable in `environments`.
+
+`supabase.serviceProfile` is `application` by default. It retains the database, Auth,
+Storage, PostgREST, gateway, and local mail service while omitting Studio, Realtime, Edge
+Functions, analytics, Vector, and image transforms. Choose `full` only when the project
+proof actually exercises one of those services. PostgreSQL remains the lighter choice
+when the proof needs only SQL, migrations, triggers, or sanitized relational data.
 
 After each Supabase start, Rehearsal changes only the exact target's containers to
 Docker's `no` restart policy. Its database and Storage volumes remain intact,
@@ -259,11 +300,165 @@ only Rehearsal's configured targets, never the shared engine. Ordinary stopping 
 database and Storage volumes and all sandbox edits; it does not reset or discard them.
 See [Container runtime lifecycle](runtime-lifecycle.md).
 
+### Foreground application idle shutdown
+
+Idle shutdown is off by default. Enable it only after your application implements
+the activity route below; a health check or quiet Docker container is not activity evidence.
+
+```js
+lifecycle: {
+  open: "stop-on-application-exit",
+  openIdleTimeoutSeconds: 900, // 30–86400 seconds; null disables shutdown.
+},
+application: {
+  // Keep your existing start/proof commands and environment mappings.
+  readiness: { url: "http://localhost:5175/health", expectedStatus: 200 },
+  activity: { url: "http://localhost:5175/rehearsal-activity" },
+},
+```
+
+The application-owned route must return HTTP 200, `Content-Type: application/json`,
+and only these three fields, within two seconds and 4 KiB:
+
+```json
+{ "schemaVersion": 1, "busy": false, "activitySequence": 12 }
+```
+
+`activitySequence` is a non-negative safe integer. Increase it for every meaningful
+user action, API request, authentication or Storage operation, and background task.
+Keep `busy: true` while work that must not be interrupted is active. Include browser
+interaction that makes no network request, or conservatively report busy. Do not count
+Rehearsal's readiness/activity probes themselves. The counter must not reset during
+the owned application session, including hot reload. Never return private rows,
+credentials, user identifiers, logs or arbitrary extra fields. The app—not a request
+parameter—owns the activity facts. This example does not implement that instrumentation.
+
+The activity URL must use the readiness route's exact HTTP(S) loopback origin and an
+explicit non-privileged port, without credentials, queries or fragments. Redirects
+are refused. `open` polls serially every five seconds only while its owned app session
+is active. It requires at least two valid, unchanged, non-busy samples spanning the
+entire timeout, measured with a monotonic clock. Busy work or a changed counter restarts
+the window. Missing, malformed, failed, oversized or regressed evidence cancels the
+window and keeps the sandbox running. A transport that ignores abort/cancellation
+disables monitoring for that session rather than accumulating requests; review the
+route and reopen explicitly.
+
+An idle close reports `application.stoppedBy` and `application.closeReason` as
+`idle-timeout`, not a signal or a successful application proof. It stops only the
+owned app process group and applies the configured non-destructive target stop policy.
+Database and Storage contents remain. No watcher or daemon survives the foreground
+session. Apps unable to provide complete activity evidence should leave the timeout
+`null` and use ordinary stop-on-application-exit instead.
+
 `retainBaselineGenerations` controls how many immutable baseline generations survive an
 approved `rehearsal refresh` or `rehearsal cleanup`; it must be at least 1. Refresh shows
 the exact old generations before confirmation and never removes the active baseline
 before its replacement is verified. Runtime deletion outside refresh and shared-image
 inspection remain explicit command choices. See [CLI commands](commands.md).
+
+### Resource review policies
+
+`resources` applies to the configured project topology, not the shared Docker engine:
+
+```ts
+resources: {
+  staleAfterSeconds: 3600,
+  retainedEnvironmentCount: 2,
+  maximumBytes: null,
+  cleanupSchedule: "daily-preview",
+},
+```
+
+- `staleAfterSeconds` is a **review cutoff**, measured from container start/stop timestamps.
+  It is not application or database idle detection. `null` disables the cutoff. Rehearsal
+  never stops an environment merely because this age is exceeded.
+- `retainedEnvironmentCount` is an advisory limit of 1–1000 configured environments with
+  retained containers or volumes. Exceeding it offers guidance; it never deletes data.
+- `maximumBytes` is an optional hard startup limit for the topology's currently measured
+  owned data-volume bytes. `null` disables it. A configured limit refuses startup when
+  measurements are incomplete or over budget. It does not predict future database growth
+  or include shared image layers; stopping a database does not reclaim its stored bytes.
+- `cleanupSchedule` is `manual`, `daily-preview`, or `weekly-preview`. A due review is
+  shown on the next resource inspection. There is no daemon, operating-system scheduler,
+  or automatic deletion. An approved cleanup records an owner-only, project/policy-bound
+  review time; ordinary read-only inspection writes nothing.
+
+Temporary files and application processes created by an operation are cleaned up by
+that operation's existing ownership boundary. These policies do not turn a persistent
+database or Storage volume into a temporary resource.
+
+### Named environment profiles
+
+Profiles are reviewed selections, not new databases or scripts:
+
+```ts
+profiles: [
+  { name: "Primary sandbox", targets: ["primary"] },
+  {
+    name: "Complete application",
+    targets: ["primary", "publication-api"],
+    applicationUrl: "http://localhost:5175",
+  },
+],
+```
+
+Every target must already be declared in this config. Names are unique, single-line text
+of at most 80 characters; at most 20 profiles are allowed. The optional application URL
+must be loopback-only. Selecting a profile is read-only. Review the exact target and
+command before starting, resetting, or deleting anything.
+
+### Reviewing endpoints in a multi-target project
+
+Application, readiness and named-profile URLs cannot use a database, API or Studio
+port from **any** target in the selected configuration graph. Rehearsal checks this
+before runtime startup. Targets may share an application URL when its port does not
+belong to a native database service; a display profile does not start a second app.
+
+`rehearsal configuration review --proposal=proposal.json --json` validates a proposed
+literal change without writing configuration or executing the proposed commands.
+The proposal contains `schemaVersion: 1`, the active file's `sourceSha256`, and a
+`changes` array of `{ path, value }` entries. When reviewing a dependent config with
+`--config`, also include `topologyConfigPath` in the proposal, for example:
+
+```json
+{
+  "schemaVersion": 1,
+  "sourceSha256": "COPY_THE_DEPENDENT_FILE_FINGERPRINT_FROM_CONFIGURATION",
+  "topologyConfigPath": "rehearsal.config.mjs",
+  "changes": [
+    {
+      "path": "application.readiness.url",
+      "value": "http://localhost:5175/health"
+    }
+  ]
+}
+```
+
+The parent must be an explicit project-local regular file and must actually declare
+the edited target. Rehearsal substitutes the proposed values in memory, checks them
+against every declared service port, and refuses concurrently changed graph files.
+It never guesses a parent from unrelated configs. Without `topologyConfigPath`,
+validation covers only the selected config and the dependents that it declares.
+The result names the checked target set; it is not a runtime or login test.
+Configuration metadata advertises
+`patchContract.dependentTargetReview: "explicit-topologyConfigPath"`. Editor clients
+send the optional parent field only when that capability is present; older contract-1
+packages retain their original proposal format.
+
+### Required application services
+
+`application.requiredServices` names the services the proof actually needs. Supported
+names are `database`, `auth`, `storage`, `postgrest`, `gateway`, `mail`, `studio`,
+`realtime`, `edge-functions`, `analytics`, and `image-transforms`. PostgreSQL supplies
+only `database`; Supabase's `application` profile omits the last five. A conflicting
+declaration fails configuration validation before any runtime starts. Use `full` when
+those excluded services are under test. An omitted list remains compatible, but cannot
+prove that an undeclared application dependency is safe to exclude.
+
+For a declared Supabase service, its matching section in the reviewed local TOML must
+also have exactly one `enabled = true`. `full` removes Rehearsal's exclusion list; it
+does not silently enable features you disabled in the template. For example, a Realtime
+proof needs both `serviceProfile: "full"` and `[realtime]` with `enabled = true`.
 
 ## Dependent databases
 
@@ -362,6 +557,24 @@ unsupported providers, extra keys, and a template that already owns the same pro
 are refused. This follows Supabase's documented
 [`env()` configuration pattern](https://supabase.com/docs/guides/local-development/managing-config).
 
+Keep these addresses distinct:
+
+- `runtime.applicationUrl` is the browser address to open.
+- `application.readiness.url` is the app's separate health route; changing the browser
+  address must not erase its health path.
+- The application return URL, such as `http://localhost:5175/auth/callback`, belongs
+  to your application's ordinary sign-in flow.
+- The provider callback is the derived API address
+  `http://127.0.0.1:<apiPort>/auth/v1/callback`; it is not an editable app-return path.
+
+When changing app host, port or return path, review your app's own redirect setting
+and the dedicated Supabase template's `[auth] site_url` and `additional_redirect_urls`
+together. Keep every redirect local and list only intended app-return addresses. Keep
+the provider console registered to the derived API callback. Rehearsal copies the
+reviewed template into the disposable runtime; editing a browser URL does **not**
+silently rewrite tracked Auth settings, your dev command, or provider-console entries.
+Review those explicit edits before restarting the sandbox, then test a fresh login.
+
 `enableLocalSignup: true` explicitly acknowledges that disposable local Auth may create
 the temporary user returned by OAuth. Rehearsal changes the generated runtime copy only;
 the tracked Supabase template and every hosted project remain unchanged.
@@ -388,6 +601,19 @@ Provider connection and copied-account association are separate. This block lets
 ordinary application sign-in reach local Auth. An optional `identityPolicy` decides
 whether that verified local identity may claim a reviewed copied account.
 
+The VS Code **Data & auth** review consumes `explain --json`'s optional
+`authenticationReview`. It distinguishes enabled, disabled and unknown public settings,
+shows the exact local callback, and identifies unsupported providers without guessing.
+Email/password state and TOTP enrollment/verification come only from unambiguous public
+boolean declarations in the tracked local Supabase template. No credential or `.env`
+value is read for this review.
+
+These are configuration facts, not a successful login or security test. Fresh sign-in,
+identity conflicts and idempotence, refresh, restart persistence, role/RLS isolation,
+account blocking, actual MFA enforcement and reset-invalidated sessions still need their
+own observed proofs. Plain PostgreSQL has no native Supabase Auth service; its application
+owns authentication.
+
 ## Safety fields
 
 Version 1 accepts loopback runtime URLs only. `hostedAccess` can only be `disabled`, and
@@ -399,9 +625,21 @@ rules.
 
 ## Ports and project identity
 
+`runtime.displayName` is a friendly single-line label of up to 100 characters. It defaults
+to the project name and never changes `projectId`, Docker names, labels, or ports.
+`runtime.protected` defaults to `false`. Set it to `true` to pin the sandbox against
+`run`, `reset`, `migrate`, `discard`, and runtime cleanup; start/stop still preserve its data.
+The VS Code Local Resources manager reviews an exact diff before changing either value.
+See [Local Resources](runtime-lifecycle.md#local-resources-manager) for image and volume rules.
+
 Use unique, non-privileged ports that do not overlap. `projectId` accepts lowercase
 letters, numbers, and hyphens. It labels the local Docker resources so cleanup targets
 only this project.
+
+Application and readiness URLs must use a different port from the configured database,
+API, and Studio services. Editing a URL does not rewrite your framework's development
+script or make it listen on that port. Update the project-owned command consistently;
+Rehearsal refuses an occupied application port rather than taking over an unknown process.
 
 ## Database runtime
 
@@ -445,6 +683,14 @@ database driver.
 runs proofs, and stops only that child process group. `environmentVariables` explicitly
 maps generated runtime values such as `primary:DATABASE_URL`; undeclared inherited
 hosted secrets are not passed through.
+
+Before spawning the application, Rehearsal checks the readiness endpoint's local
+TCP port. An existing listener or unknown availability refuses startup; Rehearsal
+does not reuse, replace or stop that application. Choose another port or stop your
+existing app explicitly. Update both the project-owned start command and the
+Rehearsal URLs together. This bounded startup check sends no HTTP request or URL
+query values and is not a permanent port reservation; another process can still
+race startup, so readiness and child-exit checks remain necessary.
 
 Your application framework may still load `.env` files from the project directory on
 its own. Rehearsal cannot intercept that file loading. If a local proof could otherwise

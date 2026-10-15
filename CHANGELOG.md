@@ -3,7 +3,45 @@
 All notable Rehearsal package changes will be documented here. The format follows Keep
 a Changelog, and versions will follow Semantic Versioning after the package exists.
 
-## Unreleased
+## [0.1.0-rc.5] - 2026-10-15
+
+### Added
+
+- Project-owned resource inventory, exact long-running-environment stop review, and
+  individually selected unused-image cleanup. Volumes remain tied to reviewed runtime
+  discard; other projects and the shared engine are protected.
+- Friendly environment labels, protection, named display profiles, resource quotas and
+  review schedules, with validated configuration metadata and fingerprint-bound proposals.
+- Ordered migration review, baseline/privacy/authentication summaries, and bounded
+  operation stages and recent receipts through public JSON contracts.
+- Opt-in, bounded graph sampling and measured distribution goals, with immutable
+  post-sanitization fidelity evidence and required-goal refusal before activation.
+- Lightweight Supabase service profiles and explicit required-service checks.
+- Opt-in foreground sandbox idle shutdown using an explicit application-owned activity
+  contract. Unknown or busy activity preserves workloads; no background daemon is added.
+- A disposable PostgreSQL regression demo showing an empty-database migration pass,
+  populated-data refusal, and verified recovery with a reviewed backfill.
+
+### Fixed
+
+- Partial startup and interrupted work clean up only workloads proved owned by the
+  operation, preserving existing running environments, data and shared engines.
+- Application startup refuses occupied local ports without replacing another process.
+- Application and profile ports are checked across the complete configured topology;
+  configuration proposals can explicitly bind a dependent edit to its parent graph.
+- Application teardown retires its owned process group even after the launcher exits.
+- Supabase startup diagnostics preserve safe service/health categories while withholding
+  logs, credentials, URLs and private paths. Unknown causes stay unknown.
+- Public JSON retains strictly false privacy attestations without exposing credentials;
+  normalized shape policies can be safely validated repeatedly.
+- Failed migrations retain their baseline/candidate phase instead of inferring it from
+  earlier progress; summaries omit Node source excerpts and provider SQL output.
+- Release preparation, publication and tag repair now refuse missing or ambiguous live
+  repository/environment controls; prereleases preserve a stable `latest` version even
+  when that version has build metadata.
+
+These changes belong to rc.5, not the existing rc.4 artifact. Scheduled review is
+not unattended cleanup, and container age is not proof of user inactivity.
 
 ## [0.1.0-rc.4] - 2026-10-11
 

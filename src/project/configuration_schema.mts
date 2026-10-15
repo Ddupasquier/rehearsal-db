@@ -19,6 +19,8 @@ export interface ValidatedConfigurationSchema {
   containerRuntime: PlainObject;
   lifecycle: PlainObject;
   cleanup: PlainObject;
+  resources: PlainObject;
+  profiles: PlainObject[];
   preparation: PlainObject | null;
   dependentTargets: PlainObject[];
   application: PlainObject;
@@ -51,6 +53,8 @@ export const validateConfigurationSchema = (
       "containerRuntime",
       "lifecycle",
       "cleanup",
+      "resources",
+      "profiles",
       "preparation",
       "runtimePolicy",
       "identityPolicy",
@@ -75,6 +79,8 @@ export const validateConfigurationSchema = (
   assertKnownKeys(
     runtime,
     [
+      "displayName",
+      "protected",
       "target",
       "applicationUrl",
       "projectId",
@@ -111,6 +117,7 @@ export const validateConfigurationSchema = (
         "migrationDirectory",
         "rehearsalConfig",
         "runtimeWorkdir",
+        "serviceProfile",
         "authentication",
         "serviceEnvironmentFile",
         "serviceEnvironmentVariables",
@@ -138,13 +145,33 @@ export const validateConfigurationSchema = (
   );
   assertKnownKeys(
     containerRuntime,
-    ["autoStartColima"],
+    [
+      "autoStartColima",
+      "stopOwnedColimaWhenIdle",
+      "diskWarningPercent",
+      "minimumFreeBytes",
+    ],
     "config.containerRuntime",
   );
   const lifecycle = assertPlainObject(root.lifecycle ?? {}, "config.lifecycle");
-  assertKnownKeys(lifecycle, ["run", "open"], "config.lifecycle");
+  assertKnownKeys(
+    lifecycle,
+    ["run", "open", "openIdleTimeoutSeconds"],
+    "config.lifecycle",
+  );
   const cleanup = assertPlainObject(root.cleanup ?? {}, "config.cleanup");
   assertKnownKeys(cleanup, ["retainBaselineGenerations"], "config.cleanup");
+  const resources = assertPlainObject(root.resources ?? {}, "config.resources");
+  assertKnownKeys(
+    resources,
+    [
+      "staleAfterSeconds",
+      "retainedEnvironmentCount",
+      "maximumBytes",
+      "cleanupSchedule",
+    ],
+    "config.resources",
+  );
   const preparation =
     root.preparation === undefined
       ? null
@@ -154,6 +181,7 @@ export const validateConfigurationSchema = (
       preparation,
       [
         "sourcePolicy",
+        "shapePolicy",
         "privacyKey",
         "batchRows",
         "maximumRows",
@@ -175,16 +203,28 @@ export const validateConfigurationSchema = (
       `config.dependentTargets[${index}]`,
     ),
   );
+  const profiles = assertObjectArray(root.profiles ?? [], "config.profiles");
+  if (profiles.length > 20)
+    throw new Error("config.profiles allows at most 20 profiles.");
+  profiles.forEach((profile, index) =>
+    assertKnownKeys(
+      profile,
+      ["name", "targets", "applicationUrl"],
+      `config.profiles[${index}]`,
+    ),
+  );
 
   const application = assertPlainObject(root.application, "config.application");
   assertKnownKeys(
     application,
     [
       "startCommand",
+      "requiredServices",
       "proofCommand",
       "environmentFile",
       "environmentVariables",
       "readiness",
+      "activity",
       "httpProofs",
       "runtimeAdapter",
     ],
@@ -287,6 +327,8 @@ export const validateConfigurationSchema = (
     containerRuntime,
     lifecycle,
     cleanup,
+    resources,
+    profiles,
     preparation,
     dependentTargets,
     application,

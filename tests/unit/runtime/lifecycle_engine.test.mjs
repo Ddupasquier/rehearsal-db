@@ -55,6 +55,28 @@ describe("shared runtime lifecycle engine", () => {
       discard: operation("discard"),
     };
   };
+  it("refuses data-replacing operations on protected environments before any operation starts", async () => {
+    for (const action of ["reset", "run", "migrate", "discard"]) {
+      const order = [];
+      await expect(
+        runRuntimeLifecycle({
+          action,
+          protected: true,
+          operations: createOperations(order),
+        }),
+      ).rejects.toThrow("protected");
+      expect(order).toEqual([]);
+    }
+    for (const action of ["start", "stop", "status"]) {
+      const order = [];
+      await runRuntimeLifecycle({
+        action,
+        protected: true,
+        operations: createOperations(order),
+      });
+      expect(order).toEqual([action]);
+    }
+  });
 
   it("dispatches every target-neutral action and fixes the complete run order", async () => {
     for (const action of [

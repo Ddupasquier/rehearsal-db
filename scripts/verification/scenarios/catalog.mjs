@@ -9,6 +9,7 @@ export const verificationScenarios = Object.freeze([
   Object.freeze({ id: "onboarding", file: fixture("onboarding.mjs") }),
   Object.freeze({ id: "typescript", file: fixture("typescript.mjs") }),
   Object.freeze({ id: "privacy", file: fixture("privacy.mjs") }),
+  Object.freeze({ id: "resources", file: fixture("resources.mjs") }),
   Object.freeze({ id: "postgresql", file: fixture("postgresql.mjs") }),
   Object.freeze({ id: "dependent-target", file: fixture("dependent.mjs") }),
   Object.freeze({ id: "standalone", file: fixture("standalone.mjs") }),

@@ -431,18 +431,49 @@ const main = async () => {
         `proofCommand: "npm run proof",\n    environmentFile: "${alternateArtifactDirectory}/runtime.env",`,
       );
     await writeFile(alternateConfigPath, alternateConfig);
+    const primaryStatus = executeCliOrThrow({
+      cwd,
+      args: ["status", "--config=rehearsal.config.mjs", "--json"],
+      label: "primary config status control",
+    });
+    const primaryRuntime = JSON.parse(primaryStatus.stdout).data.runtimeStatus;
+    if (
+      primaryRuntime?.projectId !== projectId ||
+      primaryRuntime?.baselineGenerationId !== baselineResult.data.generationId
+    )
+      throw new Error(
+        "The primary status control did not identify its verified baseline and configured runtime.",
+      );
     const alternateStatus = executeCli({
       cwd,
       args: ["status", "--config=rehearsal.alternate.config.mjs", "--json"],
     });
     if (
       alternateStatus.status === 0 ||
-      !alternateStatus.stdout.includes(alternateArtifactDirectory)
+      JSON.parse(alternateStatus.stdout).status !== "error"
     ) {
       throw new Error(
         `A lifecycle command did not stay isolated to its explicitly selected config: ${alternateStatus.stdout || alternateStatus.stderr}`,
       );
     }
+    // Diagnostics intentionally omit private filesystem paths. Prove selection by
+    // a successful primary control and refusal for the isolated, baseline-less
+    // alternate instead of requiring an absolute-path leak in its error message.
+    const primaryAfter = executeCliOrThrow({
+      cwd,
+      args: ["status", "--config=rehearsal.config.mjs", "--json"],
+      label: "primary config preservation control",
+    });
+    const primaryAfterRuntime = JSON.parse(primaryAfter.stdout).data
+      .runtimeStatus;
+    if (
+      primaryAfterRuntime?.projectId !== projectId ||
+      primaryAfterRuntime?.baselineGenerationId !==
+        primaryRuntime.baselineGenerationId
+    )
+      throw new Error(
+        "Inspecting the alternate config changed the primary baseline identity.",
+      );
     commandsProven.push("alternate config isolation");
 
     executeCliOrThrow({

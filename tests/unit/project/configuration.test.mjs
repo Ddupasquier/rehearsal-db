@@ -129,8 +129,15 @@ describe("Rehearsal configuration", () => {
     expect(loaded.config.supabase.serviceEnvironmentFile).toBeNull();
     expect(loaded.config.supabase.serviceEnvironmentVariables).toEqual([]);
     expect(loaded.config.supabase.authentication).toBeNull();
-    expect(loaded.config.containerRuntime).toEqual({ autoStartColima: false });
+    expect(loaded.config.supabase.serviceProfile).toBe("application");
+    expect(loaded.config.containerRuntime).toEqual({
+      autoStartColima: false,
+      stopOwnedColimaWhenIdle: false,
+      diskWarningPercent: 80,
+      minimumFreeBytes: 8 * 1024 * 1024 * 1024,
+    });
     expect(loaded.config.lifecycle).toEqual({
+      openIdleTimeoutSeconds: null,
       run: "keep-until-stop",
       open: "keep-until-stop",
     });
@@ -150,6 +157,7 @@ describe("Rehearsal configuration", () => {
 
     const loaded = await loadRehearsalConfig({ projectRoot: root });
     expect(loaded.config.lifecycle).toEqual({
+      openIdleTimeoutSeconds: null,
       run: "stop-after-run",
       open: "stop-on-application-exit",
     });

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -30,6 +30,13 @@ describe("runtime command diagnostics", () => {
     );
 
     try {
+      await copyFile(
+        join(
+          process.cwd(),
+          "tests/fixtures/rehearsal-project/rehearsal.config.mjs",
+        ),
+        join(directory, "rehearsal.config.mjs"),
+      );
       const commands = createRuntimeCommands({
         packageRoot: directory,
         projectRoot: directory,
@@ -66,6 +73,13 @@ describe("runtime command diagnostics", () => {
 
     try {
       process.env.ELECTRON_RUN_AS_NODE = "1";
+      await copyFile(
+        join(
+          process.cwd(),
+          "tests/fixtures/rehearsal-project/rehearsal.config.mjs",
+        ),
+        join(directory, "rehearsal.config.mjs"),
+      );
       const commands = createRuntimeCommands({
         packageRoot: directory,
         projectRoot: directory,
@@ -99,6 +113,14 @@ describe("runtime command diagnostics", () => {
         output:
           "migration reset failed: supabase_studio_fixture container is not ready: starting",
         inferredCategory: "migration_verification_failure",
+      }),
+    ).toBe("runtime_dependency_failure");
+    expect(
+      classifyManagerFailure({
+        action: "start",
+        output:
+          "Error: Supabase startup failed (exit 1).\nReported startup evidence: unknown.",
+        inferredCategory: "migration_candidate_failure",
       }),
     ).toBe("runtime_dependency_failure");
   });
@@ -149,6 +171,13 @@ Swap: 0 0 0
     );
 
     try {
+      await copyFile(
+        join(
+          process.cwd(),
+          "tests/fixtures/rehearsal-project/rehearsal.config.mjs",
+        ),
+        join(directory, "rehearsal.config.mjs"),
+      );
       const commands = createRuntimeCommands({
         packageRoot: directory,
         projectRoot: directory,

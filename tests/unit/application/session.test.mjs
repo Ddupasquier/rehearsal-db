@@ -160,6 +160,67 @@ server.listen(Number(process.env.PORT), "127.0.0.1");
     expect(signals.listenerCount("SIGINT")).toBe(0);
   });
 
+  it("reports idle shutdown distinctly and aborts its monitor before stopping the owned child", async () => {
+    const signals = new EventEmitter();
+    let monitorSignal;
+    const session = {
+      ready: { url: "http://127.0.0.1:5175/health", status: 200 },
+      wait: () => new Promise(() => undefined),
+      stop: vi.fn(async () => expect(monitorSignal.aborted).toBe(true)),
+      diagnostics: () => ({ stdoutBytes: 0, stderrBytes: 0 }),
+    };
+    const result = await holdApplicationSession({
+      session,
+      signalTarget: signals,
+      input: null,
+      activity: { url: "http://127.0.0.1:5175/activity" },
+      idleTimeoutSeconds: 30,
+      idleMonitorImplementation: async ({ signal }) => {
+        monitorSignal = signal;
+        return { reason: "idle-timeout" };
+      },
+    });
+    expect(result).toMatchObject({ reason: "idle-timeout", signal: null });
+    expect(session.stop).toHaveBeenCalledOnce();
+    expect(signals.listenerCount("SIGINT")).toBe(0);
+  });
+
+  it("aborts activity requests on interruption and leaves no monitor after the session ends", async () => {
+    const signals = new EventEmitter();
+    let monitorSignal;
+    const session = {
+      ready: { url: "http://127.0.0.1:5175/health", status: 200 },
+      wait: () => new Promise(() => undefined),
+      stop: vi.fn(async () => undefined),
+      diagnostics: () => ({ stdoutBytes: 0, stderrBytes: 0 }),
+    };
+    const pending = holdApplicationSession({
+      session,
+      signalTarget: signals,
+      input: null,
+      activity: { url: "http://127.0.0.1:5175/activity" },
+      idleTimeoutSeconds: 30,
+      idleMonitorImplementation: ({ signal }) => {
+        monitorSignal = signal;
+        return new Promise((_resolve, reject) =>
+          signal.addEventListener(
+            "abort",
+            () => reject(new Error("monitor closed")),
+            { once: true },
+          ),
+        );
+      },
+    });
+    signals.emit("SIGINT");
+    await expect(pending).resolves.toMatchObject({
+      reason: "interrupted",
+      signal: "SIGINT",
+    });
+    expect(monitorSignal.aborted).toBe(true);
+    expect(session.stop).toHaveBeenCalledOnce();
+    expect(signals.listenerCount("SIGINT")).toBe(0);
+  });
+
   it("runs identity discovery while the application stays available", async () => {
     const signals = new EventEmitter();
     const stop = vi.fn(async () => undefined);
@@ -426,6 +487,7 @@ setInterval(() => {}, 1000);
       join(root, "wait.mjs"),
       `import { writeFileSync } from "node:fs";
 process.on("SIGTERM", () => { writeFileSync("interrupted.txt", "yes"); process.exit(0); });
+writeFileSync("signal-handler-ready.txt", "ready");
 setInterval(() => {}, 1000);
 `,
     );
@@ -442,10 +504,22 @@ setInterval(() => {}, 1000);
       },
       signalTarget: signals,
     });
-    setTimeout(() => signals.emit("SIGINT"), 100);
-    await expect(starting).rejects.toThrow(
+    const interrupted = expect(starting).rejects.toThrow(
       "Application startup was interrupted by SIGINT",
     );
+    try {
+      await vi.waitFor(
+        async () => {
+          expect(
+            await readFile(join(root, "signal-handler-ready.txt"), "utf8"),
+          ).toBe("ready");
+        },
+        { timeout: 2000, interval: 20 },
+      );
+    } finally {
+      signals.emit("SIGINT");
+    }
+    await interrupted;
     expect(await readFile(join(root, "interrupted.txt"), "utf8")).toBe("yes");
     expect(signals.listenerCount("SIGINT")).toBe(0);
   });

@@ -36,6 +36,10 @@ import {
   validateSourceAccessPolicy,
 } from "./access.mjs";
 import type { SourceAccessPolicy } from "./access.mjs";
+import { validateBaselineShapePolicy } from "./shape_policy.mjs";
+import { prepareShapedBaseline } from "./shape_preparation.mjs";
+import { shapeKeyContextFromSchema } from "./shape_keys.mjs";
+import type { BaselineShapePolicy } from "./shape_contract.mjs";
 
 const { Client } = pg;
 const IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/u;
@@ -405,6 +409,62 @@ const streamSanitizedRecords = async function* ({
   }
 };
 
+const streamShapeSourceRecords = async function* (
+  client: SourceClient,
+  sourcePolicy: SourceAccessPolicy,
+  policy: BaselineShapePolicy,
+  batchRows: number,
+): AsyncGenerator<PrivacySourceRecord> {
+  let rows = 0;
+  let bytes = 0;
+  const included = new Set(
+    policy.tables.map((table) => `${table.schema}.${table.name}`),
+  );
+  for (const [index, relation] of sourcePolicy.relations.entries()) {
+    if (!included.has(`${relation.targetSchema}.${relation.targetTable}`))
+      continue;
+    const cursor = `rehearsal_shape_${index}`;
+    await client.query(
+      `declare ${quoteIdentifier(cursor)} no scroll cursor for select ${relation.columns.map(quoteIdentifier).join(", ")} from ${quoteIdentifier(sourcePolicy.exportSchema)}.${quoteIdentifier(relation.view)} order by ${relation.orderBy.map(quoteIdentifier).join(", ")}`,
+    );
+    try {
+      while (true) {
+        const batch = await client.query(
+          `fetch forward ${batchRows} from ${quoteIdentifier(cursor)}`,
+        );
+        if (!Array.isArray(batch?.rows) || batch.rows.length > batchRows) {
+          throw new Error(
+            "Shape source returned a malformed or oversized cursor batch.",
+          );
+        }
+        if (!batch.rows.length) break;
+        for (const row of batch.rows) {
+          const record = {
+            schema: relation.targetSchema,
+            table: relation.targetTable,
+            row,
+          };
+          rows += 1;
+          bytes += Buffer.byteLength(JSON.stringify(record));
+          if (
+            rows > policy.maximumSourceRows ||
+            bytes > policy.maximumSourceBytes
+          ) {
+            throw new Error(
+              "Shape source exceeded its reviewed in-memory graph boundary.",
+            );
+          }
+          yield record;
+        }
+      }
+    } finally {
+      await client
+        .query(`close ${quoteIdentifier(cursor)}`)
+        .catch(() => undefined);
+    }
+  }
+};
+
 export const refreshPostgresqlBaseline = async ({
   connectionString,
   sourcePolicy: sourcePolicyInput,
@@ -418,6 +478,7 @@ export const refreshPostgresqlBaseline = async ({
   clientFactory,
   progress,
   assets = [],
+  shapePolicy: shapePolicyInput,
 }: {
   connectionString: string;
   sourcePolicy: unknown;
@@ -431,7 +492,12 @@ export const refreshPostgresqlBaseline = async ({
   clientFactory?: SourceClientFactory;
   progress?: (state: { table: string; rows: number; bytes: number }) => void;
   assets?: Iterable<BaselineStorageAsset> | AsyncIterable<BaselineStorageAsset>;
+  shapePolicy?: unknown;
 }) => {
+  const shapePolicy =
+    shapePolicyInput === undefined
+      ? null
+      : validateBaselineShapePolicy(shapePolicyInput);
   const sourcePolicy = validateSourceAccessPolicy(sourcePolicyInput);
   if (
     sourceTargetFingerprint(connectionString) !== sourcePolicy.targetFingerprint
@@ -528,17 +594,87 @@ export const refreshPostgresqlBaseline = async ({
     generationId = createBaselineGenerationId();
     const schemaSha256 = sha256(canonicalJson(sourceSchema));
     const policySha256 = sha256(privacyPolicyBytes);
+    let shaped: Awaited<ReturnType<typeof prepareShapedBaseline>> | null = null;
+    if (shapePolicy) {
+      const includedEstimate = estimate.tables.filter((table) =>
+        shapePolicy.tables.some(
+          (declaration) =>
+            declaration.schema === table.schema &&
+            declaration.name === table.name,
+        ),
+      );
+      if (
+        includedEstimate.reduce((sum, table) => sum + table.rows, 0) >
+          shapePolicy.maximumSourceRows ||
+        includedEstimate.reduce((sum, table) => sum + table.bytes, 0) >
+          shapePolicy.maximumSourceBytes
+      ) {
+        throw new Error(
+          "Approved source estimate exceeds the bounded shape graph; narrow its reviewed scope or use full extraction.",
+        );
+      }
+      const snapshot = (
+        await client.query("select txid_current_snapshot()::text as snapshot")
+      ).rows[0]?.snapshot;
+      if (typeof snapshot !== "string" || !/^\d+:\d+:[\d,]*$/u.test(snapshot)) {
+        throw new Error(
+          "The coherent shape source snapshot could not be proved.",
+        );
+      }
+      shaped = await prepareShapedBaseline({
+        sourceRecords: streamShapeSourceRecords(
+          client,
+          sourcePolicy,
+          shapePolicy,
+          limits.batchRows,
+        ),
+        policy: shapePolicy,
+        privacyPolicy,
+        privacyEngine,
+        privacyKey,
+        generationId,
+        privacyPolicySha256: policySha256,
+        sourceSchemaSha256: schemaSha256,
+        sourceSnapshotSha256: sha256(snapshot),
+        keyContext: shapeKeyContextFromSchema(shapePolicy, sourceSchema),
+      });
+      if (
+        shaped.evidence.tables.some(
+          (table) =>
+            table.sourceRows !==
+            includedEstimate.find(
+              (estimate) =>
+                estimate.schema === table.schema &&
+                estimate.name === table.table,
+            )?.rows,
+        )
+      ) {
+        throw new Error(
+          "Shape source cursor counts do not match the coherent approved estimate; no baseline was activated.",
+        );
+      }
+      progress?.({
+        table: "reviewed_shape",
+        rows: shaped.records.length,
+        bytes: shaped.records.reduce(
+          (sum, record) => sum + Buffer.byteLength(JSON.stringify(record)),
+          0,
+        ),
+      });
+    }
     const manifest = await createAndActivateBaseline({
       artifactRoot,
       generationId,
       activate: false,
-      records: streamSanitizedRecords({
-        client,
-        sourcePolicy,
-        privacyEngine,
-        limits,
-        ...(progress ? { progress } : {}),
-      }),
+      records:
+        shaped?.records ??
+        streamSanitizedRecords({
+          client,
+          sourcePolicy,
+          privacyEngine,
+          limits,
+          ...(progress ? { progress } : {}),
+        }),
       metadata: {
         migrationCutoff: finalSourceMigration.version,
         migrationHistorySha256: migrationReceipt.historySha256,
@@ -569,6 +705,7 @@ export const refreshPostgresqlBaseline = async ({
         ),
       migrationFiles,
       assets,
+      ...(shaped ? { shapeEvidence: shaped.evidence } : {}),
     });
     const observer = await connect(connectionString, clientFactory);
     try {
@@ -591,7 +728,12 @@ export const refreshPostgresqlBaseline = async ({
     await client.query("commit");
     transactionOpen = false;
     await activateBaselineGeneration({ artifactRoot, generationId });
-    return { generationId, manifest, estimate };
+    return {
+      generationId,
+      manifest,
+      estimate,
+      shape: shaped?.evidence ?? null,
+    };
   } catch (error) {
     if (transactionOpen) await client.query("rollback").catch(() => undefined);
     if (generationId) {

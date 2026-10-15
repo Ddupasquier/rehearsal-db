@@ -19,10 +19,16 @@ These capabilities stay behind separate review boundaries. Normal runtime comman
 receive source credentials. Source-side writes, package publication, consumer cleanup,
 and real provider observation each require their own authorization.
 
+See the [standalone workflow](standalone-workflow.md) for the supported contract.
 Track the full breakdown in
 [standalone roadmap issue #38](https://github.com/Ddupasquier/rehearsal-db/issues/38).
+For questions or feature requests, use
+[GitHub issues](https://github.com/Ddupasquier/rehearsal-db/issues).
 
 ## Acceptance still required
+
+These are verification requirements, not a live checklist of unfinished releases or
+consumer migrations. Record the observed results for each exact candidate separately.
 
 - Install the exact packed candidate in clean Supabase and PostgreSQL consumers.
 - Exercise two unrelated synthetic schemas, bounded large data, interruption, drift,

@@ -4,11 +4,48 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { readFileSync, lstatSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   createCleanProcessEnvironment,
   type ProcessEnvironment,
 } from "../shared/process_environment.mjs";
 import { throwIfOperationCancelled } from "../shared/cancellation.mjs";
+import { assertContainerCapacityForRuntime } from "../runtime/resource_inventory.mjs";
+import {
+  writeContainerEngineStartReceipt,
+  CONTAINER_ENGINE_RECEIPT_FILENAME,
+  assertDefaultColimaCanBeStarted,
+  type ContainerEngineReceiptInput,
+} from "../runtime/container_engine_ownership.mjs";
+import {
+  bindRuntimeDockerEnvironment,
+  runtimeDockerEnvironment,
+  runtimeDockerContext,
+} from "../runtime/local_docker_context.mjs";
+import { assertOwnedSupabaseResourceInspection } from "./docker_resource_ownership.mjs";
+import { captureRuntimeStartupOwnership } from "../runtime/runtime_startup_ownership.mjs";
+import { summarizeSupabaseStartupFailure } from "./supabase_start_failure.mjs";
+
+type ContainerRuntimePolicy = Readonly<{
+  autoStartColima: boolean;
+  diskWarningPercent: number;
+  minimumFreeBytes: number;
+}>;
+
+const APPLICATION_PROFILE_EXCLUDES = Object.freeze([
+  "edge-runtime",
+  "logflare",
+  "vector",
+  "realtime",
+  "studio",
+  "imgproxy",
+]);
+
+export const supabaseExcludedServicesForProfile = (
+  profile: "application" | "full",
+): readonly string[] =>
+  profile === "application" ? APPLICATION_PROFILE_EXCLUDES : Object.freeze([]);
 
 export interface LocalSupabaseEnvironment {
   readonly apiUrl: string;
@@ -124,22 +161,47 @@ export const runLocalCommand = (
     maxBuffer = 16 * 1024 * 1024,
   }: LocalCommandOptions = {},
 ): string => {
+  if (
+    (command === "supabase" && ["start", "stop"].includes(args[0] ?? "")) ||
+    (command === "docker" && args[0] === "container" && args[1] === "rm")
+  )
+    captureRuntimeStartupOwnership();
   const shouldPipe = capture || input !== undefined;
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: createCleanProcessEnvironment({ overrides: environment }),
+    env: createCleanProcessEnvironment({
+      overrides: {
+        ...environment,
+        ...(["docker", "supabase"].includes(command)
+          ? runtimeDockerEnvironment()
+          : {}),
+      },
+    }),
     input,
     maxBuffer,
     stdio: shouldPipe ? ["pipe", "pipe", "pipe"] : "inherit",
   });
   throwIfOperationCancelled();
-  if (result.error) throw result.error;
+  if (result.error && !(command === "supabase" && args[0] === "start"))
+    throw result.error;
   if (result.status !== 0) {
     const detail = [result.stdout, result.stderr]
       .filter(Boolean)
       .join("\n")
       .trim();
+    if (command === "supabase" && args[0] === "start")
+      throw new Error(
+        summarizeSupabaseStartupFailure({
+          output: detail,
+          status: result.status,
+          ...(result.error &&
+          "code" in result.error &&
+          typeof result.error.code === "string"
+            ? { processErrorCode: result.error.code }
+            : {}),
+        }),
+      );
     throw new Error(
       `${command} ${args.join(" ")} failed${detail ? `:\n${detail}` : "."}`,
     );
@@ -157,23 +219,45 @@ export const localCommandSucceeds = (
 ): boolean =>
   spawnSync(command, args, {
     cwd,
-    env: createCleanProcessEnvironment({ overrides: environment }),
+    env: createCleanProcessEnvironment({
+      overrides: {
+        ...environment,
+        ...(command === "docker" ? runtimeDockerEnvironment() : {}),
+      },
+    }),
     stdio: "ignore",
   }).status === 0;
 
 export const ensureLocalContainerRuntime = ({
   cwd = process.cwd(),
   autoStartColima = false,
+  ownershipReceipt,
 }: {
   cwd?: string | undefined;
   autoStartColima?: boolean;
-} = {}): void => {
-  if (localCommandSucceeds("docker", ["info"], { cwd })) return;
+  ownershipReceipt?: ContainerEngineReceiptInput;
+} = {}): { readonly startedColima: boolean } => {
+  bindRuntimeDockerEnvironment({
+    cwd,
+    ...(process.env.REHEARSAL_DOCKER_CONTEXT
+      ? { context: process.env.REHEARSAL_DOCKER_CONTEXT }
+      : {}),
+    ...(process.env.REHEARSAL_DOCKER_IDENTITY
+      ? { expectedIdentity: process.env.REHEARSAL_DOCKER_IDENTITY }
+      : {}),
+  });
+  if (localCommandSucceeds("docker", ["info"], { cwd }))
+    return { startedColima: false };
+  let startedColima = false;
   if (autoStartColima && localCommandSucceeds("colima", ["version"], { cwd })) {
+    if (runtimeDockerContext() !== "colima")
+      throw new Error(
+        "Colima auto-start requires the local colima Docker context. Select it explicitly before retrying; Rehearsal will not switch or start another engine.",
+      );
+    assertDefaultColimaCanBeStarted({ projectRoot: cwd });
     runLocalCommand("colima", ["start"], { cwd });
-    console.log(
-      "Started Colima because containerRuntime.autoStartColima is enabled. Rehearsal will not stop this shared Docker runtime automatically.",
-    );
+    startedColima = true;
+    bindRuntimeDockerEnvironment({ cwd });
   }
   if (!localCommandSucceeds("docker", ["info"], { cwd })) {
     throw new Error(
@@ -182,6 +266,48 @@ export const ensureLocalContainerRuntime = ({
         : "A local Docker-compatible runtime is stopped or unavailable. Start Docker or Colima explicitly, or opt in with containerRuntime.autoStartColima: true.",
     );
   }
+  if (startedColima && ownershipReceipt) {
+    writeContainerEngineStartReceipt({ input: ownershipReceipt });
+  }
+  if (startedColima) {
+    console.log(
+      ownershipReceipt
+        ? "Started Colima because containerRuntime.autoStartColima is enabled and recorded an owner-only startup receipt."
+        : "Started Colima because containerRuntime.autoStartColima is enabled. No shutdown receipt was requested, so Rehearsal will preserve it.",
+    );
+  }
+  return { startedColima };
+};
+
+export const ensureConfiguredContainerRuntime = ({
+  cwd,
+  artifactDirectory,
+  projectId,
+  policy,
+}: {
+  readonly cwd: string;
+  readonly artifactDirectory: string;
+  readonly projectId: string;
+  readonly policy: ContainerRuntimePolicy;
+}): void => {
+  ensureLocalContainerRuntime({
+    cwd,
+    autoStartColima: policy.autoStartColima,
+    ownershipReceipt: {
+      path: join(artifactDirectory, CONTAINER_ENGINE_RECEIPT_FILENAME),
+      projectRoot: cwd,
+      projectId,
+      operationId:
+        process.env.REHEARSAL_OPERATION_ID ??
+        `manager-${process.pid}-${Date.now()}`,
+    },
+  });
+  const capacity = assertContainerCapacityForRuntime({
+    cwd,
+    warningPercent: policy.diskWarningPercent,
+    minimumFreeBytes: policy.minimumFreeBytes,
+  });
+  if (capacity.warning) console.warn(capacity.warning);
 };
 
 export const preventOwnedSupabaseAutoRestart = ({
@@ -206,6 +332,21 @@ export const preventOwnedSupabaseAutoRestart = ({
     .map((value) => value.trim())
     .filter(Boolean);
   if (containers.length) {
+    assertOwnedSupabaseResourceInspection({
+      output: runLocalCommand(
+        "docker",
+        [
+          "container",
+          "inspect",
+          "--format",
+          "{{json .Config.Labels}}",
+          ...containers,
+        ],
+        { capture: true, cwd },
+      ),
+      count: containers.length,
+      projectId,
+    });
     runLocalCommand("docker", ["update", "--restart=no", ...containers], {
       capture: true,
       cwd,
@@ -236,19 +377,71 @@ export const startLocalSupabase = ({
   cwd,
   workdir,
   exclude = [],
+  serviceProfile,
   environment = {},
   applyMigrations = true,
   autoStartColima = false,
+  diskWarningPercent = 80,
+  minimumFreeBytes = 8 * 1024 * 1024 * 1024,
+  containerRuntime,
+  ownershipReceipt,
+  artifactDirectory,
   projectId,
 }: SupabaseCommandOptions & {
   exclude?: readonly string[];
+  serviceProfile?: "application" | "full";
   applyMigrations?: boolean;
   autoStartColima?: boolean;
+  diskWarningPercent?: number;
+  minimumFreeBytes?: number;
+  containerRuntime?: {
+    readonly autoStartColima: boolean;
+    readonly diskWarningPercent: number;
+    readonly minimumFreeBytes: number;
+  };
+  ownershipReceipt?: ContainerEngineReceiptInput;
+  artifactDirectory?: string;
   projectId?: string | undefined;
 } = {}): LocalSupabaseEnvironment => {
-  ensureLocalContainerRuntime({ cwd, autoStartColima });
+  const runtimePolicy = containerRuntime ?? {
+    autoStartColima,
+    diskWarningPercent,
+    minimumFreeBytes,
+  };
+  const receipt =
+    ownershipReceipt ??
+    (artifactDirectory && projectId
+      ? {
+          path: join(artifactDirectory, CONTAINER_ENGINE_RECEIPT_FILENAME),
+          projectRoot: cwd ?? process.cwd(),
+          projectId,
+          operationId:
+            process.env.REHEARSAL_OPERATION_ID ??
+            `manager-${process.pid}-${Date.now()}`,
+        }
+      : undefined);
+  ensureLocalContainerRuntime({
+    cwd,
+    autoStartColima: runtimePolicy.autoStartColima,
+    ...(receipt === undefined ? {} : { ownershipReceipt: receipt }),
+  });
+  const capacity = assertContainerCapacityForRuntime({
+    ...(cwd === undefined ? {} : { cwd }),
+    warningPercent: runtimePolicy.diskWarningPercent,
+    minimumFreeBytes: runtimePolicy.minimumFreeBytes,
+  });
+  if (capacity.warning) console.warn(capacity.warning);
+  const selectedExcludes =
+    serviceProfile === undefined
+      ? exclude
+      : supabaseExcludedServicesForProfile(serviceProfile);
   const startArguments = withWorkdir(
-    ["start", ...(exclude.length ? ["--exclude", exclude.join(",")] : [])],
+    [
+      "start",
+      ...(selectedExcludes.length
+        ? ["--exclude", selectedExcludes.join(",")]
+        : []),
+    ],
     workdir,
   );
   runLocalCommand("supabase", startArguments, {
@@ -271,8 +464,76 @@ export const stopLocalSupabase = ({
   cwd,
   workdir,
   environment = {},
-}: SupabaseCommandOptions = {}): void => {
+  projectId,
+}: SupabaseCommandOptions & { readonly projectId: string }): void => {
+  if (!/^[a-z0-9][a-z0-9-]{1,62}$/u.test(projectId) || !workdir)
+    throw new Error(
+      "Supabase stop requires its exact reviewed project identity and runtime workdir.",
+    );
+  bindRuntimeDockerEnvironment(cwd === undefined ? {} : { cwd });
   if (!localCommandSucceeds("docker", ["info"], { cwd })) return;
+  const containers = runLocalCommand(
+    "docker",
+    [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      `label=com.supabase.cli.project=${projectId}`,
+      "--format",
+      "{{.ID}}",
+    ],
+    { capture: true, cwd },
+  )
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean);
+  if (!containers.length) return;
+  if (
+    containers.length > 1000 ||
+    new Set(containers).size !== containers.length ||
+    containers.some((id) => !/^[a-f0-9]{64}$/u.test(id))
+  )
+    throw new Error(
+      "Supabase stop container identity is unavailable; no target was stopped.",
+    );
+  assertOwnedSupabaseResourceInspection({
+    output: runLocalCommand(
+      "docker",
+      [
+        "container",
+        "inspect",
+        "--format",
+        "{{json .Config.Labels}}",
+        ...containers,
+      ],
+      { capture: true, cwd },
+    ),
+    count: containers.length,
+    projectId,
+  });
+  const configurationPath = join(
+    resolve(cwd ?? process.cwd(), workdir),
+    "supabase/config.toml",
+  );
+  const details = lstatSync(configurationPath);
+  if (
+    !details.isFile() ||
+    details.isSymbolicLink() ||
+    details.size > 1024 * 1024
+  )
+    throw new Error(
+      "Supabase stop runtime configuration is unsafe; no target was stopped.",
+    );
+  const ids = [
+    ...readFileSync(configurationPath, "utf8").matchAll(
+      /^\s*project_id\s*=\s*(["'])([a-z0-9][a-z0-9-]{1,62})\1\s*(?:#.*)?$/gmu,
+    ),
+  ].map((match) => match[2]);
+  if (ids.length !== 1 || ids[0] !== projectId)
+    throw new Error(
+      "Supabase stop workdir identity differs from its reviewed target; no target was stopped.",
+    );
   runLocalCommand("supabase", withWorkdir(["stop"], workdir), {
     cwd,
     environment,
@@ -309,20 +570,44 @@ export const removeLocalSupabaseProjectResources = ({
     .split("\n")
     .map((value) => value.trim())
     .filter(Boolean);
+  const volumes = list("volume", "{{.Name}}");
+  const networks = list("network", "{{.ID}}");
+  for (const [kind, names] of [
+    ["container", containers],
+    ["volume", volumes],
+    ["network", networks],
+  ] as const) {
+    if (names.length)
+      assertOwnedSupabaseResourceInspection({
+        output: runLocalCommand(
+          "docker",
+          [
+            kind,
+            "inspect",
+            "--format",
+            kind === "container"
+              ? "{{json .Config.Labels}}"
+              : "{{json .Labels}}",
+            ...names,
+          ],
+          { capture: true, cwd },
+        ),
+        count: names.length,
+        projectId: projectId!,
+      });
+  }
   if (containers.length) {
     runLocalCommand("docker", ["rm", "--force", ...containers], {
       capture: true,
       cwd,
     });
   }
-  const volumes = list("volume", "{{.Name}}");
   if (volumes.length) {
     runLocalCommand("docker", ["volume", "rm", "--force", ...volumes], {
       capture: true,
       cwd,
     });
   }
-  const networks = list("network", "{{.ID}}");
   if (networks.length) {
     runLocalCommand("docker", ["network", "rm", ...networks], {
       capture: true,

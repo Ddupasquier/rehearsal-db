@@ -1,10 +1,5 @@
-/**
- * Purpose: Restore and manage the disposable local Rehearsal Supabase runtime from
- * the active verified sanitized baseline.
- * Run: `npm run db:rehearsal:reset`, `npm run db:rehearsal:start`,
- * `npm run db:rehearsal:status`, or `npm run db:rehearsal:stop`.
- * Reset deletes only the dedicated local Rehearsal runtime and its Docker volumes.
- */
+/** Restore and manage the disposable local Supabase runtime from its verified baseline.
+ * Reset deletes only this dedicated runtime and its Docker volumes. */
 
 import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -16,10 +11,7 @@ import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { verifyActiveBaseline } from "../baseline/artifact.mjs";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
-import {
-  createCleanProcessEnvironment,
-  assertLoopbackUrl,
-} from "../shared/process_environment.mjs";
+import { assertLoopbackUrl } from "../shared/process_environment.mjs";
 import {
   localCommandSucceeds,
   readLocalSupabaseEnvironment,
@@ -27,6 +19,7 @@ import {
   runLocalCommand,
   startLocalSupabase,
   stopLocalSupabase,
+  type LocalSupabaseEnvironment,
 } from "./supabase_environment.mjs";
 import {
   buildRestoreSqlPrefix,
@@ -44,13 +37,16 @@ import type { MigrationFileEntry } from "../runtime/migration_history.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import { readRehearsalServiceEnvironment } from "../runtime/service_environment.mjs";
 import { applySupabaseAuthenticationProviders } from "../identity/provider_configuration.mjs";
-import type { LocalSupabaseEnvironment } from "./supabase_environment.mjs";
 import {
   captureLocalPublicSchema,
   compareProductionSchemaDumps,
 } from "../baseline/schema_snapshot.mjs";
 import { formatCount } from "../shared/human_output.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
+import {
+  guardRuntimeManagerAction,
+  createRuntimeManagerEnvironment,
+} from "../runtime/runtime_manager_guards.mjs";
 import {
   buildRuntimeFinalizationSql,
   buildRuntimePostSchemaSql,
@@ -87,6 +83,7 @@ const loadedConfiguration = await loadRehearsalConfig({
     : { configPath: invocation.configPath }),
 });
 const { config, paths: configuredPaths } = loadedConfiguration;
+await guardRuntimeManagerAction(loadedConfiguration, invocation.action);
 if (!config.supabase) {
   throw new Error("The Supabase runtime requires config.supabase.");
 }
@@ -294,7 +291,7 @@ const restoreBaselineRows = async ({
     {
       cwd: repositoryRoot,
       detached: process.platform !== "win32",
-      env: createCleanProcessEnvironment(),
+      env: createRuntimeManagerEnvironment(),
       stdio: ["pipe", "ignore", "pipe"],
     },
   );
@@ -607,9 +604,10 @@ const resetRuntime = async () => {
       const environment = startLocalSupabase({
         cwd: repositoryRoot,
         workdir: runtimeWorkdir,
-        exclude: ["edge-runtime", "logflare", "vector", "realtime"],
+        serviceProfile: config.supabase!.serviceProfile,
         environment: serviceEnvironment,
-        autoStartColima: config.containerRuntime.autoStartColima,
+        containerRuntime: config.containerRuntime,
+        artifactDirectory: artifactRoot,
         projectId: config.runtime.projectId,
       });
       const structuralSchemaSha256 = await restoreProductionSchema(active);
@@ -670,9 +668,10 @@ const startRuntime = async () => {
   const environment = startLocalSupabase({
     cwd: repositoryRoot,
     workdir: runtimeWorkdir,
-    exclude: ["edge-runtime", "logflare", "vector", "realtime"],
+    serviceProfile: config.supabase!.serviceProfile,
     environment: serviceEnvironment,
-    autoStartColima: config.containerRuntime.autoStartColima,
+    containerRuntime: config.containerRuntime,
+    artifactDirectory: artifactRoot,
     projectId: config.runtime.projectId,
   });
   const projectRuntime = configureProjectRuntime({ environment, baseline });
@@ -683,7 +682,6 @@ const startRuntime = async () => {
   });
   return environment;
 };
-
 const readCandidateReceipt = (baseline: BaselineManifest) =>
   readCandidateMigrationPlan({
     baseline,
@@ -852,6 +850,7 @@ const migrateRuntime = async () => {
 
 await runRuntimeLifecycle({
   action,
+  protected: config.runtime.protected,
   operations: {
     reset: resetRuntime,
     start: async () => {
@@ -889,6 +888,7 @@ await runRuntimeLifecycle({
     verify: verifyRuntime,
     stop: async () => {
       stopLocalSupabase({
+        projectId: config.runtime.projectId,
         cwd: repositoryRoot,
         workdir: runtimeWorkdir,
         environment: await readServiceEnvironment(),

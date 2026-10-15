@@ -3,8 +3,8 @@
 This tutorial runs a complete PostgreSQL rehearsal in a temporary fictional project. It
 does not use your application, production data, or a hosted database.
 
-Allow about five minutes. You need Node.js 22, 24, or 26 and a running
-Docker-compatible engine. Node.js 24 LTS is recommended.
+Allow about five minutes after downloading the database image. You need Git, Node.js 22,
+24, or 26, npm, and a running Docker-compatible engine. Node.js 24 LTS is recommended.
 
 ## 1. Prepare Rehearsal
 
@@ -19,14 +19,17 @@ Then run:
 
 ```bash
 npm ci --ignore-scripts
+npm run build
 docker pull postgres:17-alpine
 ```
 
-If you already have this repository open, use that checkout.
+If you already have this repository open, use that checkout. The build prepares its
+local package for the temporary project. Downloading the database image is explicit;
+Rehearsal will not download it for you.
 
 ## 2. Make a temporary project
 
-From the Rehearsal repository root, run this block exactly:
+From the Rehearsal repository root, run this block:
 
 ```bash
 rehearsal_repo=$PWD
@@ -44,12 +47,18 @@ The temporary project contains:
 - a reviewed sanitization policy;
 - an application proof that checks the migrated database.
 
+The fixture uses runtime ID `rehearsal-postgresql-fixture` and PostgreSQL port `59422`.
+Run only one copy at a time, or choose a distinct `runtime.projectId` and free
+`runtime.databasePort` in `rehearsal.config.mjs` before continuing. Rehearsal will not
+replace another listener.
+This is a database-only example, not a full application with a browser interface.
+
 ## 3. Create the baseline
 
 Open the guide:
 
 ```bash
-npx rehearsal
+npx --no-install rehearsal
 ```
 
 The project begins at Stage 3 of 4. Choose **Create the baseline**. Accept the detected
@@ -76,11 +85,11 @@ application before verification.
 Exit the guide, then run:
 
 ```bash
-npx rehearsal status
-npx rehearsal verify
-npx rehearsal reset
-npx rehearsal stop
-npx rehearsal discard
+npx --no-install rehearsal status
+npx --no-install rehearsal verify
+npx --no-install rehearsal reset
+npx --no-install rehearsal stop
+npx --no-install rehearsal discard
 ```
 
 `discard` removes only the labeled tutorial container and volume. The temporary project
