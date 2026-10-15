@@ -45,6 +45,9 @@ jobs:
 
   onboarding-fixture:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -52,6 +55,15 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Verify live release controls with the read-only workflow token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { githubReleaseReader, verifyReleaseSettings } from "./scripts/release/preflight.mjs";
+          const settings = await verifyReleaseSettings(githubReleaseReader({ token: process.env.GITHUB_TOKEN }));
+          console.log(JSON.stringify({ status: "passed", operation: "read-only-release-settings", ...settings }));
+          NODE
       - run: npm ci --ignore-scripts
       - run: npm run test:fixture:onboarding
       - run: npm run test:fixture:typescript
