@@ -60,8 +60,31 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           node --input-type=module <<'NODE'
-          import { githubReleaseReader, verifyReleaseSettings } from "./scripts/release/preflight.mjs";
-          const settings = await verifyReleaseSettings(githubReleaseReader({ token: process.env.GITHUB_TOKEN }));
+          import { githubReleaseReader, RELEASE_POLICY, verifyReleaseSettings } from "./scripts/release/preflight.mjs";
+          const read = githubReleaseReader({ token: process.env.GITHUB_TOKEN });
+          const rulesetPrefix = `/repos/${RELEASE_POLICY.repository}/rulesets/`;
+          const observed = async (path) => {
+            const value = await read(path);
+            if (path.startsWith(rulesetPrefix) && /^[1-9][0-9]*$/.test(path.slice(rulesetPrefix.length))) {
+              const ruleset = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+              const references = ruleset.conditions?.ref_name?.include;
+              const checks = Array.isArray(ruleset.rules) ? ruleset.rules.find((rule) => rule?.type === "required_status_checks")?.parameters?.required_status_checks : undefined;
+              const recognized = (values, allowed) => Array.isArray(values) ? values.slice(0, 20).map((value) => allowed.includes(value) ? value : "unrecognized") : null;
+              console.log(JSON.stringify({
+                observation: "release-ruleset-metadata",
+                id: Number.isSafeInteger(ruleset.id) ? ruleset.id : null,
+                enforcement: ["active", "disabled", "evaluate"].includes(ruleset.enforcement) ? ruleset.enforcement : "unknown",
+                target: ["branch", "tag", "push"].includes(ruleset.target) ? ruleset.target : "unknown",
+                bypassActorsPresent: Object.hasOwn(ruleset, "bypass_actors"),
+                bypassActorsArray: Array.isArray(ruleset.bypass_actors),
+                bypassActorCount: Array.isArray(ruleset.bypass_actors) ? ruleset.bypass_actors.length : null,
+                refIncludes: recognized(references, ["refs/heads/main", "refs/tags/v*"]),
+                requiredCheckNames: recognized(Array.isArray(checks) ? checks.map((check) => check?.context) : null, RELEASE_POLICY.checks),
+              }));
+            }
+            return value;
+          };
+          const settings = await verifyReleaseSettings(observed);
           console.log(JSON.stringify({ status: "passed", operation: "read-only-release-settings", ...settings }));
           NODE
       - run: npm ci --ignore-scripts
