@@ -9,16 +9,27 @@ import {
   realpath,
   rename,
   rm,
-  stat,
   writeFile,
 } from "node:fs/promises";
 import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { REHEARSAL_VERSION } from "./diagnostics.mjs";
+import {
+  refreshLiveOperationProgress,
+  type OperationProgressSnapshot,
+  type RecentOperationProgress,
+} from "./operation_progress_contract.mjs";
+import {
+  archiveOperationProgress,
+  readOwnedOperationProgress,
+  readRecentOperationProgress,
+  writeOwnedOperationProgress,
+} from "./operation_progress_storage.mjs";
 
 const LOCK_ROOT = join(tmpdir(), "rehearsal-db-operation-locks");
 const OPERATION_KINDS = new Set([
+  "stop-stale",
   "baseline create",
   "baseline prepare",
   "baseline refresh",
@@ -49,6 +60,9 @@ export interface InstalledPackageFingerprint {
 
 export interface ProjectOperation {
   readonly command: string;
+  readonly id: string;
+  readonly startedAt: string;
+  writeProgress(progress: OperationProgressSnapshot): Promise<void>;
   release(): Promise<void>;
   releaseSync(): void;
 }
@@ -70,7 +84,9 @@ export type ProjectOperationState = Readonly<{
     kind: string;
     startedAt: string;
     rehearsalVersion: string | null;
+    progress: OperationProgressSnapshot | null;
   }> | null;
+  recent: readonly RecentOperationProgress[] | null;
 }>;
 
 const hasErrorCode = (error: unknown, code: string): boolean =>
@@ -106,7 +122,10 @@ const parseLockOwner = (source: string): LockOwner => {
     ("rehearsalVersion" in value &&
       (typeof value.rehearsalVersion !== "string" ||
         value.rehearsalVersion.length === 0 ||
-        value.rehearsalVersion.length > 64))
+        value.rehearsalVersion.length > 64 ||
+        !/^\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?$/u.test(
+          value.rehearsalVersion,
+        )))
   ) {
     throw new Error("The Rehearsal operation-lock owner is invalid.");
   }
@@ -115,6 +134,19 @@ const parseLockOwner = (source: string): LockOwner => {
 
 const digest = (value: string): string =>
   createHash("sha256").update(value).digest("hex");
+
+const readPrivateLockOwner = async (ownerPath: string): Promise<LockOwner> => {
+  const details = await lstat(ownerPath);
+  if (
+    !details.isFile() ||
+    details.isSymbolicLink() ||
+    details.size > 4096 ||
+    (details.mode & 0o077) !== 0 ||
+    (typeof process.getuid === "function" && details.uid !== process.getuid())
+  )
+    throw new Error("The operation-lock owner file is unsafe.");
+  return parseLockOwner(await readFile(ownerPath, "utf8"));
+};
 
 const packageFiles = (root: string, directory = root): string[] =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -174,9 +206,10 @@ const processIsAlive = (pid: unknown): pid is number => {
 
 const assertPrivateLockRoot = async (): Promise<void> => {
   await mkdir(LOCK_ROOT, { recursive: true, mode: 0o700 });
-  const details = await stat(LOCK_ROOT);
+  const details = await lstat(LOCK_ROOT);
   if (
     !details.isDirectory() ||
+    details.isSymbolicLink() ||
     (details.mode & 0o077) !== 0 ||
     (typeof process.getuid === "function" && details.uid !== process.getuid())
   ) {
@@ -226,9 +259,45 @@ export const acquireProjectOperation = async ({
       };
       return Object.freeze({
         command,
-        async release() {
-          const current = parseLockOwner(await readFile(ownerPath, "utf8"));
+        id: digest(token),
+        startedAt: owner.startedAt,
+        async writeProgress(progress: OperationProgressSnapshot) {
+          const current = await readPrivateLockOwner(ownerPath);
           assertOwnership(current);
+          if (progress.startedAt !== owner.startedAt)
+            throw new Error(
+              "Operation progress does not match its verified start time.",
+            );
+          await writeOwnedOperationProgress({
+            lockDirectory,
+            token,
+            operationId: digest(token),
+            progress,
+          });
+        },
+        async release() {
+          const current = await readPrivateLockOwner(ownerPath);
+          assertOwnership(current);
+          const progress = await readOwnedOperationProgress({
+            lockDirectory,
+            token,
+            operationId: digest(token),
+            startedAt: owner.startedAt,
+          });
+          if (progress) {
+            try {
+              await archiveOperationProgress({
+                projectHash,
+                operationKinds: OPERATION_KINDS,
+                kind: command,
+                rehearsalVersion: REHEARSAL_VERSION,
+                progress,
+              });
+            } catch {
+              /* Missing private history never fabricates success or prevents owned lock release. */
+            }
+          }
+          assertOwnership(await readPrivateLockOwner(ownerPath));
           await rm(lockDirectory, { recursive: true });
         },
         releaseSync() {
@@ -245,7 +314,7 @@ export const acquireProjectOperation = async ({
       }
       let current: LockOwner;
       try {
-        current = parseLockOwner(await readFile(ownerPath, "utf8"));
+        current = await readPrivateLockOwner(ownerPath);
       } catch {
         throw new Error(
           "Another Rehearsal operation owns this project, or its lock is incomplete.",
@@ -272,6 +341,8 @@ export const acquireProjectOperation = async ({
 const operationState = (
   state: ProjectOperationState["state"],
   owner: LockOwner | null = null,
+  progress: OperationProgressSnapshot | null = null,
+  recent: readonly RecentOperationProgress[] | null = null,
 ): ProjectOperationState =>
   Object.freeze({
     schemaVersion: 1,
@@ -281,8 +352,10 @@ const operationState = (
           kind: owner.command,
           startedAt: owner.startedAt,
           rehearsalVersion: owner.rehearsalVersion ?? null,
+          progress,
         })
       : null,
+    recent,
   });
 
 export const inspectProjectOperationState = async ({
@@ -295,25 +368,49 @@ export const inspectProjectOperationState = async ({
   const projectHash = digest(canonicalRoot);
   const lockDirectory = join(LOCK_ROOT, projectHash);
   const ownerPath = join(lockDirectory, "owner.json");
+  const recent = await readRecentOperationProgress({
+    projectHash,
+    operationKinds: OPERATION_KINDS,
+  });
   let details;
   try {
     details = await lstat(lockDirectory);
   } catch (error) {
-    if (hasErrorCode(error, "ENOENT")) return operationState("idle");
+    if (hasErrorCode(error, "ENOENT"))
+      return operationState("idle", null, null, recent);
     throw error;
   }
-  if (!details.isDirectory() || details.isSymbolicLink()) {
-    return operationState("invalid");
+  if (
+    !details.isDirectory() ||
+    details.isSymbolicLink() ||
+    (details.mode & 0o077) !== 0 ||
+    (typeof process.getuid === "function" && details.uid !== process.getuid())
+  ) {
+    return operationState("invalid", null, null, recent);
   }
   let owner: LockOwner;
   try {
-    owner = parseLockOwner(await readFile(ownerPath, "utf8"));
+    owner = await readPrivateLockOwner(ownerPath);
   } catch (error) {
-    if (hasErrorCode(error, "ENOENT")) return operationState("idle");
-    return operationState("invalid");
+    if (hasErrorCode(error, "ENOENT"))
+      return operationState("idle", null, null, recent);
+    return operationState("invalid", null, null, recent);
   }
-  if (owner.projectHash !== projectHash) return operationState("invalid");
-  return operationState(processIsAlive(owner.pid) ? "busy" : "stale", owner);
+  if (owner.projectHash !== projectHash)
+    return operationState("invalid", null, null, recent);
+  const live = processIsAlive(owner.pid);
+  const progress = await readOwnedOperationProgress({
+    lockDirectory,
+    token: owner.token,
+    operationId: digest(owner.token),
+    startedAt: owner.startedAt,
+  });
+  return operationState(
+    live ? "busy" : "stale",
+    owner,
+    live && progress ? refreshLiveOperationProgress(progress) : progress,
+    recent,
+  );
 };
 
 export const inspectProjectOperationLocks = async (): Promise<string[]> =>

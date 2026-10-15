@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { REHEARSAL_VERSION } from "../../../dist/src/shared/diagnostics.mjs";
 import {
   assertCandidateConfirmation,
   hasMatchingRuntimeMarker,
@@ -55,6 +56,28 @@ describe("shared runtime lifecycle engine", () => {
       discard: operation("discard"),
     };
   };
+  it("refuses data-replacing operations on protected environments before any operation starts", async () => {
+    for (const action of ["reset", "run", "migrate", "discard"]) {
+      const order = [];
+      await expect(
+        runRuntimeLifecycle({
+          action,
+          protected: true,
+          operations: createOperations(order),
+        }),
+      ).rejects.toThrow("protected");
+      expect(order).toEqual([]);
+    }
+    for (const action of ["start", "stop", "status"]) {
+      const order = [];
+      await runRuntimeLifecycle({
+        action,
+        protected: true,
+        operations: createOperations(order),
+      });
+      expect(order).toEqual([action]);
+    }
+  });
 
   it("dispatches every target-neutral action and fixes the complete run order", async () => {
     for (const action of [
@@ -156,6 +179,7 @@ describe("shared runtime lifecycle engine", () => {
       target: "postgresql",
       generationId: "baseline-1",
       dataSha256: "c".repeat(64),
+      rehearsalVersion: "caller-supplied-version-must-not-win",
       secret: "preserved-but-not-compared",
     };
     await writeRuntimeMarker({ path, marker });
@@ -169,7 +193,8 @@ describe("shared runtime lifecycle engine", () => {
         },
         mismatchMessage: "reset required",
       }),
-    ).resolves.toEqual(marker);
+    ).resolves.toEqual({ ...marker, rehearsalVersion: REHEARSAL_VERSION });
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
     await writeFile(path, "{}\n");
     await expect(
       readMatchingRuntimeMarker({

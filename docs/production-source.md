@@ -332,3 +332,159 @@ Rehearsal does not decide consent, licensing, retention rights, privileged-role 
 or which owner is yours. It does not provide an OS firewall, backup, disaster recovery,
 or universal database support. Real Google account selection and provider callbacks
 still require direct human observation; a synthetic redirect cannot prove them.
+
+## Optional smaller, measured baselines
+
+Full approved extraction stays the default. To request a bounded sample, add
+`shapePolicy: "rehearsal/shape-policy.json"` to `preparation`, then review that JSON file:
+
+```json
+{
+  "shapeVersion": 1,
+  "seed": "library-shape-v1",
+  "maximumSourceRows": 10000,
+  "maximumSourceBytes": 16777216,
+  "maximumRows": 200,
+  "maximumDepth": 8,
+  "minimumCohortSize": 5,
+  "tables": [
+    { "name": "authors", "key": ["id"], "maximumRows": 40, "rootRows": 20 },
+    { "name": "books", "key": ["id"], "maximumRows": 160, "rootRows": 0 }
+  ],
+  "relationships": [
+    {
+      "id": "book_author",
+      "parent": { "table": "authors", "columns": ["id"] },
+      "child": { "table": "books", "columns": ["author_id"] },
+      "nullable": false,
+      "includeChildren": true,
+      "maximumChildrenPerParent": 8,
+      "maximumRows": 160
+    }
+  ],
+  "distributions": [
+    {
+      "id": "available_books",
+      "table": "books",
+      "column": "available",
+      "kind": "boolean",
+      "required": false,
+      "tolerance": 0.1,
+      "minimumBucketRows": 5
+    }
+  ]
+}
+```
+
+A **root** is a table where selection starts. `rootRows` is its root-selection budget;
+parent and child relationships may add rows up to the table and total `maximumRows`.
+Every included privacy table needs an explicit key and budget. Optional `schema` defaults
+to `public`; composite keys use several column names. Every retained foreign key in the
+privacy policy needs a matching relationship. Logical relationships may be declared too;
+the sampler never discovers or guesses joins.
+
+Same input rows, key, seed, declarations and algorithm produce the same selected graph.
+Changing one creates new evidence. Parent rows needed by selected children are always
+included. `includeChildren` also follows the relationship from parents to children.
+Missing parents, duplicate keys, excessive fan-out, depth, or row budgets refuse the
+sample; the package never silently drops a required parent or exceeds a budget.
+`maximumChildrenPerParent` limits the selected children even when `includeChildren` is
+false. When it is true, following all children also refuses source fan-out above that cap.
+Nullable keys may explicitly skip a parent when any component is null. Hash-bound required
+inclusions may be listed in a table's `requiredKeySha256`; use the advanced
+`shapeKeySha256([keyComponent, ...])` API in trusted local tooling, never raw identities in
+the policy or command arguments.
+These hashes are selection receipts, not encryption or anonymization. Predictable keys
+can be guessed; keep identity-sensitive selector policies untracked and owner-only.
+
+Native preparation uses the inspected SQL types to match integer/bigint/numeric keys
+exactly, including composite foreign keys with different numeric widths. It never guesses
+that text `"01"` means numeric `1`. Numeric strings keep arbitrary precision; unsafe
+JavaScript numeric magnitudes refuse. Advanced required-key hashing must name the
+inspected PostgreSQL types: `shapeKeySha256([1], ["int8"])`. Pure graph tooling defaults
+to exact primitive comparison unless it supplies `shapeKeyContextFromSchema` explicitly.
+Other SQL comparison rules, such as custom collations or domain-specific equivalence,
+are not inferred.
+
+Sampling never rewrites values before privacy transformation. Existing pseudonym recipes
+distinguish JSON strings and numbers; different raw representations of a numeric FK may
+therefore produce different pseudonyms. The post-sanitization relationship gate refuses
+that result rather than silently changing the reviewed privacy recipe or emitting an
+orphaned baseline. This needs an explicitly reviewed privacy/data-representation
+correction, not a sampling workaround. Full extraction does not prove the relationship
+is correct either.
+
+Sampling does not authorize copying a value. The existing exhaustive privacy policy
+sanitizes every selected row. Rehearsal verifies the declared relationships again after
+transformation, so inconsistent pseudonym namespaces cannot become a successful receipt.
+
+Basic distribution kinds are `null`, `boolean`, `number`, `timestamp`, `string-length`, and
+`array-length`. Numeric and length kinds accept ordered numeric `boundaries`; numeric
+values may be finite numbers or canonical PostgreSQL decimal strings that can be
+represented without changing their decimal spelling. Unsafe precision is refused.
+Timestamp boundaries are epoch milliseconds and the values must be zoned ISO timestamps. A boundary
+starts the next bucket. Buckets describe reviewed classes, not private literal values.
+`tolerance: 0.1` allows a difference of ten percentage points. `minimumBucketRows` applies
+to source classes large enough to meet `minimumCohortSize`, both in the selected source
+rows and after sanitization. Optional `requiredBuckets` also names classes that must
+exist, rather than silently passing an absent edge case.
+
+For categorical and edge-case coverage, use these reviewed kinds:
+
+- `enum`: explicit `values` (up to 16 structural codes, finite numbers or booleans).
+  Strings must be portable codes, not names, URLs, tokens or prose. Unknown classes refuse
+  unless you explicitly allow `includeOther: true`. Evidence shows `category-0`,
+  `category-1`, etc.—never the literals. This does not authorize retaining the source column.
+- `empty`: `null`, `empty`, `non-empty` classes for text, arrays or plain JSON objects.
+- `number-extrema`, `timestamp-extrema`, `string-length-extrema`, `array-length-extrema`:
+  `null`, `minimum`, `maximum`, `minimum-maximum`, `interior` classes. Timestamp extrema
+  cover oldest/newest values. Unique extremes cannot be certified below the cohort limit.
+- `relationship-fanout`: a declared `relationship` on its parent table, without `column`.
+  Defaults classify `zero`, `one`, `many` children; reviewed integer boundaries may replace
+  these classes. Both the source and sanitized selected graph are measured.
+
+Small same-table correlations use optional `jointDistributions`. Combine two or three
+declared scalar goal IDs, capped at 64 Cartesian buckets:
+
+```json
+{
+  "id": "state_availability",
+  "table": "books",
+  "goals": ["reviewed_state", "available_books"],
+  "required": true,
+  "tolerance": 0.05,
+  "minimumBucketRows": 5
+}
+```
+
+Declare both component goals in `distributions` first. Joint evidence uses `joint-N`
+classes in the components' declared bucket order; raw categories stay in the policy.
+Optional `requiredBuckets` can require particular `joint-N` classes.
+
+The first joint goal for a root table guides stratified selection; otherwise its first
+scalar goal does. This bounded approximation is not a general optimizer: competing goals
+or minimum allocations larger than the root budget may be impossible. All goals
+are checked after sanitization. A **required** goal that misses tolerance or cannot be
+reported safely blocks activation; an **advisory** goal produces an honest warning. Small
+nonzero bucket counts are suppressed in both human and JSON evidence. If any bucket is
+unsafe, every count and difference for that goal is hidden so subtraction from table
+totals cannot reveal the rare count. Suppression does not mean preservation was proved;
+it is not differential privacy or a formal anonymity guarantee against external knowledge,
+overlapping goals or separately released reports. Class evidence distinguishes selected
+source rows from sanitized rows: represented, transformed, omitted, absent or introduced.
+An empty/min/max class appearing only after transformation cannot substitute for a missed
+required source representative.
+
+`refresh` binds the shape-policy file to its exact replacement preview. The generation's
+immutable `shape-evidence.json` binds the algorithm, seed receipt, source snapshot,
+policies, schema and sanitized data bytes. `inspect baseline --json` returns verified
+aggregate shape evidence; normal baseline verification refuses an altered receipt.
+The prior active baseline and edited runtime survive a failed shape gate.
+
+This first algorithm keeps only a capped approved graph in memory—never raw disk staging.
+Defaults are 10,000 source rows and 16 MiB; hard limits are 100,000 rows and 128 MiB. Larger
+sources must narrow their reviewed export or continue using full streaming extraction.
+Derived key indexes are additionally capped at 32 MiB; relationship and profile work each
+have a one-million-cell boundary. These are input/work bounds, not an operating-system
+memory quota. Rehearsal does not generate synthetic rows or invent edge cases absent from
+the reviewed source, and does not promise that a sample predicts every production failure.

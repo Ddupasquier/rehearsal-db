@@ -86,9 +86,13 @@ describe("typed CLI command registry", () => {
     });
   });
 
-  it("unit-tests the application handler with an injected session service", async () => {
+  it("prints the browser address rather than the separate application health route", async () => {
     const openRuntimeApplication = vi.fn(async ({ onReady }) => {
-      onReady({ url: "http://localhost:5175" });
+      onReady({
+        url: "http://localhost:5175/health",
+        status: 200,
+        applicationUrl: "http://localhost:5175",
+      });
       return {
         started: { output: "started" },
         verified: { output: "verified" },
@@ -113,6 +117,9 @@ describe("typed CLI command registry", () => {
     try {
       const result = await handler.handle(commandContext);
       expect(openRuntimeApplication).toHaveBeenCalledOnce();
+      const lines = log.mock.calls.flat().join("\n").split("\n");
+      expect(lines).toContain("Application: http://localhost:5175");
+      expect(lines).not.toContain("Application: http://localhost:5175/health");
       expect(commandContext.state.lastGuidedDetails).toBe(
         "started\nverified\nstopped",
       );

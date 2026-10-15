@@ -8,6 +8,7 @@ import {
   installCandidateArtifact,
   prepareCandidateArtifact,
 } from "../scenarios/artifact.mjs";
+import { shapeConsumerAssertions } from "./shape_assertions.mjs";
 
 const repositoryRoot = process.cwd();
 const temporaryRoot = await mkdtemp(
@@ -46,6 +47,7 @@ const create = (overrides = {}, key = Buffer.alloc(32, 7)) => createPrivacyEngin
   environment: { ...environment, ...overrides },
 });
 ${assertions}
+${shapeConsumerAssertions}
 console.log(JSON.stringify({ status: "passed" }));
 `;
 
@@ -858,6 +860,9 @@ assert.throws(() => sanitize([], undefined, undefined, null, { servingGrams: { 1
         mixedLengthNestedGtins: true,
         keyedHttpsUrls: true,
         sanitizedInputDigests: true,
+        boundedGraphSampling: true,
+        shapeFidelityAndSuppression: true,
+        immutableShapeReceipt: true,
       },
       null,
       2,

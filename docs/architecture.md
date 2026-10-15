@@ -57,6 +57,9 @@ typed registry and produce the same result contract:
   implementing their behavior.
 - `guided.mts` owns the interactive home screen and first-run questions.
 - `runtime_commands.mts` coordinates local runtimes and project proofs.
+- `runtime_planning.mts` owns read-only stack plans and exact candidate summaries.
+- `editor_command_handlers.mts` exposes bounded migration and configuration review
+  contracts plus digest-bound, non-destructive stale-environment stop review.
 - `source_commands.mts` coordinates approved source access and refresh.
 - `renderers.mts` formats human-readable results without changing state.
 - `terminal.mts` owns prompts, colors, and terminal exit behavior.
@@ -65,6 +68,9 @@ Command handlers receive an explicit context containing parsed flags, selected c
 guided state, and session-local caches. They return a rendered, text, or silent result;
 only the shared output boundary creates JSON envelopes or writes final human output.
 Session caches never appear in the public parsed-flags type.
+Owned child output has a byte boundary. If a process floods it, Rehearsal sends TERM
+and forcibly reaps only that owned process group after one second; a child ignoring
+TERM cannot leave the operation hanging indefinitely.
 
 Repository contracts keep the process entry point at 300 lines or fewer and every
 handler-family module at 350 lines or fewer. A new command belongs in the narrowest

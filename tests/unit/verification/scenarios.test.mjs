@@ -26,6 +26,7 @@ describe("installed-consumer scenario harness", () => {
       "onboarding",
       "typescript",
       "privacy",
+      "resources",
       "postgresql",
       "dependent-target",
       "standalone",

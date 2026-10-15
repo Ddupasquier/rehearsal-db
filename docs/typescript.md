@@ -69,13 +69,16 @@ export const unresolvedChoices = (profile: ProjectDiscoveryResult): number =>
 
 ## Exported configuration types
 
-| Export                      | Meaning                                                                   |
-| --------------------------- | ------------------------------------------------------------------------- |
-| `RehearsalConfigVersion`    | The supported configuration format. It is currently the literal type `1`. |
-| `RehearsalConfig`           | The reviewed input shape of `rehearsal.config.mjs`.                       |
-| `NormalizedRehearsalConfig` | The immutable, defaulted configuration returned by Rehearsal's loader.    |
-| `defineRehearsalConfig()`   | Checks a config while preserving its more specific inferred value types.  |
-| `ProjectDiscoveryResult`    | Versioned read-only facts, suggestions, decisions, and field states.      |
+| Export                       | Meaning                                                                                      |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| `RehearsalConfigVersion`     | The supported configuration format. It is currently the literal type `1`.                    |
+| `RehearsalConfig`            | The reviewed input shape of `rehearsal.config.mjs`.                                          |
+| `NormalizedRehearsalConfig`  | The immutable, defaulted configuration returned by Rehearsal's loader.                       |
+| `defineRehearsalConfig()`    | Checks a config while preserving its more specific inferred value types.                     |
+| `ProjectDiscoveryResult`     | Versioned read-only facts, suggestions, decisions, and field states.                         |
+| `RehearsalResourcePolicy`    | Project-owned stale review, advisory retention, volume budget, and review schedule settings. |
+| `ApplicationRequiredService` | The closed set of services a project proof can declare as required.                          |
+| `ApplicationActivitySample`  | The application's minimal schema-1 busy flag and monotonic activity counter.                 |
 
 `discoverProjectProfile()` and its result types are exported for trusted local tooling.
 The function has the same privacy boundary as `rehearsal discover`: it does not import
@@ -87,6 +90,41 @@ Nested sections are available through indexed access types such as
 `RehearsalConfig["application"]`, `RehearsalConfig["runtime"]`, and
 `RehearsalConfig["safety"]`. The [configuration reference](configuration.md) explains
 what each setting does and remains the source of truth for runtime behavior.
+
+## Type an explicit application activity route
+
+The route is opt-in application instrumentation, not a health check. Include meaningful
+user, API, Auth, Storage and background activity; polling the route itself must not
+increment its counter or set busy. Keep shutdown disabled when this evidence is incomplete.
+See [Foreground application idle shutdown](configuration.md#foreground-application-idle-shutdown)
+for bounds, failure handling and ownership.
+
+<!-- checked-example: activity-usage -->
+
+```ts
+import type {
+  ApplicationActivitySample,
+  RehearsalConfig,
+} from "@rehearsal-db/core";
+
+export const idleApplication = {
+  startCommand: "npm run dev",
+  proofCommand: "npm test",
+  readiness: { url: "http://localhost:5175/health", expectedStatus: 200 },
+  activity: { url: "http://localhost:5175/rehearsal-activity" },
+} satisfies RehearsalConfig["application"];
+
+export const idleLifecycle = {
+  open: "stop-on-application-exit",
+  openIdleTimeoutSeconds: 900,
+} satisfies NonNullable<RehearsalConfig["lifecycle"]>;
+
+export const activityResponse = {
+  schemaVersion: 1,
+  busy: false,
+  activitySequence: 12,
+} satisfies ApplicationActivitySample;
+```
 
 ## Type reviewed privacy policies
 
@@ -127,6 +165,40 @@ export const policy: ExecutablePrivacyPolicy = validateExecutablePrivacyPolicy({
 });
 
 export const identifierColumn: PrivacyColumn = policy.tables[0]!.columns[0]!;
+```
+
+## Type reviewed baseline shapes
+
+The optional shape entry point exports `BaselineShapePolicy`, `BaselineShapeEvidence`,
+`ShapeTable`, `ShapeRelationship`, `ShapeDistribution`, `ShapeJointDistribution`,
+`ShapeGoal`, and `ShapeRecord`. Input remains
+ordinary JSON. Use the validator before sampling; runtime limits and reviewed privacy
+coverage still apply. See [Production source](production-source.md#optional-smaller-measured-baselines)
+for the complete declaration and its explicit algorithm limits.
+
+Advanced pure graph tools may use `shapeKeyContextFromSchema(policy, sourceSchema)` and
+the exported `ShapeKeyContext` / `ShapeSourceSchemaTable` types. Pass that context to
+sampling and evidence together. Native preparation supplies it automatically from the
+inspected SQL schema; do not infer numeric types by looking at private row values.
+
+<!-- checked-example: shape-usage -->
+
+```ts
+import {
+  validateBaselineShapePolicy,
+  type BaselineShapePolicy,
+  type BaselineShapeEvidence,
+} from "@rehearsal-db/core/shape";
+
+export const shape: BaselineShapePolicy = validateBaselineShapePolicy({
+  shapeVersion: 1,
+  seed: "synthetic-widgets-v1",
+  maximumRows: 100,
+  tables: [{ name: "widgets", key: ["id"], maximumRows: 100, rootRows: 100 }],
+});
+
+export const hasMeasuredGoals = (evidence: BaselineShapeEvidence): boolean =>
+  evidence.distributions.length > 0;
 ```
 
 ## Package implementation and declarations

@@ -21,6 +21,37 @@ afterEach(async () => {
 });
 
 describe("project operation guard", () => {
+  it("exposes a confirmed stale-stop as an owned operation and refuses concurrent mutations", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-stale-stop-lock-"));
+    roots.push(root);
+    const operation = await acquireProjectOperation({
+      projectRoot: root,
+      command: "stop-stale",
+    });
+    try {
+      await expect(
+        inspectProjectOperationState({ projectRoot: root }),
+      ).resolves.toMatchObject({
+        schemaVersion: 1,
+        state: "busy",
+        operation: { kind: "stop-stale" },
+      });
+      await expect(
+        acquireProjectOperation({ projectRoot: root, command: "reset" }),
+      ).rejects.toThrow("already running");
+    } finally {
+      await operation.release();
+    }
+    await expect(
+      inspectProjectOperationState({ projectRoot: root }),
+    ).resolves.toEqual({
+      schemaVersion: 1,
+      state: "idle",
+      operation: null,
+      recent: [],
+    });
+  });
+
   it("allows one project mutation at a time and releases it exactly", async () => {
     const root = await mkdtemp(join(tmpdir(), "rehearsal-operation-test-"));
     roots.push(root);
@@ -68,6 +99,7 @@ describe("project operation guard", () => {
         schemaVersion: 1,
         state: "idle",
         operation: null,
+        recent: [],
       });
     } finally {
       await operation.release();

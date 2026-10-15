@@ -5,6 +5,26 @@ use `npx`, so a global install is not required.
 
 ## Guided mode
 
+For editor-style review, `npx rehearsal inspect plan --json` returns a bounded,
+versioned migration history with required predecessor links, statuses, warnings, and
+the exact complete candidate digest. Filters never change the required ordered suffix;
+Rehearsal does not infer SQL safety from filenames.
+
+`npx rehearsal configuration --json` identifies the exact active config, its source
+fingerprint, validated field metadata, and saved named profiles. To validate an edit
+without writing it, use `npx rehearsal configuration review --proposal=review.json --json`.
+The input is a project-local JSON object with `schemaVersion: 1`, the current
+`sourceSha256`, and `changes: [{ path: "runtime.displayName", value: "Feature branch" }]`.
+Only the listed structured fields are accepted. Core validates the complete proposed
+configuration and refuses stale fingerprints; it does not execute proposed commands or
+write the configuration. The editor shows the exact source diff and asks before saving.
+
+`npx rehearsal stop-stale --json` previews long-running, ownership-proven environments.
+Configure `resources.staleAfterSeconds` first. Review active application sessions,
+then repeat with `--confirm-stop=FULL_DIGEST` to stop precisely those environments.
+Container start/stop times do not prove inactivity. This command retains all database
+and Storage contents, volumes, images, baselines, and the shared engine.
+
 ```bash
 npx rehearsal
 ```
@@ -112,18 +132,20 @@ obsolete placeholder key.
 
 ## Check and inspect
 
-| Command                            | What it does                                                   |
-| ---------------------------------- | -------------------------------------------------------------- |
-| `npx rehearsal doctor`             | Check dependencies, inputs, and safety rules.                  |
-| `npx rehearsal discover`           | Explain detected facts, suggestions, and decisions.            |
-| `npx rehearsal support`            | Print a privacy-safe report for a support request.             |
-| `npx rehearsal activity`           | Report whether another Rehearsal operation is active.          |
-| `npx rehearsal explain`            | Show the exact plan without changing anything.                 |
-| `npx rehearsal run --dry-run`      | Show the same non-mutating plan.                               |
-| `npx rehearsal candidates`         | List pending migrations and their approval digest.             |
-| `npx rehearsal inspect baseline`   | Show active and retained baseline metadata without row values. |
-| `npx rehearsal inspect migrations` | Classify every historical and candidate migration.             |
-| `npx rehearsal status`             | Report baseline, candidates, and local runtime state.          |
+| Command                            | What it does                                                            |
+| ---------------------------------- | ----------------------------------------------------------------------- |
+| `npx rehearsal doctor`             | Check dependencies, inputs, and safety rules.                           |
+| `npx rehearsal discover`           | Explain detected facts, suggestions, and decisions.                     |
+| `npx rehearsal support`            | Print a privacy-safe report for a support request.                      |
+| `npx rehearsal activity`           | Report whether another Rehearsal operation is active.                   |
+| `npx rehearsal environments`       | Show owned runtimes, live resource use, and Docker capacity.            |
+| `npx rehearsal resources`          | Browse images, volumes, container references, and cleanup explanations. |
+| `npx rehearsal explain`            | Show the exact plan without changing anything.                          |
+| `npx rehearsal run --dry-run`      | Show the same non-mutating plan.                                        |
+| `npx rehearsal candidates`         | List pending migrations and their approval digest.                      |
+| `npx rehearsal inspect baseline`   | Show active and retained baseline metadata without row values.          |
+| `npx rehearsal inspect migrations` | Classify every historical and candidate migration.                      |
+| `npx rehearsal status`             | Report baseline, candidates, and local runtime state.                   |
 
 State-reporting commands accept `--json` for scripts. Scripts should use the JSON fields
 and process exit code, not parse human-facing text.
@@ -131,6 +153,11 @@ and process exit code, not parse human-facing text.
 `explain --json` includes the validated application start, proof, and readiness settings,
 the lifecycle modes, and the retained-baseline count. These are safe configuration facts
 for editor review; environment-file values and credentials are never included.
+
+The baseline metadata in `explain --json` and `inspect baseline --json` includes
+`sourceSchemaSha256`: an exact digest of reviewed source-column metadata, or `null`
+when unavailable. Matching row counts or migration histories cannot replace this
+receipt. It does not identify complete current runtime DDL or prove schema equivalence.
 
 `inspect baseline --json` includes a `generations` array for the active and retained
 immutable copies. Each entry contains only the generation identifier, derived creation
@@ -263,8 +290,22 @@ digest is rejected before it reaches the public result.
 
 `activity --json` reports a separate privacy-safe operation snapshot. `state` is `idle`,
 `busy`, `stale`, or `invalid`. `operation` is `null` for idle and invalid states. For a
-busy or stale state it contains only the broad operation `kind`, ISO `startedAt` time,
-and owning `rehearsalVersion` when the lock format provides one. It never exposes the
+busy or stale state it contains the broad operation `kind`, ISO `startedAt` time,
+owning `rehearsalVersion`, and `progress` when instrumentation is available. Progress
+has schema version 1, an opaque operation ID, overall state, start/update timestamps,
+elapsed milliseconds, the current stage or `null`, up to 20 completed stages, and up
+to 40 fixed-code events. Stages identify only their phase, reviewed target name,
+state, timestamps and duration; `truncated` flags indicate bounded history loss.
+The runtime manager is one honest lifecycle stage: restore and migration timings
+are not inferred from stdout. Read-only status is not reported as verification.
+
+`recent` contains up to 20 observed terminal operations from the same project's
+private temporary cache, oldest first. `[]` means no records were found; `null`
+means history was unsafe or unavailable. Current `progress: null` likewise means
+unavailable instrumentation, not inactivity or success. Abrupt exits may leave no
+completed record. This history is not a durable audit log or task tracker.
+
+It never exposes application output, arbitrary log/error text, or the
 PID, arguments, lock path, token, credentials, URLs, or raw lock contents. `activity`
 does not remove a stale or malformed lock, stop a process, or mutate runtime resources.
 Clients should disable conflicting actions unless the state is `idle`.
@@ -313,6 +354,11 @@ transaction and cancellation contract. The first editor prototype remains read-o
 | `npx rehearsal discard`                               | Remove this project's disposable runtime and volume.                |
 | `npx rehearsal cleanup`                               | Preview conservative cleanup without removing anything.             |
 
+When `containerRuntime.stopOwnedColimaWhenIdle` is enabled, `stop` and `discard` also
+evaluate the owner-only engine receipt after all configured targets stop. Colima is
+stopped only when Rehearsal started that exact VM boot and Docker has zero running
+containers. Otherwise the command preserves the shared engine and prints the reason.
+
 In a terminal, the guide displays candidate filenames and asks for confirmation. In a
 script, copy the digest from `candidates` into `--confirm-candidates`. Adding, removing,
 reordering, or editing a migration changes that digest.
@@ -328,6 +374,16 @@ with database and Storage changes preserved. Likewise, `lifecycle.run` can remai
 the selected mode, final runtime state, and preserved-data guarantee.
 
 ## Clean up disk space
+
+For a selected set of image IDs, use `cleanup --images-only --image-id=sha256:FULL_ID`.
+Repeat `--image-id` for multiple images. This selects no baseline generations, runtime
+containers, or data volumes. Review the digest, then rerun the identical selection with
+`--write --confirm-cleanup=FULL_DIGEST`. In-use, current, outside-policy, and stale
+selections are refused. Image sizes are upper-bound estimates because layers may be shared.
+
+`start`, `stop`, and `discard` can select one configured environment with
+`--target=primary` or a declared dependent-target name. With no selector, the existing
+whole-stack ordering applies. Protected environments refuse data replacement and discard.
 
 Start with a preview:
 

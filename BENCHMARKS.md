@@ -55,6 +55,24 @@ the same proof remains required in GitHub Actions before public release.
 
 ## Regression policy
 
+The installed PostgreSQL scenario also demonstrates a data-specific failure:
+the exact same `SET NOT NULL` migration succeeds on an empty table and fails on a
+synthetic table containing a known null. It then reviews a changed candidate that
+backfills the synthetic value, verifies the corrected constraint through the
+application's HTTP proof, and checks immutable baselines and resource cleanup.
+This is a correctness control, not a timing benchmark or a claim about production
+traffic. The synthetic backfill is not a recommendation for real business data.
+
+Maintainers can repeat it with one exact artifact:
+
+```bash
+REHEARSAL_CANDIDATE_ARTIFACT=/absolute/path/to/candidate.tgz npm run test:fixture:postgresql
+```
+
+The result records the artifact and candidate hashes, empty/populated outcomes,
+baseline preservation and cleanup. Do not attribute a candidate's result to a
+different registry artifact merely because both have the same version number.
+
 Record a new equivalent sample before a beta release or after changing baseline format,
 streaming, restore, migration application, verification, or local-runtime lifecycle.
 Investigate a repeatable increase greater than 25% in a phase. Do not weaken checks to

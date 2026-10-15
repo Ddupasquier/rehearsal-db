@@ -58,13 +58,38 @@ writes setup files.
 Start Docker Desktop or Colima, confirm `docker info`, then rerun `rehearsal doctor`.
 Restarting the computer is rarely necessary.
 
+If Colima restarts unexpectedly, run `npx rehearsal environments` first. Rehearsal's
+read-only commands never start it. Mutating commands start Colima only when
+`containerRuntime.autoStartColima` is explicitly enabled. To release a package-started
+VM after `stop` or `discard`, also enable `stopOwnedColimaWhenIdle`; Rehearsal still
+preserves the VM when any container is running or the current boot lacks a valid
+owner-only startup receipt. This cannot stop a manually started engine.
+
 When a container stays in `starting` or becomes `unhealthy`, Rehearsal reports a runtime
 dependency failure rather than a migration failure. The safe diagnostic includes Docker
 CPU, memory, and container counts; Colima also includes available VM memory when it can
 be read. Stop unrelated local stacks or increase the engine's resources before retrying.
 Rehearsal never changes engine settings or bypasses service health checks.
 
+Supabase startup failures retain a bounded summary of recognized provider evidence,
+such as `health_check` and `auth=starting`. Container logs, private paths, environment
+values and connection URLs are not included. `unknown` means the provider did not supply
+recognized safe detail; it is not evidence of a migration failure or a proven memory
+problem. The summary reports observed messages, not the underlying cause. Preserve the
+failure report and inspect the existing local services before retrying; Rehearsal does
+not retry startup automatically or use `--ignore-health-check`.
+
 ## Docker or Colima is out of disk space
+
+Inspect the active engine without starting it:
+
+```bash
+npx rehearsal environments
+```
+
+Generated configs warn at 80% usage and require 8 GiB free for Supabase or 2 GiB for
+PostgreSQL. Tune `containerRuntime.diskWarningPercent` and `minimumFreeBytes` for a known
+local engine; do not set them to hide recurring capacity failures.
 
 Preview what Rehearsal can safely remove:
 
@@ -86,6 +111,10 @@ npx rehearsal cleanup --include-images --write --confirm-cleanup=PASTE_FULL_DIGE
 For Colima, disk capacity belongs to the user rather than the project. Increase it with
 `colima stop` followed by a larger `colima start --disk <GiB>` value. Rehearsal respects
 that configuration and does not choose a disk size.
+
+After reviewed cleanup, `colima ssh -- sudo fstrim -a` can return unused virtual-disk
+blocks to macOS. Never use `docker volume prune` or `docker system prune --volumes` as a
+Rehearsal shortcut: those commands cross project boundaries.
 
 ## The guide does not show styled menus
 

@@ -79,4 +79,25 @@ describe("CLI arguments", () => {
       commandMutatesProject({ command: "doctor", flags, guided: true }),
     ).toBe(true);
   });
+
+  it("keeps stale-stop previews read-only and locks only an exact confirmed stop", () => {
+    const preview = parseArguments(["stop-stale", "--json"]);
+    expect(
+      commandMutatesProject({ command: "stop-stale", flags: preview.flags }),
+    ).toBe(false);
+    const apply = parseArguments([
+      "stop-stale",
+      `--confirm-stop=${"a".repeat(64)}`,
+    ]);
+    expect(apply.flags.stopConfirmation).toBe("a".repeat(64));
+    expect(
+      commandMutatesProject({ command: "stop-stale", flags: apply.flags }),
+    ).toBe(true);
+    expect(
+      commandMutatesProject({
+        command: "configuration review",
+        flags: parseArguments(["--proposal=proposal.json"]).flags,
+      }),
+    ).toBe(false);
+  });
 });

@@ -5,6 +5,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { join } from "node:path";
@@ -35,6 +36,11 @@ import {
   readBoundRuntimeSanitizationPolicy,
   validateRuntimeSanitizationPolicy,
 } from "../baseline/sanitization_policy.mjs";
+import {
+  buildAuthenticationReview,
+  buildBaselineScopeReview,
+} from "./project_review.mjs";
+import { readVerifiedBaselineShapeEvidence } from "../source/shape_files.mjs";
 
 type LoadedRehearsalConfig = Awaited<ReturnType<typeof loadRehearsalConfig>>;
 type RuntimeReceipt = Readonly<{
@@ -242,7 +248,7 @@ const loadPlanInputs = async (options: RehearsalConfigPathOptions = {}) => {
     }),
     readFile(loaded.paths.sanitizationPolicy),
   ]);
-  readBoundRuntimeSanitizationPolicy({
+  const sanitizationPolicy = readBoundRuntimeSanitizationPolicy({
     bytes: policyBytes,
     expectedSha256: baseline.sanitizationPolicySha256,
   });
@@ -278,21 +284,35 @@ const loadPlanInputs = async (options: RehearsalConfigPathOptions = {}) => {
   return {
     ...loaded,
     baseline,
+    sanitizationPolicy,
     currentFiles,
     candidateReceipt,
     migrations,
   };
 };
 
-export const buildRehearsalPlan = async (
-  options: RehearsalConfigPathOptions = {},
+const buildPlanFromInputs = async (
+  inputs: Awaited<ReturnType<typeof loadPlanInputs>>,
 ) => {
-  const inputs = await loadPlanInputs(options);
   const { baseline, candidateReceipt, config, configPath, migrations, paths } =
     inputs;
+  const authenticationCallback = config.supabase?.authentication
+    ? `http://127.0.0.1:${config.runtime.ports.api}/auth/v1/callback`
+    : null;
+  let authenticationTemplate: string | null = null;
+  if (paths.rehearsalConfig) {
+    try {
+      const details = await stat(paths.rehearsalConfig);
+      if (details.size <= 512 * 1024)
+        authenticationTemplate = await readFile(paths.rehearsalConfig, "utf8");
+    } catch {
+      // A missing or unreadable template is not evidence that a provider is disabled.
+    }
+  }
   return {
     config: {
       schemaVersion: config.schemaVersion,
+      sha256: createHash("sha256").update(JSON.stringify(config)).digest("hex"),
       path: configPath,
       project: config.project.name,
     },
@@ -305,9 +325,7 @@ export const buildRehearsalPlan = async (
       hostedAccess: config.safety.hostedAccess,
       outboundNetwork: config.safety.outboundNetwork,
       authenticationProviders: config.safety.authenticationProviders,
-      authenticationCallback: config.supabase?.authentication
-        ? `http://127.0.0.1:${config.runtime.ports.api}/auth/v1/callback`
-        : null,
+      authenticationCallback,
       barriers: [
         "versioned configuration accepts loopback hosts only",
         `runtime uses a dedicated local ${config.runtime.target === "supabase" ? "Supabase workdir" : "PostgreSQL container and volume"} and project id`,
@@ -327,6 +345,11 @@ export const buildRehearsalPlan = async (
       createdAt: baselineCreatedAt(baseline.generationId),
       migrationCutoff: baseline.migrationCutoff,
       migrationHistorySha256: baseline.migrationHistorySha256 ?? null,
+      sourceSchemaSha256:
+        typeof baseline.sourceSchemaSha256 === "string" &&
+        /^[a-f0-9]{64}$/u.test(baseline.sourceSchemaSha256)
+          ? baseline.sourceSchemaSha256
+          : null,
       sanitizationPolicySha256: baseline.sanitizationPolicySha256,
       dataSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
       tableCount: Object.keys(baseline.tableCounts).length,
@@ -334,6 +357,24 @@ export const buildRehearsalPlan = async (
       migrationCount: Object.keys(baseline.migrations).length,
       verification: "checksums_verified",
     },
+    baselineReview: buildBaselineScopeReview({
+      baseline,
+      policy: inputs.sanitizationPolicy,
+      provider: config.runtime.target,
+      sourcePreparationConfigured: config.preparation !== null,
+      identityPolicyConfigured: paths.identityPolicy !== null,
+    }),
+    authenticationReview: buildAuthenticationReview({
+      provider: config.runtime.target,
+      configuredProviders: config.safety.authenticationProviders,
+      declarativeProviders:
+        config.supabase?.authentication?.providers.map(
+          (provider) => provider.name,
+        ) ?? [],
+      callback: authenticationCallback,
+      template: authenticationTemplate,
+      identityPolicyConfigured: paths.identityPolicy !== null,
+    }),
     migrations: {
       representedCount: migrations.filter(
         (entry) => entry.status === "represented_by_baseline",
@@ -348,9 +389,11 @@ export const buildRehearsalPlan = async (
     lifecycle: {
       run: config.lifecycle.run,
       open: config.lifecycle.open,
+      openIdleTimeoutSeconds: config.lifecycle.openIdleTimeoutSeconds,
       dataOnStop: "preserved",
     },
     application: {
+      activity: config.application.activity,
       startCommand: config.application.startCommand,
       proofCommand: config.application.proofCommand,
       readiness: config.application.readiness
@@ -388,16 +431,34 @@ export const buildRehearsalPlan = async (
   };
 };
 
+export const buildRehearsalPlan = async (
+  options: RehearsalConfigPathOptions = {},
+) => buildPlanFromInputs(await loadPlanInputs(options));
+
 export const inspectRehearsalBaseline = async (
   options: RehearsalConfigPathOptions = {},
 ) => {
-  const plan = await buildRehearsalPlan(options);
+  const inputs = await loadPlanInputs(options);
+  const plan = await buildPlanFromInputs(inputs);
   const generations = await inspectBaselineGenerations({
+    artifactRoot: plan.paths.artifactDirectory,
+  });
+  const baseline = inputs.baseline;
+  if (
+    generations.find((generation) => generation.active)?.generationId !==
+    baseline.generationId
+  )
+    throw new Error(
+      "The active baseline changed during read-only review. Retry inspection.",
+    );
+  const shape = await readVerifiedBaselineShapeEvidence({
+    baseline,
     artifactRoot: plan.paths.artifactDirectory,
   });
   return {
     ...plan.baseline,
     generations,
+    shape,
     project: plan.config.project,
     provenance: {
       configVersion: plan.config.schemaVersion,
@@ -408,6 +469,7 @@ export const inspectRehearsalBaseline = async (
       sourceRowsExposed: false,
       sensitiveValuesIncludedInReport: false,
     },
+    review: plan.baselineReview,
   };
 };
 

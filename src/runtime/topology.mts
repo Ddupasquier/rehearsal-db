@@ -9,6 +9,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import { inspectRehearsalMigrations } from "./plan.mjs";
 import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
+import { assertRuntimeTopologyApplicationPorts } from "./topology_application_ports.mjs";
 
 export type LoadedRehearsalConfig = Awaited<
   ReturnType<typeof loadRehearsalConfig>
@@ -24,6 +25,30 @@ export interface RuntimeTopologyTarget {
   readonly config: LoadedRehearsalConfig["config"];
   readonly paths: LoadedRehearsalConfig["paths"];
 }
+
+export const selectRuntimeTargets = (
+  targets: readonly RuntimeTopologyTarget[],
+  name?: string,
+  action?: string,
+): readonly RuntimeTopologyTarget[] => {
+  const selected =
+    name === undefined
+      ? targets
+      : targets.filter((target) => target.name === name);
+  if (!selected.length)
+    throw new Error(
+      "The selected environment is not in this project's configuration.",
+    );
+  if (
+    action &&
+    ["reset", "run", "migrate", "discard"].includes(action) &&
+    selected.some((target) => target.config.runtime.protected)
+  )
+    throw new Error(
+      "A selected environment is protected. Unprotect it in its reviewed configuration before replacing or deleting data.",
+    );
+  return selected;
+};
 
 const isInside = (parent: string, candidate: string): boolean => {
   const path = relative(parent, candidate);
@@ -69,8 +94,9 @@ const targetFrom = ({
 
 export const loadRuntimeTopology = async (
   options: RehearsalConfigPathOptions = {},
+  loadConfiguration: typeof loadRehearsalConfig = loadRehearsalConfig,
 ) => {
-  const primaryLoaded = await loadRehearsalConfig(options);
+  const primaryLoaded = await loadConfiguration(options);
   const primary = targetFrom({
     name: "primary",
     declaration: null,
@@ -79,7 +105,7 @@ export const loadRuntimeTopology = async (
   });
   const dependents: RuntimeTopologyTarget[] = [];
   for (const declaration of primary.config.dependentTargets) {
-    const loaded = await loadRehearsalConfig({
+    const loaded = await loadConfiguration({
       projectRoot: primaryLoaded.projectRoot,
       configPath: declaration.configPath,
     });
@@ -115,6 +141,7 @@ export const loadRuntimeTopology = async (
     (entry) => entry.port,
     "runtime port",
   );
+  assertRuntimeTopologyApplicationPorts(targets);
   assertUnique(
     targets,
     (target) => target.paths.applicationEnvironment,

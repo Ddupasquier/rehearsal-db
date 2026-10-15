@@ -5,10 +5,15 @@ import type { ChildProcess } from "node:child_process";
 import type { EventEmitter } from "node:events";
 import { readFile, stat } from "node:fs/promises";
 import { parseEnv } from "node:util";
+import { performance } from "node:perf_hooks";
 import {
   createCleanProcessEnvironment,
   isLoopbackUrl,
 } from "../shared/process_environment.mjs";
+import { assertApplicationPortAvailable } from "./port_preflight.mjs";
+import { waitForApplicationIdle } from "./activity_monitor.mjs";
+import type { ApplicationActivity } from "./activity_contract.mjs";
+import { stopOwnedPosixProcessGroup } from "./process_group.mjs";
 
 const ENV_KEY = /^[A-Z][A-Z0-9_]*$/u;
 const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
@@ -266,19 +271,18 @@ const waitForReadiness = async ({
 };
 
 const stopOwnedChild = async (child: ChildProcess): Promise<void> => {
+  if (child.pid === undefined) return;
+  if (process.platform !== "win32") {
+    await stopOwnedPosixProcessGroup({ pid: child.pid });
+    return;
+  }
   if (childHasExited(child)) return;
-  const exit = waitForChildExit(child);
+  const groupExists = (): boolean => {
+    return !childHasExited(child);
+  };
   const kill = (signal: NodeJS.Signals): void => {
     try {
-      if (process.platform === "win32") child.kill(signal);
-      else {
-        if (child.pid === undefined) {
-          throw new Error(
-            "Application child process has no process identifier.",
-          );
-        }
-        process.kill(-child.pid, signal);
-      }
+      child.kill(signal);
     } catch (error) {
       if (
         typeof error !== "object" ||
@@ -290,13 +294,18 @@ const stopOwnedChild = async (child: ChildProcess): Promise<void> => {
     }
   };
   kill("SIGTERM");
-  await Promise.race([
-    exit,
-    new Promise((resolve) => setTimeout(resolve, 5_000)),
-  ]);
-  if (!childHasExited(child)) {
+  const deadline = performance.now() + 5_000;
+  while (groupExists() && performance.now() < deadline)
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  if (groupExists()) {
     kill("SIGKILL");
-    await exit;
+    const forceDeadline = performance.now() + 1_000;
+    while (groupExists() && performance.now() < forceDeadline)
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    if (groupExists())
+      throw new Error(
+        "Owned application process group did not stop within its shutdown bound. No unrelated process was targeted.",
+      );
   }
 };
 
@@ -310,6 +319,8 @@ export const startApplicationSession = async ({
   spawnImplementation = spawn,
   fetchImplementation = fetch,
   signalTarget = process,
+  portPreflight = (value) =>
+    assertApplicationPortAvailable({ url: value?.url }),
 }: EnvironmentInput & {
   command: string;
   cwd: string;
@@ -318,9 +329,11 @@ export const startApplicationSession = async ({
   spawnImplementation?: typeof spawn;
   fetchImplementation?: typeof fetch;
   signalTarget?: SignalTarget;
+  portPreflight?: (readiness: ApplicationReadiness) => Promise<void>;
 }): Promise<ApplicationSession> => {
   const mapped = await buildApplicationEnvironment({ files, mappings });
   const [program, ...args] = parseCommand(command);
+  await portPreflight(readiness);
   const child = spawnImplementation(program, args, {
     cwd,
     env: createCleanProcessEnvironment({
@@ -329,6 +342,19 @@ export const startApplicationSession = async ({
     }),
     detached: process.platform !== "win32",
     stdio: ["ignore", "pipe", "pipe"],
+  });
+  let stopping: Promise<void> | undefined;
+  const stopApplication = (): Promise<void> => {
+    if (!stopping) {
+      stopping = stopOwnedChild(child);
+      // Preserve the result for the caller without an unhandled background rejection.
+      void stopping.catch(() => undefined);
+    }
+    return stopping;
+  };
+  // Retire the owned group immediately, not via an old PID when a later proof finishes.
+  child.once("exit", () => {
+    void stopApplication();
   });
   let stdout = "";
   let stderr = "";
@@ -365,7 +391,7 @@ export const startApplicationSession = async ({
     return Object.freeze({
       pid: child.pid,
       ready,
-      stop: () => stopOwnedChild(child),
+      stop: stopApplication,
       wait: () => waitForChildExit(child),
       diagnostics: () => ({
         stdoutBytes: Buffer.byteLength(stdout),
@@ -373,7 +399,7 @@ export const startApplicationSession = async ({
       }),
     });
   } catch (error) {
-    await stopOwnedChild(child);
+    await stopApplication();
     throw error;
   } finally {
     for (const [signal, handler] of startupHandlers) {
@@ -391,13 +417,25 @@ export const holdApplicationSession = async ({
   signalTarget = process,
   input = process.stdin,
   onReady = () => undefined,
+  activity = null,
+  idleTimeoutSeconds = null,
+  idleMonitorImplementation = waitForApplicationIdle,
+  onActivityAvailability = () => undefined,
 }: {
   session: ApplicationSession;
   signalTarget?: SignalTarget;
   input?: SessionInput;
   onReady?: (ready: ApplicationSession["ready"]) => void;
+  activity?: ApplicationActivity | null;
+  idleTimeoutSeconds?: number | null;
+  idleMonitorImplementation?: typeof waitForApplicationIdle;
+  onActivityAvailability?: (available: boolean) => void;
 }): Promise<
-  Readonly<{ signal: SessionSignal; diagnostics: ApplicationDiagnostics }>
+  Readonly<{
+    reason: "interrupted" | "idle-timeout";
+    signal: SessionSignal | null;
+    diagnostics: ApplicationDiagnostics;
+  }>
 > => {
   if (
     !session ||
@@ -429,13 +467,37 @@ export const holdApplicationSession = async ({
     }
   };
   if (input?.isTTY) input.prependListener("data", onInput);
+  const activityController = new AbortController();
   try {
+    if (
+      idleTimeoutSeconds !== null &&
+      (!activity ||
+        !Number.isSafeInteger(idleTimeoutSeconds) ||
+        idleTimeoutSeconds < 30 ||
+        idleTimeoutSeconds > 86400)
+    )
+      throw new Error(
+        "Foreground idle shutdown requires an explicit activity route and a timeout from 30 to 86400 seconds.",
+      );
     onReady(session.ready);
-    const outcome: Interruption | ({ kind: "exited" } & ChildExit) =
-      await Promise.race([
-        interruption,
-        session.wait().then((exit) => ({ kind: "exited" as const, ...exit })),
-      ]);
+    const outcome:
+      | Interruption
+      | ({ kind: "exited" } & ChildExit)
+      | { kind: "idle-timeout" } = await Promise.race([
+      interruption,
+      session.wait().then((exit) => ({ kind: "exited" as const, ...exit })),
+      ...(idleTimeoutSeconds !== null && activity
+        ? [
+            idleMonitorImplementation({
+              url: activity.url,
+              readinessUrl: session.ready.url,
+              timeoutSeconds: idleTimeoutSeconds,
+              signal: activityController.signal,
+              onAvailability: onActivityAvailability,
+            }).then(() => ({ kind: "idle-timeout" as const })),
+          ]
+        : []),
+    ]);
     if (outcome.kind === "exited") {
       const diagnostics = session.diagnostics?.() ?? {};
       throw new Error(
@@ -450,13 +512,15 @@ export const holdApplicationSession = async ({
       );
     }
     return Object.freeze({
-      signal: outcome.signal,
+      reason: outcome.kind === "idle-timeout" ? "idle-timeout" : "interrupted",
+      signal: outcome.kind === "idle-timeout" ? null : outcome.signal,
       diagnostics: session.diagnostics?.() ?? {
         stdoutBytes: 0,
         stderrBytes: 0,
       },
     });
   } finally {
+    activityController.abort();
     try {
       // npm can forward the terminal's SIGINT after the CLI receives it.
       // Keep our handlers installed until the owned process group is fully

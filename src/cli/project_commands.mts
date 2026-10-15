@@ -26,7 +26,10 @@ import {
 } from "../runtime/cleanup.mjs";
 import type { RehearsalCleanupPlan } from "../runtime/cleanup.mjs";
 import { runRehearsalDoctor } from "../runtime/plan.mjs";
-import { loadRuntimeTopology } from "../runtime/topology.mjs";
+import {
+  loadRuntimeTopology,
+  selectRuntimeTargets,
+} from "../runtime/topology.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
 import type { CliSessionState } from "./command_contract.mjs";
 
@@ -151,7 +154,11 @@ export const createProjectCommands = ({
       configPath: string;
       plan: RehearsalCleanupPlan;
     }> = [];
-    for (const target of topology.targets) {
+    for (const target of selectRuntimeTargets(
+      topology.targets,
+      flags.target,
+      flags.includeRuntime ? "discard" : undefined,
+    )) {
       targets.push({
         name: target.name,
         configPath: target.configPath,
@@ -160,10 +167,14 @@ export const createProjectCommands = ({
           configPath: target.configPath,
           includeRuntime: flags.includeRuntime,
           includeImages: flags.includeImages && target.primary,
+          imagesOnly: flags.imagesOnly,
+          ...(flags.imageIds === undefined || !target.primary
+            ? {}
+            : { selectedImageIds: flags.imageIds }),
         }),
       });
     }
-    if (targets.length === 1) return targets[0]!.plan;
+    if (topology.targets.length === 1) return targets[0]!.plan;
     return {
       digest: createHash("sha256")
         .update(
@@ -201,6 +212,10 @@ export const createProjectCommands = ({
           configPath: target.configPath,
           includeRuntime: target.plan.runtime.included,
           includeImages: target.plan.images.requested,
+          imagesOnly: target.plan.imagesOnly,
+          ...(target.plan.selectedImageIds === undefined
+            ? {}
+            : { selectedImageIds: target.plan.selectedImageIds }),
         });
         if (refreshed.digest !== target.plan.digest) {
           throw new Error(

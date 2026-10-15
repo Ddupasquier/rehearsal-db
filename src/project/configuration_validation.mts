@@ -177,14 +177,14 @@ export const assertLoopbackUrl = (
   } catch {
     throw new Error(`${path} must be a valid loopback URL.`);
   }
-  if (
-    !allowedHosts.includes(parsed.hostname) ||
-    !supportedHosts.has(parsed.hostname)
-  ) {
+  const hostname = parsed.hostname === "[::1]" ? "::1" : parsed.hostname;
+  if (!allowedHosts.includes(hostname) || !supportedHosts.has(hostname)) {
     throw new Error(`${path} must use an explicitly allowed loopback host.`);
   }
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error(`${path} must use HTTP or HTTPS.`);
   }
+  if (parsed.username || parsed.password)
+    throw new Error(`${path} must not contain URL credentials.`);
   return parsed.toString().replace(/\/$/u, "");
 };

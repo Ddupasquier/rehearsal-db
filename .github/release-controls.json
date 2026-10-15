@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "repository": "Ddupasquier/rehearsal-db",
+  "repositoryId": 1369494567,
+  "ownerId": 89223122,
+  "environmentId": 21930821446,
+  "observedAt": "2026-10-15T22:56:11.958Z",
+  "rulesets": [
+    {
+      "id": 25184242,
+      "target": "branch",
+      "createdAt": "2026-10-15T18:00:30.555Z",
+      "updatedAt": "2026-10-15T18:00:30.630Z",
+      "publicSha256": "3aae1380d15114a83933c4494eb9cdfde0a46e2d4d46341fbb946e1c712150e2",
+      "bypassActors": []
+    },
+    {
+      "id": 25184243,
+      "target": "tag",
+      "createdAt": "2026-10-15T18:00:31.242Z",
+      "updatedAt": "2026-10-15T18:00:31.276Z",
+      "publicSha256": "333478abdc55922535fa8ee1501f7f8f0eb80b5a3f686e25a0944ecf8c901222",
+      "bypassActors": []
+    }
+  ]
+}

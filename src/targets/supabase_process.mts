@@ -9,22 +9,27 @@ import {
   createCleanProcessEnvironment,
   type ProcessEnvironment,
 } from "../shared/process_environment.mjs";
+import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
 
 export const runOwnedSupabaseMigration = async ({
   environment,
   repositoryRoot,
   runtimeWorkdir,
+  runProcessImplementation = runOwnedProcess,
 }: {
   environment: ProcessEnvironment;
   repositoryRoot: string;
   runtimeWorkdir: string;
+  runProcessImplementation?: typeof runOwnedProcess;
 }): Promise<void> => {
   const cancellationSignal = getOperationCancellationSignal();
-  const result = await runOwnedProcess({
+  const result = await runProcessImplementation({
     command: "supabase",
     args: ["migration", "up", "--local", "--workdir", runtimeWorkdir],
     cwd: repositoryRoot,
-    env: createCleanProcessEnvironment({ overrides: environment }),
+    env: createCleanProcessEnvironment({
+      overrides: { ...environment, ...runtimeDockerEnvironment() },
+    }),
     stdin: "ignore",
     ...(cancellationSignal ? { signal: cancellationSignal } : {}),
   });
@@ -32,7 +37,7 @@ export const runOwnedSupabaseMigration = async ({
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(
-      `supabase migration up failed${result.stderr.trim() ? `:\n${result.stderr.trim()}` : "."}`,
+      `The confirmed candidate Supabase migration failed (exit ${Number.isInteger(result.status) ? result.status : "unknown"}; stderr ${result.stderrByteCount} bytes). SQL and provider output are withheld.`,
     );
   }
 };

@@ -2,6 +2,7 @@
 
 import { readFile, writeFile } from "node:fs/promises";
 import type { PathLike } from "node:fs";
+import { REHEARSAL_VERSION } from "../shared/diagnostics.mjs";
 import {
   resolveActiveBaselinePaths,
   verifyActiveBaseline,
@@ -149,9 +150,13 @@ export const writeRuntimeMarker = async ({
   path: PathLike;
   marker: Readonly<Record<string, unknown>>;
 }): Promise<void> => {
-  await writeFile(path, `${JSON.stringify(marker, null, "\t")}\n`, {
-    mode: 0o600,
-  });
+  await writeFile(
+    path,
+    `${JSON.stringify({ ...marker, rehearsalVersion: REHEARSAL_VERSION }, null, "\t")}\n`,
+    {
+      mode: 0o600,
+    },
+  );
 };
 
 export const readMatchingRuntimeMarker = async ({
@@ -232,10 +237,20 @@ export const withOwnedRuntimeRollback = async <Result,>({
 export const runRuntimeLifecycle = async ({
   action,
   operations,
+  protected: protectedRuntime = false,
 }: {
   action: string;
   operations: RuntimeLifecycleOperations;
+  protected?: boolean;
 }): Promise<void> => {
+  if (
+    protectedRuntime &&
+    ["reset", "run", "migrate", "discard"].includes(action)
+  ) {
+    throw new Error(
+      "This environment is protected. Set runtime.protected to false in its reviewed configuration before replacing or deleting its data.",
+    );
+  }
   switch (action) {
     case "reset":
       await operations.reset();

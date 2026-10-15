@@ -106,6 +106,24 @@ relationships. A failed restore cannot produce a successful receipt.
 The baseline itself never changes during normal use. Runtime edits persist until you
 reset or discard that runtime.
 
+## Review metadata without exposing rows
+
+`rehearsal inspect baseline --json` reports the verified generation, timestamps, migration
+boundary and exact policy/data hashes. Its optional `review` section lists approved
+schema/table names with row and transformation counts, excluded tables, declared
+relationships and Storage bucket totals. It never includes private rows, transformation
+recipe values, object paths, credentials or source connection URLs.
+
+The VS Code **Data & auth** page presents this evidence and the decisions still owned by
+you. A configured source policy is not permission to contact a source; inspection makes
+no source connection. Declared foreign keys are not runtime verification, and references
+to excluded tables receive a review warning. Changing scope requires reviewing the
+tracked policies and a new native preparation plan. Baseline replacement remains a
+separately confirmed, rollback-safe core operation.
+
+Older core releases may not provide detailed scope. The extension explains that limit
+instead of treating missing Storage or relationship evidence as zero.
+
 ## Storage and privacy
 
 Baseline files can still be sensitive after sanitization. Rehearsal stores them under the

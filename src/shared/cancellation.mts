@@ -14,7 +14,13 @@ export type OperationCancellationSignal =
 
 type SignalTarget = Pick<EventEmitter, "prependListener" | "removeListener">;
 
-const CANCELLABLE_COMMANDS = new Set(["migrate", "refresh", "reset", "run"]);
+const CANCELLABLE_COMMANDS = new Set([
+  "migrate",
+  "refresh",
+  "reset",
+  "run",
+  "stop-stale",
+]);
 
 let activeSignal: AbortSignal | undefined;
 let shieldDepth = 0;

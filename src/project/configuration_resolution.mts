@@ -54,6 +54,9 @@ export const loadRehearsalConfig = async ({
     sourcePolicy: config.preparation
       ? resolveOwnedPath(config.preparation.sourcePolicy)
       : null,
+    shapePolicy: config.preparation?.shapePolicy
+      ? resolveOwnedPath(config.preparation.shapePolicy)
+      : null,
     privacyKey: config.preparation
       ? resolveOwnedPath(config.preparation.privacyKey)
       : null,

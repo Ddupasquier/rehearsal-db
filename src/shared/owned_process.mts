@@ -107,6 +107,7 @@ export const runOwnedProcess = ({
     let processError: NodeJS.ErrnoException | undefined;
     let settled = false;
     let outputLimitExceeded = false;
+    let outputLimitForceTimer: NodeJS.Timeout | undefined;
 
     const append = (kind: "stdout" | "stderr", chunk: Buffer | string) => {
       const bytes = Buffer.byteLength(chunk);
@@ -124,6 +125,12 @@ export const runOwnedProcess = ({
         if (!outputLimitExceeded) {
           outputLimitExceeded = true;
           signalOwnedProcessGroup(child, "SIGTERM");
+          // An output flood is not an interactive cancellation request. Bound its
+          // shutdown even when the child (or a pipe-owning descendant) ignores TERM.
+          outputLimitForceTimer = setTimeout(() => {
+            signalOwnedProcessGroup(child, "SIGKILL");
+          }, 1_000);
+          outputLimitForceTimer.unref();
         }
       }
     };
@@ -145,6 +152,7 @@ export const runOwnedProcess = ({
 
     child.once("close", (status, childSignal) => {
       unbindCancellation();
+      if (outputLimitForceTimer) clearTimeout(outputLimitForceTimer);
       if (settled) return;
       settled = true;
       if (outputLimitExceeded) {

@@ -45,6 +45,9 @@ jobs:
 
   onboarding-fixture:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -52,6 +55,39 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Verify live release controls with the read-only workflow token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { githubReleaseReader, RELEASE_POLICY, verifyReleaseSettings } from "./scripts/release/preflight.mjs";
+          import { readControlsWitness } from "./scripts/release/settings_witness.mjs";
+          const read = githubReleaseReader({ token: process.env.GITHUB_TOKEN });
+          const rulesetPrefix = `/repos/${RELEASE_POLICY.repository}/rulesets/`;
+          const observed = async (path) => {
+            const value = await read(path);
+            if (path.startsWith(rulesetPrefix) && /^[1-9][0-9]*$/.test(path.slice(rulesetPrefix.length))) {
+              const ruleset = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+              const references = ruleset.conditions?.ref_name?.include;
+              const checks = Array.isArray(ruleset.rules) ? ruleset.rules.find((rule) => rule?.type === "required_status_checks")?.parameters?.required_status_checks : undefined;
+              const recognized = (values, allowed) => Array.isArray(values) ? values.slice(0, 20).map((value) => allowed.includes(value) ? value : "unrecognized") : null;
+              console.log(JSON.stringify({
+                observation: "release-ruleset-metadata",
+                id: Number.isSafeInteger(ruleset.id) ? ruleset.id : null,
+                enforcement: ["active", "disabled", "evaluate"].includes(ruleset.enforcement) ? ruleset.enforcement : "unknown",
+                target: ["branch", "tag", "push"].includes(ruleset.target) ? ruleset.target : "unknown",
+                bypassActorsPresent: Object.hasOwn(ruleset, "bypass_actors"),
+                bypassActorsArray: Array.isArray(ruleset.bypass_actors),
+                bypassActorCount: Array.isArray(ruleset.bypass_actors) ? ruleset.bypass_actors.length : null,
+                refIncludes: recognized(references, ["refs/heads/main", "refs/tags/v*"]),
+                requiredCheckNames: recognized(Array.isArray(checks) ? checks.map((check) => check?.context) : null, RELEASE_POLICY.checks),
+              }));
+            }
+            return value;
+          };
+          const settings = await verifyReleaseSettings(observed, { controlsWitness: await readControlsWitness() });
+          console.log(JSON.stringify({ status: "passed", operation: "read-only-release-settings-drift-check", approval: "not-observed-not-authorized", ...settings }));
+          NODE
       - run: npm ci --ignore-scripts
       - run: npm run test:fixture:onboarding
       - run: npm run test:fixture:typescript

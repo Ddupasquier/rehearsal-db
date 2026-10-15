@@ -70,4 +70,7 @@ appropriate, a migration has the intended business meaning, or a real provider f
 observed. Repository owners must review those decisions and protect artifacts. The
 configuration barriers are not an operating-system firewall.
 
-Report vulnerabilities using the private process in the root security policy.
+Report vulnerabilities through the
+[private security form](https://github.com/Ddupasquier/rehearsal-db/security/advisories/new)
+in this repository. A GitHub account is required. Never put
+credentials, source data or exploit details in an ordinary issue.

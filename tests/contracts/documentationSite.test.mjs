@@ -1,5 +1,6 @@
-import { access, readFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { buildDocs } from "../../scripts/docs/build.mjs";
 import { groups, pageBySlug, pages } from "../../scripts/docs/site.mjs";
@@ -73,5 +74,49 @@ describe("documentation site", () => {
     );
     expect(home).toContain("npm install --save-dev @rehearsal-db/core");
     expect(home).not.toContain("@rehearsal-db/core@beta");
+  });
+
+  it("uses reviewed source and public links without replacing an existing output", async () => {
+    const temporary = await mkdtemp(
+      join(tmpdir(), "rehearsal-docs-export-test-"),
+    );
+    const outputRoot = join(temporary, "public-site");
+    try {
+      const result = await buildDocs({
+        docsRoot: join(repositoryRoot, "docs"),
+        outputRoot,
+        base: "/preview/",
+        site: {
+          url: "https://example.com/preview/",
+          repository: "https://github.com/example/documentation",
+          version: "reviewed-release",
+          documentationSource: false,
+        },
+      });
+      const home = await readFile(join(outputRoot, "index.html"), "utf8");
+      expect(result.base).toBe("/preview/");
+      expect(home).toContain(
+        'href="https://github.com/example/documentation/issues"',
+      );
+      expect(home).toContain('href="https://example.com/preview/"');
+      expect(home).toContain("reviewed-release");
+      expect(home).not.toContain("Edit this page");
+      await expect(
+        access(join(outputRoot, "assets/fonts/fraunces-LICENSE.txt")),
+      ).resolves.toBeUndefined();
+      await expect(
+        access(join(outputRoot, "assets/fonts/dm-sans-LICENSE.txt")),
+      ).resolves.toBeUndefined();
+      await expect(buildDocs({ outputRoot })).rejects.toThrow();
+      expect(await readFile(join(outputRoot, "index.html"), "utf8")).toBe(home);
+    } finally {
+      await rm(temporary, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an unsafe public base before writing an output", async () => {
+    await expect(buildDocs({ base: '/unsafe/"onload=bad/' })).rejects.toThrow(
+      "Documentation base must be a root-relative directory path",
+    );
   });
 });

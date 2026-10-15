@@ -129,6 +129,15 @@ When local disk space gets tight, choose **Clean up disk space** in the guide. R
 previews old baseline generations first and keeps runtime or shared-image removal
 explicit.
 
+Run `npx rehearsal environments` for a read-only view of this project's owned runtimes,
+container state, current owned-container CPU and memory, Docker resource totals, and
+measurable Colima disk capacity. Rehearsal
+warns before the disk becomes critical and refuses expensive startup without configured
+headroom. PostgreSQL uses one container for SQL-only proofs; Supabase's default
+`application` profile keeps application services while omitting development-only extras.
+Optional idle shutdown can stop only a Colima boot Rehearsal proves it started, and only
+after every container on the shared engine is already stopped.
+
 Press `Ctrl+Z` at any guided prompt to exit the whole session. Choose **Get help**, or run
 `npx rehearsal support`, to create a privacy-safe diagnostic report.
 

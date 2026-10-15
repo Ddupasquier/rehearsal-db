@@ -7,12 +7,25 @@ import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import {
   planBaselineGenerationPrune,
   pruneBaselineGenerations,
 } from "../baseline/artifact.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
+import { parsePosixDiskUsage } from "./resource_inventory.mjs";
+import { assertLocalDockerContext } from "./local_docker_context.mjs";
+import {
+  writeResourceReviewReceipt,
+  RESOURCE_REVIEW_RECEIPT_FILENAME,
+} from "./resource_policy.mjs";
+import {
+  selectOlderUnusedSupabaseImages,
+  selectImageCleanupSubset,
+} from "./resource_images.mjs";
+export { selectOlderUnusedSupabaseImages } from "./resource_images.mjs";
+export { parsePosixDiskUsage } from "./resource_inventory.mjs";
 
 type LoadedConfiguration = Awaited<ReturnType<typeof loadRehearsalConfig>>;
 
@@ -31,6 +44,7 @@ interface DockerUsage {
   readonly available: boolean;
   readonly resources: unknown[];
   readonly disk: ContainerDiskUsage | null;
+  readonly engineIdentity?: string | null;
 }
 
 interface DockerImage {
@@ -50,6 +64,7 @@ interface ImageCandidate {
 interface CleanupInspection {
   readonly inspectDockerUsage: (projectRoot: string) => DockerUsage;
   readonly runtimeDetected: (loaded: LoadedConfiguration) => Promise<boolean>;
+  readonly inspectUnusedImages?: (projectRoot: string) => ImageCandidate[];
 }
 
 export interface RehearsalCleanupPlan {
@@ -57,12 +72,18 @@ export interface RehearsalCleanupPlan {
   readonly projectId: string;
   readonly target: "supabase" | "postgresql";
   readonly retainBaselineGenerations: number;
+  readonly imagesOnly: boolean;
+  readonly selectedImageIds?: readonly string[];
   readonly baselines: Readonly<{
     available: boolean;
     retained: string[];
     removed: string[];
   }>;
-  readonly runtime: Readonly<{ included: boolean; detected: boolean }>;
+  readonly runtime: Readonly<{
+    included: boolean;
+    detected: boolean;
+    protected: boolean;
+  }>;
   readonly images: Readonly<{
     requested: boolean;
     inspected: boolean;
@@ -78,8 +99,6 @@ const hasErrorCode = (error: unknown, code: string): boolean =>
   "code" in error &&
   error.code === code;
 
-const SUPABASE_IMAGE_PREFIX = "public.ecr.aws/supabase/";
-
 const commandResult = (
   command: string,
   args: readonly string[],
@@ -90,6 +109,7 @@ const commandResult = (
     encoding: "utf8",
     env: createCleanProcessEnvironment(),
     maxBuffer: 32 * 1024 * 1024,
+    timeout: 30_000,
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -121,24 +141,6 @@ const nonEmptyLines = (value: unknown): string[] =>
 
 const dockerAvailable = (projectRoot: string): boolean =>
   runDocker(["info"], { projectRoot, allowFailure: true }).status === 0;
-
-export const parsePosixDiskUsage = (output: string): DiskUsage | null => {
-  const columns = nonEmptyLines(output).at(-1)?.split(/\s+/u) ?? [];
-  if (columns.length < 6) return null;
-  const totalKiB = Number(columns[1]);
-  const usedKiB = Number(columns[2]);
-  const availableKiB = Number(columns[3]);
-  const usedPercent = Number.parseInt(columns[4]!, 10);
-  if (![totalKiB, usedKiB, availableKiB, usedPercent].every(Number.isFinite)) {
-    return null;
-  }
-  return {
-    totalBytes: totalKiB * 1024,
-    usedBytes: usedKiB * 1024,
-    availableBytes: availableKiB * 1024,
-    usedPercent,
-  };
-};
 
 const inspectContainerDisk = (
   projectRoot: string,
@@ -183,70 +185,6 @@ const inspectUsedImageIds = (projectRoot: string): Set<string> => {
       ).stdout,
     ),
   );
-};
-
-const splitImageTag = (
-  value: string,
-): { repository: string; tag: string } | null => {
-  const separator = value.lastIndexOf(":");
-  if (separator <= value.lastIndexOf("/")) return null;
-  return {
-    repository: value.slice(0, separator),
-    tag: value.slice(separator + 1),
-  };
-};
-
-export const selectOlderUnusedSupabaseImages = ({
-  images,
-  usedImageIds,
-}: {
-  images: readonly DockerImage[];
-  usedImageIds: ReadonlySet<string>;
-}): ImageCandidate[] => {
-  const byRepository = new Map<
-    string,
-    Array<{
-      id: string;
-      createdAt: string;
-      bytes: number;
-      fullTag: string;
-    }>
-  >();
-  for (const image of images) {
-    for (const fullTag of image.RepoTags ?? []) {
-      const parsed = splitImageTag(fullTag);
-      if (!parsed?.repository.startsWith(SUPABASE_IMAGE_PREFIX)) continue;
-      const entries = byRepository.get(parsed.repository) ?? [];
-      entries.push({
-        id: image.Id,
-        createdAt: image.Created,
-        bytes: image.Size,
-        fullTag,
-      });
-      byRepository.set(parsed.repository, entries);
-    }
-  }
-
-  const candidatesById = new Map<string, ImageCandidate>();
-  for (const entries of byRepository.values()) {
-    const newestId = [...entries].sort(
-      (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt),
-    )[0]?.id;
-    for (const entry of entries) {
-      if (entry.id === newestId || usedImageIds.has(entry.id)) continue;
-      const existing = candidatesById.get(entry.id) ?? {
-        id: entry.id,
-        createdAt: entry.createdAt,
-        bytes: entry.bytes,
-        tags: [],
-      };
-      existing.tags.push(entry.fullTag);
-      candidatesById.set(entry.id, existing);
-    }
-  }
-  return [...candidatesById.values()]
-    .map((entry) => ({ ...entry, tags: [...new Set(entry.tags)].sort() }))
-    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
 };
 
 const inspectUnusedImages = (projectRoot: string): ImageCandidate[] => {
@@ -357,6 +295,9 @@ const inspectBaselineCleanup = async ({
 
 const cleanupIdentity = (plan: Omit<RehearsalCleanupPlan, "digest">) => ({
   projectId: plan.projectId,
+  engineIdentity: plan.docker.engineIdentity ?? null,
+  imagesOnly: plan.imagesOnly,
+  protectedRuntime: plan.runtime.protected,
   retainBaselineGenerations: plan.retainBaselineGenerations,
   baselineGenerations: plan.baselines.removed,
   runtime: plan.runtime.included && plan.runtime.detected,
@@ -373,29 +314,61 @@ export const planRehearsalCleanup = async ({
   configPath,
   includeRuntime = false,
   includeImages = false,
+  selectedImageIds,
+  imagesOnly = false,
   inspection = { inspectDockerUsage, runtimeDetected },
 }: {
   projectRoot?: string;
   configPath?: string;
   includeRuntime?: boolean;
   includeImages?: boolean;
+  selectedImageIds?: readonly string[];
+  imagesOnly?: boolean;
   inspection?: CleanupInspection;
 } = {}): Promise<RehearsalCleanupPlan> => {
   const loaded = await loadRehearsalConfig({
     projectRoot,
     ...(configPath === undefined ? {} : { configPath }),
   });
-  const docker = inspection.inspectDockerUsage(loaded.projectRoot);
-  const baselines = await inspectBaselineCleanup({
-    artifactRoot: loaded.paths.artifactDirectory,
-    retain: loaded.config.cleanup.retainBaselineGenerations,
-  });
+  if (imagesOnly && includeRuntime)
+    throw new Error("Image-only cleanup cannot include a database runtime.");
+  if (selectedImageIds !== undefined && !includeImages)
+    throw new Error(
+      "Image selection requires --include-images or --images-only.",
+    );
+  if (includeRuntime && loaded.config.runtime.protected)
+    throw new Error(
+      "This environment is protected. Unprotect it in the reviewed configuration before runtime cleanup.",
+    );
+  const engine =
+    includeImages && inspection.inspectDockerUsage === inspectDockerUsage
+      ? assertLocalDockerContext({ cwd: loaded.projectRoot })
+      : null;
+  const docker = {
+    ...inspection.inspectDockerUsage(loaded.projectRoot),
+    engineIdentity: engine?.identity ?? null,
+  };
+  if (selectedImageIds !== undefined && !docker.available)
+    throw new Error(
+      "Docker is stopped or unavailable. Image selections cannot be verified.",
+    );
+  const baselines = imagesOnly
+    ? { available: false, retained: [], removed: [] }
+    : await inspectBaselineCleanup({
+        artifactRoot: loaded.paths.artifactDirectory,
+        retain: loaded.config.cleanup.retainBaselineGenerations,
+      });
   const images = {
     requested: includeImages,
     inspected: includeImages && docker.available,
     candidates:
       includeImages && docker.available
-        ? inspectUnusedImages(loaded.projectRoot)
+        ? selectImageCleanupSubset(
+            (inspection.inspectUnusedImages ?? inspectUnusedImages)(
+              loaded.projectRoot,
+            ),
+            selectedImageIds,
+          )
         : [],
   };
   const plan: Omit<RehearsalCleanupPlan, "digest"> = {
@@ -403,10 +376,17 @@ export const planRehearsalCleanup = async ({
     projectId: loaded.config.runtime.projectId,
     target: loaded.config.runtime.target,
     retainBaselineGenerations: loaded.config.cleanup.retainBaselineGenerations,
+    imagesOnly,
+    ...(selectedImageIds === undefined
+      ? {}
+      : { selectedImageIds: [...selectedImageIds].sort() }),
     baselines,
     runtime: {
       included: includeRuntime,
-      detected: await inspection.runtimeDetected({ ...loaded }),
+      detected: imagesOnly
+        ? false
+        : await inspection.runtimeDetected({ ...loaded }),
+      protected: loaded.config.runtime.protected,
     },
     images,
     docker,
@@ -417,14 +397,21 @@ export const planRehearsalCleanup = async ({
 const removePlannedImages = ({
   candidates,
   projectRoot,
+  engineIdentity,
 }: {
   candidates: readonly ImageCandidate[];
   projectRoot: string;
+  engineIdentity: string | null;
 }): string[] => {
   if (candidates.length === 0) return [];
-  const usedImageIds = inspectUsedImageIds(projectRoot);
   const removed: string[] = [];
   for (const candidate of candidates) {
+    const engine = assertLocalDockerContext({ cwd: projectRoot });
+    if (engine.identity !== engineIdentity)
+      throw new Error(
+        "The Docker engine changed after preview. Nothing further was removed; preview again.",
+      );
+    const usedImageIds = inspectUsedImageIds(projectRoot);
     if (usedImageIds.has(candidate.id)) {
       throw new Error(
         `Cleanup stopped because a container began using ${candidate.id}. Preview the cleanup again.`,
@@ -435,13 +422,23 @@ const removePlannedImages = ({
         ["image", "inspect", "--format", "{{.Id}}", tag],
         { projectRoot, allowFailure: true },
       );
-      if (inspection.status !== 0) continue;
+      if (inspection.status !== 0)
+        throw new Error(
+          "A selected image tag disappeared after preview. Cleanup stopped; refresh and preview again.",
+        );
       if (inspection.stdout.trim() !== candidate.id) {
         throw new Error(
           `Cleanup stopped because ${tag} changed after the preview. Preview the cleanup again.`,
         );
       }
-      runDocker(["image", "rm", tag], { projectRoot });
+      const currentEngine = assertLocalDockerContext({ cwd: projectRoot });
+      if (currentEngine.identity !== engineIdentity)
+        throw new Error(
+          "The Docker engine changed after preview. Cleanup stopped.",
+        );
+      runDocker(["--context", currentEngine.context, "image", "rm", tag], {
+        projectRoot,
+      });
       removed.push(tag);
     }
   }
@@ -473,6 +470,10 @@ export const applyRehearsalCleanup = async ({
     ...(configPath === undefined ? {} : { configPath }),
     includeRuntime: plan.runtime.included,
     includeImages: plan.images.inspected,
+    imagesOnly: plan.imagesOnly,
+    ...(plan.selectedImageIds === undefined
+      ? {}
+      : { selectedImageIds: plan.selectedImageIds }),
     ...(inspection ? { inspection } : {}),
   });
   if (refreshed.digest !== plan.digest) {
@@ -502,6 +503,15 @@ export const applyRehearsalCleanup = async ({
   const images = removePlannedImages({
     candidates: refreshed.images.candidates,
     projectRoot: loaded.projectRoot,
+    engineIdentity: refreshed.docker.engineIdentity ?? null,
+  });
+  await writeResourceReviewReceipt({
+    path: join(
+      loaded.paths.artifactDirectory,
+      RESOURCE_REVIEW_RECEIPT_FILENAME,
+    ),
+    projectRoot: loaded.projectRoot,
+    policy: loaded.config.resources,
   });
   return {
     project: refreshed.project,

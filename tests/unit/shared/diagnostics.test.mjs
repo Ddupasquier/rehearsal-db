@@ -8,6 +8,10 @@ import {
   renderHumanError,
   serializeRehearsalError,
 } from "../../../dist/src/shared/diagnostics.mjs";
+import {
+  buildAuthenticationReview,
+  buildBaselineScopeReview,
+} from "../../../dist/src/runtime/project_review.mjs";
 
 const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
 
@@ -122,5 +126,79 @@ describe("Rehearsal diagnostics", () => {
       presentButQuarantined: ["SUPABASE_ACCESS_TOKEN"],
       note: "not inherited",
     });
+  });
+
+  it("preserves only the exact false privacy attestation, not arbitrary credential values", () => {
+    expect(
+      redactDiagnosticValue({ privacy: { credentialsIncluded: false } }),
+    ).toEqual({ privacy: { credentialsIncluded: false } });
+    for (const value of [
+      true,
+      null,
+      "false",
+      { password: canaries.password },
+      [false],
+      0,
+      undefined,
+    ]) {
+      expect(
+        redactDiagnosticValue({ privacy: { credentialsIncluded: value } }),
+      ).toEqual({ privacy: { credentialsIncluded: "[REDACTED]" } });
+    }
+    for (const key of [
+      "credentials",
+      "CredentialsIncluded",
+      "credentialsIncludedExtra",
+      "password",
+      "apiKey",
+      "token",
+    ]) {
+      expect(redactDiagnosticValue({ [key]: false })).toEqual({
+        [key]: "[REDACTED]",
+      });
+    }
+  });
+
+  it("keeps baseline and authentication privacy attestations in the public JSON envelope", () => {
+    const review = buildBaselineScopeReview({
+      provider: "postgresql",
+      sourcePreparationConfigured: false,
+      identityPolicyConfigured: false,
+      baseline: {
+        tableCounts: {},
+        sanitizationPolicySha256: "a".repeat(64),
+        storageAssets: {},
+      },
+      policy: { policyVersion: 1, tables: [] },
+    });
+    const authenticationReview = buildAuthenticationReview({
+      provider: "postgresql",
+      configuredProviders: [],
+      declarativeProviders: [],
+      callback: null,
+      template: null,
+      identityPolicyConfigured: false,
+    });
+    const decoded = JSON.parse(
+      JSON.stringify(
+        createRehearsalResult({
+          command: "inspect baseline",
+          status: "success",
+          data: { review, authenticationReview, credentials: canaries },
+        }),
+      ),
+    );
+    expect(decoded.data.review.privacy).toEqual({
+      rowValuesIncluded: false,
+      credentialsIncluded: false,
+      sourceContacted: false,
+    });
+    expect(decoded.data.authenticationReview.privacy).toEqual({
+      credentialsIncluded: false,
+      environmentFilesRead: false,
+      authenticationAttempted: false,
+    });
+    expect(decoded.data.credentials).toBe("[REDACTED]");
+    expect(JSON.stringify(decoded)).not.toContain(canaries.password);
   });
 });

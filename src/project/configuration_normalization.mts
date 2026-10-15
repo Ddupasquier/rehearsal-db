@@ -10,6 +10,13 @@ import {
 } from "./configuration_contract.mjs";
 import { validateConfigurationSchema } from "./configuration_schema.mjs";
 import {
+  normalizeResourcePolicy,
+  normalizeRequiredServices,
+} from "./configuration_resource_policy.mjs";
+import { normalizeConfigurationProfiles } from "./configuration_profiles.mjs";
+import { normalizeApplicationUrls } from "./configuration_application_urls.mjs";
+import { normalizeApplicationActivity } from "./configuration_activity.mjs";
+import {
   assertBoolean,
   assertCommand,
   assertDatabaseIdentifier,
@@ -39,6 +46,12 @@ const assertChoice = <Choice extends string>(
     throw new Error(`${path} must be one of: ${choices.join(", ")}.`);
   }
   return value as Choice;
+};
+
+const assertPercentage = (value: unknown, path: string): number => {
+  const percentage = assertPositiveInteger(value, path);
+  if (percentage > 100) throw new Error(`${path} must be at most 100.`);
+  return percentage;
 };
 
 const normalizeApplicationEnvironmentMappings = (
@@ -71,6 +84,8 @@ export const normalizeRehearsalConfig = (input: unknown) => {
     containerRuntime,
     lifecycle,
     cleanup,
+    resources,
+    profiles,
     preparation,
     dependentTargets,
     application,
@@ -82,6 +97,17 @@ export const normalizeRehearsalConfig = (input: unknown) => {
   } = validateConfigurationSchema(input);
 
   const projectName = assertIdentifier(project.name, "config.project.name");
+  const environmentDisplayName = assertNonEmptyString(
+    runtime.displayName ?? projectName,
+    "config.runtime.displayName",
+  );
+  if (
+    environmentDisplayName.length > 100 ||
+    /[\r\n\0]/u.test(environmentDisplayName)
+  )
+    throw new Error(
+      "config.runtime.displayName must be single-line text of at most 100 characters.",
+    );
 
   const normalizedDependentTargets = dependentTargets.map((target, index) => {
     const path = `config.dependentTargets[${index}]`;
@@ -143,6 +169,19 @@ export const normalizeRehearsalConfig = (input: unknown) => {
   if (new Set(Object.values(ports)).size !== Object.values(ports).length) {
     throw new Error("Rehearsal runtime ports must be unique.");
   }
+  const applicationUrls = normalizeApplicationUrls({
+    applicationUrl:
+      runtime.applicationUrl ?? REHEARSAL_DEFAULTS.runtime.applicationUrl,
+    readinessUrl: readiness?.url,
+    allowedHosts,
+    servicePorts: Object.values(ports),
+  });
+  const activityPolicy = normalizeApplicationActivity({
+    value: application.activity,
+    readinessUrl: applicationUrls.readinessUrl,
+    openPersistence: lifecycle.open ?? REHEARSAL_DEFAULTS.lifecycle.open,
+    idleTimeoutSeconds: lifecycle.openIdleTimeoutSeconds,
+  });
 
   const commands = verification.commands ?? [];
   if (!Array.isArray(commands)) {
@@ -319,6 +358,11 @@ export const normalizeRehearsalConfig = (input: unknown) => {
             supabase.runtimeWorkdir,
             "config.supabase.runtimeWorkdir",
           ),
+          serviceProfile: assertChoice(
+            supabase.serviceProfile ?? "application",
+            ["application", "full"],
+            "config.supabase.serviceProfile",
+          ),
           authentication: normalizedAuthentication,
           serviceEnvironmentFile: normalizedAuthentication
             ? normalizedAuthentication.environmentFile
@@ -374,8 +418,26 @@ export const normalizeRehearsalConfig = (input: unknown) => {
           REHEARSAL_DEFAULTS.containerRuntime.autoStartColima,
         "config.containerRuntime.autoStartColima",
       ),
+      stopOwnedColimaWhenIdle: assertBoolean(
+        containerRuntime.stopOwnedColimaWhenIdle ??
+          REHEARSAL_DEFAULTS.containerRuntime.stopOwnedColimaWhenIdle,
+        "config.containerRuntime.stopOwnedColimaWhenIdle",
+      ),
+      diskWarningPercent: assertPercentage(
+        containerRuntime.diskWarningPercent ??
+          REHEARSAL_DEFAULTS.containerRuntime.diskWarningPercent,
+        "config.containerRuntime.diskWarningPercent",
+      ),
+      minimumFreeBytes: assertPositiveInteger(
+        containerRuntime.minimumFreeBytes ??
+          (runtimeTarget === "supabase"
+            ? REHEARSAL_DEFAULTS.containerRuntime.supabaseMinimumFreeBytes
+            : REHEARSAL_DEFAULTS.containerRuntime.minimumFreeBytes),
+        "config.containerRuntime.minimumFreeBytes",
+      ),
     }),
     lifecycle: Object.freeze({
+      openIdleTimeoutSeconds: activityPolicy.openIdleTimeoutSeconds,
       run: assertChoice(
         lifecycle.run ?? REHEARSAL_DEFAULTS.lifecycle.run,
         ["keep-until-stop", "stop-after-run"],
@@ -394,8 +456,25 @@ export const normalizeRehearsalConfig = (input: unknown) => {
         "config.cleanup.retainBaselineGenerations",
       ),
     }),
+    resources: normalizeResourcePolicy(resources),
+    profiles: normalizeConfigurationProfiles({
+      profiles,
+      targetNames: [
+        "primary",
+        ...normalizedDependentTargets.map((target) => target.name),
+      ],
+      allowedHosts,
+      servicePorts: Object.values(ports),
+    }),
     preparation: preparation
       ? Object.freeze({
+          shapePolicy:
+            preparation.shapePolicy === undefined
+              ? null
+              : assertRelativePath(
+                  preparation.shapePolicy,
+                  "config.preparation.shapePolicy",
+                ),
           sourcePolicy: assertRelativePath(
             preparation.sourcePolicy,
             "config.preparation.sourcePolicy",
@@ -432,6 +511,11 @@ export const normalizeRehearsalConfig = (input: unknown) => {
         : assertRelativePath(root.identityPolicy, "config.identityPolicy"),
     dependentTargets: Object.freeze(normalizedDependentTargets),
     application: Object.freeze({
+      requiredServices: normalizeRequiredServices({
+        value: application.requiredServices,
+        target: runtimeTarget,
+        serviceProfile: supabase?.serviceProfile,
+      }),
       startCommand: assertCommand(
         application.startCommand,
         "config.application.startCommand",
@@ -447,14 +531,10 @@ export const normalizeRehearsalConfig = (input: unknown) => {
       environmentVariables: normalizeApplicationEnvironmentMappings(
         application.environmentVariables,
       ),
+      activity: activityPolicy.activity,
       readiness: readiness
         ? Object.freeze({
-            url: assertLoopbackUrl(
-              readiness.url,
-              "config.application.readiness.url",
-              allowedHosts,
-              LOOPBACK_HOSTS,
-            ),
+            url: applicationUrls.readinessUrl!,
             expectedStatus: assertHttpStatus(
               readiness.expectedStatus,
               "config.application.readiness.expectedStatus",
@@ -562,13 +642,13 @@ export const normalizeRehearsalConfig = (input: unknown) => {
             ),
     }),
     runtime: Object.freeze({
-      target: runtimeTarget,
-      applicationUrl: assertLoopbackUrl(
-        runtime.applicationUrl ?? REHEARSAL_DEFAULTS.runtime.applicationUrl,
-        "config.runtime.applicationUrl",
-        allowedHosts,
-        LOOPBACK_HOSTS,
+      displayName: environmentDisplayName,
+      protected: assertBoolean(
+        runtime.protected ?? false,
+        "config.runtime.protected",
       ),
+      target: runtimeTarget,
+      applicationUrl: applicationUrls.applicationUrl,
       projectId: assertNonEmptyString(
         runtime.projectId ?? REHEARSAL_DEFAULTS.runtime.projectId,
         "config.runtime.projectId",

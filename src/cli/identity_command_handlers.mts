@@ -5,6 +5,7 @@ import { parseEnv } from "node:util";
 import * as prompts from "@clack/prompts";
 import { holdApplicationSession } from "../application/session.mjs";
 import { runApplicationSessionTask } from "../application/interactive_task.mjs";
+import { trackOperationStage } from "../shared/operation_progress.mjs";
 import { applyIdentityClaim } from "../identity/claim.mjs";
 import { waitForIdentityConnection } from "../identity/connect.mjs";
 import { createSupabaseStorageTransfer } from "../identity/storage.mjs";
@@ -125,11 +126,12 @@ export const createIdentityCommandHandlers = ({
             planOptions,
             session: state,
           });
+          const applicationUrl = active.applicationUrl;
           const observed = await runApplicationSessionTask({
             session: active.session,
-            onReady: (ready) => {
+            onReady: () => {
               const lines = [
-                `Application: ${ready.url}`,
+                `Application: ${applicationUrl}`,
                 "Sign in normally with the provider allowed by your reviewed identity policy.",
                 "Rehearsal will continue when exactly one approved, verified local identity appears.",
                 "It never reads your provider password, passkey, MFA secret, browser cookies, or session tokens.",
@@ -225,21 +227,26 @@ export const createIdentityCommandHandlers = ({
             plan: refreshed.plan,
             environment: refreshedEnvironment,
           });
-          const result = await applyIdentityClaim({
-            plan: refreshed.plan,
-            confirmation: preview.planDigest,
-            connectionString: refreshedEnvironment.DATABASE_URL!,
-            ...(storageTransfer === undefined ? {} : { storageTransfer }),
-          });
+          const result = await trackOperationStage(
+            { phase: "identity-association", target: "primary" },
+            () =>
+              applyIdentityClaim({
+                plan: refreshed.plan,
+                confirmation: preview.planDigest,
+                connectionString: refreshedEnvironment.DATABASE_URL!,
+                ...(storageTransfer === undefined ? {} : { storageTransfer }),
+              }),
+          );
 
           reopened = await startRuntimeApplication({
             flags,
             planOptions,
             session: state,
           });
+          const reopenedApplicationUrl = reopened.applicationUrl;
           const closed = await holdApplicationSession({
             session: reopened.session,
-            onReady: (ready) => {
+            onReady: () => {
               const lines = [
                 renderIdentityConnection({
                   mode: "connected",
@@ -247,7 +254,7 @@ export const createIdentityCommandHandlers = ({
                   result,
                 }),
                 "",
-                `Application: ${ready.url}`,
+                `Application: ${reopenedApplicationUrl}`,
                 "The app is running again. Sign out and sign in once for fresh claims.",
                 "Press Ctrl+C to close the app or Ctrl+Z to exit Rehearsal.",
               ];
@@ -295,12 +302,17 @@ export const createIdentityCommandHandlers = ({
         plan,
         environment: runtimeEnvironment,
       });
-      const result = await applyIdentityClaim({
-        plan,
-        confirmation: flags.identityConfirmation,
-        connectionString: runtimeEnvironment.DATABASE_URL!,
-        ...(storageTransfer === undefined ? {} : { storageTransfer }),
-      });
+      const confirmation = flags.identityConfirmation;
+      const result = await trackOperationStage(
+        { phase: "identity-association", target: "primary" },
+        () =>
+          applyIdentityClaim({
+            plan,
+            confirmation,
+            connectionString: runtimeEnvironment.DATABASE_URL!,
+            ...(storageTransfer === undefined ? {} : { storageTransfer }),
+          }),
+      );
       const data = { mode: "written" as const, plan, result };
       return renderedCommand({ data, render: renderIdentityPlan });
     },

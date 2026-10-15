@@ -32,8 +32,9 @@ separate commercial preview with a 14-day evaluation and per-user licensing. Pri
 installations do not auto-update, so each reviewed delivery includes its exact version,
 compatible core range, checksum, privacy statement, license, and support policy.
 
-The current extension candidate is `0.1.1` and requires
-`@rehearsal-db/core@0.1.0-rc.4` or newer. Once the extension is active, project dependency
+The extension requires `@rehearsal-db/core@0.1.0-rc.4` or newer. Use the exact extension
+version and checksum in your reviewed delivery; a development candidate is not a new
+release merely because it has the same version number. Once active, project dependency
 and configuration changes trigger a narrow, debounced, read-only refresh automatically;
 users do not reload the VS Code window after an ordinary core-package update. Installing a
 new private VSIX may still require VS Code's normal one-time extension-host reload so the

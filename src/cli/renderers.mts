@@ -7,6 +7,8 @@ import { formatCount } from "../shared/human_output.mjs";
 import type { SourceAccessPlan } from "../source/access.mjs";
 import type { IdentityClaimPlan } from "../identity/claim.mjs";
 import { terminalStyle } from "./terminal.mjs";
+import { renderBaselineShape } from "./baseline_shape_rendering.mjs";
+import type { BaselineShapeEvidence } from "../source/shape_contract.mjs";
 
 type Verbosity = "normal" | "verbose";
 type RenderFlags = Readonly<{ plain?: boolean; json?: boolean }>;
@@ -166,7 +168,15 @@ interface RefreshPlan {
   readonly digest: string;
   readonly review: {
     readonly currentBaseline: string;
-    readonly source: { readonly readerExpiresAt: string };
+    readonly source: {
+      readonly readerExpiresAt: string;
+      readonly shape?: null | {
+        readonly maximumRows: number;
+        readonly requiredGoals: readonly string[];
+        readonly advisoryGoals: readonly string[];
+        readonly policySha256: string;
+      };
+    };
     readonly runtimeTargets: readonly string[];
     readonly retention: {
       readonly generations: number;
@@ -340,6 +350,7 @@ export const renderBaseline = (baseline: {
   dataSha256: string;
   sanitizationPolicySha256: string;
   verification: string;
+  shape?: BaselineShapeEvidence | null;
 }): string =>
   [
     "REHEARSAL BASELINE",
@@ -353,6 +364,7 @@ export const renderBaseline = (baseline: {
     `Data SHA-256: ${baseline.dataSha256}`,
     `Sanitization policy SHA-256: ${baseline.sanitizationPolicySha256}`,
     `Verification: ${baseline.verification}`,
+    ...renderBaselineShape(baseline.shape),
     "Source rows and sensitive values are never printed by inspect.",
   ].join("\n");
 
@@ -859,7 +871,7 @@ export const renderRefreshWorkflow = ({
 }: {
   mode: RenderMode;
   plan: RefreshPlan;
-  refreshed?: { generationId: string };
+  refreshed?: { generationId: string; shape?: BaselineShapeEvidence | null };
   runtime?: { targets?: readonly unknown[] };
   cleanup?:
     | { state: "complete"; removed: readonly string[] }
@@ -875,6 +887,15 @@ export const renderRefreshWorkflow = ({
     "",
     `Current baseline: ${plan.review.currentBaseline}`,
     `Source access expires: ${plan.review.source.readerExpiresAt}`,
+    ...(plan.review.source.shape
+      ? [
+          `Reviewed sample: up to ${plan.review.source.shape.maximumRows} rows`,
+          `Required shape goals: ${plan.review.source.shape.requiredGoals.join(", ") || "none"}`,
+          `Advisory shape goals: ${plan.review.source.shape.advisoryGoals.join(", ") || "none"}`,
+          `Shape policy SHA-256: ${plan.review.source.shape.policySha256}`,
+          "Sampling still applies every reviewed privacy rule. Required losses refuse activation.",
+        ]
+      : []),
     `Runtime targets reset: ${plan.review.runtimeTargets.join(", ")}`,
     `Baseline retention: ${formatCount(plan.review.retention.generations, "generation")}`,
     ...(plan.review.retention.removeAfterReplacement.length
@@ -895,6 +916,13 @@ export const renderRefreshWorkflow = ({
         ]
       : [
           `Activated baseline: ${refreshed?.generationId ?? "unknown"}`,
+          ...(refreshed?.shape
+            ? [
+                `Reviewed shape: ${refreshed.shape.distributions.filter((goal) => goal.status === "passed").length}/${refreshed.shape.distributions.length} goal(s) proved; ${refreshed.shape.relationships.length} relationship(s) verified.`,
+                ...refreshed.shape.warnings,
+                "Detailed evidence: rehearsal inspect baseline",
+              ]
+            : []),
           `Runtime reset: ${runtime?.targets?.length ?? 1} target(s)`,
           cleanupLine,
           "",

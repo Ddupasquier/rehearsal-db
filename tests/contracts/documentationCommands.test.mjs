@@ -31,6 +31,7 @@ const documentedCommands = [
   "discover",
   "support",
   "activity",
+  "environments",
   "explain",
   "run --dry-run",
   "run --confirm-candidates=",
@@ -356,6 +357,7 @@ describe("documented CLI contract", () => {
     expect(cleanupSource).not.toContain('"--force"');
     expect(cleanupSource).toContain("exact --confirm-cleanup digest");
     expect(configuration).toContain("autoStartColima");
+    expect(configuration).toContain("stopOwnedColimaWhenIdle");
     expect(configuration).toContain("stop-after-run");
     expect(configuration).toContain("stop-on-application-exit");
     expect(configuration).toContain("retainBaselineGenerations");
@@ -396,7 +398,10 @@ describe("documented CLI contract", () => {
       'npm dist-tag add "$PACKAGE_NAME@$PACKAGE_VERSION" latest',
     );
     expect(workflow).toContain(
-      'const stableLatest=typeof tags.latest === "string"',
+      'import { releaseTagsMatch } from "./scripts/release/channel.mjs"',
+    );
+    expect(workflow).toContain(
+      'import { shouldUpdateLatest } from "./scripts/release/channel.mjs"',
     );
     expect(syncTagsJob).toContain("github.ref == 'refs/heads/main'");
     expect(syncTagsJob).toContain(

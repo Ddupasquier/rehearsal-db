@@ -1,4 +1,12 @@
-import { mkdtemp, readFile, readdir, readlink, rm } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  readdir,
+  readlink,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -174,6 +182,8 @@ const fakeClient = ({
               )
             : schemaRows,
         };
+      if (sql.includes("txid_current_snapshot"))
+        return { rows: [{ snapshot: "100:200:" }] };
       if (sql.includes("pg_column_size"))
         return {
           rows: [
@@ -713,5 +723,194 @@ describe("coherent source baseline refresh", () => {
       ]),
     );
     expect(JSON.stringify(records)).not.toContain("private");
+  });
+
+  it("samples through the same read-only snapshot and writes a bound immutable shape receipt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-source-shape-"));
+    roots.push(root);
+    const clients = [
+      fakeClient({ rowCount: 20 }),
+      fakeClient({ observer: true, rowCount: 20 }),
+    ];
+    const result = await refreshPostgresqlBaseline({
+      ...commonRefreshOptions({ root }),
+      shapePolicy: {
+        shapeVersion: 1,
+        seed: "fixture-shape",
+        maximumRows: 8,
+        minimumCohortSize: 2,
+        tables: [{ name: "widgets", key: ["id"], maximumRows: 8, rootRows: 8 }],
+        distributions: [
+          {
+            id: "ids",
+            table: "widgets",
+            column: "id",
+            kind: "number",
+            boundaries: [11],
+            required: true,
+            tolerance: 0,
+          },
+        ],
+      },
+      clientFactory: async () => clients.shift(),
+    });
+    expect(result.manifest.rowCount).toBe(8);
+    expect(result.shape.tables[0]).toMatchObject({
+      sourceRows: 20,
+      selectedRows: 8,
+      emittedRows: 8,
+    });
+    expect(result.shape.distributions[0].status).toBe("passed");
+    expect(result.manifest.files["shape-evidence.json"].sha256).toMatch(
+      /^[a-f0-9]{64}$/u,
+    );
+    const artifactRoot = commonRefreshOptions({ root }).artifactRoot;
+    expect(await verifyActiveBaseline({ artifactRoot })).toMatchObject({
+      rowCount: 8,
+    });
+    const { readVerifiedBaselineShapeEvidence } =
+      await import("../../../dist/src/source/shape.mjs");
+    expect(
+      await readVerifiedBaselineShapeEvidence({
+        artifactRoot,
+        baseline: result.manifest,
+      }),
+    ).toEqual(result.shape);
+    const serialized = await readFile(
+      join(
+        artifactRoot,
+        "generations",
+        result.generationId,
+        "shape-evidence.json",
+      ),
+      "utf8",
+    );
+    expect(serialized).not.toMatch(
+      /Secret|reader-secret|fixture-shape|source_fixture/u,
+    );
+  });
+
+  it("required shape loss preserves the prior baseline and removes no trusted generation", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "rehearsal-source-shape-rollback-"),
+    );
+    roots.push(root);
+    const options = commonRefreshOptions({ root });
+    const originalClients = [fakeClient(), fakeClient({ observer: true })];
+    const original = await refreshPostgresqlBaseline({
+      ...options,
+      clientFactory: async () => originalClients.shift(),
+    });
+    const before = await readlink(join(options.artifactRoot, "current"));
+    await expect(
+      refreshPostgresqlBaseline({
+        ...options,
+        shapePolicy: {
+          shapeVersion: 1,
+          seed: "required-loss",
+          maximumRows: 20,
+          minimumCohortSize: 2,
+          tables: [
+            { name: "widgets", key: ["id"], maximumRows: 20, rootRows: 20 },
+          ],
+          distributions: [
+            {
+              id: "length",
+              table: "widgets",
+              column: "name",
+              kind: "string-length",
+              boundaries: [9],
+              required: true,
+              tolerance: 0,
+            },
+          ],
+        },
+        clientFactory: async () => fakeClient({ rowCount: 20 }),
+      }),
+    ).rejects.toThrow("Required shape goal");
+    expect(await readlink(join(options.artifactRoot, "current"))).toBe(before);
+    expect(
+      (await verifyActiveBaseline({ artifactRoot: options.artifactRoot }))
+        .generationId,
+    ).toBe(original.generationId);
+    expect(await readdir(join(options.artifactRoot, "generations"))).toEqual([
+      original.generationId,
+    ]);
+  });
+
+  it("refuses an oversized source estimate before fetching a raw shape graph", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "rehearsal-source-shape-capacity-"),
+    );
+    roots.push(root);
+    const stats = {};
+    await expect(
+      refreshPostgresqlBaseline({
+        ...commonRefreshOptions({ root }),
+        shapePolicy: {
+          shapeVersion: 1,
+          seed: "capacity",
+          maximumSourceRows: 10,
+          maximumRows: 8,
+          tables: [
+            { name: "widgets", key: ["id"], maximumRows: 8, rootRows: 8 },
+          ],
+        },
+        clientFactory: async () => fakeClient({ rowCount: 20, stats }),
+      }),
+    ).rejects.toThrow("estimate exceeds");
+    expect(stats.fetches).toBeUndefined();
+  });
+
+  it("rejects shape-file tampering during ordinary immutable-baseline verification", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "rehearsal-source-shape-tampering-"),
+    );
+    roots.push(root);
+    const clients = [fakeClient(), fakeClient({ observer: true })];
+    const options = commonRefreshOptions({ root });
+    const result = await refreshPostgresqlBaseline({
+      ...options,
+      shapePolicy: {
+        shapeVersion: 1,
+        seed: "tampering",
+        maximumRows: 2,
+        tables: [{ name: "widgets", key: ["id"], maximumRows: 2, rootRows: 2 }],
+      },
+      clientFactory: async () => clients.shift(),
+    });
+    const path = join(
+      options.artifactRoot,
+      "generations",
+      result.generationId,
+      "shape-evidence.json",
+    );
+    await chmod(path, 0o600);
+    await writeFile(path, "{}\n");
+    await expect(
+      verifyActiveBaseline({ artifactRoot: options.artifactRoot }),
+    ).rejects.toThrow("shape-evidence checksum");
+  });
+
+  it("refuses incomplete shape cursor results even when they fit the row budget", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "rehearsal-source-shape-incomplete-"),
+    );
+    roots.push(root);
+    await expect(
+      refreshPostgresqlBaseline({
+        ...commonRefreshOptions({ root }),
+        shapePolicy: {
+          shapeVersion: 1,
+          seed: "incomplete",
+          maximumRows: 2,
+          tables: [
+            { name: "widgets", key: ["id"], maximumRows: 2, rootRows: 2 },
+          ],
+        },
+        clientFactory: async () =>
+          fakeClient({ rowCount: 2, estimateRows: "20" }),
+      }),
+    ).rejects.toThrow("cursor counts do not match");
   });
 });
