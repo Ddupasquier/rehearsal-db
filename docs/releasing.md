@@ -43,6 +43,11 @@ credential is not part of the maintained release architecture: it was deleted fr
 GitHub environment after publication, must remain revoked at npm, and cannot be consumed
 by this workflow.
 
+A failed candidate does not permit moving or deleting its release tag. If its pinned
+workflow needs a source correction, prepare a new version and artifact through the same
+checks; preserve the failed candidate's history and clearly distinguish GitHub assets
+from an npm-published version. A workflow rerun cannot acquire a later main-only fix.
+
 Direct `npm publish` is allowed only through the verified trusted publisher and human
 gate. A later switch to npm staged publication must change and prove the workflow first.
 
@@ -65,6 +70,12 @@ correct. Demonstrate a held approval, refusal without approval, and successful e
 artifact verification before enabling a new publisher. For a solo maintainer, the
 configured owner can approve a deployment; do not call this independent two-person
 review or require an unavailable second person without a separate decision.
+
+After proving the immutable source tag, exact equality with the verified protected-main
+commit establishes ancestry without a comparison request. Older source commits require
+an unpaged, bounded GitHub comparison reporting ahead, zero behind and that exact source
+as the merge base. This checks ancestry summary facts, not an unlimited list of commits;
+pagination, unavailable metadata and ambiguous ancestry remain refusals.
 
 ### Hidden ruleset metadata and owner attestation
 

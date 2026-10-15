@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   githubReleaseReader,
   releaseExecution,
@@ -129,7 +129,7 @@ function fixture(mode = "prepare") {
       { ref: "refs/tags/v0.1.0-rc.5", object: { type: "commit", sha } },
     ],
     [
-      `${base}/compare/${sha}...${mainSha}?per_page=1`,
+      `${base}/compare/${sha}...${mainSha}`,
       { status: "ahead", behind_by: 0, merge_base_commit: { sha } },
     ],
   ]);
@@ -476,9 +476,7 @@ describe("release protection preflight", () => {
       }),
     ).rejects.toThrow("release_tag_moved");
     const unrelated = fixture();
-    unrelated.values.get(
-      `${base}/compare/${sha}...${mainSha}?per_page=1`,
-    ).behind_by = 1;
+    unrelated.values.get(`${base}/compare/${sha}...${mainSha}`).behind_by = 1;
     await expect(
       releasePreflight({
         mode: "prepare",
@@ -525,6 +523,158 @@ describe("release protection preflight", () => {
       }),
     ).rejects.toThrow("invalid_tag_chain");
   });
+
+  it.each(["prepare", "publish"])(
+    "proves an exact-main %s without requesting redundant self-comparison while retaining all release gates",
+    async (mode) => {
+      const f = fixture(mode);
+      f.values.get(`${base}/branches/main`).commit.sha = sha;
+      const compare = vi.fn(async () =>
+        Response.json(
+          {
+            status: "identical",
+            behind_by: 0,
+            total_commits: 0,
+            merge_base_commit: { sha },
+          },
+          {
+            headers: {
+              link: `<https://api.github.com/repositories/456/compare/${sha}...${sha}?per_page=1&page=1>; rel="first"`,
+            },
+          },
+        ),
+      );
+      const result = await releasePreflight({
+        mode,
+        environment: context(mode),
+        controlsWitness: f.controlsWitness,
+        now,
+        fetcher: (url, options) =>
+          new URL(url).pathname.includes("/compare/")
+            ? compare()
+            : f.fetcher(url, options),
+      });
+      expect(result.status).toBe("passed");
+      expect(compare).not.toHaveBeenCalled();
+      const paths = f.calls.map(({ url }) => new URL(url).pathname);
+      expect(paths).toContain(`${base}/git/ref/tags/v0.1.0-rc.5`);
+      expect(paths).toContain(`${base}/rulesets/1`);
+      expect(paths).toContain(`${base}/rulesets/2`);
+      expect(paths).toContain(`${base}/environments/npm`);
+      if (mode === "publish")
+        expect(paths).toContain(`${base}/actions/runs/12345/approvals`);
+    },
+  );
+
+  it.each([
+    "moved-tag",
+    "unsafe-controls",
+    "missing-approval",
+    "stale-witness",
+  ])("does not let exact-main equality bypass %s", async (failure) => {
+    const f = fixture("publish");
+    f.values.get(`${base}/branches/main`).commit.sha = sha;
+    if (failure === "moved-tag")
+      f.values.get(`${base}/git/ref/tags/v0.1.0-rc.5`).object.sha = mainSha;
+    if (failure === "unsafe-controls")
+      f.branch.bypass_actors = [
+        { actor_type: "RepositoryRole", actor_id: 5, bypass_mode: "always" },
+      ];
+    if (failure === "missing-approval")
+      f.values.set(`${base}/actions/runs/12345/approvals`, []);
+    await expect(
+      releasePreflight({
+        mode: "publish",
+        environment: context("publish"),
+        controlsWitness: f.controlsWitness,
+        now: failure === "stale-witness" ? now + 8 * 24 * 60 * 60 * 1000 : now,
+        fetcher: f.fetcher,
+      }),
+    ).rejects.toThrow(/Release (preflight|witness) refused:/u);
+    expect(
+      f.calls.some(({ url }) => new URL(url).pathname.includes("/compare/")),
+    ).toBe(false);
+  });
+
+  it("proves an older reviewed source with one unpaged exact-SHA ancestry request, not a complete commit-log claim", async () => {
+    const f = fixture();
+    await expect(
+      releasePreflight({
+        mode: "prepare",
+        environment: context(),
+        controlsWitness: f.controlsWitness,
+        now,
+        fetcher: f.fetcher,
+      }),
+    ).resolves.toMatchObject({ status: "passed" });
+    const comparisons = f.calls.filter(({ url }) =>
+      new URL(url).pathname.includes("/compare/"),
+    );
+    expect(comparisons).toHaveLength(1);
+    expect(comparisons[0].url).toBe(
+      `https://api.github.com${base}/compare/${sha}...${mainSha}`,
+    );
+    expect(new URL(comparisons[0].url).search).toBe("");
+  });
+
+  it.each([
+    [
+      "identical distinct SHAs",
+      { status: "identical", behind_by: 0, merge_base_commit: { sha } },
+    ],
+    ["behind", { status: "behind", behind_by: 1, merge_base_commit: { sha } }],
+    [
+      "diverged",
+      { status: "diverged", behind_by: 0, merge_base_commit: { sha } },
+    ],
+    [
+      "wrong merge base",
+      { status: "ahead", behind_by: 0, merge_base_commit: { sha: mainSha } },
+    ],
+    [
+      "unknown ancestry",
+      { status: "unknown", behind_by: 0, merge_base_commit: { sha } },
+    ],
+    ["missing behind count", { status: "ahead", merge_base_commit: { sha } }],
+  ])("refuses older-source ancestry with %s", async (_name, evidence) => {
+    const f = fixture();
+    f.values.set(`${base}/compare/${sha}...${mainSha}`, evidence);
+    await expect(
+      releasePreflight({
+        mode: "prepare",
+        environment: context(),
+        fetcher: f.fetcher,
+      }),
+    ).rejects.toThrow("release_not_on_reviewed_main");
+  });
+
+  it.each([
+    `<https://api.github.com/repositories/456/compare/${sha}...${mainSha}?page=1>; rel="first"`,
+    `<https://api.github.com${base}/compare/${sha}...${mainSha}?page=2>; rel="next"`,
+    `<https://api.github.com${base}/compare/${sha}...${mainSha}?page=2>; rel="last"`,
+    '<https://untrusted.invalid/control>; rel="first"',
+    "malformed-pagination",
+  ])(
+    "continues refusing every nonempty ancestry Link header (%s)",
+    async (link) => {
+      const f = fixture();
+      await expect(
+        releasePreflight({
+          mode: "prepare",
+          environment: context(),
+          fetcher: (url, options) =>
+            new URL(url).pathname.includes("/compare/")
+              ? Promise.resolve(
+                  Response.json(
+                    f.values.get(`${base}/compare/${sha}...${mainSha}`),
+                    { headers: { link } },
+                  ),
+                )
+              : f.fetcher(url, options),
+        }),
+      ).rejects.toThrow("metadata_unavailable_or_paginated");
+    },
+  );
 
   it("bounds response size, pages, paths, transport errors and invalid JSON", async () => {
     const path = base;
