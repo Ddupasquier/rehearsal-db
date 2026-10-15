@@ -174,6 +174,14 @@ describe("resource inventory", () => {
           memoryUsageBytes: null,
           memoryLimitBytes: null,
           cleanupEligibility: "preview-required",
+          retention: "persistent",
+          classification: {
+            role: "configured-environment",
+            dataPersistence: "preserved-on-stop",
+            presence: { state: "created" },
+            receipt: { state: "unknown", reason: "receipt-unavailable" },
+            review: { state: "disabled" },
+          },
         },
       ],
       stale: { stoppedCount: 1, targets: ["primary"] },
@@ -207,6 +215,14 @@ describe("resource inventory", () => {
       state: "unavailable",
       containerCount: 0,
       cleanupEligibility: "inspection-unavailable",
+      retention: "persistent",
+      classification: {
+        presence: { state: "unknown" },
+        review: {
+          state: "unknown",
+          reason: "ownership-inspection-unavailable",
+        },
+      },
       provenance: {
         schemaVersion: 1,
         verification: "recorded-not-reverified",

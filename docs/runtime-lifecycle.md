@@ -229,6 +229,20 @@ an unavailable reason without exposing their contents or starting a runtime.
 Saved profiles organize views of existing targets. They do not clone databases,
 select historical runtime copies or change the target a command will execute against.
 
+Presence, receipt compatibility and long-running review are separate facts. An owned
+container or data volume proves that an environment was created even if its verification
+receipt is missing. An incompatible receipt means its recorded format/provider cannot
+be used; a different recorded Rehearsal version alone does not prove incompatibility.
+Missing or legacy evidence stays unknown. Long-running review uses the configured age
+cutoff and observable resource timestamps, not user inactivity. Engine/ownership
+unavailability cannot establish that an environment is absent or safe to remove.
+
+Configured sandboxes preserve data on stop/start, including `stop-after-run`. Stopping
+workloads does not turn their database/Storage volumes into disposable helpers. An
+explicitly reviewed `run` or `reset` can replace data and volumes from the baseline;
+discard removes volumes. Persistent does not mean immutable sandbox data or stable
+volume IDs across reset. Unknown and other-project resources remain read-only.
+
 Each environment can have a friendly name and protection policy in its own config:
 
 ```js

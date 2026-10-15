@@ -8,6 +8,10 @@ import { createCleanProcessEnvironment } from "../shared/process_environment.mjs
 import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
 import { assertLocalDockerContext } from "./local_docker_context.mjs";
 import {
+  evaluateObservableEnvironmentReview,
+  observableContainerTime,
+} from "./environment_classification.mjs";
+import {
   loadRuntimeTopology,
   type RuntimeTopologyTarget,
 } from "./topology.mjs";
@@ -72,13 +76,6 @@ export interface StopStalePlan {
 
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
-const observableTime = (value: unknown, now: Date): string | null => {
-  if (typeof value !== "string") return null;
-  const time = Date.parse(value);
-  return Number.isFinite(time) && time > 0 && time <= now.getTime()
-    ? value
-    : null;
-};
 
 export const createStopStalePlan = ({
   projectRoot,
@@ -148,16 +145,18 @@ export const createStopStalePlan = ({
         Object.freeze({
           id: container.Id!,
           running: container.State!.Running!,
-          startedAt: observableTime(container.State!.StartedAt, now),
-          finishedAt: observableTime(container.State!.FinishedAt, now),
+          startedAt: observableContainerTime(container.State!.StartedAt, now),
+          finishedAt: observableContainerTime(container.State!.FinishedAt, now),
         }),
       )
       .sort((left, right) => left.id.localeCompare(right.id));
-    if (
-      bindings.some(
-        (container) => container.running && container.startedAt === null,
-      )
-    ) {
+    const review = evaluateObservableEnvironmentReview({
+      inspectionAvailable: true,
+      staleAfterSeconds: cutoff,
+      containers: bindings,
+      now,
+    });
+    if (review.state === "unknown") {
       skipped.push({
         target: target.name,
         reason:
@@ -165,11 +164,8 @@ export const createStopStalePlan = ({
       });
       continue;
     }
-    const last = bindings
-      .flatMap((container) => [container.startedAt, container.finishedAt])
-      .filter((value): value is string => value !== null)
-      .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-    if (!last || now.getTime() - Date.parse(last) < cutoff! * 1000) {
+    const last = review.lastObservableActivityAt;
+    if (review.state !== "due" || !last) {
       skipped.push({
         target: target.name,
         reason:

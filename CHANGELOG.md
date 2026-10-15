@@ -17,6 +17,10 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 - Optional target-local resource provenance reports recorded baseline and migration
   digests, restore-writer version, and configured ports without claiming fresh
   verification, listening services or activity. Legacy receipts remain explicitly unknown.
+- Environment classification separately reports ownership-proven creation, recorded
+  format/provider compatibility, and age-based review due status. Missing verification
+  does not mean a database was never created; differing writer versions do not imply
+  incompatible data. Configured sandbox volumes remain persistent after workload stop.
 - Opt-in, bounded graph sampling and measured distribution goals, with immutable
   post-sanitization fidelity evidence and required-goal refusal before activation.
 - Lightweight Supabase service profiles and explicit required-service checks.

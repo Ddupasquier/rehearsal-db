@@ -70,7 +70,7 @@ const readReceipt = async (
   }
 };
 
-export const inspectEnvironmentProvenance = async ({
+export const inspectEnvironmentProvenanceEvidence = async ({
   projectRoot,
   runtimeWorkdir,
   provider,
@@ -82,7 +82,10 @@ export const inspectEnvironmentProvenance = async ({
   readonly provider: "supabase" | "postgresql";
   readonly ports: Readonly<Record<string, number | undefined>>;
   readonly applicationUrl: string;
-}): Promise<EnvironmentProvenance> => {
+}): Promise<{
+  readonly provenance: EnvironmentProvenance;
+  readonly providerRecorded: boolean;
+}> => {
   // These endpoints come from validated configuration, not Docker environment data.
   const configuredPorts: EnvironmentProvenance["configuredPorts"][number][] =
     [];
@@ -126,7 +129,14 @@ export const inspectEnvironmentProvenance = async ({
       join(runtimeWorkdir, "baseline.json"),
     );
   } catch {
-    return { ...base, runtime: null, runtimeReason: "receipt-unavailable" };
+    return {
+      provenance: {
+        ...base,
+        runtime: null,
+        runtimeReason: "receipt-unavailable",
+      },
+      providerRecorded: false,
+    };
   }
   if (
     !record(marker) ||
@@ -141,7 +151,10 @@ export const inspectEnvironmentProvenance = async ({
         marker.rehearsalVersion.length > 100 ||
         !VERSION.test(marker.rehearsalVersion)))
   )
-    return { ...base, runtime: null, runtimeReason: "receipt-invalid" };
+    return {
+      provenance: { ...base, runtime: null, runtimeReason: "receipt-invalid" },
+      providerRecorded: false,
+    };
   let candidateSha256: string | null = null;
   let migrationReason:
     "receipt-unavailable" | "receipt-does-not-match-baseline" | null =
@@ -166,19 +179,28 @@ export const inspectEnvironmentProvenance = async ({
     // Missing, unsafe, and unreadable metadata have the same bounded unavailable outcome.
   }
   return {
-    ...base,
-    runtime: {
-      rehearsalVersion:
-        typeof marker.rehearsalVersion === "string"
-          ? marker.rehearsalVersion
-          : null,
-      versionReason:
-        marker.rehearsalVersion === undefined ? "not-recorded" : null,
-      baselineGenerationId: marker.generationId,
-      baselineDataSha256: marker.dataSha256,
-      candidateSha256,
-      migrationReason,
+    provenance: {
+      ...base,
+      runtime: {
+        rehearsalVersion:
+          typeof marker.rehearsalVersion === "string"
+            ? marker.rehearsalVersion
+            : null,
+        versionReason:
+          marker.rehearsalVersion === undefined ? "not-recorded" : null,
+        baselineGenerationId: marker.generationId,
+        baselineDataSha256: marker.dataSha256,
+        candidateSha256,
+        migrationReason,
+      },
+      runtimeReason: null,
     },
-    runtimeReason: null,
+    providerRecorded: marker.target === provider,
   };
 };
+
+/** Public inventory projection stays unchanged; provider evidence is private to classification. */
+export const inspectEnvironmentProvenance = async (
+  options: Parameters<typeof inspectEnvironmentProvenanceEvidence>[0],
+): Promise<EnvironmentProvenance> =>
+  (await inspectEnvironmentProvenanceEvidence(options)).provenance;

@@ -74,6 +74,10 @@ describe("stop stale environment plan", () => {
     );
     expect(preview.preserves).toContain("shared engine");
     expect(preview.digest).toBe(plan().digest);
+    // Fixed before extracting the shared review evaluator: annotations must not change exact approval scope.
+    expect(plan().digest).toBe(
+      "6dc7d66ecde45ad5a9d51e4848f9eff560748dfa398d3c1727a15a2ff024fd74",
+    );
   });
   it("omits disabled, fresh, absent, stopped, ambiguous, or unknown-activity environments", () => {
     expect(

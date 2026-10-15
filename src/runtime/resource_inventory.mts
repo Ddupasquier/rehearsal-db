@@ -17,9 +17,13 @@ import {
 } from "./resource_catalog.mjs";
 import type { ResourceCatalog, CatalogContainer } from "./resource_catalog.mjs";
 import {
-  inspectEnvironmentProvenance,
+  inspectEnvironmentProvenanceEvidence,
   type EnvironmentProvenance,
 } from "./resource_provenance.mjs";
+import {
+  classifyConfiguredEnvironment,
+  type EnvironmentClassification,
+} from "./environment_classification.mjs";
 import {
   assertLocalDockerContext,
   runtimeDockerEnvironment,
@@ -73,6 +77,7 @@ export interface RehearsalEnvironmentInventoryEntry {
   readonly restartPolicies: readonly string[];
   /** Recorded local receipts and configured endpoints; not fresh database verification. */
   readonly provenance?: EnvironmentProvenance;
+  readonly classification?: EnvironmentClassification;
 }
 
 export interface RehearsalResourceInventory {
@@ -496,10 +501,11 @@ export const inspectRehearsalResources = async (
   const topology = await loadRuntimeTopology(options);
   const run = dependencies.run ?? defaultCommandRunner;
   const now = dependencies.now ?? (() => new Date());
+  const inspectedAt = now();
   const cwd = topology.projectRoot;
   const provenance = await Promise.all(
     topology.targets.map((target) =>
-      inspectEnvironmentProvenance({
+      inspectEnvironmentProvenanceEvidence({
         projectRoot: cwd,
         runtimeWorkdir: target.paths.runtimeWorkdir,
         provider: target.config.runtime.target,
@@ -537,7 +543,7 @@ export const inspectRehearsalResources = async (
     return withPolicy(
       Object.freeze({
         schemaVersion: RESOURCE_INVENTORY_SCHEMA_VERSION,
-        inspectedAt: now().toISOString(),
+        inspectedAt: inspectedAt.toISOString(),
         engine: Object.freeze({
           state: "stopped",
           context: readContext(run, cwd),
@@ -564,13 +570,19 @@ export const inspectRehearsalResources = async (
               memoryLimitBytes: null,
               createdAt: null,
               lastActivityAt: null,
-              retention:
-                target.config.lifecycle.run === "stop-after-run"
-                  ? ("disposable" as const)
-                  : ("persistent" as const),
+              retention: "persistent" as const,
               cleanupEligibility: "inspection-unavailable" as const,
               restartPolicies: Object.freeze([]),
-              provenance: provenance[index]!,
+              provenance: provenance[index]!.provenance,
+              classification: classifyConfiguredEnvironment({
+                inspectionAvailable: false,
+                containerCount: 0,
+                volumeCount: 0,
+                ...provenance[index]!,
+                staleAfterSeconds: target.config.resources.staleAfterSeconds,
+                containers: [],
+                now: inspectedAt,
+              }),
             }),
           ),
         ),
@@ -646,10 +658,6 @@ export const inspectRehearsalResources = async (
           : running.length === owned.length
             ? ("running" as const)
             : ("mixed" as const);
-    const retention =
-      target.config.lifecycle.run === "stop-after-run"
-        ? ("disposable" as const)
-        : ("persistent" as const);
     return Object.freeze({
       target: target.name,
       displayName: target.config.runtime.displayName,
@@ -717,7 +725,7 @@ export const inspectRehearsalResources = async (
         ]),
         ...ownedVolumes.map((entry) => entry.CreatedAt),
       ]),
-      retention,
+      retention: "persistent" as const,
       cleanupEligibility:
         state === "unavailable"
           ? ("inspection-unavailable" as const)
@@ -737,14 +745,27 @@ export const inspectRehearsalResources = async (
           ),
         ].sort(),
       ),
-      provenance: provenance[index]!,
+      provenance: provenance[index]!.provenance,
+      classification: classifyConfiguredEnvironment({
+        inspectionAvailable: !hasConflict,
+        containerCount: owned.length,
+        volumeCount: ownedVolumes.length,
+        ...provenance[index]!,
+        staleAfterSeconds: target.config.resources.staleAfterSeconds,
+        containers: owned.map((entry) => ({
+          running: entry.State?.Running,
+          startedAt: entry.State?.StartedAt,
+          finishedAt: entry.State?.FinishedAt,
+        })),
+        now: inspectedAt,
+      }),
     });
   });
   const digest = staleDigest(environments);
   return withPolicy(
     Object.freeze({
       schemaVersion: RESOURCE_INVENTORY_SCHEMA_VERSION,
-      inspectedAt: now().toISOString(),
+      inspectedAt: inspectedAt.toISOString(),
       engine: Object.freeze({
         state: "running",
         context,

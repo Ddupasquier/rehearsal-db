@@ -9,7 +9,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { inspectEnvironmentProvenance } from "../../../dist/src/runtime/resource_provenance.mjs";
+import {
+  inspectEnvironmentProvenance,
+  inspectEnvironmentProvenanceEvidence,
+} from "../../../dist/src/runtime/resource_provenance.mjs";
 import { REHEARSAL_VERSION } from "../../../dist/src/shared/diagnostics.mjs";
 
 const roots = [];
@@ -99,6 +102,21 @@ describe("recorded environment provenance", () => {
     expect((await inspectEnvironmentProvenance(fixture)).runtime).toMatchObject(
       { rehearsalVersion: null, versionReason: "not-recorded" },
     );
+  });
+  it("keeps missing provider evidence private and unknown rather than lending compatibility", async () => {
+    const fixture = await setup();
+    const { target: _target, ...legacy } = marker;
+    await receipts(fixture, legacy);
+    const evidence = await inspectEnvironmentProvenanceEvidence(fixture);
+    expect(evidence.providerRecorded).toBe(false);
+    expect(evidence.provenance).not.toHaveProperty("providerRecorded");
+    expect(await inspectEnvironmentProvenance(fixture)).toEqual(
+      evidence.provenance,
+    );
+    await receipts(fixture);
+    expect(
+      (await inspectEnvironmentProvenanceEvidence(fixture)).providerRecorded,
+    ).toBe(true);
   });
   it("handles missing engine-independent receipts and refuses malformed or wrong-provider facts", async () => {
     const fixture = await setup();
