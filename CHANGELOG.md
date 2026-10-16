@@ -3,6 +3,13 @@
 All notable Rehearsal package changes will be documented here. The format follows Keep
 a Changelog, and versions will follow Semantic Versioning after the package exists.
 
+## [Unreleased]
+
+### Documentation
+
+- Clarify that configured database and Storage data remain persistent and that no
+  separate temporary Docker-helper ownership or cleanup capability exists today.
+
 ## [0.1.0-rc.7] - 2026-10-15
 
 ### Fixed

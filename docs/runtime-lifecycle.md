@@ -243,6 +243,23 @@ explicitly reviewed `run` or `reset` can replace data and volumes from the basel
 discard removes volumes. Persistent does not mean immutable sandbox data or stable
 volume IDs across reset. Unknown and other-project resources remain read-only.
 
+### Inventory scope and temporary helpers
+
+Rehearsal currently manages configured database environments, not a separate class of
+temporary Docker helpers. Every configured database and Storage volume is persistent,
+including with `stop-after-run`. The legacy `disposable` retention alternative is not
+emitted for these environments and does not enable helper discovery or deletion.
+
+Helper-looking names, extra labels, age, or missing verification never prove that a
+resource is disposable. Provider-internal containers and test-fixture helpers have no
+separate package helper-ownership contract; unknown or conflicting ownership stays
+protected. Temporary application processes and files are cleaned up by their owning
+operation, not classified as disposable Docker data.
+
+If a future feature needs Docker helpers, it must first define operation-bound ownership,
+exact resource IDs, the local-engine binding, and persistent-volume protection. There is
+no helper cleanup setting to enable today.
+
 Each environment can have a friendly name and protection policy in its own config:
 
 ```js
