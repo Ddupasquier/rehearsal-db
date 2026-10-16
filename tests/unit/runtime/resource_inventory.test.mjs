@@ -463,7 +463,88 @@ describe("resource inventory", () => {
     });
   });
 
-  it("fails closed when recognized ownership labels conflict", async () => {
+  it("does not treat helper-looking names or extra retention labels as disposable ownership", async () => {
+    const projectRoot = await makeProject();
+    const calls = [];
+    const inventory = await inspectRehearsalResources(
+      { projectRoot },
+      {
+        run: (command, args) => {
+          calls.push([command, ...args]);
+          if (args[0] === "info") return result(0);
+          if (args[0] === "context") return result(0, "default\n");
+          if (args[0] === "container" && args[1] === "ls")
+            return result(0, "owned\nforeign-helper\nunlabeled-helper\n");
+          if (args[0] === "container" && args[1] === "inspect")
+            return result(
+              0,
+              JSON.stringify([
+                {
+                  Id: "owned",
+                  Name: "/inventory-rehearsal-temporary-helper",
+                  Config: {
+                    Labels: {
+                      "com.rehearsal-db.project": "inventory-rehearsal",
+                      // These extra labels are untrusted fixture data, not a helper API.
+                      "com.rehearsal-db.role": "helper",
+                      "com.rehearsal-db.retention": "disposable",
+                    },
+                  },
+                  State: { Running: false },
+                },
+                {
+                  Id: "foreign-helper",
+                  Name: "/inventory-rehearsal-helper",
+                  Config: {
+                    Labels: { "com.rehearsal-db.project": "other-project" },
+                  },
+                  State: { Running: false },
+                },
+                {
+                  Id: "unlabeled-helper",
+                  Name: "/inventory-rehearsal-disposable",
+                  Config: { Labels: {} },
+                  State: { Running: false },
+                },
+              ]),
+            );
+          if (args[0] === "volume" && args[1] === "ls") return result(0);
+          if (args[0] === "system") return result(0);
+          throw new Error(`Unexpected command: ${command} ${args.join(" ")}`);
+        },
+      },
+    );
+    expect(inventory.environments).toHaveLength(1);
+    expect(inventory.environments[0]).toMatchObject({
+      projectId: "inventory-rehearsal",
+      state: "stopped",
+      containerCount: 1,
+      retention: "persistent",
+      cleanupEligibility: "preview-required",
+      classification: {
+        role: "configured-environment",
+        dataPersistence: "preserved-on-stop",
+        presence: { state: "created" },
+      },
+    });
+    expect(
+      calls.every(
+        ([command, ...args]) =>
+          command === "docker" &&
+          [
+            "info",
+            "context show",
+            "container ls",
+            "container inspect",
+            "volume ls",
+            "volume inspect",
+            "system df",
+          ].includes(args.slice(0, 2).join(" ")),
+      ),
+    ).toBe(true);
+  });
+
+  it("fails closed when recognized ownership labels conflict, even with helper labels", async () => {
     const projectRoot = await makeProject();
     const inventory = await inspectRehearsalResources(
       { projectRoot },
@@ -492,6 +573,8 @@ describe("resource inventory", () => {
                     Labels: {
                       "com.rehearsal-db.project": "inventory-rehearsal",
                       "com.supabase.cli.project": "another-project",
+                      "com.rehearsal-db.role": "helper",
+                      "com.rehearsal-db.retention": "disposable",
                     },
                   },
                   State: { Running: true },
@@ -516,6 +599,11 @@ describe("resource inventory", () => {
       state: "unavailable",
       containerCount: 0,
       cleanupEligibility: "inspection-unavailable",
+      retention: "persistent",
+      classification: {
+        presence: { state: "unknown" },
+        review: { state: "unknown" },
+      },
     });
   });
 

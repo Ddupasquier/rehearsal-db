@@ -91,6 +91,17 @@ Nested sections are available through indexed access types such as
 `RehearsalConfig["safety"]`. The [configuration reference](configuration.md) explains
 what each setting does and remains the source of truth for runtime behavior.
 
+## Resource inventory classifications
+
+Editor clients should use the versioned `environments --json` contract, not private
+implementation imports. Configured entries report `classification.role` as
+`configured-environment`, `classification.dataPersistence` as `preserved-on-stop`, and `retention` as
+`persistent`. The broader legacy retention alternative is not a supported Docker-helper
+capability or permission to delete data. Presence, receipt compatibility, and review due
+status remain separate facts; unavailable inspection cannot prove absence. See
+[Inventory scope and temporary helpers](runtime-lifecycle.md#inventory-scope-and-temporary-helpers)
+for the current boundary.
+
 ## Type an explicit application activity route
 
 The route is opt-in application instrumentation, not a health check. Include meaningful
