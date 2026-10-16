@@ -177,6 +177,19 @@ See Supabase's [architecture](https://supabase.com/docs/guides/getting-started/a
 and [Storage service configuration](https://supabase.com/docs/guides/self-hosting/storage/config)
 for the provider-owned boundaries; Rehearsal's profiles remain explicit reviewed choices.
 
+### Reading resource measurements
+
+Test Lab's profile report separates fresh-container startup from image downloads. Startup
+times the complete reset, health checks, and baseline restoration—not just `docker start`.
+Cached images and an already-running engine are reported explicitly.
+
+CPU and memory are short, idle container samples. They exclude host/VM overhead, startup
+peaks, and application load; container counts can also vary with the provider CLI version.
+These observations help compare profiles, not promise a machine-wide memory budget.
+
+A cold-image or fresh-VM benchmark needs its own disposable, exclusive test environment.
+Do not prune shared images or restart a shared engine to manufacture a cold measurement.
+
 ## Scheduled review and stale-stop safety
 
 Resource policies configure advisory retention, measured-volume budgets, and scheduled
@@ -225,6 +238,8 @@ writer version; that value stays unknown rather than borrowing the inspector's v
 These are recorded facts, not a fresh database or migration verification. Configured
 loopback ports are not proof of listening services. Missing or unsafe receipts report
 an unavailable reason without exposing their contents or starting a runtime.
+Receipts without a recorded provider remain `unknown` with `provider-not-recorded`;
+Rehearsal does not infer compatibility from the configured provider.
 
 Saved profiles organize views of existing targets. They do not clone databases,
 select historical runtime copies or change the target a command will execute against.
