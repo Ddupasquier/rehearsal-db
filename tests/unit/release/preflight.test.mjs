@@ -236,6 +236,38 @@ describe("release protection preflight", () => {
     },
   );
 
+  it.each(["publish", "sync-tags"])(
+    "accepts GitHub form CRLF in %s without accepting stale approval bindings",
+    async (mode) => {
+      const f = fixture(mode);
+      const reviews = f.values.get(`${base}/actions/runs/12345/approvals`);
+      reviews[0].comment = reviews[0].comment.replaceAll("\n", "\r\n");
+      const input = {
+        mode,
+        environment: context(mode),
+        fetcher: f.fetcher,
+        controlsWitness: f.controlsWitness,
+        now,
+      };
+      await expect(releasePreflight(input)).resolves.toMatchObject({
+        status: "passed",
+      });
+      for (const changes of [
+        { GITHUB_RUN_ATTEMPT: "2" },
+        { EXPECTED_SHA256: "e".repeat(64) },
+      ])
+        await expect(
+          releasePreflight({
+            ...input,
+            environment: { ...input.environment, ...changes },
+          }),
+        ).rejects.toThrow("owner_approval_not_proven");
+      expect(f.calls.every(({ options }) => options.method === "GET")).toBe(
+        true,
+      );
+    },
+  );
+
   it.each([
     ["GITHUB_ACTIONS", "false"],
     ["GITHUB_EVENT_NAME", "pull_request"],

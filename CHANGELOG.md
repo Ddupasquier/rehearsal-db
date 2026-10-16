@@ -3,6 +3,22 @@
 All notable Rehearsal package changes will be documented here. The format follows Keep
 a Changelog, and versions will follow Semantic Versioning after the package exists.
 
+## [0.1.0-rc.7] - 2026-10-15
+
+### Fixed
+
+- Release approval checks accept GitHub form line endings without changing the exact
+  owner, environment, operation, run, attempt, source or checksum bindings. Other text
+  changes and stale or ambiguous approvals remain refused.
+
+rc.6's tag and failed GitHub publication history are preserved; it was not published
+to npm. rc.7 does not add or change database, application or environment behavior.
+
+### Documentation
+
+- The shared GitHub/npm README visibly links to both the source repository and npm
+  package page.
+
 ## [0.1.0-rc.6] - 2026-10-15
 
 ### Fixed
