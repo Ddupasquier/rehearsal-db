@@ -359,17 +359,19 @@ export async function releasePreflight({
     }
     if (target.type !== "commit" || target.sha !== execution.sha)
       fail("release_tag_moved");
-    const comparison = object(
-      await read(
-        `${base}/compare/${execution.sha}...${settings.mainSha}?per_page=1`,
-      ),
-    );
-    if (
-      !["ahead", "identical"].includes(comparison.status) ||
-      comparison.behind_by !== 0 ||
-      object(comparison.merge_base_commit).sha !== execution.sha
-    )
-      fail("release_not_on_reviewed_main");
+    // Exact identity already proves ancestry after both main and the tag are verified.
+    if (execution.sha !== settings.mainSha) {
+      // Only the ancestry summary is needed, not an enumerated commit/file history.
+      const comparison = object(
+        await read(`${base}/compare/${execution.sha}...${settings.mainSha}`),
+      );
+      if (
+        comparison.status !== "ahead" ||
+        comparison.behind_by !== 0 ||
+        object(comparison.merge_base_commit).sha !== execution.sha
+      )
+        fail("release_not_on_reviewed_main");
+    }
   }
   if (mode === "publish" || mode === "sync-tags") {
     if (!controlsWitness) fail("controls_witness_missing");

@@ -3,6 +3,19 @@
 All notable Rehearsal package changes will be documented here. The format follows Keep
 a Changelog, and versions will follow Semantic Versioning after the package exists.
 
+## [0.1.0-rc.6] - 2026-10-15
+
+### Fixed
+
+- Release ancestry verification no longer requests a paginated comparison when the
+  immutable source tag already points to the exact verified main commit. Older source
+  commits still require bounded, unpaged ancestry evidence; incomplete responses remain
+  refused. Human approval, provenance and immutable-tag protections are unchanged.
+
+rc.5's GitHub candidate and tag are retained, but its npm publication stopped at the
+read-only preflight. rc.6 carries the same product features and a new tested artifact;
+no runtime or environment behavior was added during this publisher correction.
+
 ## [0.1.0-rc.5] - 2026-10-15
 
 ### Added
