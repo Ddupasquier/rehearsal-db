@@ -9,6 +9,8 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 - Clarify that configured database and Storage data remain persistent and that no
   separate temporary Docker-helper ownership or cleanup capability exists today.
+- Explain profile startup and resource measurements without equating cached-image
+  container checks with a cold VM or whole-machine memory benchmark.
 
 ## [0.1.0-rc.7] - 2026-10-15
 
