@@ -101,6 +101,8 @@ the live no-bypass settings and accepted artifact checksum, then paste the comme
 tags, the workflow reads GitHub's actual approval history and requires the configured
 owner's authenticated review for that npm environment. The comment binds the operation,
 run ID, run attempt, source commit, artifact SHA-256 and settings-record SHA-256.
+GitHub may store the form's line breaks as CRLF instead of LF. The checker treats
+those two encodings as equivalent; it does not trim whitespace or change any field.
 An approval copied from another artifact, run or attempt is refused. Rerun the whole
 workflow after failure so preparation prints a new attempt-bound comment; do not reuse
 an earlier comment when rerunning only the mutation job.

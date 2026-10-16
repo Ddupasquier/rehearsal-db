@@ -16,6 +16,7 @@
 <p align="center">
   <a href="https://ddupasquier.github.io/rehearsal-db/">Read the documentation</a> ·
   <a href="https://www.npmjs.com/package/@rehearsal-db/core">View on npm</a> ·
+  <a href="https://github.com/Ddupasquier/rehearsal-db">Source on GitHub</a> ·
   <a href="https://github.com/Ddupasquier/rehearsal-db/issues">Report a problem</a>
 </p>
 

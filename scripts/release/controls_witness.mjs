@@ -361,7 +361,9 @@ export function assertWitnessApproval(
         refuse("invalid_approval_metadata");
     }
     return (
-      review.comment === comment &&
+      // HTML form submission stores CRLF; compare the same text with canonical LF.
+      // Do not trim whitespace or normalize any other character or binding.
+      review.comment.replaceAll("\r\n", "\n") === comment &&
       user.type === "User" &&
       user.id === ownerId &&
       review.environments.length === 1 &&

@@ -58,6 +58,7 @@ const expected = () => ({
   ownerId: identity.ownerId,
   environmentId: identity.environmentId,
 });
+const toCrlf = (value) => value.replaceAll("\n", "\r\n");
 
 describe("unsigned release-controls witness", () => {
   it("records exactly two observed-empty rulesets with normalized offset timestamps and deterministic digests", () => {
@@ -405,6 +406,113 @@ describe("authenticated owner approval binding", () => {
         attempt: 2,
       }),
     ).toContain("operation=sync-tags\nrun=12345\nattempt=2");
+  });
+
+  it.each([
+    ["LF", (value) => value],
+    ["CRLF", toCrlf],
+    ["mixed LF/CRLF", (value) => value.replace("\n", "\r\n")],
+  ])(
+    "accepts standard %s review transport without changing its exact bindings or stored text",
+    (_name, transport) => {
+      for (const operation of ["publish", "sync-tags"]) {
+        const comment = approvalComment({ ...bindings, operation });
+        const actual = review({ comment: transport(comment) });
+        const original = clone(actual);
+        expect(
+          assertWitnessApproval([actual], { ...expected(), comment }),
+        ).toBe(true);
+        expect(actual).toEqual(original);
+      }
+    },
+  );
+
+  it.each([
+    ["operation", "sync-tags"],
+    ["runId", "12346"],
+    ["attempt", "3"],
+    ["sourceSha", "d".repeat(40)],
+    ["artifactSha256", "d".repeat(64)],
+    ["witnessSha256", "d".repeat(64)],
+  ])("still refuses changed %s bindings in CRLF reviews", (field, value) => {
+    const comment = toCrlf(approvalComment({ ...bindings, [field]: value }));
+    expect(() =>
+      assertWitnessApproval([review({ comment })], expected()),
+    ).toThrow("owner_approval_not_proven");
+  });
+
+  it.each([
+    ["wrong owner", { user: { id: 999, type: "User" } }],
+    ["bot", { user: { id: identity.ownerId, type: "Bot" } }],
+    ["rejected", { state: "rejected" }],
+    ["wrong environment", { environments: [{ id: 999, name: "npm" }] }],
+    [
+      "wrong environment name",
+      { environments: [{ id: identity.environmentId, name: "other" }] },
+    ],
+    [
+      "extra environment",
+      {
+        environments: [
+          { id: identity.environmentId, name: "npm" },
+          { id: 999, name: "other" },
+        ],
+      },
+    ],
+  ])("does not normalize away CRLF review %s controls", (_name, changes) => {
+    expect(() =>
+      assertWitnessApproval(
+        [review({ ...changes, comment: toCrlf(approvalComment(bindings)) })],
+        expected(),
+      ),
+    ).toThrow("owner_approval_not_proven");
+  });
+
+  it.each([
+    ["bare CR separators", (value) => value.replaceAll("\r\n", "\r")],
+    ["isolated CR", (value) => value.replace("operation=", "\roperation=")],
+    ["leading whitespace", (value) => ` ${value}`],
+    ["trailing whitespace", (value) => `${value} `],
+    ["leading newline", (value) => `\r\n${value}`],
+    ["trailing LF", (value) => `${value}\n`],
+    ["trailing CRLF", (value) => `${value}\r\n`],
+    ["extra blank line", (value) => value.replace("\r\n", "\r\n\r\n")],
+    ["field whitespace", (value) => value.replace("run=", "run= ")],
+    ["tab", (value) => value.replace("operation=", "\toperation=")],
+    ["NUL", (value) => value.replace("operation=", "\0operation=")],
+    ["form feed", (value) => value.replace("operation=", "\foperation=")],
+    ["BOM", (value) => `\uFEFF${value}`],
+    ["Unicode line separator", (value) => value.replace("\r\n", "\u2028")],
+  ])(
+    "refuses %s rather than trimming or relaxing review text",
+    (_name, alter) => {
+      const comment = alter(toCrlf(approvalComment(bindings)));
+      expect(() =>
+        assertWitnessApproval([review({ comment })], expected()),
+      ).toThrow("owner_approval_not_proven");
+    },
+  );
+
+  it.each(["approved", "rejected"])(
+    "refuses duplicate equivalent LF/CRLF reviews even when the CRLF review is %s",
+    (state) => {
+      expect(() =>
+        assertWitnessApproval(
+          [
+            review(),
+            review({ state, comment: toCrlf(approvalComment(bindings)) }),
+          ],
+          expected(),
+        ),
+      ).toThrow("owner_approval_not_proven");
+    },
+  );
+
+  it("keeps the internally generated expected comment canonical LF", () => {
+    const comment = toCrlf(approvalComment(bindings));
+    expect(() =>
+      assertWitnessApproval([review({ comment })], { ...expected(), comment }),
+    ).toThrow("invalid_approval_metadata");
   });
 
   it.each([

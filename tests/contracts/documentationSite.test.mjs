@@ -3,11 +3,38 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
 import { buildDocs } from "../../scripts/docs/build.mjs";
-import { groups, pageBySlug, pages } from "../../scripts/docs/site.mjs";
+import { groups, pageBySlug, pages, site } from "../../scripts/docs/site.mjs";
 
 const repositoryRoot = process.cwd();
 
 describe("documentation site", () => {
+  it("keeps visible reciprocal GitHub and npm links in the shared package README", async () => {
+    const [readme, manifest] = await Promise.all([
+      readFile(join(repositoryRoot, "README.md"), "utf8"),
+      readFile(join(repositoryRoot, "package.json"), "utf8"),
+    ]);
+    const metadata = JSON.parse(manifest);
+    const introduction = readme.split(/^## /mu)[0];
+    const textLinks = [
+      ...introduction.matchAll(/<a href="([^"]+)">([^<]+)<\/a>/gu),
+    ].map(([, href, label]) => ({ href, label }));
+
+    expect(textLinks).toContainEqual({
+      href: site.repository,
+      label: "Source on GitHub",
+    });
+    expect(textLinks).toContainEqual({
+      href: site.package,
+      label: "View on npm",
+    });
+    expect(site.package).toBe(`https://www.npmjs.com/package/${metadata.name}`);
+    expect(metadata.repository.type).toBe("git");
+    expect(metadata.repository.url).toBe(`git+${site.repository}.git`);
+    expect(metadata.bugs.url).toBe(`${site.repository}/issues`);
+    expect(metadata.homepage).toBe(site.url);
+    expect(metadata.files).toContain("README.md");
+  });
+
   it("places every page in exactly one task-based navigation group", () => {
     const navigationSlugs = groups.flatMap((group) => group.pages);
     expect(navigationSlugs).toHaveLength(pages.length);
