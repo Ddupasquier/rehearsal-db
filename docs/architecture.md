@@ -115,6 +115,10 @@ individual fixture commands and `npm run release:verify`.
   scenario explicitly supplies a safe value.
 - `scenarios/application_session.mjs` owns persistent application and terminal-session
   checks.
+- `scenarios/fixture_container.mjs` owns only the standalone source fixture: a unique
+  creation ID and nonce, pinned local engine, and image-created anonymous volumes.
+  Cleanup refuses ownership or mount drift, verifies removal, and cannot hide the
+  original failure or report success early. This is not persistent-runtime cleanup.
 - `scenarios/catalog.mjs` is the sole ordered list of installed-consumer scenarios.
 - Fixture files contain only the target setup and assertions unique to that scenario.
 

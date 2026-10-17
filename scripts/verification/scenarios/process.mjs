@@ -9,18 +9,38 @@ const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 export const spawnScenarioCommand = (
   command,
   args,
-  { cwd, environment = {}, input, inheritEnvironment = false } = {},
-) =>
-  spawnSync(command, args, {
+  {
+    cwd,
+    environment = {},
+    input,
+    inheritEnvironment = false,
+    timeout,
+    maxBuffer = MAX_OUTPUT_BYTES,
+  } = {},
+) => {
+  if (
+    (timeout !== undefined &&
+      (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 300_000)) ||
+    !Number.isSafeInteger(maxBuffer) ||
+    maxBuffer < 1 ||
+    maxBuffer > MAX_OUTPUT_BYTES
+  ) {
+    throw new Error(
+      "Scenario process bounds must be positive bounded integers.",
+    );
+  }
+  return spawnSync(command, args, {
     cwd,
     encoding: "utf8",
     env: inheritEnvironment
       ? { ...process.env, ...environment }
       : createCleanProcessEnvironment({ overrides: environment }),
     input,
-    maxBuffer: MAX_OUTPUT_BYTES,
+    maxBuffer,
+    ...(timeout === undefined ? {} : { timeout, killSignal: "SIGKILL" }),
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
   });
+};
 
 export const commandFailureText = (result, fallback) =>
   result.stderr ||

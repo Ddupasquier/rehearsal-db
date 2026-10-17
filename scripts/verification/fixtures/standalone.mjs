@@ -1,6 +1,5 @@
 /** Prove the packed source-to-local workflow without consumer Rehearsal scripts. */
 
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cp,
@@ -24,7 +23,12 @@ import {
 import {
   executeInstalledCli,
   runScenarioCommand,
+  spawnScenarioCommand,
 } from "../scenarios/process.mjs";
+import {
+  createFixtureSourceContainer,
+  finishFixtureCleanup,
+} from "../scenarios/fixture_container.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");
@@ -42,9 +46,9 @@ const executeCliOrThrow = ({ cwd, args, label, environment }) => {
   return result;
 };
 
-const waitForSource = ({ name, cwd }) => {
+const waitForSource = ({ name, cwd, endpoint }) => {
   for (let attempt = 0; attempt < 60; attempt += 1) {
-    const result = spawnSync(
+    const result = spawnScenarioCommand(
       "docker",
       [
         "exec",
@@ -55,7 +59,12 @@ const waitForSource = ({ name, cwd }) => {
         "--username",
         "postgres",
       ],
-      { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      {
+        cwd,
+        environment: { DOCKER_HOST: endpoint },
+        timeout: 1_000,
+        maxBuffer: 16_384,
+      },
     );
     if (result.status === 0) return;
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
@@ -73,9 +82,12 @@ const main = async () => {
   const publicationStateDirectory = "targets/publication/.rehearsal";
   const publicationArtifactRoot = join(cwd, publicationStateDirectory);
   const packageOutput = join(temporaryRoot, "packed");
-  const sourceName = `rehearsal-source-${process.pid}`;
-  const sourceLabel = `com.rehearsal-db.fixture=${sourceName}`;
+  let sourceFixture;
   let projectId;
+  let installed = false;
+  let runtimeDiscarded = false;
+  let operationFailure;
+  let report;
   try {
     await cp(fixtureSource, cwd, { recursive: true });
     await mkdir(packageOutput, { recursive: true });
@@ -152,25 +164,14 @@ $$;
       REHEARSAL_APPROVED_OWNER_ID: approvedOwnerId,
     };
 
-    run(
-      "docker",
-      [
-        "run",
-        "--detach",
-        "--pull=never",
-        "--name",
-        sourceName,
-        "--label",
-        sourceLabel,
-        "--publish",
-        `127.0.0.1:${sourcePort}:5432`,
-        "--env",
-        `POSTGRES_PASSWORD=${sourcePassword}`,
-        "postgres:17-alpine",
-      ],
-      { cwd },
-    );
-    waitForSource({ name: sourceName, cwd });
+    sourceFixture = createFixtureSourceContainer({
+      cwd,
+      port: sourcePort,
+      password: sourcePassword,
+    });
+    const sourceName = sourceFixture.create();
+    sourceFixture.start();
+    waitForSource({ name: sourceName, cwd, endpoint: sourceFixture.endpoint });
     run(
       "docker",
       [
@@ -664,6 +665,7 @@ process.on("SIGTERM", () => server.close());
       outputDirectory: packageOutput,
     });
     installCandidateArtifact(cwd, artifact);
+    installed = true;
     await writeFile(
       join(cwd, "installed-cleanup-proof.mjs"),
       `import assert from "node:assert/strict";
@@ -1580,55 +1582,72 @@ where id = '22222222-2222-4222-8222-222222222222';
       args: ["verify", "--json"],
     });
     executeCliOrThrow({ cwd, label: "discard", args: ["discard", "--json"] });
+    runtimeDiscarded = true;
 
-    console.log(
-      JSON.stringify(
-        {
-          status: "passed",
-          fixture: "standalone-source-to-local-postgresql",
-          installedPackage: `${artifact.name}@${artifact.version}`,
-          artifactSha256: artifact.sha256,
-          artifactSource: artifact.source,
-          sourceAccessRetired: true,
-          externalReaderVerified: true,
-          externalReaderMembershipVerified: true,
-          externalMembershipRefusalVerified: true,
-          externalProviderResourcesPreserved: true,
-          isolatedSourceStateRootsVerified: 2,
-          streamedRows: 10_003,
-          unrelatedTargetSchemasVerified: 2,
-          legacyApprovedOwnerUuidRestoreVerified: true,
-          numericIdentitySequenceVerified: true,
-          failedAssetCleanupVerified: true,
-          refreshAndReplaceVerified: true,
-          rawCanaryExcluded: true,
-          runtimePolicyVerified: true,
-          applicationLifecycleVerified: true,
-          httpProofs: 2,
-          identityAssociationVerified: true,
-          candidateApplied: "20260101000100_add_widget_description.sql",
-        },
-        null,
-        2,
-      ),
-    );
+    report = {
+      status: "passed",
+      fixture: "standalone-source-to-local-postgresql",
+      installedPackage: `${artifact.name}@${artifact.version}`,
+      artifactSha256: artifact.sha256,
+      artifactSource: artifact.source,
+      sourceAccessRetired: true,
+      externalReaderVerified: true,
+      externalReaderMembershipVerified: true,
+      externalMembershipRefusalVerified: true,
+      externalProviderResourcesPreserved: true,
+      isolatedSourceStateRootsVerified: 2,
+      streamedRows: 10_003,
+      unrelatedTargetSchemasVerified: 2,
+      legacyApprovedOwnerUuidRestoreVerified: true,
+      numericIdentitySequenceVerified: true,
+      failedAssetCleanupVerified: true,
+      refreshAndReplaceVerified: true,
+      rawCanaryExcluded: true,
+      runtimePolicyVerified: true,
+      applicationLifecycleVerified: true,
+      httpProofs: 2,
+      identityAssociationVerified: true,
+      candidateApplied: "20260101000100_add_widget_description.sql",
+      sourceFixtureCleanupVerified: true,
+    };
+  } catch (error) {
+    operationFailure = error;
   } finally {
-    if (projectId) {
-      executeCli({ cwd, args: ["discard"] });
+    const cleanupFailures = [];
+    if (installed && projectId && !runtimeDiscarded) {
+      try {
+        executeCliOrThrow({ cwd, label: "cleanup discard", args: ["discard"] });
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
     }
     try {
-      run("docker", ["rm", "--force", sourceName], { cwd });
-    } catch {
-      // The disposable source may already have been removed.
+      sourceFixture?.cleanup();
+    } catch (error) {
+      cleanupFailures.push(error);
     }
-    await removeBaselineArtifactRoot({
-      artifactRoot: primaryArtifactRoot,
-    }).catch(() => undefined);
-    await removeBaselineArtifactRoot({
-      artifactRoot: publicationArtifactRoot,
-    }).catch(() => undefined);
-    await rm(temporaryRoot, { recursive: true, force: true });
+    if (!cleanupFailures.length) {
+      for (const artifactRoot of [
+        primaryArtifactRoot,
+        publicationArtifactRoot,
+      ]) {
+        try {
+          await removeBaselineArtifactRoot({ artifactRoot });
+        } catch (error) {
+          cleanupFailures.push(error);
+        }
+      }
+    }
+    if (!cleanupFailures.length) {
+      try {
+        await rm(temporaryRoot, { recursive: true, force: true });
+      } catch (error) {
+        cleanupFailures.push(error);
+      }
+    }
+    finishFixtureCleanup(operationFailure, cleanupFailures);
   }
+  console.log(JSON.stringify(report, null, 2));
 };
 
 await main();
