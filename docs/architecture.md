@@ -56,6 +56,9 @@ typed registry and produce the same result contract:
 - `cli_commands.mts` composes those focused families in precedence order without
   implementing their behavior.
 - `guided.mts` owns the interactive home screen and first-run questions.
+- `guided_updates.mts` owns optional update consent and reminders in that guide;
+  `update_advisory.mts` bounds public release metadata, private preferences and
+  installation-origin checks. Neither participates in passive JSON inspection.
 - `runtime_commands.mts` coordinates local runtimes and project proofs.
 - `runtime_planning.mts` owns read-only stack plans and exact candidate summaries.
 - `editor_command_handlers.mts` exposes bounded migration and configuration review

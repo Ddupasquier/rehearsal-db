@@ -293,6 +293,26 @@ describe("documented CLI contract", () => {
     expect(gettingStarted).toContain(installCommand);
   });
 
+  it("gives released VSIX users a direct install path without contributor prerequisites", async () => {
+    const guide = await readFile(join(root, "docs/vscode.md"), "utf8");
+
+    expect(guide).toContain(
+      "https://github.com/Ddupasquier/rehearsal-vscode/releases",
+    );
+    expect(guide).not.toContain("rehearsal-vscode/releases/latest");
+    expect(guide).toContain("SHA256SUMS");
+    expect(guide).toContain("Install from VSIX");
+    expect(guide).toContain("Rehearsal: Open Dashboard");
+    expect(guide).toContain(
+      "You do not need the extension source repository or Test Lab.",
+    );
+    expect(guide).not.toContain(
+      "Public purchase and download instructions will appear here only after",
+    );
+    expect(guide).toMatch(/14-day\s+evaluation/u);
+    expect(guide).toContain("not a Marketplace listing");
+  });
+
   it("keeps the beginner journey aligned with the guide labels", async () => {
     const [gettingStarted, cliEntrySource, guidedSource] = await Promise.all([
       readFile(join(root, "docs/getting-started.md"), "utf8"),

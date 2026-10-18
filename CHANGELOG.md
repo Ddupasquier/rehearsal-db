@@ -5,8 +5,25 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## [Unreleased]
 
+## [0.1.0-rc.8] - Unreleased candidate
+
+### Added
+
+- Optional interactive update reminders, with explicit network consent, daily
+  opening-session checks, defer/skip/disable choices and exact-version guidance.
+  Machine commands remain network-free, custom installations stay manual-only,
+  and no update installs automatically.
+
+### Fixed
+
+- Invalid positive-integer configuration settings and rejected configuration proposals
+  report configuration failures rather than baseline or internal failures. Review
+  remains non-writing, and unexpected faults retain their original failure category.
+
 ### Documentation
 
+- Separate released VSIX installation, dashboard access, and updates from contributor
+  setup and separately approved commercial launch requirements.
 - Clarify that configured database and Storage data remain persistent and that no
   separate temporary Docker-helper ownership or cleanup capability exists today.
 - Explain profile startup and resource measurements without equating cached-image
