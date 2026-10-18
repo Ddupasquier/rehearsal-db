@@ -101,6 +101,12 @@ try {
   );
   docker(["container", "rm", containerId]);
   containerId = null;
+  catalog = json(["resources"]).catalog;
+  assert.equal(
+    catalog.images.find((image) => image.id === imageId)?.state,
+    "candidate",
+    "Owned scratch v1 must become a cleanup candidate after its stopped container is removed",
+  );
   const preview = json(selection);
   assert.equal(preview.plan.imagesOnly, true);
   assert.deepEqual(preview.plan.baselines.removed, []);
@@ -151,6 +157,38 @@ try {
       2,
     ),
   );
+} catch (error) {
+  // Keep diagnostic evidence confined to this run's labelled scratch images.
+  // Never dump another project's resources, image configuration or environment.
+  try {
+    const images = JSON.parse(docker(["image", "inspect", ...tags])).filter(
+      (image) =>
+        image.Config?.Labels?.["com.rehearsal-db.resource-test"] === identity,
+    );
+    const ownedIds = new Set(images.map((image) => image.Id));
+    const current = json(["resources"]).catalog;
+    console.error(
+      JSON.stringify({
+        diagnostic: "resource-fixture-owned-images",
+        images: images.map(({ Id, Created, RepoTags, Size }) => ({
+          Id,
+          Created: Created ?? null,
+          RepoTags,
+          Size,
+        })),
+        catalog: current.images
+          .filter((image) => ownedIds.has(image.id))
+          .map(({ id, state, references }) => ({
+            id,
+            state,
+            referenceCount: references.length,
+          })),
+      }),
+    );
+  } catch {
+    console.error("resource-fixture-owned-images: diagnostic unavailable");
+  }
+  throw error;
 } finally {
   if (containerId) {
     assert.equal(
