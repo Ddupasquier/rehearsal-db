@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  approvalComment,
-  assertWitnessApproval,
+  assertEnvironmentApproval,
   controlsWitnessDigest,
   createControlsWitness,
   rulesetPublicDigest,
@@ -38,27 +37,17 @@ function fixture() {
   return { branch, tag, input, witness: createControlsWitness(input) };
 }
 
-const bindings = {
-  operation: "publish",
-  runId: "12345",
-  attempt: "2",
-  sourceSha: "a".repeat(40),
-  artifactSha256: "b".repeat(64),
-  witnessSha256: "c".repeat(64),
-};
 const review = (overrides = {}) => ({
   state: "approved",
   user: { id: identity.ownerId, login: "owner-public-login", type: "User" },
   environments: [{ id: identity.environmentId, name: "npm" }],
-  comment: approvalComment(bindings),
+  comment: "",
   ...overrides,
 });
 const expected = () => ({
-  comment: approvalComment(bindings),
   ownerId: identity.ownerId,
   environmentId: identity.environmentId,
 });
-const toCrlf = (value) => value.replaceAll("\n", "\r\n");
 
 describe("unsigned release-controls witness", () => {
   it("records exactly two observed-empty rulesets with normalized offset timestamps and deterministic digests", () => {
@@ -389,56 +378,48 @@ describe("unsigned release-controls witness", () => {
   });
 });
 
-describe("authenticated owner approval binding", () => {
-  it("accepts the actual owner and exact npm environment approval, with unrelated prior history", () => {
-    expect(assertWitnessApproval([review()], expected())).toBe(true);
+describe("authenticated environment review", () => {
+  it.each([
+    ["blank", ""],
+    ["null", null],
+    ["free text", "Ship it!"],
+    ["CRLF", "Any optional\r\nreview text"],
+    ["maximum length", " ".repeat(4096)],
+  ])(
+    "accepts a bounded %s comment without making it an authorization binding",
+    (_name, comment) => {
+      const actual = review({ comment });
+      const original = clone(actual);
+      expect(assertEnvironmentApproval([actual], expected())).toBe(true);
+      expect(actual).toEqual(original);
+    },
+  );
+
+  it("accepts an omitted optional comment and repeated genuine approvals", () => {
+    const actual = review();
+    delete actual.comment;
+    expect(assertEnvironmentApproval([actual], expected())).toBe(true);
+    expect(assertEnvironmentApproval([review(), review()], expected())).toBe(
+      true,
+    );
+  });
+
+  it("corroborates a run review without guessing review order or attempt freshness", () => {
+    for (const history of [
+      [review({ state: "rejected" }), review()],
+      [review(), review({ state: "rejected" })],
+      [review({ user: { id: 999, type: "User" } }), review()],
+    ]) {
+      expect(assertEnvironmentApproval(history, expected())).toBe(true);
+    }
+    // Approval history has no attempt identity. The protected job's GitHub
+    // environment admission, not an arbitrary comment, guards its execution.
     expect(
-      assertWitnessApproval(
-        [review({ comment: "An unrelated earlier approval" }), review()],
+      assertEnvironmentApproval(
+        [review({ comment: "attempt=1\nartifact-sha256=not-a-proof" })],
         expected(),
       ),
     ).toBe(true);
-    expect(
-      approvalComment({
-        ...bindings,
-        operation: "sync-tags",
-        runId: 12345,
-        attempt: 2,
-      }),
-    ).toContain("operation=sync-tags\nrun=12345\nattempt=2");
-  });
-
-  it.each([
-    ["LF", (value) => value],
-    ["CRLF", toCrlf],
-    ["mixed LF/CRLF", (value) => value.replace("\n", "\r\n")],
-  ])(
-    "accepts standard %s review transport without changing its exact bindings or stored text",
-    (_name, transport) => {
-      for (const operation of ["publish", "sync-tags"]) {
-        const comment = approvalComment({ ...bindings, operation });
-        const actual = review({ comment: transport(comment) });
-        const original = clone(actual);
-        expect(
-          assertWitnessApproval([actual], { ...expected(), comment }),
-        ).toBe(true);
-        expect(actual).toEqual(original);
-      }
-    },
-  );
-
-  it.each([
-    ["operation", "sync-tags"],
-    ["runId", "12346"],
-    ["attempt", "3"],
-    ["sourceSha", "d".repeat(40)],
-    ["artifactSha256", "d".repeat(64)],
-    ["witnessSha256", "d".repeat(64)],
-  ])("still refuses changed %s bindings in CRLF reviews", (field, value) => {
-    const comment = toCrlf(approvalComment({ ...bindings, [field]: value }));
-    expect(() =>
-      assertWitnessApproval([review({ comment })], expected()),
-    ).toThrow("owner_approval_not_proven");
   });
 
   it.each([
@@ -459,152 +440,67 @@ describe("authenticated owner approval binding", () => {
         ],
       },
     ],
-  ])("does not normalize away CRLF review %s controls", (_name, changes) => {
+    ["missing environment", { environments: [] }],
+  ])("does not confuse %s with the owner's npm review", (_name, changes) => {
     expect(() =>
-      assertWitnessApproval(
-        [review({ ...changes, comment: toCrlf(approvalComment(bindings)) })],
-        expected(),
-      ),
+      assertEnvironmentApproval([review(changes)], expected()),
     ).toThrow("owner_approval_not_proven");
   });
 
   it.each([
-    ["bare CR separators", (value) => value.replaceAll("\r\n", "\r")],
-    ["isolated CR", (value) => value.replace("operation=", "\roperation=")],
-    ["leading whitespace", (value) => ` ${value}`],
-    ["trailing whitespace", (value) => `${value} `],
-    ["leading newline", (value) => `\r\n${value}`],
-    ["trailing LF", (value) => `${value}\n`],
-    ["trailing CRLF", (value) => `${value}\r\n`],
-    ["extra blank line", (value) => value.replace("\r\n", "\r\n\r\n")],
-    ["field whitespace", (value) => value.replace("run=", "run= ")],
-    ["tab", (value) => value.replace("operation=", "\toperation=")],
-    ["NUL", (value) => value.replace("operation=", "\0operation=")],
-    ["form feed", (value) => value.replace("operation=", "\foperation=")],
-    ["BOM", (value) => `\uFEFF${value}`],
-    ["Unicode line separator", (value) => value.replace("\r\n", "\u2028")],
-  ])(
-    "refuses %s rather than trimming or relaxing review text",
-    (_name, alter) => {
-      const comment = alter(toCrlf(approvalComment(bindings)));
-      expect(() =>
-        assertWitnessApproval([review({ comment })], expected()),
-      ).toThrow("owner_approval_not_proven");
-    },
-  );
-
-  it.each(["approved", "rejected"])(
-    "refuses duplicate equivalent LF/CRLF reviews even when the CRLF review is %s",
-    (state) => {
-      expect(() =>
-        assertWitnessApproval(
-          [
-            review(),
-            review({ state, comment: toCrlf(approvalComment(bindings)) }),
-          ],
-          expected(),
-        ),
-      ).toThrow("owner_approval_not_proven");
-    },
-  );
-
-  it("keeps the internally generated expected comment canonical LF", () => {
-    const comment = toCrlf(approvalComment(bindings));
-    expect(() =>
-      assertWitnessApproval([review({ comment })], { ...expected(), comment }),
-    ).toThrow("invalid_approval_metadata");
+    ["null history", null],
+    ["empty history", []],
+    ["null record", [null]],
+    ["bypass state", [review({ state: "bypassed" })]],
+    ["numeric comment", [review({ comment: 123 })]],
+    ["non-JSON comment", [review({ comment: undefined })]],
+    ["oversized comment", [review({ comment: "x".repeat(4097) })]],
+    ["null user", [review({ user: null })]],
+    ["invalid user ID", [review({ user: { id: 0, type: "User" } })]],
+    [
+      "unknown user type",
+      [review({ user: { id: identity.ownerId, type: "App" } })],
+    ],
+    ["null environments", [review({ environments: null })]],
+    [
+      "excessive environments",
+      [review({ environments: Array(7).fill({ id: 789, name: "npm" }) })],
+    ],
+    [
+      "invalid environment ID",
+      [review({ environments: [{ id: 0, name: "npm" }] })],
+    ],
+    [
+      "oversized environment name",
+      [review({ environments: [{ id: 789, name: "x".repeat(101) }] })],
+    ],
+    ["excessive history", Array(101).fill(review())],
+  ])("refuses %s", (_name, reviews) => {
+    expect(() => assertEnvironmentApproval(reviews, expected())).toThrow(
+      "Release witness refused:",
+    );
   });
 
-  it.each([
-    ["operation", "sync-tags"],
-    ["runId", "12346"],
-    ["attempt", "3"],
-    ["sourceSha", "d".repeat(40)],
-    ["artifactSha256", "d".repeat(64)],
-    ["witnessSha256", "d".repeat(64)],
-  ])("refuses replay or mismatch in %s", (field, value) => {
-    expect(() =>
-      assertWitnessApproval(
-        [review({ comment: approvalComment({ ...bindings, [field]: value }) })],
-        expected(),
-      ),
-    ).toThrow("owner_approval_not_proven");
-  });
-
-  it.each([
-    ["wrong owner", { user: { id: 999, type: "User" } }],
-    ["bot", { user: { id: identity.ownerId, type: "Bot" } }],
-    ["rejected", { state: "rejected" }],
-    ["wrong environment", { environments: [{ id: 999, name: "npm" }] }],
-    [
-      "wrong environment name",
-      { environments: [{ id: identity.environmentId, name: "other" }] },
-    ],
-    ["partial approval", { comment: "Ship it!" }],
-    [
-      "extra environment",
-      {
-        environments: [
-          { id: identity.environmentId, name: "npm" },
-          { id: 999, name: "other" },
-        ],
-      },
-    ],
-  ])(
-    "does not confuse %s with the exact bound human approval",
-    (_name, changes) => {
-      expect(() =>
-        assertWitnessApproval([review(changes)], expected()),
-      ).toThrow("owner_approval_not_proven");
-    },
-  );
-
-  it("refuses ambiguous, empty, malformed, oversized and unknown approval metadata", () => {
-    for (const reviews of [
-      [],
-      null,
-      [null],
-      [review(), review()],
-      [review(), review({ state: "rejected" })],
-      [review({ state: "bypassed" })],
-      Array(101).fill(review()),
-      [review({ comment: "x".repeat(4097) })],
+  it("checks every historical record instead of stopping at the first valid review", () => {
+    for (const history of [
+      [review(), review({ user: null })],
+      [review({ user: null }), review()],
     ])
-      expect(() => assertWitnessApproval(reviews, expected())).toThrow(
+      expect(() => assertEnvironmentApproval(history, expected())).toThrow(
         "Release witness refused:",
       );
-    expect(() =>
-      assertWitnessApproval([review()], { ...expected(), comment: "" }),
-    ).toThrow("invalid_approval_metadata");
-    const unsafeRun = expected().comment.replace(
-      "run=12345",
-      "run=9999999999999999",
-    );
-    expect(() =>
-      assertWitnessApproval([review({ comment: unsafeRun })], {
-        ...expected(),
-        comment: unsafeRun,
-      }),
-    ).toThrow("invalid_approval_binding");
   });
 
   it.each([
-    ["operation", "prepare"],
-    ["runId", "01"],
-    ["attempt", 0],
-    ["runId", Number.MAX_SAFE_INTEGER + 1],
-    ["sourceSha", "short"],
-    ["artifactSha256", "private-secret"],
-    ["witnessSha256", "A".repeat(64)],
-  ])(
-    "refuses malformed approval binding %s without echoing its value",
-    (field, value) => {
-      expect(() => approvalComment({ ...bindings, [field]: value })).toThrow(
-        "invalid_approval_binding",
-      );
-      expect(() =>
-        approvalComment({ ...bindings, [field]: value }),
-      ).not.toThrow("private-secret");
-    },
-  );
+    ["ownerId", 0],
+    ["ownerId", "456"],
+    ["ownerId", Number.MAX_SAFE_INTEGER + 1],
+    ["environmentId", 0],
+    ["environmentId", "789"],
+    ["environmentId", Number.MAX_SAFE_INTEGER + 1],
+  ])("refuses invalid expected %s", (field, value) => {
+    expect(() =>
+      assertEnvironmentApproval([review()], { ...expected(), [field]: value }),
+    ).toThrow("invalid_approval_metadata");
+  });
 });

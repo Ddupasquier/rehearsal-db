@@ -69,9 +69,10 @@ jobs:
           echo "sha1=$SHA1" >> "$GITHUB_OUTPUT"
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
           echo "publish_tag=$PUBLISH_TAG" >> "$GITHUB_OUTPUT"
-      - name: Prepare the exact owner approval comment
+      - name: Show the exact candidate for human approval
         env:
           EXPECTED_SHA256: ${{ steps.candidate.outputs.sha256 }}
+          PACKAGE_VERSION: ${{ steps.candidate.outputs.package_version }}
         run: node scripts/release/approval_summary.mjs publish
       - uses: actions/upload-artifact@v7
         with:
@@ -219,9 +220,11 @@ jobs:
           echo "$REGISTRY_SHA1  $RUNNER_TEMP/$TARBALL" | sha1sum --check --strict
           SHA256="$(sha256sum "$RUNNER_TEMP/$TARBALL" | cut -d' ' -f1)"
           echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
-      - name: Prepare the exact owner approval comment
+          echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+      - name: Show the exact candidate for human approval
         env:
           EXPECTED_SHA256: ${{ steps.registry.outputs.sha256 }}
+          PACKAGE_VERSION: ${{ steps.registry.outputs.package_version }}
         run: node scripts/release/approval_summary.mjs sync-tags
 
   sync-tags:

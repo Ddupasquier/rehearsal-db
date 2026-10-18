@@ -290,43 +290,13 @@ export function witnessRulesetProof(
   }
 }
 
-const positiveBinding = (value) => {
-  const number =
-    typeof value === "string" && /^[1-9][0-9]{0,15}$/u.test(value)
-      ? Number(value)
-      : value;
-  if (!positive(number)) refuse("invalid_approval_binding");
-  return String(number);
-};
-
-export function approvalComment({
-  operation,
-  runId,
-  attempt,
-  sourceSha,
-  artifactSha256,
-  witnessSha256,
-}) {
+/**
+ * Corroborate a human review in this workflow run, independently of comment text.
+ * GitHub's enforced environment admission protects the current job. This history
+ * does not establish a fresh attempt, artifact approval or current hidden settings.
+ */
+export function assertEnvironmentApproval(reviews, { ownerId, environmentId }) {
   if (
-    !["publish", "sync-tags"].includes(operation) ||
-    typeof sourceSha !== "string" ||
-    !/^[a-f0-9]{40}$/u.test(sourceSha) ||
-    !sha256(artifactSha256) ||
-    !sha256(witnessSha256)
-  )
-    refuse("invalid_approval_binding");
-  return `Rehearsal release approval v1\noperation=${operation}\nrun=${positiveBinding(runId)}\nattempt=${positiveBinding(attempt)}\nsource=${sourceSha}\nartifact-sha256=${artifactSha256}\ncontrols-sha256=${witnessSha256}`;
-}
-
-export function assertWitnessApproval(
-  reviews,
-  { comment, ownerId, environmentId },
-) {
-  if (
-    typeof comment !== "string" ||
-    !/^Rehearsal release approval v1\noperation=(publish|sync-tags)\nrun=[1-9][0-9]{0,15}\nattempt=[1-9][0-9]{0,15}\nsource=[a-f0-9]{40}\nartifact-sha256=[a-f0-9]{64}\ncontrols-sha256=[a-f0-9]{64}$/u.test(
-      comment,
-    ) ||
     !positive(ownerId) ||
     !positive(environmentId) ||
     !Array.isArray(reviews) ||
@@ -334,17 +304,15 @@ export function assertWitnessApproval(
     reviews.length > 100
   )
     refuse("invalid_approval_metadata");
-  const lines = comment.split("\n");
-  positiveBinding(lines[2].slice("run=".length));
-  positiveBinding(lines[3].slice("attempt=".length));
   canonical(reviews);
   const matches = reviews.filter((raw) => {
     const review = record(raw);
     const user = record(review.user);
     if (
       !["approved", "rejected"].includes(review.state) ||
-      typeof review.comment !== "string" ||
-      review.comment.length > 4096 ||
+      (Object.hasOwn(review, "comment") &&
+        review.comment !== null &&
+        (typeof review.comment !== "string" || review.comment.length > 4096)) ||
       !positive(user.id) ||
       !["User", "Bot"].includes(user.type) ||
       !Array.isArray(review.environments) ||
@@ -361,9 +329,7 @@ export function assertWitnessApproval(
         refuse("invalid_approval_metadata");
     }
     return (
-      // HTML form submission stores CRLF; compare the same text with canonical LF.
-      // Do not trim whitespace or normalize any other character or binding.
-      review.comment.replaceAll("\r\n", "\n") === comment &&
+      review.state === "approved" &&
       user.type === "User" &&
       user.id === ownerId &&
       review.environments.length === 1 &&
@@ -371,7 +337,6 @@ export function assertWitnessApproval(
       review.environments[0].name === "npm"
     );
   });
-  if (matches.length !== 1 || matches[0].state !== "approved")
-    refuse("owner_approval_not_proven");
+  if (matches.length === 0) refuse("owner_approval_not_proven");
   return true;
 }

@@ -201,7 +201,7 @@ describe("release channel policy", () => {
     expect(workflow).not.toMatch(/secrets\.(?:NPM|NODE_AUTH|GH|GITHUB)_TOKEN/u);
   });
 
-  it("binds tag repair to freshly checked registry bytes and publishes an owner review comment before the gate", async () => {
+  it("binds tag repair to freshly checked bytes and displays the exact candidate before ordinary human approval", async () => {
     const workflow = await readFile(
       join(root, ".github/workflows/publish.yml"),
       "utf8",
@@ -222,6 +222,15 @@ describe("release channel policy", () => {
     );
     expect(workflow).toContain(
       "run: node scripts/release/approval_summary.mjs sync-tags",
+    );
+    expect(workflow).toContain(
+      "PACKAGE_VERSION: ${{ steps.candidate.outputs.package_version }}",
+    );
+    expect(workflow).toContain(
+      "PACKAGE_VERSION: ${{ steps.registry.outputs.package_version }}",
+    );
+    expect(workflow).toContain(
+      'echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"',
     );
     expect(workflow).toContain(
       "run: node scripts/release/preflight.mjs prepare-tags",
