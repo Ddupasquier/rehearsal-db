@@ -324,7 +324,8 @@ Clients should disable conflicting actions unless the state is `idle`.
 
 ### Cancelling a mutation
 
-`run`, `reset`, `migrate`, and confirmed `refresh` support package-owned cancellation.
+`run`, `reset`, `migrate`, confirmed `refresh`, and direct or guided `open` preparation support
+package-owned cancellation.
 Send `SIGINT`, `SIGTERM`, `SIGHUP`, or `SIGTSTP` to the Rehearsal CLI process. Rehearsal
 handles repeated delivery as one request, forwards it only to the detached process group
 it launched, waits for package rollback and child cleanup, releases the project lock, and
@@ -343,6 +344,14 @@ The CLI does not stop Docker itself, signal unrelated processes, prune shared re
 or delete unrelated volumes. `SIGTSTP` is treated as cancellation and becomes `SIGTERM`
 for the owned child group instead of suspending it mid-cleanup. Windows uses direct child
 signalling; the detached process-group guarantee is supported on macOS and Linux.
+During an interactive cancellable operation, Rehearsal temporarily owns terminal control
+input so `Ctrl+C` and `Ctrl+Z` request cleanup without suspending an invoking npm job.
+It restores the terminal's previous raw mode and consuming/non-consuming input state
+after cleanup. Piped input is not consumed by this shortcut.
+For direct or guided `open`, cancellation before the ready attached session returns this same
+exit `130` contract, including interruption during runtime preparation or application
+readiness. A cancellation during the ready application's handoff stops that owned
+application before returning; cleanup failure is not reported as clean cancellation.
 
 `SIGKILL`, host shutdown, and a force-quit cannot produce a result or run cleanup. After
 one of those events, clients must not guess: run `activity --json`. A `stale` or `invalid`
@@ -384,6 +393,13 @@ default `keep-until-stop` leaves databases running; `stop-on-application-exit` s
 with database and Storage changes preserved. Likewise, `lifecycle.run` can remain
 `keep-until-stop` or use `stop-after-run` for bounded automation. JSON results include
 the selected mode, final runtime state, and preserved-data guarantee.
+While the ready application or copied-account sign-in session is attached, terminal
+`Ctrl+C` and `Ctrl+Z` are handled as control bytes rather than suspending npm wrappers.
+Rehearsal restores the prior terminal mode after retiring its owned application; it
+never resumes or signals an invoking shell, npm ancestor, or unrelated job.
+Once the ready application is attached, its handled `Ctrl+C`, `Ctrl+Z`, `SIGINT`, or
+`SIGTSTP` closes the session with exit `0` as before; it does not also cancel an outer
+preparation owner. Nested input ownership dispatches a control byte only once.
 
 ## Clean up disk space
 

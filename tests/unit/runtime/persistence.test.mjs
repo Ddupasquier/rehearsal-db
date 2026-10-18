@@ -1,10 +1,91 @@
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import {
   applyRuntimePersistence,
   shouldStopRuntime,
 } from "../../../dist/src/runtime/persistence.mjs";
+import {
+  getOperationCancellationSignal,
+  runWithOperationCancellation,
+} from "../../../dist/src/shared/cancellation.mjs";
 
 describe("runtime persistence", () => {
+  it.each(["SIGINT", "SIGTSTP"])(
+    "retains runtime cleanup failure when %s arrives after a successful application close",
+    async (signal) => {
+      const signals = new EventEmitter();
+      const stopFailure = new Error("owned runtime stop failed");
+      const operation = runWithOperationCancellation({
+        signalTarget: signals,
+        input: null,
+        task: () =>
+          applyRuntimePersistence({
+            mode: "stop-on-application-exit",
+            operation: async () => "closed normally",
+            stop: async () => {
+              expect(getOperationCancellationSignal()).toBeUndefined();
+              signals.emit(signal);
+              throw stopFailure;
+            },
+          }),
+      });
+      const failure = await operation.catch((error) => error);
+      expect(failure).toBeInstanceOf(AggregateError);
+      expect(failure.errors).toEqual([
+        expect.objectContaining({
+          category: "operation_cancelled",
+          code: "OPERATION_CANCELLED",
+          context: { signal },
+        }),
+        stopFailure,
+      ]);
+      expect(signals.eventNames()).toEqual([]);
+    },
+  );
+
+  it.each(["SIGINT", "SIGTSTP"])(
+    "still reports %s cancellation after successful shielded runtime cleanup",
+    async (signal) => {
+      const signals = new EventEmitter();
+      const stop = vi.fn(async () => {
+        signals.emit(signal);
+        return "stopped";
+      });
+      await expect(
+        runWithOperationCancellation({
+          signalTarget: signals,
+          input: null,
+          task: () =>
+            applyRuntimePersistence({
+              mode: "stop-on-application-exit",
+              operation: async () => "closed normally",
+              stop,
+            }),
+        }),
+      ).rejects.toMatchObject({
+        category: "operation_cancelled",
+        code: "OPERATION_CANCELLED",
+        exitCode: 130,
+        context: { signal },
+      });
+      expect(stop).toHaveBeenCalledOnce();
+      expect(signals.eventNames()).toEqual([]);
+    },
+  );
+
+  it("preserves an ordinary cleanup failure without introducing cancellation", async () => {
+    const failure = new Error("owned runtime stop failed");
+    await expect(
+      applyRuntimePersistence({
+        mode: "stop-on-application-exit",
+        operation: async () => "closed normally",
+        stop: async () => {
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
+  });
+
   it("keeps the compatibility default running", async () => {
     const stop = vi.fn();
     const outcome = await applyRuntimePersistence({

@@ -196,12 +196,18 @@ const main = async () => {
                 removeGuidedExitShortcut = null;
               }
               try {
-                await executeCommand({
-                  command: selected,
-                  flags,
-                  planOptions,
-                  guided: true,
-                });
+                const executeSelected = () =>
+                  executeCommand({
+                    command: selected,
+                    flags,
+                    planOptions,
+                    guided: true,
+                  });
+                if (opensApplication) {
+                  await runWithOperationCancellation({ task: executeSelected });
+                } else {
+                  await executeSelected();
+                }
               } finally {
                 if (opensApplication) {
                   removeGuidedExitShortcut = installExitShortcut();

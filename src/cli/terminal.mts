@@ -2,6 +2,11 @@
 
 import { createInterface } from "node:readline/promises";
 import * as prompts from "@clack/prompts";
+import {
+  hasTerminalInputLease,
+  reassertTerminalInputLease,
+} from "../shared/terminal_input.mjs";
+import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
 
 export interface TerminalFlags {
   readonly plain?: boolean;
@@ -118,21 +123,35 @@ export async function promptForConfirmation(
   flags: TerminalFlags = {},
   { cancelValue = false }: { cancelValue?: boolean | null } = {},
 ): Promise<boolean | null> {
+  const signal = getOperationCancellationSignal();
+  if (signal?.aborted) throw signal.reason;
   if (useStyledPrompts(flags)) {
-    const accepted = await prompts.confirm({ message, initialValue: false });
-    return prompts.isCancel(accepted) ? cancelValue : accepted;
+    try {
+      const accepted = await prompts.confirm({
+        message,
+        initialValue: false,
+        ...(signal ? { signal } : {}),
+      });
+      return prompts.isCancel(accepted) ? cancelValue : accepted;
+    } finally {
+      reassertTerminalInputLease(process.stdin);
+    }
   }
   const prompt = createInterface({
     input: process.stdin,
     output: process.stdout,
   });
   try {
-    const answer = (await prompt.question(`${message} (y/N) `))
+    const answer = (await prompt.question(`${message} (y/N) `, { signal }))
       .trim()
       .toLowerCase();
     return answer === "y" || answer === "yes";
   } finally {
-    prompt.close();
+    try {
+      prompt.close();
+    } finally {
+      reassertTerminalInputLease(process.stdin);
+    }
   }
 }
 
@@ -315,7 +334,7 @@ export const installGuidedExitShortcut = (
 ): (() => void) => {
   let exiting = false;
   const exit = (): void => {
-    if (exiting) return;
+    if (exiting || hasTerminalInputLease(process.stdin)) return;
     exiting = true;
     if (process.stdin.isTTY && process.stdin.isRaw)
       process.stdin.setRawMode(false);

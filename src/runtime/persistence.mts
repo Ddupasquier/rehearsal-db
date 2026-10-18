@@ -4,7 +4,10 @@ import type {
   OpenPersistenceMode,
   RunPersistenceMode,
 } from "../project/configuration_contract.mjs";
-import { withOperationCancellationShield } from "../shared/cancellation.mjs";
+import {
+  getOperationCancellationSignal,
+  withOperationCancellationShield,
+} from "../shared/cancellation.mjs";
 
 export type RuntimePersistenceMode = RunPersistenceMode | OpenPersistenceMode;
 
@@ -49,9 +52,12 @@ export const applyRuntimePersistence = async <Result, StopResult>({
       stopResult = await withOperationCancellationShield(stop);
       stopped = true;
     } catch (stopError) {
-      if (operationFailed) {
+      // The shield has unwound here. A later interruption must not let the
+      // outer cancellation owner replace a real cleanup fault with clean130.
+      const cancellation = getOperationCancellationSignal();
+      if (operationFailed || cancellation?.aborted) {
         throw new AggregateError(
-          [operationError, stopError],
+          [operationFailed ? operationError : cancellation!.reason, stopError],
           "The Rehearsal operation failed and its owned runtime could not be stopped automatically.",
         );
       }

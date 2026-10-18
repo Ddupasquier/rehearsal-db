@@ -45,9 +45,9 @@ release.
 
 ## Promotion sequence
 
-The sequence below records the initial beta-to-stable policy, not current release
-progress. Historical version names explain that policy; they do not claim a candidate
-is ready or restart an observation window by themselves.
+Promotion is evidence-based, not a calendar countdown. The initial seven-day RC
+wait was replaced after owner review; passing time alone cannot make a candidate
+ready. The sequence below is policy, not a claim that its checks have passed.
 
 1. Ship beta.18 with only stability, release-safety, upgrade, and documentation work.
 2. Freeze broad feature development on the release branch.
@@ -55,9 +55,11 @@ is ready or restart an observation window by themselves.
 4. Run the complete Rehearsal Test Lab gate twice from clean isolated workspaces.
 5. Perform one final package-only upgrade in a real consumer. The consumer must use the
    published package rather than duplicate Rehearsal machinery.
-6. Keep the current candidate available for at least seven calendar days. Restart the
-   window if a blocking package change is required. The container-lifecycle correction
-   in `0.1.0-rc.2` restarts this observation window.
+6. Review reports and existing scheduled Test Lab results for unresolved blockers.
+   A blocking correction needs its affected acceptance repeated against the exact
+   corrected candidate. Reuse sufficient unchanged evidence with its original scope;
+   do not relabel old or unavailable manual checks as new results. No minimum number
+   of calendar days replaces these checks.
 7. Publish `0.1.0` only when no blocking issue remains and the accepted registry artifact
    matches the tested artifact exactly.
 

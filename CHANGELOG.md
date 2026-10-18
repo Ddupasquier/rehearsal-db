@@ -5,6 +5,21 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## [Unreleased]
 
+## [0.1.0-rc.10] - 2026-10-17
+
+### Fixed
+
+- Interactive Ctrl+C and Ctrl+Z retire owned work without leaving an invoking npm
+  job suspended. Terminal mode and input consumption are restored after cleanup;
+  startup and unanswered migration confirmations cancel safely, and unrelated jobs
+  are untouched.
+
+### Documentation
+
+- Stable promotion is evidence-based after owner review: complete the release and
+  consumer acceptance checks rather than waiting a fixed number of calendar days.
+  Exact-artifact, security, data-preservation and human publishing approvals remain.
+
 ## [0.1.0-rc.9] - 2026-10-17
 
 ### Fixed

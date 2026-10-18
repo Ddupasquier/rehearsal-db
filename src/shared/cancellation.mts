@@ -2,6 +2,11 @@
 
 import type { EventEmitter } from "node:events";
 import { RehearsalError } from "./diagnostics.mjs";
+import {
+  acquireTerminalInput,
+  type TerminalInput,
+  type TerminalInputLease,
+} from "./terminal_input.mjs";
 
 export const OPERATION_CANCELLATION_SIGNALS = [
   "SIGINT",
@@ -16,6 +21,7 @@ type SignalTarget = Pick<EventEmitter, "prependListener" | "removeListener">;
 
 const CANCELLABLE_COMMANDS = new Set([
   "migrate",
+  "open",
   "refresh",
   "reset",
   "run",
@@ -74,22 +80,27 @@ export const withOperationCancellationShield = async <Value,>(
 export const runWithOperationCancellation = async <Value,>({
   task,
   signalTarget = process,
+  input = process.stdin,
 }: {
   task: (signal: AbortSignal) => Promise<Value>;
   signalTarget?: SignalTarget;
+  input?: TerminalInput | null;
 }): Promise<Value> => {
   if (activeSignal) {
     throw new Error("A cancellable Rehearsal operation is already active.");
   }
   const controller = new AbortController();
   activeSignal = controller.signal;
+  let releaseInput: TerminalInputLease | null = null;
+  const interrupt = (signal: OperationCancellationSignal) => {
+    if (!controller.signal.aborted)
+      controller.abort(createOperationCancelledError(signal));
+  };
   const handlers = new Map(
     OPERATION_CANCELLATION_SIGNALS.map((signal) => [
       signal,
       () => {
-        if (!controller.signal.aborted) {
-          controller.abort(createOperationCancelledError(signal));
-        }
+        if (!releaseInput || releaseInput.isCurrentOwner()) interrupt(signal);
       },
     ]),
   );
@@ -97,6 +108,7 @@ export const runWithOperationCancellation = async <Value,>({
     signalTarget.prependListener(signal, handler);
   }
   try {
+    releaseInput = acquireTerminalInput(input, interrupt);
     const result = await task(controller.signal);
     throwIfOperationCancelled();
     return result;
@@ -111,5 +123,6 @@ export const runWithOperationCancellation = async <Value,>({
     }
     activeSignal = undefined;
     shieldDepth = 0;
+    releaseInput?.();
   }
 };
