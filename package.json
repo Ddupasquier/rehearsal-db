@@ -76,7 +76,7 @@
     "test:fixture:standalone": "npm run build && node scripts/verification/run_scenario.mjs standalone",
     "test:fixture:privacy": "npm run build && node scripts/verification/run_scenario.mjs privacy",
     "test:fixture:resources": "npm run build && node scripts/verification/run_scenario.mjs resources",
-    "release:verify": "node scripts/verification/release_gate.mjs",
+    "release:verify": "npm run build && node scripts/verification/release_gate.mjs",
     "check": "npm run check:syntax && npm run typecheck && npm run test && npm run docs:build && npm run format:check && npm run package:audit",
     "check:syntax": "find scripts tests -type f -name '*.mjs' -exec node --check {} +",
     "typecheck": "npm run build && tsc --project tsconfig.json",

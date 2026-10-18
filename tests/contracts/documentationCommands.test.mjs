@@ -435,7 +435,13 @@ describe("documented CLI contract", () => {
       "utf8",
     );
     const remoteJob = workflow.slice(workflow.indexOf("\n  exact-release:"));
+    const manifest = JSON.parse(
+      await readFile(join(root, "package.json"), "utf8"),
+    );
 
+    expect(manifest.scripts["release:verify"]).toBe(
+      "npm run build && node scripts/verification/release_gate.mjs",
+    );
     expect(workflow).toContain("exact_release:");
     expect(workflow).toContain("default: false");
     expect(remoteJob).toContain(
