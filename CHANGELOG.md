@@ -5,7 +5,15 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## [Unreleased]
 
-## [0.1.0-rc.8] - Unreleased candidate
+## [0.1.0-rc.9] - 2026-10-17
+
+### Fixed
+
+- Wrong or stale source-access approval and review-required privacy drafts report
+  actionable configuration refusals instead of internal failures. Source access,
+  privacy review and baseline-preservation requirements are unchanged.
+
+## [0.1.0-rc.8] - 2026-10-17
 
 ### Added
 

@@ -244,6 +244,12 @@ baseline-retention settings and fields that require manual review. They are not
 baseline corruption or internal failures. Review never writes configuration or
 executes proposed commands; unexpected faults retain their existing classification.
 
+A wrong or stale source-access confirmation and an executable privacy policy still
+marked as a review-required draft also return `configuration_invalid` /
+`CONFIGURATION_INVALID` (exit `2`). Review a fresh `source plan` before confirming it;
+complete the privacy review before retrying `baseline refresh`. These refusals do not
+grant source access, export rows, or replace the current baseline.
+
 Editor integrations should resolve the project's installed `@rehearsal-db/core`
 manifest and its declared `rehearsal` binary. They should not import private package
 files, search for a global installation, invoke through a shell, or parse styled output.
