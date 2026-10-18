@@ -1,11 +1,11 @@
 # Stability and the first stable release
 
 Rehearsal leaves beta when the workflow it already promises is dependable. Stable
-`0.1.0` does not require every planned database, desktop interface, or paid feature.
+`1.0.0` does not require every planned database, desktop interface, or paid feature.
 
 ## What becomes a compatibility promise
 
-Starting with `0.1.0`, Rehearsal treats these documented surfaces as public:
+Starting with `1.0.0`, Rehearsal treats these documented surfaces as public:
 
 - CLI command names, flags, JSON result fields, and exit categories in
   [CLI commands](commands.md);
@@ -49,18 +49,17 @@ Promotion is evidence-based, not a calendar countdown. The initial seven-day RC
 wait was replaced after owner review; passing time alone cannot make a candidate
 ready. The sequence below is policy, not a claim that its checks have passed.
 
-1. Ship beta.18 with only stability, release-safety, upgrade, and documentation work.
-2. Freeze broad feature development on the release branch.
-3. Publish a release candidate from protected `main` through the reviewed npm environment.
-4. Run the complete Rehearsal Test Lab gate twice from clean isolated workspaces.
-5. Perform one final package-only upgrade in a real consumer. The consumer must use the
+1. Freeze broad feature development on the release branch.
+2. Publish a release candidate from protected `main` through the reviewed npm environment.
+3. Run the complete Rehearsal Test Lab gate twice from clean isolated workspaces.
+4. Perform one final package-only upgrade in a real consumer. The consumer must use the
    published package rather than duplicate Rehearsal machinery.
-6. Review reports and existing scheduled Test Lab results for unresolved blockers.
+5. Review reports and existing scheduled Test Lab results for unresolved blockers.
    A blocking correction needs its affected acceptance repeated against the exact
    corrected candidate. Reuse sufficient unchanged evidence with its original scope;
    do not relabel old or unavailable manual checks as new results. No minimum number
    of calendar days replaces these checks.
-7. Publish `0.1.0` only when no blocking issue remains and the accepted registry artifact
+6. Publish `1.0.0` only when no blocking issue remains and the accepted registry artifact
    matches the tested artifact exactly.
 
 Test Lab is the primary verification system. A real consumer is the final compatibility
@@ -71,6 +70,22 @@ not need to run on every build unless authentication behavior changes.
 
 Beta and release-candidate versions publish under the `beta` tag. Before a stable
 release exists, `latest` follows that reviewed prerelease so the ordinary install command
-remains useful. Once stable `0.1.0` exists, `latest` stays on the stable line and `beta`
+remains useful. Once stable `1.0.0` exists, `latest` stays on the stable line and `beta`
 continues to identify the newest prerelease. Stable publication never rewrites the
 `beta` tag.
+
+## Upgrading from a 0.1 release candidate
+
+The first stable release preserves rc.10's runtime and schema formats. A package upgrade
+does not require resetting a sandbox or replacing its reviewed configuration, key or
+baseline. Automatic compatible updates do not cross the 0.x-to-1.x version boundary;
+review the changelog and deliberately select the stable version:
+
+```bash
+npm install --save-dev --save-exact @rehearsal-db/core@1.0.0
+npx --no-install rehearsal --version
+npx --no-install rehearsal doctor
+```
+
+Use the project's existing package manager and dependency location. Review its lockfile
+and readiness output before the next sandbox operation; do not reset data just to update.

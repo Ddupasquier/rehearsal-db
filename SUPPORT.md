@@ -3,8 +3,7 @@
 Use GitHub Issues for reproducible defects and setup problems that include a synthetic
 reproduction. Include operating system, architecture, Node version, Supabase CLI version,
 Docker engine, the failing command, safe diagnostics, and the smallest reproduction.
-The first beta does not yet maintain a separate public discussion or feature-request
-channel.
+Search existing reports before opening a new issue.
 
 Run `npx rehearsal support` or choose **Get help** in the guide to collect the environment
 and readiness portion without assembling it by hand. The report intentionally excludes
@@ -15,6 +14,8 @@ Do not include credentials, connection strings, source rows, baseline artifacts,
 URLs, or proprietary migrations. Report security problems through private vulnerability
 reporting as described in [SECURITY.md](SECURITY.md).
 
-The package is pre-release. The supported matrix is defined in
+The supported matrix and 1.x compatibility boundary are defined in
 [COMPATIBILITY.md](COMPATIBILITY.md); unsupported environments are welcome as clearly
 labelled experiments but cannot be treated as verified behavior.
+
+Support is community-based; no response-time guarantee or production SLA is offered.

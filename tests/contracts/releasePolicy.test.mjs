@@ -20,9 +20,9 @@ describe("release channel policy", () => {
     expect(releaseChannel("0.1.0-rc.1", true).npmTag).toBe("beta");
   });
 
-  it("routes a stable version through latest", () => {
-    expect(releaseChannel("0.1.0", false)).toEqual({
-      version: "0.1.0",
+  it.each(["0.1.0", "1.0.0"])("routes stable %s through latest", (version) => {
+    expect(releaseChannel(version, false)).toEqual({
+      version,
       prerelease: false,
       npmTag: "latest",
     });
