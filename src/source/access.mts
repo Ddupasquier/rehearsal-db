@@ -4,6 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { RehearsalError } from "../shared/diagnostics.mjs";
 
 const IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/u;
 const ENVIRONMENT_KEY = /^[A-Z][A-Z0-9_]{1,127}$/u;
@@ -948,9 +949,17 @@ export const assertSourceAccessConfirmation = <Plan extends SourceAccessPlan>(
   confirmation: string,
 ): Plan => {
   if (confirmation !== plan.digest) {
-    throw new Error(
-      `Source access confirmation does not match this exact plan. Expected ${plan.digest}.`,
-    );
+    throw new RehearsalError({
+      category: "configuration_invalid",
+      code: "CONFIGURATION_INVALID",
+      message: `Source access confirmation does not match this exact plan. Expected ${plan.digest}.`,
+      refused:
+        "This confirmation check did not open a source connection or change source access.",
+      suggestions: [
+        "Run rehearsal source plan and review the complete current plan.",
+        "Only after explicit approval, rerun rehearsal source apply --confirm-source-access=<reviewed-full-sha256> using that plan's exact digest.",
+      ],
+    });
   }
   return plan;
 };

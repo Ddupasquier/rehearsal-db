@@ -2,13 +2,18 @@ import { createHash, createHmac } from "node:crypto";
 import { chmod, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createPrivacyEngine,
   createPrivacyKey,
   readPrivacyKey,
   validateExecutablePrivacyPolicy,
 } from "../../../dist/src/baseline/privacy_engine.mjs";
+import {
+  RehearsalError,
+  renderHumanError,
+  serializeRehearsalError,
+} from "../../../dist/src/shared/diagnostics.mjs";
 
 const roots = [];
 
@@ -77,6 +82,134 @@ afterEach(async () => {
 });
 
 describe("executable privacy engine", () => {
+  it("refuses a draft before reading classifications or resolving private bindings", () => {
+    const classifications = vi.fn(() => policy.tables);
+    const privateBinding = vi.fn(() => "private-binding-canary");
+    const draft = { ...policy, draft: true };
+    Object.defineProperty(draft, "tables", {
+      enumerable: true,
+      get: classifications,
+    });
+    const environment = {};
+    Object.defineProperty(environment, "REHEARSAL_APPROVED_OWNER_ID", {
+      get: privateBinding,
+    });
+
+    let failure;
+    try {
+      createPrivacyEngine({
+        policy: draft,
+        key: Buffer.alloc(32, 7),
+        environment,
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(RehearsalError);
+    expect(failure).toMatchObject({
+      category: "configuration_invalid",
+      code: "CONFIGURATION_INVALID",
+      exitCode: 2,
+      message: "The privacy policy is still a REVIEW REQUIRED draft.",
+      refused:
+        "This draft policy was not accepted for source export or baseline activation.",
+    });
+    expect(classifications).not.toHaveBeenCalled();
+    expect(privateBinding).not.toHaveBeenCalled();
+    expect(draft.draft).toBe(true);
+  });
+
+  it("serializes a draft refusal with safe review guidance and no policy values", () => {
+    const draft = structuredClone(policy);
+    draft.draft = true;
+    draft.tables[0].columns[0].recipe.namespace = "private-policy-canary";
+    const before = JSON.stringify(draft);
+    let failure;
+    try {
+      validateExecutablePrivacyPolicy(draft);
+    } catch (error) {
+      failure = error;
+    }
+
+    for (const debug of [false, true]) {
+      const serialized = serializeRehearsalError(failure, { debug });
+      const human = renderHumanError(failure, { debug });
+      expect(serialized.error).toMatchObject({
+        category: "configuration_invalid",
+        code: "CONFIGURATION_INVALID",
+      });
+      expect(serialized.error).not.toHaveProperty("exitCode");
+      const guidance = serialized.error.suggestions.join(" ");
+      expect(guidance).toMatch(/review.*explicit privacy approval/iu);
+      expect(guidance).toContain("Do not remove the draft marker");
+      expect(guidance).toContain("rehearsal baseline refresh");
+      expect(human).toContain(
+        "This draft policy was not accepted for source export or baseline activation.",
+      );
+      expect(JSON.stringify(serialized) + human).not.toContain(
+        "private-policy-canary",
+      );
+    }
+    expect(JSON.stringify(draft)).toBe(before);
+  });
+
+  it("leaves unrelated validation errors and unexpected faults unchanged", () => {
+    let invalidVersion;
+    try {
+      validateExecutablePrivacyPolicy({ ...policy, policyVersion: 3 });
+    } catch (error) {
+      invalidVersion = error;
+    }
+    expect(invalidVersion).not.toBeInstanceOf(RehearsalError);
+    expect(invalidVersion.message).toBe(
+      "Executable privacy policies must use policyVersion 2.",
+    );
+
+    const unexpected = new Error("Synthetic unexpected privacy fault.");
+    const candidate = { ...policy };
+    Object.defineProperty(candidate, "draft", {
+      get() {
+        throw unexpected;
+      },
+    });
+    expect(() => validateExecutablePrivacyPolicy(candidate)).toThrow(
+      unexpected,
+    );
+    expect(serializeRehearsalError(unexpected).error.category).toBe(
+      "internal_failure",
+    );
+  });
+
+  it.each([undefined, false])(
+    "keeps a complete reviewed policy executable with draft=%s",
+    (draft) => {
+      const reviewed = structuredClone(policy);
+      if (draft !== undefined) reviewed.draft = draft;
+      const before = JSON.stringify(reviewed);
+      const normalized = validateExecutablePrivacyPolicy(reviewed);
+      expect(normalized.tables).toHaveLength(1);
+      expect(Object.isFrozen(normalized)).toBe(true);
+      expect(normalized).not.toHaveProperty("draft");
+      const engine = createPrivacyEngine({
+        policy: reviewed,
+        key: Buffer.alloc(32, 7),
+      });
+      expect(
+        engine.sanitize({
+          table: "accounts",
+          row: {
+            id: "synthetic-owner",
+            email: "synthetic@example.invalid",
+            metadata: { nickname: "Synthetic", token: "excluded-canary" },
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        }).row.metadata,
+      ).not.toHaveProperty("token");
+      expect(JSON.stringify(reviewed)).toBe(before);
+    },
+  );
+
   it("preserves only a reviewed owner and sanitizes bounded structured arrays", () => {
     const owner = "11111111-1111-4111-8111-111111111111";
     const policyWithOwner = {

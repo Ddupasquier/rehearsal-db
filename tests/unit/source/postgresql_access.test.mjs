@@ -270,6 +270,69 @@ afterEach(async () => {
 });
 
 describe("PostgreSQL source access lifecycle", () => {
+  it.each(["managed", "external"])(
+    "refuses wrong and stale %s confirmations before source connections or local writes",
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), "rehearsal-source-approval-"));
+      roots.push(root);
+      const sourcePolicy = mode === "managed" ? policy : externalPolicy;
+      const sourceEnvironment =
+        mode === "managed" ? environment : externalEnvironment;
+      const original = createSourceAccessPlan({
+        policy: sourcePolicy,
+        environment: sourceEnvironment,
+      });
+      const current = createSourceAccessPlan({
+        policy: {
+          ...sourcePolicy,
+          reader: {
+            ...sourcePolicy.reader,
+            ...(mode === "managed"
+              ? { validForMinutes: 16 }
+              : { maximumValidForMinutes: 31 }),
+          },
+        },
+        environment: sourceEnvironment,
+      });
+      expect(current.digest).not.toBe(original.digest);
+      const credentialPath = join(root, sourcePolicy.reader.credentialFile);
+      const receiptPath = join(root, ".rehearsal/source-access-receipt.json");
+      await mkdir(join(root, ".rehearsal/secrets"), { recursive: true });
+      await writeFile(credentialPath, "existing-credential\n");
+      await writeFile(receiptPath, "existing-receipt\n");
+      let sourceConnections = 0;
+      const client =
+        mode === "managed" ? provisioningClient() : externalReaderClient();
+
+      for (const confirmation of ["0".repeat(64), original.digest]) {
+        await expect(
+          applyPostgresqlSourceAccess({
+            plan: current,
+            confirmation,
+            projectRoot: root,
+            // Confirmation must precede even credential lookup, not just connect.
+            environment: {},
+            clientFactory: async () => {
+              sourceConnections += 1;
+              return client;
+            },
+          }),
+        ).rejects.toMatchObject({
+          category: "configuration_invalid",
+          code: "CONFIGURATION_INVALID",
+          exitCode: 2,
+          message: `Source access confirmation does not match this exact plan. Expected ${current.digest}.`,
+        });
+        expect(sourceConnections).toBe(0);
+        expect(client.queries).toEqual([]);
+        expect(await readFile(credentialPath, "utf8")).toBe(
+          "existing-credential\n",
+        );
+        expect(await readFile(receiptPath, "utf8")).toBe("existing-receipt\n");
+      }
+    },
+  );
+
   it("applies and retires only exact reviewed resources", async () => {
     const root = await mkdtemp(join(tmpdir(), "rehearsal-source-access-"));
     roots.push(root);

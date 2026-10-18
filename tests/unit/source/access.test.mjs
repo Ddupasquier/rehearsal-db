@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  RehearsalError,
+  normalizeRehearsalError,
+  serializeRehearsalError,
+} from "../../../dist/src/shared/diagnostics.mjs";
+import {
   assertSourceAccessConfirmation,
   assetEndpointFingerprint,
   createSourceAccessPlan,
@@ -106,6 +111,81 @@ describe("source access boundary", () => {
     );
     expect(assertSourceAccessConfirmation(plan, plan.digest)).toBe(plan);
   });
+
+  it.each(["incorrect", "stale"])(
+    "classifies %s confirmation with explicit source-plan review guidance",
+    (kind) => {
+      const environment = {
+        REHEARSAL_SOURCE_ADMIN_URL: connection,
+        REHEARSAL_APPROVED_OWNER_ID: "private-owner-123",
+        REHEARSAL_SOURCE_STORAGE_URL: "https://storage.example.invalid",
+        REHEARSAL_SOURCE_STORAGE_TOKEN: "scoped-token",
+      };
+      const original = createSourceAccessPlan({ policy, environment });
+      const current =
+        kind === "stale"
+          ? createSourceAccessPlan({
+              policy: {
+                ...policy,
+                reader: { ...policy.reader, validForMinutes: 31 },
+              },
+              environment,
+            })
+          : original;
+      const confirmation = kind === "stale" ? original.digest : "0".repeat(64);
+      expect(confirmation).not.toBe(current.digest);
+      let failure;
+      try {
+        assertSourceAccessConfirmation(current, confirmation);
+      } catch (error) {
+        failure = error;
+      }
+
+      expect(failure).toBeInstanceOf(RehearsalError);
+      expect(failure).toMatchObject({
+        category: "configuration_invalid",
+        code: "CONFIGURATION_INVALID",
+        exitCode: 2,
+        message: `Source access confirmation does not match this exact plan. Expected ${current.digest}.`,
+        refused: expect.stringMatching(
+          /did not open.*or change source access/u,
+        ),
+      });
+      expect(
+        normalizeRehearsalError(failure, {
+          category: "internal_failure",
+          suggestions: [
+            "Run rehearsal doctor for actionable readiness checks.",
+          ],
+        }),
+      ).toBe(failure);
+      const serialized = serializeRehearsalError(failure);
+      expect(serialized).toMatchObject({
+        schemaVersion: 1,
+        status: "error",
+        error: {
+          category: "configuration_invalid",
+          code: "CONFIGURATION_INVALID",
+          message: failure.message,
+          refused: failure.refused,
+          suggestions: [
+            expect.stringMatching(/rehearsal source plan.*review/u),
+            expect.stringMatching(
+              /explicit approval.*--confirm-source-access=/u,
+            ),
+          ],
+          diagnosticId: expect.stringMatching(/^[a-f0-9]{12}$/u),
+        },
+      });
+      const json = JSON.stringify(serialized);
+      expect(json).not.toContain("administrator:secret");
+      expect(json).not.toContain("private-owner-123");
+      expect(json).not.toContain("scoped-token");
+      expect(assertSourceAccessConfirmation(current, current.digest)).toBe(
+        current,
+      );
+    },
+  );
 
   it("rejects wrong targets, broad lifetime, unsafe scope, and unknown fields", () => {
     expect(() =>

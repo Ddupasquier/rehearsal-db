@@ -10,6 +10,7 @@ import type {
   PrivacyPathMapping,
   PrivacyTable,
 } from "./privacy_contract.mjs";
+import { RehearsalError } from "../shared/diagnostics.mjs";
 import { validatePrivacyDependencyGraph } from "./privacy_dependency_graph.mjs";
 import { validatePrivacyRecipe } from "./privacy_recipe_validation.mjs";
 import {
@@ -54,7 +55,19 @@ export const validateExecutablePrivacyPolicy = (
     throw new Error("Executable privacy policies must use policyVersion 2.");
   }
   if (policy.draft === true) {
-    throw new Error("The privacy policy is still a REVIEW REQUIRED draft.");
+    throw new RehearsalError({
+      category: "configuration_invalid",
+      code: "CONFIGURATION_INVALID",
+      message: "The privacy policy is still a REVIEW REQUIRED draft.",
+      expected: "A complete, explicitly reviewed and approved privacy policy.",
+      actual: "REVIEW REQUIRED draft.",
+      refused:
+        "This draft policy was not accepted for source export or baseline activation.",
+      suggestions: [
+        "Review every exported table, column, recipe and source-data boundary, and obtain explicit privacy approval before completing this draft.",
+        "Do not remove the draft marker merely to bypass review. After approval, rerun rehearsal baseline refresh.",
+      ],
+    });
   }
   if (
     typeof policy.migrationCutoff !== "string" ||
