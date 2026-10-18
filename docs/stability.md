@@ -76,7 +76,8 @@ continues to identify the newest prerelease. Stable publication never rewrites t
 
 ## Upgrading from a 0.1 release candidate
 
-The first stable release preserves rc.10's runtime and schema formats. A package upgrade
+The first stable release preserves rc.10's database runtime and schema formats and
+corrects invalid-command diagnostics. A package upgrade
 does not require resetting a sandbox or replacing its reviewed configuration, key or
 baseline. Automatic compatible updates do not cross the 0.x-to-1.x version boundary;
 review the changelog and deliberately select the stable version:

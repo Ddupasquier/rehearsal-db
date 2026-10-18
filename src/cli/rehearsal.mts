@@ -10,6 +10,7 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import * as prompts from "@clack/prompts";
 import {
+  RehearsalError,
   normalizeRehearsalError,
   renderHumanError,
   serializeRehearsalError,
@@ -122,7 +123,13 @@ const executeCommand = async ({
     state,
   });
   if (!result) {
-    throw new Error(`Unknown Rehearsal command: ${command}.\n\n${usage()}`);
+    throw new RehearsalError({
+      category: "configuration_invalid",
+      code: "CONFIGURATION_INVALID",
+      message: `Unknown Rehearsal command: ${command}.\n\n${usage()}`,
+      refused: "No Rehearsal command was executed.",
+      suggestions: ["Run rehearsal --help to list supported commands."],
+    });
   }
   const exitCode = emitCommand({ command, flags, result });
   if (exitCode !== undefined) process.exitCode = exitCode;

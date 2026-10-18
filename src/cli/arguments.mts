@@ -1,5 +1,7 @@
 /** Parse and classify the stable Rehearsal command-line contract. */
 
+import { RehearsalError } from "../shared/diagnostics.mjs";
+
 export type RehearsalVerbosity = "normal" | "verbose" | "debug";
 
 export interface RehearsalCliFlags {
@@ -120,7 +122,13 @@ export const parseArguments = (
     } else if (argument.startsWith("--image-id="))
       (flags.imageIds ??= []).push(argument.slice("--image-id=".length));
     else if (argument.startsWith("--"))
-      throw new Error(`Unknown Rehearsal option: ${argument}.`);
+      throw new RehearsalError({
+        category: "configuration_invalid",
+        code: "CONFIGURATION_INVALID",
+        message: `Unknown Rehearsal option: ${argument}.`,
+        refused: "No Rehearsal command was executed.",
+        suggestions: ["Run rehearsal --help to list supported options."],
+      });
     else positionals.push(argument);
   }
   return { flags, positionals };

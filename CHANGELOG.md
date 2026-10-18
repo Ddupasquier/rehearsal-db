@@ -10,11 +10,17 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 ### Stable compatibility
 
 - Establish the documented CLI, configuration, policy, baseline, TypeScript and
-  JSON contracts as the 1.x compatibility boundary. This promotes rc.10 behavior;
-  no database, authentication or runtime behavior changes are introduced.
+  JSON contracts as the 1.x compatibility boundary. This preserves rc.10's database,
+  authentication and restore behavior.
 - Keep the complete MIT CLI free. The separately distributed Free Starter editor,
   future Pro plans and additional database families do not expand the core support
   matrix or change its safety boundaries.
+
+### Fixed
+
+- Report unknown CLI commands and options as invalid input (exit 2), rather than
+  letting words in the input or help text misclassify them as migration or baseline
+  failures. The command remains refused and supported-command help is retained.
 
 ## [0.1.0-rc.10] - 2026-10-17
 
