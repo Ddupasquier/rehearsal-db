@@ -50,17 +50,24 @@ wait was replaced after owner review; passing time alone cannot make a candidate
 ready. The sequence below is policy, not a claim that its checks have passed.
 
 1. Freeze broad feature development on the release branch.
-2. Publish a release candidate from protected `main` through the reviewed npm environment.
+2. Select one immutable candidate from the reviewed release branch. A release candidate
+   may be published from protected `main` through the reviewed npm environment; another
+   prerelease is not required solely to verify the final stable tarball.
 3. Run the complete Rehearsal Test Lab gate twice from clean isolated workspaces.
-4. Perform one final package-only upgrade in a real consumer. The consumer must use the
-   published package rather than duplicate Rehearsal machinery.
+4. Perform one final package-only check in a real consumer using the exact frozen
+   stable tarball, not duplicate Rehearsal machinery. Preserve its reviewed settings
+   and persistent data; a package check does not require resetting its databases.
 5. Review reports and existing scheduled Test Lab results for unresolved blockers.
    A blocking correction needs its affected acceptance repeated against the exact
    corrected candidate. Reuse sufficient unchanged evidence with its original scope;
    do not relabel old or unavailable manual checks as new results. No minimum number
    of calendar days replaces these checks.
-6. Publish `1.0.0` only when no blocking issue remains and the accepted registry artifact
-   matches the tested artifact exactly.
+6. Publish `1.0.0` only when no blocking issue remains and the exact tarball has passed
+   the required release checks, consumer acceptance, exact-artifact authorization and
+   protected human publication approval.
+7. Independently verify registry bytes, provenance, signatures and channels, then
+   confirm the published package in the real consumer. Promotion is complete only
+   when the published artifact matches the tested tarball and these checks pass.
 
 Test Lab is the primary verification system. A real consumer is the final compatibility
 check, not a replacement for package-owned coverage. Real Google or GitHub consent does

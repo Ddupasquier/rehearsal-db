@@ -429,6 +429,37 @@ describe("documented CLI contract", () => {
     expect(configuration).toContain("retainBaselineGenerations");
   });
 
+  it("keeps remote exact-artifact verification manually opt-in and read-only", async () => {
+    const workflow = await readFile(
+      join(root, ".github/workflows/verify.yml"),
+      "utf8",
+    );
+    const remoteJob = workflow.slice(workflow.indexOf("\n  exact-release:"));
+
+    expect(workflow).toContain("exact_release:");
+    expect(workflow).toContain("default: false");
+    expect(remoteJob).toContain(
+      "if: github.event_name == 'workflow_dispatch' && inputs.exact_release",
+    );
+    expect(remoteJob).toContain("timeout-minutes: 45");
+    expect(remoteJob).toContain("contents: read");
+    expect(remoteJob).toContain("persist-credentials: false");
+    expect(remoteJob).toContain("cancel-in-progress: false");
+    expect(remoteJob).toContain("npm run release:verify");
+    expect(remoteJob).toContain("npm audit --omit=dev --audit-level=high");
+    expect(remoteJob).toContain("actions/upload-artifact@v7");
+    expect(remoteJob).toContain("retention-days: 7");
+    expect(remoteJob).toContain("test-results/release-gate/*/candidate.tgz");
+    expect(remoteJob).toContain("test-results/release-gate/*/acceptance.json");
+    expect(remoteJob).toContain("test-results/release-gate/*/acceptance.md");
+    expect(remoteJob).not.toContain("environment: npm");
+    expect(remoteJob).not.toContain("id-token: write");
+    expect(remoteJob).not.toContain("npm publish");
+    expect(remoteJob).not.toContain("secrets.");
+    expect(remoteJob).not.toContain("NODE_AUTH_TOKEN");
+    expect(remoteJob).not.toContain("BLENDCALC_ALLOW_RESOURCE_PRESSURE");
+  });
+
   it("keeps npm publication behind an exact-artifact human gate", async () => {
     const [workflow, releaseGuide, manifest] = await Promise.all([
       readFile(join(root, ".github/workflows/publish.yml"), "utf8"),
