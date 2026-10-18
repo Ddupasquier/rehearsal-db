@@ -1,5 +1,8 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   REHEARSAL_EXIT_CODES,
   RehearsalError,
@@ -12,8 +15,22 @@ import {
   buildAuthenticationReview,
   buildBaselineScopeReview,
 } from "../../../dist/src/runtime/project_review.mjs";
+import {
+  createAndActivateBaseline,
+  removeBaselineArtifactRoot,
+  verifyActiveBaseline,
+} from "../../../dist/src/baseline/artifact.mjs";
 
 const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
+const roots = [];
+afterEach(async () => {
+  for (const root of roots.splice(0)) {
+    await removeBaselineArtifactRoot({
+      artifactRoot: join(root, ".rehearsal"),
+    });
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 const canaries = {
   password: "never-print-this-password",
@@ -24,6 +41,67 @@ const canaries = {
 };
 
 describe("Rehearsal diagnostics", () => {
+  it("preserves real baseline and checksum failures plus unexpected internal faults", async () => {
+    const root = await mkdtemp(
+      join(tmpdir(), "rehearsal-diagnostic-categories-"),
+    );
+    const artifactRoot = join(root, ".rehearsal");
+    const generationId = "20260912T120000Z-aaaaaaaaaaaa";
+    await createAndActivateBaseline({
+      artifactRoot,
+      generationId,
+      metadata: {
+        migrationCutoff: "20260911223000",
+        migrationHistorySha256: "a".repeat(64),
+        sanitizationPolicySha256: "b".repeat(64),
+      },
+      records: [{ table: "widgets", row: { id: "synthetic" } }],
+    });
+    roots.push(root);
+    const manifestPath = join(
+      artifactRoot,
+      "generations",
+      generationId,
+      "baseline-manifest.json",
+    );
+    const manifest = await readFile(manifestPath);
+    await chmod(manifestPath, 0o600);
+    await writeFile(manifestPath, "[]\n");
+    const baselineFailure = await verifyActiveBaseline({
+      artifactRoot,
+    }).catch((error) => error);
+    expect(serializeRehearsalError(baselineFailure).error.category).toBe(
+      "baseline_invalid",
+    );
+    await writeFile(manifestPath, manifest);
+    const dataPath = join(
+      artifactRoot,
+      "generations",
+      generationId,
+      "sanitized-data.ndjson",
+    );
+    await chmod(dataPath, 0o600);
+    await writeFile(dataPath, "tampered\n");
+    const checksumFailure = await verifyActiveBaseline({ artifactRoot }).catch(
+      (error) => error,
+    );
+    expect(serializeRehearsalError(checksumFailure).error.category).toBe(
+      "baseline_checksum_mismatch",
+    );
+    expect(
+      serializeRehearsalError(new Error("Synthetic unexpected fault.")).error
+        .category,
+    ).toBe("internal_failure");
+    for (const [error, expectedExitCode] of [
+      [baselineFailure, 4],
+      [checksumFailure, 5],
+      [new Error("Synthetic unexpected fault."), 10],
+    ]) {
+      const category = serializeRehearsalError(error).error.category;
+      expect(REHEARSAL_EXIT_CODES[category]).toBe(expectedExitCode);
+    }
+  });
+
   it("publishes stable exit categories", () => {
     expect(REHEARSAL_EXIT_CODES).toEqual({
       success: 0,

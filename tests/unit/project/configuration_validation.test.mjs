@@ -8,10 +8,56 @@ import {
   assertKnownKeys,
   assertLoopbackUrl,
   assertPort,
+  assertPositiveInteger,
   assertRelativePath,
 } from "../../../dist/src/project/configuration_validation.mjs";
+import {
+  RehearsalError,
+  serializeRehearsalError,
+} from "../../../dist/src/shared/diagnostics.mjs";
 
 describe("configuration validators", () => {
+  it.each([
+    0,
+    -1,
+    false,
+    true,
+    "3",
+    null,
+    undefined,
+    [],
+    {},
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])(
+    "classifies invalid positive-integer settings without baseline-name guessing (%j)",
+    (value) => {
+      try {
+        assertPositiveInteger(
+          value,
+          "config.cleanup.retainBaselineGenerations",
+        );
+        throw new Error("Unexpected validation success.");
+      } catch (error) {
+        expect(error).toBeInstanceOf(RehearsalError);
+        expect(error.exitCode).toBe(2);
+        expect(serializeRehearsalError(error).error).toMatchObject({
+          category: "configuration_invalid",
+          code: "CONFIGURATION_INVALID",
+          message:
+            "config.cleanup.retainBaselineGenerations must be a positive integer.",
+        });
+      }
+    },
+  );
+
+  it("accepts only positive safe integer boundaries", () => {
+    for (const value of [1, Number.MAX_SAFE_INTEGER])
+      expect(assertPositiveInteger(value, "config.limit")).toBe(value);
+  });
+
   it("accepts project-owned paths, safe commands, and non-privileged ports", () => {
     expect(assertRelativePath("database/migrations", "path")).toBe(
       "database/migrations",

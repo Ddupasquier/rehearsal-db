@@ -238,6 +238,12 @@ provides a stable category, code, safe message, suggestions, diagnostic ID, and 
 context under `error`. Callers should use the category and code for decisions and show
 the message and suggestions to people.
 
+Invalid positive-integer settings and rejected proposal structure or fields use
+`configuration_invalid` with code `CONFIGURATION_INVALID` (exit `2`), including
+baseline-retention settings and fields that require manual review. They are not
+baseline corruption or internal failures. Review never writes configuration or
+executes proposed commands; unexpected faults retain their existing classification.
+
 Editor integrations should resolve the project's installed `@rehearsal-db/core`
 manifest and its declared `rehearsal` binary. They should not import private package
 files, search for a global installation, invoke through a shell, or parse styled output.

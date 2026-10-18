@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import {
   mkdtemp,
   mkdir,
@@ -16,12 +17,33 @@ import {
   inspectConfigurationMetadata,
   reviewConfigurationProposal,
 } from "../../../dist/src/project/configuration_review.mjs";
+import {
+  RehearsalError,
+  serializeRehearsalError,
+} from "../../../dist/src/shared/diagnostics.mjs";
+import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 
 const roots = [];
 const configModule = pathToFileURL(
   join(process.cwd(), "dist/src/project/configuration.mjs"),
 ).href;
 const hash = (value) => createHash("sha256").update(value).digest("hex");
+const cli = (root, args) => {
+  const result = spawnSync(
+    process.execPath,
+    [join(process.cwd(), "dist/src/cli/rehearsal.mjs"), ...args, "--json"],
+    {
+      cwd: root,
+      env: createCleanProcessEnvironment(),
+      encoding: "utf8",
+      timeout: 10_000,
+      maxBuffer: 64 * 1024,
+    },
+  );
+  expect(result.error).toBeUndefined();
+  expect(result.signal).toBeNull();
+  return { status: result.status, output: JSON.parse(result.stdout) };
+};
 const fixture = async () => {
   const root = await mkdtemp(join(tmpdir(), "rehearsal-configuration-review-"));
   roots.push(root);
@@ -80,6 +102,147 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true });
 });
 describe("core configuration review", () => {
+  it.each([0, -1, false, "3", Number.MAX_SAFE_INTEGER + 1])(
+    "reports invalid retention as configuration failure in API and CLI (%j)",
+    async (value) => {
+      const { root, source } = await fixture();
+      await expect(
+        propose(root, source, [
+          { path: "cleanup.retainBaselineGenerations", value },
+        ]),
+      ).rejects.toMatchObject({
+        category: "configuration_invalid",
+        code: "CONFIGURATION_INVALID",
+        exitCode: 2,
+      });
+      const proposal = await readFile(join(root, "proposal.json"), "utf8");
+      const result = cli(root, [
+        "configuration",
+        "review",
+        "--proposal=proposal.json",
+      ]);
+      expect(result.status).toBe(2);
+      expect(result.output.error).toMatchObject({
+        category: "configuration_invalid",
+        code: "CONFIGURATION_INVALID",
+      });
+      expect(await readFile(join(root, "rehearsal.config.mjs"), "utf8")).toBe(
+        source,
+      );
+      expect(await readFile(join(root, "proposal.json"), "utf8")).toBe(
+        proposal,
+      );
+    },
+  );
+
+  it.each([
+    [
+      "manual-only",
+      [{ path: "identityPolicy", value: "PRIVATE_PROPOSAL_CANARY" }],
+    ],
+    [
+      "unknown",
+      [{ path: "PRIVATE_FIELD_CANARY", value: "PRIVATE_PROPOSAL_CANARY" }],
+    ],
+    [
+      "duplicate",
+      [
+        { path: "runtime.displayName", value: "PRIVATE_PROPOSAL_CANARY" },
+        { path: "runtime.displayName", value: "PRIVATE_PROPOSAL_CANARY" },
+      ],
+    ],
+  ])(
+    "classifies %s proposals without printing private field names or values",
+    async (_name, changes) => {
+      const { root, source } = await fixture();
+      const sentinel = join(root, "must-not-execute-proposal");
+      const proposed = [
+        {
+          path: "application.proofCommand",
+          value: `node -e "require('node:fs').writeFileSync(${JSON.stringify(sentinel)},'bad')"`,
+        },
+        ...changes,
+      ];
+      try {
+        await propose(root, source, proposed);
+        throw new Error("Unexpected proposal acceptance.");
+      } catch (error) {
+        expect(error).toBeInstanceOf(RehearsalError);
+        expect(error.exitCode).toBe(2);
+        expect(serializeRehearsalError(error).error).toMatchObject({
+          category: "configuration_invalid",
+          code: "CONFIGURATION_INVALID",
+        });
+        expect(JSON.stringify(serializeRehearsalError(error))).not.toMatch(
+          /PRIVATE_(?:FIELD|PROPOSAL)_CANARY/u,
+        );
+      }
+      const proposal = await readFile(join(root, "proposal.json"), "utf8");
+      const result = cli(root, [
+        "configuration",
+        "review",
+        "--proposal=proposal.json",
+      ]);
+      expect(result.status).toBe(2);
+      expect(result.output.error).toMatchObject({
+        category: "configuration_invalid",
+        code: "CONFIGURATION_INVALID",
+      });
+      expect(JSON.stringify(result.output)).not.toMatch(
+        /PRIVATE_(?:FIELD|PROPOSAL)_CANARY/u,
+      );
+      expect(await readFile(join(root, "rehearsal.config.mjs"), "utf8")).toBe(
+        source,
+      );
+      expect(await readFile(join(root, "proposal.json"), "utf8")).toBe(
+        proposal,
+      );
+      await expect(access(sentinel)).rejects.toThrow();
+    },
+  );
+
+  it("does not relabel an unexpected executable configuration fault as validation", async () => {
+    const { root } = await fixture();
+    const source = 'throw new Error("Synthetic unexpected fault.");\n';
+    await writeFile(join(root, "rehearsal.config.mjs"), source);
+    const result = cli(root, ["configuration"]);
+    expect(result.status).toBe(10);
+    expect(result.output.error).toMatchObject({
+      category: "internal_failure",
+      code: "INTERNAL_FAILURE",
+    });
+    expect(await readFile(join(root, "rehearsal.config.mjs"), "utf8")).toBe(
+      source,
+    );
+  });
+
+  it("reports invalid active baseline-retention configuration without inspecting a baseline", async () => {
+    const { root, source } = await fixture();
+    const invalid = source.replace(
+      "runtime:{",
+      "cleanup:{retainBaselineGenerations:0},runtime:{",
+    );
+    expect(invalid).not.toBe(source);
+    await writeFile(join(root, "rehearsal.config.mjs"), invalid);
+    await expect(
+      inspectConfigurationMetadata({ projectRoot: root }),
+    ).rejects.toMatchObject({
+      category: "configuration_invalid",
+      code: "CONFIGURATION_INVALID",
+      exitCode: 2,
+    });
+    const result = cli(root, ["configuration"]);
+    expect(result.status).toBe(2);
+    expect(result.output.error).toMatchObject({
+      category: "configuration_invalid",
+      code: "CONFIGURATION_INVALID",
+    });
+    expect(await readFile(join(root, "rehearsal.config.mjs"), "utf8")).toBe(
+      invalid,
+    );
+    await expect(access(join(root, ".rehearsal"))).rejects.toThrow();
+  });
+
   it("reports exact active root/nested paths and bounded policy defaults without reading secrets", async () => {
     const { root, source } = await fixture();
     await writeFile(join(root, ".env"), "PRIVATE_CANARY=do-not-read-or-print");

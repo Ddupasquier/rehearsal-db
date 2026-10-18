@@ -10,6 +10,7 @@ import type { RehearsalConfigPathOptions } from "./configuration.mjs";
 import { normalizeRehearsalConfig } from "./configuration_normalization.mjs";
 import { loadRuntimeTopology } from "../runtime/topology.mjs";
 import { assertRuntimeTopologyApplicationPorts } from "../runtime/topology_application_ports.mjs";
+import { createConfigurationValidationError } from "./configuration_validation.mjs";
 
 export const EDITABLE_CONFIGURATION_FIELDS = Object.freeze([
   ["runtime.applicationUrl", "local-url"],
@@ -64,7 +65,7 @@ const localRegularPath = async (
     details.isSymbolicLink() ||
     details.size > maximumBytes
   )
-    throw new Error(
+    throw createConfigurationValidationError(
       "Configuration review requires a bounded project-local regular file, not a symbolic link.",
     );
   return candidate;
@@ -92,7 +93,9 @@ const boundedSource = async (
       opened.ino !== current.ino ||
       opened.dev !== current.dev
     )
-      throw new Error("Configuration review file changed while opening it.");
+      throw createConfigurationValidationError(
+        "Configuration review file changed while opening it.",
+      );
     const bytes = Buffer.alloc(maximumBytes + 1);
     let offset = 0;
     while (offset < bytes.length) {
@@ -106,7 +109,7 @@ const boundedSource = async (
       offset += result.bytesRead;
     }
     if (offset > maximumBytes)
-      throw new Error(
+      throw createConfigurationValidationError(
         "Configuration review file exceeds its bounded read limit.",
       );
     return bytes.subarray(0, offset).toString("utf8");
@@ -122,7 +125,7 @@ const loadReviewedConfiguration = async (
   const source = await boundedSource(configPath, projectRoot);
   const loaded = await loadRehearsalConfig({ projectRoot, configPath });
   if (hash(await boundedSource(configPath, projectRoot)) !== hash(source))
-    throw new Error(
+    throw createConfigurationValidationError(
       "Configuration changed while loading its review; no proposal was accepted.",
     );
   return { loaded, source };
@@ -167,19 +170,23 @@ export const reviewConfigurationProposal = async (
   const path = resolve(loaded.projectRoot, proposalPath);
   const local = relative(loaded.projectRoot, path);
   if (!local || local.startsWith("..") || /^[A-Za-z]:/u.test(local))
-    throw new Error("Configuration proposals must remain project-local.");
+    throw createConfigurationValidationError(
+      "Configuration proposals must remain project-local.",
+    );
   let input: unknown;
   try {
     input = JSON.parse(await boundedSource(path, loaded.projectRoot, 65536));
   } catch (error) {
     if (error instanceof SyntaxError)
-      throw new Error(
+      throw createConfigurationValidationError(
         "The configuration proposal is not valid JSON; no private content was printed.",
       );
     throw error;
   }
   if (!input || typeof input !== "object" || Array.isArray(input))
-    throw new Error("The configuration proposal must be an object.");
+    throw createConfigurationValidationError(
+      "The configuration proposal must be an object.",
+    );
   const proposal = input as Record<string, unknown>;
   if (
     proposal.schemaVersion !== 1 ||
@@ -197,9 +204,11 @@ export const reviewConfigurationProposal = async (
         ].includes(key),
     )
   )
-    throw new Error("The versioned configuration proposal is invalid.");
+    throw createConfigurationValidationError(
+      "The versioned configuration proposal is invalid.",
+    );
   if (hash(before) !== proposal.sourceSha256)
-    throw new Error(
+    throw createConfigurationValidationError(
       "Configuration changed during review; refresh and review a new diff.",
     );
   const module = await import(
@@ -209,7 +218,7 @@ export const reviewConfigurationProposal = async (
   const seen = new Set<string>();
   for (const raw of proposal.changes) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw))
-      throw new Error("A proposed change is invalid.");
+      throw createConfigurationValidationError("A proposed change is invalid.");
     const change = raw as Record<string, unknown>;
     if (
       Object.keys(change).some((key) => !["path", "value"].includes(key)) ||
@@ -217,7 +226,7 @@ export const reviewConfigurationProposal = async (
       seen.has(change.path) ||
       !EDITABLE_CONFIGURATION_FIELDS.some(([path]) => path === change.path)
     )
-      throw new Error(
+      throw createConfigurationValidationError(
         "The proposed field is unknown, duplicated, or requires manual review.",
       );
     seen.add(change.path);
@@ -231,7 +240,9 @@ export const reviewConfigurationProposal = async (
         typeof owner[key] !== "object" ||
         Array.isArray(owner[key])
       )
-        throw new Error("A configuration owner cannot be safely edited.");
+        throw createConfigurationValidationError(
+          "A configuration owner cannot be safely edited.",
+        );
       owner = owner[key] as Record<string, unknown>;
     }
     owner[leaf] = change.value;
@@ -248,7 +259,7 @@ export const reviewConfigurationProposal = async (
       /^[A-Za-z]:/u.test(topologyConfigPath) ||
       topologyConfigPath.split(/[\\/]/u).includes(".."))
   )
-    throw new Error(
+    throw createConfigurationValidationError(
       "The topology configuration must be an explicit bounded project-local path.",
     );
   const graphSources = new Map<string, string>();
@@ -266,7 +277,7 @@ export const reviewConfigurationProposal = async (
   if (
     !topology.targets.some((target) => target.configPath === loaded.configPath)
   )
-    throw new Error(
+    throw createConfigurationValidationError(
       "The edited configuration is not a member of the explicit parent topology; no proposal was accepted.",
     );
   assertRuntimeTopologyApplicationPorts(
@@ -278,14 +289,14 @@ export const reviewConfigurationProposal = async (
   );
   for (const [path, expected] of graphSources)
     if (hash(await boundedSource(path, loaded.projectRoot)) !== expected)
-      throw new Error(
+      throw createConfigurationValidationError(
         "A topology configuration changed during review; no proposal was accepted.",
       );
   if (
     hash(await boundedSource(loaded.configPath, loaded.projectRoot)) !==
     proposal.sourceSha256
   )
-    throw new Error(
+    throw createConfigurationValidationError(
       "Configuration changed during review; no configuration was written.",
     );
   return {

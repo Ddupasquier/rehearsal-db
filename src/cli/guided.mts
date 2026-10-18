@@ -5,6 +5,7 @@
 import { access, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import * as prompts from "@clack/prompts";
+import { createGuidedUpdates } from "./guided_updates.mjs";
 import {
   findRehearsalConfigPath,
   inspectDetectedProject,
@@ -430,6 +431,7 @@ const reviewPolicyInteractively = async ({
 const guidedOptions = (
   state: GuidedState,
   hasLastDetails: boolean,
+  showUpdates: boolean,
 ): GuidedCommandOption[] => {
   const options: GuidedCommandOption[] = [];
   if (!state.node.supported) {
@@ -523,6 +525,9 @@ const guidedOptions = (
       command: "support",
     },
     { label: "Show all commands", command: "help" },
+    ...(showUpdates
+      ? [{ label: "Check for updates", command: "check-updates" }]
+      : []),
     { label: "Exit", command: "exit" },
   );
   return options;
@@ -792,43 +797,52 @@ const guideBaseline = async ({
   }
 };
 
-export const createGuidedHome =
-  ({
-    projectRoot,
-    topologyCandidateSummary,
-    buildRefreshWorkflowPlan,
-    planRuntimeStackCleanup,
-    getLastGuidedDetails,
-    session,
-  }: {
-    projectRoot: string;
-    topologyCandidateSummary: (
-      options: RehearsalConfigPathOptions,
-    ) => Promise<TopologySummary>;
-    buildRefreshWorkflowPlan: (
-      options: RehearsalConfigPathOptions,
-    ) => Promise<{ plan: GuidedRefreshPlan }>;
-    planRuntimeStackCleanup: (input: {
-      flags: RehearsalCliFlags;
-      planOptions: RehearsalConfigPathOptions;
-    }) => Promise<GuidedCleanupPlan>;
-    getLastGuidedDetails: () => string | undefined;
-    session: CliSessionState;
-  }) =>
-  async ({
+export const createGuidedHome = ({
+  projectRoot,
+  topologyCandidateSummary,
+  buildRefreshWorkflowPlan,
+  planRuntimeStackCleanup,
+  getLastGuidedDetails,
+  session,
+}: {
+  projectRoot: string;
+  topologyCandidateSummary: (
+    options: RehearsalConfigPathOptions,
+  ) => Promise<TopologySummary>;
+  buildRefreshWorkflowPlan: (
+    options: RehearsalConfigPathOptions,
+  ) => Promise<{ plan: GuidedRefreshPlan }>;
+  planRuntimeStackCleanup: (input: {
+    flags: RehearsalCliFlags;
+    planOptions: RehearsalConfigPathOptions;
+  }) => Promise<GuidedCleanupPlan>;
+  getLastGuidedDetails: () => string | undefined;
+  session: CliSessionState;
+}) => {
+  const updates = createGuidedUpdates({ projectRoot });
+  return async ({
     flags,
     planOptions,
   }: {
     flags: RehearsalCliFlags;
     planOptions: RehearsalConfigPathOptions;
   }): Promise<string | null> => {
+    if (await updates(flags)) return null;
     const state = await inspectGuidedProject({
       projectRoot,
       planOptions,
       topologyCandidateSummary,
     });
     const lastDetails = getLastGuidedDetails();
-    const options = guidedOptions(state, Boolean(lastDetails));
+    const options = guidedOptions(
+      state,
+      Boolean(lastDetails),
+      !flags.json &&
+        Boolean(process.stdin.isTTY && process.stdout.isTTY) &&
+        !process.env.CI &&
+        !process.env.CODEX_CI &&
+        process.env.REHEARSAL_UPDATE_CHECK !== "off",
+    );
     showGuidedStatus({ state, options, flags });
     const selected = await promptForChoice({
       message: "What would you like to do?",
@@ -837,6 +851,9 @@ export const createGuidedHome =
       optionsAlreadyShown: !useStyledPrompts(flags),
     });
     if (!selected || selected.command === "exit") return null;
+    if (selected.command === "check-updates") {
+      return (await updates(flags, true)) ? null : "home";
+    }
     if (selected.command === "node-help") {
       console.log(
         [
@@ -978,3 +995,4 @@ export const createGuidedHome =
     flags.write = true;
     return "setup";
   };
+};

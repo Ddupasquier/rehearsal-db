@@ -39,6 +39,26 @@ npm install --save-dev @rehearsal-db/core
 npx rehearsal
 ```
 
+The guide first offers an optional update check. **Not now** makes no network request.
+Choose **Check once** or **Check and remind me daily** to contact npm's public registry;
+daily checks happen only when opening this guide, not in the background. A newer release
+offers its exact update command, **Not now**, **Skip this release**, and **Disable reminders**.
+Rehearsal exits before you run an update command; it never installs its own replacement.
+Review the release's compatibility notes and resulting dependency diff.
+Stable installations check stable releases only. Preview installations also check for a
+newer stable release and label it explicitly; switching remains your reviewed decision.
+
+Use **Check for updates** in the guide to check manually or change that choice. Preferences
+stay in the owner-private `~/.cache/rehearsal/updates-v1.json`, outside your project.
+Set `REHEARSAL_UPDATE_CHECK=off` to prevent checks and prompts for a session. JSON, CI and
+noninteractive commands never check. Offline checks do not block local work; custom
+artifact installations keep their own reviewed update process.
+Exact commands require matching npm manifest, lockfile and installed-origin records.
+Other package managers, unverified origins or a new compatibility series receive manual
+review guidance instead; release availability is not a compatibility guarantee.
+For an isolated test or a different preference location, set `REHEARSAL_UPDATE_STATE_DIR`
+to an absolute owner-private directory; this changes no registry endpoint or project files.
+
 With npm, a normal application install creates `rehearsal.config.mjs`, the dedicated
 local runtime config, and the required `.gitignore` entries when Rehearsal can prove the
 application root. It never replaces an existing file. Review the generated config,

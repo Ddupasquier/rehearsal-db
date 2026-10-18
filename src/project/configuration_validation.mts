@@ -4,8 +4,24 @@
  */
 
 import { isAbsolute } from "node:path";
+import { RehearsalError } from "../shared/diagnostics.mjs";
 
 export type PlainObject = Record<string, unknown>;
+
+/** Classify deliberate configuration refusals without guessing from field names. */
+export const createConfigurationValidationError = (
+  message: string,
+): RehearsalError =>
+  new RehearsalError({
+    category: "configuration_invalid",
+    code: "CONFIGURATION_INVALID",
+    message,
+    refused:
+      "Rehearsal did not write configuration or execute a proposed command.",
+    suggestions: [
+      "Review the configuration and correct the invalid setting before retrying.",
+    ],
+  });
 
 const SAFE_COMMAND_PATTERN = /^[^\n\r\0]+$/u;
 const IDENTIFIER_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/u;
@@ -137,7 +153,9 @@ export const assertBoolean = (value: unknown, path: string): boolean => {
 
 export const assertPositiveInteger = (value: unknown, path: string): number => {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
-    throw new Error(`${path} must be a positive integer.`);
+    throw createConfigurationValidationError(
+      `${path} must be a positive integer.`,
+    );
   }
   return value;
 };

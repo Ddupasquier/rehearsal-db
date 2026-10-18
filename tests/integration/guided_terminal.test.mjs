@@ -31,11 +31,14 @@ const makeTreeWritable = async (path) => {
   }
 };
 
-const runInPty = ({ cwd, interactions, plain }) =>
+const runInPty = ({ cwd, interactions, plain, updateState }) =>
   new Promise((resolve, reject) => {
     const environment = Object.fromEntries(
       Object.entries(process.env).filter(
-        ([key]) => !["CI", "CODEX_CI", "NO_COLOR"].includes(key),
+        ([key]) =>
+          !["CI", "CODEX_CI", "NO_COLOR", "REHEARSAL_UPDATE_CHECK"].includes(
+            key,
+          ),
       ),
     );
     const terminal = spawn(
@@ -46,7 +49,16 @@ const runInPty = ({ cwd, interactions, plain }) =>
         cols: 100,
         rows: 40,
         cwd,
-        env: { ...environment, COLORTERM: "truecolor", TERM: "xterm-256color" },
+        // This older journey owns setup/navigation, not release checks. Dedicated
+        // update-advisory tests exercise default consent and enabled reminders.
+        env: {
+          ...environment,
+          ...(updateState
+            ? { REHEARSAL_UPDATE_STATE_DIR: updateState }
+            : { REHEARSAL_UPDATE_CHECK: "off" }),
+          COLORTERM: "truecolor",
+          TERM: "xterm-256color",
+        },
       },
     );
     let output = "";
@@ -238,6 +250,24 @@ afterEach(async () => {
 });
 
 describe("guided terminal journey", () => {
+  it("exits the real plain first-consent prompt cleanly with one Ctrl+C", async () => {
+    const root = await makeProject();
+    const updateState = join(await realpath(root), "update-state");
+    const output = String(
+      await runInPty({
+        cwd: root,
+        plain: true,
+        updateState,
+        interactions: [
+          { after: "Check npm for Rehearsal updates? [1]:", write: "\u0003" },
+        ],
+      }),
+    );
+    expect(output).toContain("Check npm for Rehearsal updates?");
+    expect(output).not.toContain("internal_failure");
+    expect(output).not.toContain("Checking the published");
+    await expect(access(updateState)).rejects.toThrow();
+  });
   it("shows nested PostgreSQL setup choices in the plain guide", async () => {
     const root = await makePostgresqlProject();
     const output = String(
