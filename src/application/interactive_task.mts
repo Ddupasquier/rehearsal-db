@@ -2,6 +2,10 @@
 
 import type { EventEmitter } from "node:events";
 import {
+  acquireTerminalInput,
+  type TerminalInput,
+} from "../shared/terminal_input.mjs";
+import {
   summarizeProjectCommandFailure,
   type ApplicationDiagnostics,
   type ApplicationSession,
@@ -11,18 +15,6 @@ import {
 const SESSION_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGTSTP"] as const;
 type SessionSignal = (typeof SESSION_SIGNALS)[number];
 type SignalTarget = Pick<EventEmitter, "prependListener" | "removeListener">;
-
-interface SessionInput {
-  readonly isTTY?: boolean;
-  prependListener(
-    event: "data",
-    listener: (chunk: Buffer | string) => void,
-  ): unknown;
-  removeListener(
-    event: "data",
-    listener: (chunk: Buffer | string) => void,
-  ): unknown;
-}
 
 /**
  * A terminal interruption aborts the task and retires the owned process group.
@@ -39,7 +31,7 @@ export const runApplicationSessionTask = async <Value,>({
   session: ApplicationSession;
   task: (signal: AbortSignal) => Promise<Value>;
   signalTarget?: SignalTarget;
-  input?: SessionInput;
+  input?: TerminalInput | null;
   onReady?: (ready: ApplicationSession["ready"]) => void;
 }): Promise<
   | Readonly<{
@@ -75,17 +67,12 @@ export const runApplicationSessionTask = async <Value,>({
   for (const [signal, handler] of handlers) {
     signalTarget.prependListener(signal, handler);
   }
-  const onInput = (chunk: Buffer | string) => {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    if (bytes.includes(0x03)) {
-      finishInterruption({ kind: "interrupted", signal: "SIGINT" });
-    } else if (bytes.includes(0x1a)) {
-      finishInterruption({ kind: "interrupted", signal: "SIGTSTP" });
-    }
-  };
-  if (input?.isTTY) input.prependListener("data", onInput);
+  let releaseInput: () => void = () => undefined;
   const abortController = new AbortController();
   try {
+    releaseInput = acquireTerminalInput(input, (signal) =>
+      finishInterruption({ kind: "interrupted", signal }),
+    );
     onReady(session.ready);
     const outcome:
       | Interruption
@@ -134,6 +121,6 @@ export const runApplicationSessionTask = async <Value,>({
     for (const [signal, handler] of handlers) {
       signalTarget.removeListener(signal, handler);
     }
-    if (input?.isTTY) input.removeListener("data", onInput);
+    releaseInput();
   }
 };

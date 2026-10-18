@@ -12,6 +12,7 @@ import {
   summarizeProjectCommandFailure,
 } from "../../../dist/src/application/session.mjs";
 import { runApplicationSessionTask } from "../../../dist/src/application/interactive_task.mjs";
+import { runWithOperationCancellation } from "../../../dist/src/shared/cancellation.mjs";
 
 const roots = [];
 const servers = [];
@@ -36,6 +37,86 @@ afterEach(async () => {
 });
 
 describe("package-owned application sessions", () => {
+  it.each(["SIGINT", "SIGTSTP"])(
+    "keeps ready %s as a handled close inside an outer Open cancellation boundary",
+    async (signal) => {
+      const signals = new EventEmitter();
+      const input = new EventEmitter();
+      input.isTTY = false;
+      const session = {
+        ready: { url: "http://127.0.0.1:5175", status: 200 },
+        wait: () => new Promise(() => undefined),
+        stop: vi.fn(async () => undefined),
+        diagnostics: () => ({ stdoutBytes: 0, stderrBytes: 0 }),
+      };
+      await expect(
+        runWithOperationCancellation({
+          signalTarget: signals,
+          input,
+          task: () =>
+            holdApplicationSession({
+              session,
+              signalTarget: signals,
+              input,
+              onReady: () => signals.emit(signal),
+            }),
+        }),
+      ).resolves.toMatchObject({ signal });
+      expect(session.stop).toHaveBeenCalledOnce();
+      expect(signals.eventNames()).toEqual([]);
+      expect(input.listenerCount("data")).toBe(0);
+    },
+  );
+
+  it.each([false, true])(
+    "retires an already-ready session on cancelled handoff; stop failure=%s",
+    async (stopFails) => {
+      const signals = new EventEmitter();
+      const input = new EventEmitter();
+      input.isTTY = false;
+      const cleanupError = new Error("owned handoff stop failed");
+      const onReady = vi.fn();
+      const session = {
+        ready: { url: "http://127.0.0.1:5175", status: 200 },
+        wait: () => new Promise(() => undefined),
+        stop: vi.fn(async () => {
+          if (stopFails) throw cleanupError;
+        }),
+        diagnostics: () => ({ stdoutBytes: 0, stderrBytes: 0 }),
+      };
+      const operation = runWithOperationCancellation({
+        signalTarget: signals,
+        input,
+        task: async () => {
+          signals.emit("SIGINT");
+          return holdApplicationSession({
+            session,
+            signalTarget: signals,
+            input,
+            onReady,
+          });
+        },
+      });
+      if (stopFails) {
+        await expect(operation).rejects.toBeInstanceOf(AggregateError);
+        await expect(operation).rejects.toMatchObject({
+          errors: [
+            expect.objectContaining({ code: "OPERATION_CANCELLED" }),
+            cleanupError,
+          ],
+        });
+      } else
+        await expect(operation).rejects.toMatchObject({
+          category: "operation_cancelled",
+          code: "OPERATION_CANCELLED",
+          exitCode: 130,
+        });
+      expect(onReady).not.toHaveBeenCalled();
+      expect(session.stop).toHaveBeenCalledOnce();
+      expect(signals.eventNames()).toEqual([]);
+    },
+  );
+
   it("reports exit status and byte counts without echoing project output", () => {
     const summary = summarizeProjectCommandFailure({
       status: 7,
@@ -159,6 +240,63 @@ server.listen(Number(process.env.PORT), "127.0.0.1");
     await expect(held).resolves.toMatchObject({ signal: "SIGINT" });
     expect(signals.listenerCount("SIGINT")).toBe(0);
   });
+
+  it.each(["hold", "identity"])(
+    "restores terminal input after %s readiness or shutdown errors",
+    async (mode) => {
+      for (const failure of ["ready", "stop"]) {
+        const signals = new EventEmitter();
+        const input = new EventEmitter();
+        input.isTTY = true;
+        input.isRaw = false;
+        input.readableFlowing = false;
+        input.setRawMode = vi.fn((enabled) => {
+          input.isRaw = enabled;
+        });
+        input.resume = vi.fn(() => {
+          input.readableFlowing = true;
+        });
+        input.pause = vi.fn(() => {
+          input.readableFlowing = false;
+        });
+        const session = {
+          ready: { url: "http://127.0.0.1:5175", status: 200 },
+          wait: () => new Promise(() => undefined),
+          stop: vi.fn(async () => {
+            expect(input.isRaw).toBe(true);
+            if (failure === "stop") throw new Error("owned stop failed");
+          }),
+          diagnostics: () => ({ stdoutBytes: 0, stderrBytes: 0 }),
+        };
+        const options = {
+          session,
+          input,
+          signalTarget: signals,
+          onReady: () => {
+            if (failure === "ready")
+              throw new Error("readiness rendering failed");
+            input.emit("data", Buffer.from([0x1a]));
+          },
+        };
+        const result =
+          mode === "hold"
+            ? holdApplicationSession(options)
+            : runApplicationSessionTask({
+                ...options,
+                task: () => new Promise(() => undefined),
+              });
+        await expect(result).rejects.toThrow(
+          failure === "ready"
+            ? "readiness rendering failed"
+            : "owned stop failed",
+        );
+        expect(input.isRaw).toBe(false);
+        expect(input.readableFlowing).toBe(false);
+        expect(input.listenerCount("data")).toBe(0);
+        expect(signals.eventNames()).toEqual([]);
+      }
+    },
+  );
 
   it("reports idle shutdown distinctly and aborts its monitor before stopping the owned child", async () => {
     const signals = new EventEmitter();
@@ -504,9 +642,12 @@ setInterval(() => {}, 1000);
       },
       signalTarget: signals,
     });
-    const interrupted = expect(starting).rejects.toThrow(
-      "Application startup was interrupted by SIGINT",
-    );
+    const interrupted = expect(starting).rejects.toMatchObject({
+      category: "operation_cancelled",
+      code: "OPERATION_CANCELLED",
+      exitCode: 130,
+      context: { signal: "SIGINT" },
+    });
     try {
       await vi.waitFor(
         async () => {

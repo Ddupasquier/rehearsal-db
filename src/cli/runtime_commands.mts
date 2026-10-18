@@ -726,6 +726,7 @@ export const createRuntimeCommands = ({
     onRuntimeStarted?: () => void;
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
+    throwIfOperationCancelled();
     const application = topology.primary.config.application;
     const readiness = application.readiness;
     if (!readiness) {
@@ -783,6 +784,19 @@ export const createRuntimeCommands = ({
           readiness,
         }),
     );
+    try {
+      throwIfOperationCancelled();
+    } catch (error) {
+      try {
+        await applicationSession.stop();
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          "Application handoff was cancelled and its owned process could not be stopped.",
+        );
+      }
+      throw error;
+    }
     return {
       started: started.runtime,
       verified: verified.runtime,
@@ -807,6 +821,7 @@ export const createRuntimeCommands = ({
     ) => void;
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
+    throwIfOperationCancelled();
     let runtimeStarted = false;
     const { result, lifecycle } = await applyRuntimePersistence({
       mode: topology.primary.config.lifecycle.open,

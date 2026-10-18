@@ -33,6 +33,51 @@ const waitForPath = async (path) => {
 };
 
 describe("mutating operation cancellation", () => {
+  it.each([
+    [0x03, "SIGINT"],
+    [0x1a, "SIGTSTP"],
+  ])(
+    "handles terminal control byte %s without suspending a wrapper",
+    async (byte, requestedSignal) => {
+      const signals = new EventEmitter();
+      const input = new EventEmitter();
+      input.isTTY = true;
+      input.isRaw = false;
+      input.readableFlowing = false;
+      input.setRawMode = (enabled) => {
+        input.isRaw = enabled;
+      };
+      input.resume = () => {
+        input.readableFlowing = true;
+      };
+      input.pause = () => {
+        input.readableFlowing = false;
+      };
+      const operation = runWithOperationCancellation({
+        signalTarget: signals,
+        input,
+        task: async () => {
+          expect(input.isRaw).toBe(true);
+          input.emit("data", Buffer.from([byte]));
+          await withOperationCancellationShield(async () => {
+            expect(input.isRaw).toBe(true);
+          });
+          throwIfOperationCancelled();
+        },
+      });
+      await expect(operation).rejects.toMatchObject({
+        category: "operation_cancelled",
+        code: "OPERATION_CANCELLED",
+        exitCode: 130,
+        context: { signal: requestedSignal },
+      });
+      expect(input.isRaw).toBe(false);
+      expect(input.readableFlowing).toBe(false);
+      expect(input.listenerCount("data")).toBe(0);
+      expect(signals.eventNames()).toEqual([]);
+    },
+  );
+
   it.each(["SIGINT", "SIGTERM", "SIGHUP", "SIGTSTP"])(
     "returns the stable cancellation contract for %s",
     async (requestedSignal) => {

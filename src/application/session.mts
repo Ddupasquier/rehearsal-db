@@ -14,10 +14,19 @@ import { assertApplicationPortAvailable } from "./port_preflight.mjs";
 import { waitForApplicationIdle } from "./activity_monitor.mjs";
 import type { ApplicationActivity } from "./activity_contract.mjs";
 import { stopOwnedPosixProcessGroup } from "./process_group.mjs";
+import {
+  acquireTerminalInput,
+  type TerminalInput,
+  type TerminalInputLease,
+} from "../shared/terminal_input.mjs";
+import {
+  createOperationCancelledError,
+  throwIfOperationCancelled,
+} from "../shared/cancellation.mjs";
 
 const ENV_KEY = /^[A-Z][A-Z0-9_]*$/u;
 const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
-const SESSION_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGTSTP"];
+const SESSION_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGTSTP"] as const;
 type SessionSignal = (typeof SESSION_SIGNALS)[number];
 
 export type ApplicationSessionSignal = SessionSignal;
@@ -44,18 +53,6 @@ export interface ApplicationDiagnostics {
 interface ChildExit {
   readonly status: number | null;
   readonly signal: NodeJS.Signals | null;
-}
-
-interface SessionInput {
-  readonly isTTY?: boolean;
-  prependListener(
-    event: "data",
-    listener: (chunk: Buffer | string) => void,
-  ): unknown;
-  removeListener(
-    event: "data",
-    listener: (chunk: Buffer | string) => void,
-  ): unknown;
 }
 
 interface EnvironmentInput {
@@ -319,6 +316,7 @@ export const startApplicationSession = async ({
   spawnImplementation = spawn,
   fetchImplementation = fetch,
   signalTarget = process,
+  input = process.stdin,
   portPreflight = (value) =>
     assertApplicationPortAvailable({ url: value?.url }),
 }: EnvironmentInput & {
@@ -329,6 +327,7 @@ export const startApplicationSession = async ({
   spawnImplementation?: typeof spawn;
   fetchImplementation?: typeof fetch;
   signalTarget?: SignalTarget;
+  input?: TerminalInput | null;
   portPreflight?: (readiness: ApplicationReadiness) => Promise<void>;
 }): Promise<ApplicationSession> => {
   const mapped = await buildApplicationEnvironment({ files, mappings });
@@ -371,15 +370,24 @@ export const startApplicationSession = async ({
   let interruptStartup: (signal: SessionSignal) => void = () => undefined;
   const interruption = new Promise<never>((_, reject) => {
     interruptStartup = (signal: SessionSignal) =>
-      reject(new Error(`Application startup was interrupted by ${signal}.`));
+      reject(createOperationCancelledError(signal));
   });
+  let releaseInput: TerminalInputLease | null = null;
   const startupHandlers = new Map(
-    SESSION_SIGNALS.map((signal) => [signal, () => interruptStartup(signal)]),
+    SESSION_SIGNALS.map((signal) => [
+      signal,
+      () => {
+        if (!releaseInput || releaseInput.isCurrentOwner())
+          interruptStartup(signal);
+      },
+    ]),
   );
   for (const [signal, handler] of startupHandlers) {
     signalTarget.prependListener(signal, handler);
   }
   try {
+    releaseInput = acquireTerminalInput(input, interruptStartup);
+    throwIfOperationCancelled();
     const ready = await Promise.race([
       waitForReadiness({
         readiness,
@@ -399,12 +407,20 @@ export const startApplicationSession = async ({
       }),
     });
   } catch (error) {
-    await stopApplication();
+    try {
+      await stopApplication();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        "Application startup failed and its owned process could not be stopped.",
+      );
+    }
     throw error;
   } finally {
     for (const [signal, handler] of startupHandlers) {
       signalTarget.removeListener(signal, handler);
     }
+    releaseInput?.();
   }
 };
 
@@ -424,7 +440,7 @@ export const holdApplicationSession = async ({
 }: {
   session: ApplicationSession;
   signalTarget?: SignalTarget;
-  input?: SessionInput;
+  input?: TerminalInput | null;
   onReady?: (ready: ApplicationSession["ready"]) => void;
   activity?: ApplicationActivity | null;
   idleTimeoutSeconds?: number | null;
@@ -449,26 +465,27 @@ export const holdApplicationSession = async ({
   const interruption = new Promise<Interruption>((resolve) => {
     finishInterruption = resolve;
   });
+  let releaseInput: TerminalInputLease | null = null;
   const handlers = new Map(
     SESSION_SIGNALS.map((signal) => [
       signal,
-      () => finishInterruption({ kind: "interrupted", signal }),
+      () => {
+        if (!releaseInput || releaseInput.isCurrentOwner())
+          finishInterruption({ kind: "interrupted", signal });
+      },
     ]),
   );
   for (const [signal, handler] of handlers) {
     signalTarget.prependListener(signal, handler);
   }
-  const onInput = (chunk: Buffer | string) => {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    if (bytes.includes(0x03)) {
-      finishInterruption({ kind: "interrupted", signal: "SIGINT" });
-    } else if (bytes.includes(0x1a)) {
-      finishInterruption({ kind: "interrupted", signal: "SIGTSTP" });
-    }
-  };
-  if (input?.isTTY) input.prependListener("data", onInput);
   const activityController = new AbortController();
+  let operationFailed = false;
+  let operationError: unknown;
   try {
+    releaseInput = acquireTerminalInput(input, (signal) =>
+      finishInterruption({ kind: "interrupted", signal }),
+    );
+    throwIfOperationCancelled();
     if (
       idleTimeoutSeconds !== null &&
       (!activity ||
@@ -519,18 +536,31 @@ export const holdApplicationSession = async ({
         stderrBytes: 0,
       },
     });
+  } catch (error) {
+    operationFailed = true;
+    operationError = error;
+    throw error;
   } finally {
     activityController.abort();
     try {
       // npm can forward the terminal's SIGINT after the CLI receives it.
       // Keep our handlers installed until the owned process group is fully
       // stopped so a duplicate signal cannot terminate Rehearsal mid-cleanup.
-      await session.stop();
+      try {
+        await session.stop();
+      } catch (cleanupError) {
+        if (operationFailed)
+          throw new AggregateError(
+            [operationError, cleanupError],
+            "Application session failed and its owned process could not be stopped.",
+          );
+        throw cleanupError;
+      }
     } finally {
       for (const [signal, handler] of handlers) {
         signalTarget.removeListener(signal, handler);
       }
-      if (input?.isTTY) input.removeListener("data", onInput);
+      releaseInput?.();
     }
   }
 };
