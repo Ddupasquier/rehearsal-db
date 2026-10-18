@@ -63,8 +63,9 @@ ready. The sequence below is policy, not a claim that its checks have passed.
    do not relabel old or unavailable manual checks as new results. No minimum number
    of calendar days replaces these checks.
 6. Publish `1.0.0` only when no blocking issue remains and the exact tarball has passed
-   the required release checks, consumer acceptance, exact-artifact authorization and
-   protected human publication approval.
+   the required release checks and consumer acceptance. The protected GitHub npm
+   review is the single human authorization for its displayed exact version and
+   checksum; no separate chat approval or pasted phrase is required.
 7. Independently verify registry bytes, provenance, signatures and channels, then
    confirm the published package in the real consumer. Promotion is complete only
    when the published artifact matches the tested tarball and these checks pass.

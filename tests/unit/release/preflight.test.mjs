@@ -6,11 +6,7 @@ import {
   RELEASE_POLICY,
   verifyReleaseSettings,
 } from "../../../scripts/release/preflight.mjs";
-import {
-  approvalComment,
-  controlsWitnessDigest,
-  createControlsWitness,
-} from "../../../scripts/release/controls_witness.mjs";
+import { createControlsWitness } from "../../../scripts/release/controls_witness.mjs";
 
 const base = "/repos/Ddupasquier/rehearsal-db";
 const sha = "a".repeat(40);
@@ -147,14 +143,7 @@ function fixture(mode = "prepare") {
         state: "approved",
         user: { id: 123, type: "User" },
         environments: [{ id: 789, name: "npm" }],
-        comment: approvalComment({
-          operation: mode,
-          runId: "12345",
-          attempt: "1",
-          sourceSha: sha,
-          artifactSha256: "d".repeat(64),
-          witnessSha256: controlsWitnessDigest(controlsWitness),
-        }),
+        comment: "",
       },
     ]);
   }
@@ -237,11 +226,11 @@ describe("release protection preflight", () => {
   );
 
   it.each(["publish", "sync-tags"])(
-    "accepts GitHub form CRLF in %s without accepting stale approval bindings",
+    "keeps ordinary %s comments optional and review history distinct from attempt/byte proof",
     async (mode) => {
       const f = fixture(mode);
       const reviews = f.values.get(`${base}/actions/runs/12345/approvals`);
-      reviews[0].comment = reviews[0].comment.replaceAll("\n", "\r\n");
+      reviews[0].comment = "Reviewed\r\nReady";
       const input = {
         mode,
         environment: context(mode),
@@ -261,7 +250,12 @@ describe("release protection preflight", () => {
             ...input,
             environment: { ...input.environment, ...changes },
           }),
-        ).rejects.toThrow("owner_approval_not_proven");
+        ).resolves.toMatchObject({
+          status: "passed",
+          limitations: expect.arrayContaining([
+            expect.stringContaining("not current-attempt or artifact proof"),
+          ]),
+        });
       expect(f.calls.every(({ options }) => options.method === "GET")).toBe(
         true,
       );
@@ -855,7 +849,7 @@ describe("release protection preflight", () => {
   );
 
   it.each(["publish", "sync-tags"])(
-    "requires authenticated exact owner approval before %s",
+    "corroborates authenticated owner review for the protected %s job",
     async (mode) => {
       const f = fixture(mode);
       const input = {
@@ -875,10 +869,10 @@ describe("release protection preflight", () => {
             ...input,
             environment: {
               ...input.environment,
-              [key]: key === "EXPECTED_SHA256" ? "e".repeat(64) : "2",
+              [key]: key === "EXPECTED_SHA256" ? "private-sentinel" : "0",
             },
           }),
-        ).rejects.toThrow("owner_approval_not_proven");
+        ).rejects.toThrow("invalid_approval_binding");
       }
       reviews[0].user.id = 999;
       await expect(releasePreflight(input)).rejects.toThrow(

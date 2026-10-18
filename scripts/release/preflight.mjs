@@ -3,9 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { releaseVersion } from "./channel.mjs";
 import {
-  approvalComment,
-  assertWitnessApproval,
-  controlsWitnessDigest,
+  assertEnvironmentApproval,
   witnessRulesetProof,
 } from "./controls_witness.mjs";
 import { readControlsWitness } from "./settings_witness.mjs";
@@ -83,6 +81,18 @@ export function releaseExecution(mode, environment) {
     environment.GITHUB_WORKFLOW_SHA !== environment.GITHUB_SHA
   )
     fail("unpinned_workflow_reference");
+  if (
+    ["publish", "sync-tags"].includes(mode) &&
+    (![environment.GITHUB_RUN_ID, environment.GITHUB_RUN_ATTEMPT].every(
+      (value) =>
+        typeof value === "string" &&
+        /^[1-9][0-9]{0,15}$/u.test(value) &&
+        Number.isSafeInteger(Number(value)),
+    ) ||
+      typeof environment.EXPECTED_SHA256 !== "string" ||
+      !/^[a-f0-9]{64}$/u.test(environment.EXPECTED_SHA256))
+  )
+    fail("invalid_approval_binding");
   return Object.freeze({ mode, reference, sha: environment.GITHUB_SHA });
 }
 
@@ -375,18 +385,11 @@ export async function releasePreflight({
   }
   if (mode === "publish" || mode === "sync-tags") {
     if (!controlsWitness) fail("controls_witness_missing");
-    const comment = approvalComment({
-      operation: mode,
-      runId: environment.GITHUB_RUN_ID,
-      attempt: environment.GITHUB_RUN_ATTEMPT,
-      sourceSha: execution.sha,
-      artifactSha256: environment.EXPECTED_SHA256,
-      witnessSha256: controlsWitnessDigest(controlsWitness),
-    });
-    assertWitnessApproval(
+    // GitHub's protected npm job admits execution. Run history corroborates an
+    // owner review; it cannot establish which attempt a review belonged to.
+    assertEnvironmentApproval(
       await read(`${base}/actions/runs/${environment.GITHUB_RUN_ID}/approvals`),
       {
-        comment,
         ownerId: controlsWitness.ownerId,
         environmentId: controlsWitness.environmentId,
       },
@@ -402,6 +405,7 @@ export async function releasePreflight({
     limitations: [
       "Settings do not establish an observed approval hold or authorize publication.",
       "npm publisher/account controls and owner approval require separate verification.",
+      "Run review history is corroboration, not current-attempt or artifact proof; GitHub enforces protected-job admission and the workflow verifies bytes separately.",
     ],
   };
 }

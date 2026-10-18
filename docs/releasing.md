@@ -95,23 +95,27 @@ than seven days or in the future. Public fields and timestamps must still match 
 bypass metadata is hidden; an explicitly malformed or nonempty bypass list always
 refuses publication.
 
-The prepare job prints an exact approval comment in its summary. Independently check
-the live no-bypass settings and accepted artifact checksum, then paste the comment into
-**Review deployments → npm** and approve manually. Before publishing or repairing
-tags, the workflow reads GitHub's actual approval history and requires the configured
-owner's authenticated review for that npm environment. The comment binds the operation,
-run ID, run attempt, source commit, artifact SHA-256 and settings-record SHA-256.
-GitHub may store the form's line breaks as CRLF instead of LF. The checker treats
-those two encodings as equivalent; it does not trim whitespace or change any field.
-An approval copied from another artifact, run or attempt is refused. Rerun the whole
-workflow after failure so preparation prints a new attempt-bound comment; do not reuse
-an earlier comment when rerunning only the mutation job.
+The prepare job displays the exact package version, SHA-256, source commit and run
+in its summary. Review the candidate and passed checks, then choose **Review
+deployments → npm → Approve and deploy**. That ordinary GitHub approval is the
+publication authorization: no separate chat approval, secret phrase or pasted block
+is required. Comments are optional.
 
-The record alone is never authorization. This mechanism relies on the owner's fresh
-settings review and GitHub's reported timestamps; timestamps are not cryptographic
-proof of every hidden setting change. No settings check eliminates a subsequent
-administrator change or check-to-use race. Keep the npm environment's no-bypass human
-gate enforced. See [GitHub's ruleset metadata boundary](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset)
+GitHub's enforced, no-bypass `npm` environment admits the publishing job only after
+its protection rules pass. The workflow also reads this run's actual review history
+to corroborate the configured human owner's approval for the exact npm environment.
+That history does not identify an approval's run attempt or verify artifact bytes;
+the workflow independently checks the prepared tarball's hashes before publication,
+and freshly downloads/checks registry bytes before tag repair. Reruns keep the same
+source/ref and remain subject to GitHub's environment controls; old review text is
+never presented as proof of new bytes or a fresh attempt.
+
+The unsigned settings record remains a bounded drift check, not authorization or
+cryptographic proof of current hidden bypass settings. Refresh its owner observation
+when stale or changed; never advance its timestamp without reading the settings.
+No settings check eliminates a later administrator change or check-to-use race.
+See [GitHub's deployment review](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/review-deployments),
+[ruleset metadata boundary](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset)
 and [workflow approval history](https://docs.github.com/en/rest/actions/workflow-runs#get-the-review-history-for-a-workflow-run).
 
 Keep customer evidence, credentials, runtime data and the internal tracker out of public
@@ -137,11 +141,12 @@ release-source migration.
 5. Change `private` to `false` only in the reviewed release change.
 6. Record the exact tarball filename, SHA-1, SHA-256, allowlisted files, unpacked size,
    executable, declared runtime dependency inventory, and dependency audit result.
-7. Obtain explicit publication authorization for that exact version and artifact.
-8. Merge the approved release commit through protected `main` and create the exact
+7. Review the release change and its exact artifact evidence.
+8. Merge the reviewed release commit through protected `main` and create the exact
    `v<package-version>` tag and GitHub release.
-9. Review and approve the protected `npm` deployment only after its prepare job matches
-   the approved version and checksum, using its exact approval comment.
+9. Authorize publication once, in the protected `npm` deployment review, after its
+   prepare job matches the tested version and checksum. No comment or chat approval
+   is required.
 10. Verify public visibility, ownership, provenance, registry SHA-1, README rendering,
     exact-version clean installation, CLI execution, signatures, and the unrelated
     installed Docker fixture. Allow up to six minutes for a first package to propagate
@@ -199,6 +204,5 @@ package or select a different version. The `npm` environment must supply the ver
 human approval gate; a workflow reference to that environment is not sufficient.
 
 Creating the repository, passing CI, extracting the engine, merging a release branch,
-or creating a tag does not authorize npm publication. Publication requires explicit
-authorization for the exact packed artifact, and the protected GitHub environment
-supplies the final human gate.
+or creating a tag does not authorize npm publication. The protected GitHub deployment
+review supplies the single human authorization for the exact displayed artifact.
