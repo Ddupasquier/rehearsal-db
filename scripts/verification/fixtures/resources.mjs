@@ -24,6 +24,7 @@ const root = workspace.projectRoot;
 const identity = `rehearsal-resource-proof-${randomUUID().slice(0, 8)}`;
 const repository = `public.ecr.aws/supabase/${identity}`;
 const tags = [`${repository}:v1`, `${repository}:v2`];
+const sourceDateEpoch = 1_609_459_200;
 let containerId = null;
 const docker = (args) => runScenarioCommand("docker", args, { cwd: root });
 const ids = (value) => value.trim().split(/\s+/u).filter(Boolean);
@@ -57,8 +58,35 @@ try {
       join(root, "Dockerfile"),
       `FROM scratch\nLABEL com.rehearsal-db.resource-test="${identity}"\nLABEL com.rehearsal-db.generation="${index}"\nCMD ["/never-executed"]\n`,
     );
-    docker(["build", "--quiet", "--tag", tag, root]);
+    // Metadata-only scratch builds can omit Created. Give these synthetic images
+    // explicit ages using Dockerfile 1.5 / BuildKit 0.11+'s predefined build arg.
+    // https://docs.docker.com/reference/dockerfile/#buildkit-built-in-build-args
+    docker([
+      "build",
+      "--quiet",
+      "--build-arg",
+      `SOURCE_DATE_EPOCH=${sourceDateEpoch + index}`,
+      "--tag",
+      tag,
+      root,
+    ]);
   }
+  const creationTimes = tags.map((tag, index) => {
+    const [image] = JSON.parse(docker(["image", "inspect", tag]));
+    assert.equal(
+      image.Config?.Labels?.["com.rehearsal-db.resource-test"],
+      identity,
+    );
+    const createdAt = Date.parse(image.Created ?? "");
+    assert(Number.isFinite(createdAt), "Scratch images must expose Created");
+    assert.equal(
+      createdAt,
+      (sourceDateEpoch + index) * 1000,
+      "Scratch image creation must honor the explicit SOURCE_DATE_EPOCH",
+    );
+    return createdAt;
+  });
+  assert(creationTimes[0] < creationTimes[1], "Scratch v1 must predate v2");
   const imageId = docker([
     "image",
     "inspect",
