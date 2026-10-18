@@ -24,6 +24,7 @@ const root = workspace.projectRoot;
 const identity = `rehearsal-resource-proof-${randomUUID().slice(0, 8)}`;
 const repository = `public.ecr.aws/supabase/${identity}`;
 const tags = [`${repository}:v1`, `${repository}:v2`];
+const sourceDateEpoch = 1_609_459_200;
 let containerId = null;
 const docker = (args) => runScenarioCommand("docker", args, { cwd: root });
 const ids = (value) => value.trim().split(/\s+/u).filter(Boolean);
@@ -57,8 +58,35 @@ try {
       join(root, "Dockerfile"),
       `FROM scratch\nLABEL com.rehearsal-db.resource-test="${identity}"\nLABEL com.rehearsal-db.generation="${index}"\nCMD ["/never-executed"]\n`,
     );
-    docker(["build", "--quiet", "--tag", tag, root]);
+    // Metadata-only scratch builds can omit Created. Give these synthetic images
+    // explicit ages using Dockerfile 1.5 / BuildKit 0.11+'s predefined build arg.
+    // https://docs.docker.com/reference/dockerfile/#buildkit-built-in-build-args
+    docker([
+      "build",
+      "--quiet",
+      "--build-arg",
+      `SOURCE_DATE_EPOCH=${sourceDateEpoch + index}`,
+      "--tag",
+      tag,
+      root,
+    ]);
   }
+  const creationTimes = tags.map((tag, index) => {
+    const [image] = JSON.parse(docker(["image", "inspect", tag]));
+    assert.equal(
+      image.Config?.Labels?.["com.rehearsal-db.resource-test"],
+      identity,
+    );
+    const createdAt = Date.parse(image.Created ?? "");
+    assert(Number.isFinite(createdAt), "Scratch images must expose Created");
+    assert.equal(
+      createdAt,
+      (sourceDateEpoch + index) * 1000,
+      "Scratch image creation must honor the explicit SOURCE_DATE_EPOCH",
+    );
+    return createdAt;
+  });
+  assert(creationTimes[0] < creationTimes[1], "Scratch v1 must predate v2");
   const imageId = docker([
     "image",
     "inspect",
@@ -101,6 +129,12 @@ try {
   );
   docker(["container", "rm", containerId]);
   containerId = null;
+  catalog = json(["resources"]).catalog;
+  assert.equal(
+    catalog.images.find((image) => image.id === imageId)?.state,
+    "candidate",
+    "Owned scratch v1 must become a cleanup candidate after its stopped container is removed",
+  );
   const preview = json(selection);
   assert.equal(preview.plan.imagesOnly, true);
   assert.deepEqual(preview.plan.baselines.removed, []);
@@ -151,6 +185,38 @@ try {
       2,
     ),
   );
+} catch (error) {
+  // Keep diagnostic evidence confined to this run's labelled scratch images.
+  // Never dump another project's resources, image configuration or environment.
+  try {
+    const images = JSON.parse(docker(["image", "inspect", ...tags])).filter(
+      (image) =>
+        image.Config?.Labels?.["com.rehearsal-db.resource-test"] === identity,
+    );
+    const ownedIds = new Set(images.map((image) => image.Id));
+    const current = json(["resources"]).catalog;
+    console.error(
+      JSON.stringify({
+        diagnostic: "resource-fixture-owned-images",
+        images: images.map(({ Id, Created, RepoTags, Size }) => ({
+          Id,
+          Created: Created ?? null,
+          RepoTags,
+          Size,
+        })),
+        catalog: current.images
+          .filter((image) => ownedIds.has(image.id))
+          .map(({ id, state, references }) => ({
+            id,
+            state,
+            referenceCount: references.length,
+          })),
+      }),
+    );
+  } catch {
+    console.error("resource-fixture-owned-images: diagnostic unavailable");
+  }
+  throw error;
 } finally {
   if (containerId) {
     assert.equal(

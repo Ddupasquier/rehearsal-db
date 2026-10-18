@@ -4,6 +4,10 @@ import {
   parseArguments,
   resetGuidedFlags,
 } from "../../../dist/src/cli/arguments.mjs";
+import {
+  RehearsalError,
+  normalizeRehearsalError,
+} from "../../../dist/src/shared/diagnostics.mjs";
 
 describe("CLI arguments", () => {
   it("separates commands from supported flags", () => {
@@ -31,11 +35,25 @@ describe("CLI arguments", () => {
     expect(parseArguments(["-V"]).flags.version).toBe(true);
   });
 
-  it("rejects unknown long options", () => {
-    expect(() => parseArguments(["doctor", "--surprise"])).toThrow(
-      "Unknown Rehearsal option: --surprise.",
-    );
-  });
+  it.each(["--surprise", "--checksum", "--candidate", "--baseline"])(
+    "classifies unknown option %s as invalid input regardless of its text",
+    (option) => {
+      let failure;
+      try {
+        parseArguments(["doctor", option]);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(RehearsalError);
+      expect(normalizeRehearsalError(failure)).toMatchObject({
+        category: "configuration_invalid",
+        code: "CONFIGURATION_INVALID",
+        exitCode: 2,
+        message: `Unknown Rehearsal option: ${option}.`,
+        suggestions: ["Run rehearsal --help to list supported options."],
+      });
+    },
+  );
 
   it("clears one-action guided state without clearing display preferences", () => {
     const flags = parseArguments([

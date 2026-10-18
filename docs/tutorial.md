@@ -117,6 +117,6 @@ npm run test:fixture
 The PostgreSQL equivalent is `npm run test:fixture:postgresql`.
 
 The release workflow also runs `npm run test:fixture:onboarding` from the packed package.
-That check creates fresh Supabase and PostgreSQL consumers, verifies beta configuration
+That check creates fresh Supabase and PostgreSQL consumers, verifies reviewed configuration
 preservation, and exercises safe refusal and recovery for partial setup, occupied ports,
 malformed configuration, and missing credentials.

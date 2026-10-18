@@ -50,6 +50,52 @@ const documentedCommands = [
 ];
 
 describe("documented CLI contract", () => {
+  it.each([
+    { args: ["not-a-rehearsal-command"], unknownCommand: true },
+    { args: ["checksum"], unknownCommand: true },
+    { args: ["candidate"], unknownCommand: true },
+    { args: ["baseline"], unknownCommand: true },
+    { args: ["doctor", "--checksum"], unknownCommand: false },
+    { args: ["doctor", "--candidate"], unknownCommand: false },
+    { args: ["doctor", "--baseline"], unknownCommand: false },
+  ])(
+    "reports invalid CLI input $args with exit 2",
+    async ({ args, unknownCommand }) => {
+      let failure;
+      try {
+        await execute(process.execPath, [cli, ...args, "--json", "--plain"], {
+          cwd: root,
+          timeout: 5_000,
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure?.code).toBe(2);
+      expect(failure?.stderr).toBe("");
+      const result = JSON.parse(failure.stdout);
+      expect(result).toMatchObject({
+        schemaVersion: 1,
+        status: "error",
+        error: {
+          category: "configuration_invalid",
+          code: "CONFIGURATION_INVALID",
+          refused: "No Rehearsal command was executed.",
+        },
+      });
+      expect(result.error.message).toContain(
+        `Unknown Rehearsal ${unknownCommand ? "command" : "option"}:`,
+      );
+      expect(result.error.suggestions).toEqual([
+        `Run rehearsal --help to list supported ${unknownCommand ? "commands" : "options"}.`,
+      ]);
+      if (unknownCommand) {
+        expect(result.error.message).toContain(
+          "Usage: rehearsal <command> [options]",
+        );
+      }
+    },
+  );
+
   it("documents structured privacy declarations without consumer callbacks", async () => {
     const sanitization = await readFile(
       join(root, "docs/sanitization.md"),
@@ -381,6 +427,43 @@ describe("documented CLI contract", () => {
     expect(configuration).toContain("stop-after-run");
     expect(configuration).toContain("stop-on-application-exit");
     expect(configuration).toContain("retainBaselineGenerations");
+  });
+
+  it("keeps remote exact-artifact verification manually opt-in and read-only", async () => {
+    const workflow = await readFile(
+      join(root, ".github/workflows/verify.yml"),
+      "utf8",
+    );
+    const remoteJob = workflow.slice(workflow.indexOf("\n  exact-release:"));
+    const manifest = JSON.parse(
+      await readFile(join(root, "package.json"), "utf8"),
+    );
+
+    expect(manifest.scripts["release:verify"]).toBe(
+      "npm run build && node scripts/verification/release_gate.mjs",
+    );
+    expect(workflow).toContain("exact_release:");
+    expect(workflow).toContain("default: false");
+    expect(remoteJob).toContain(
+      "if: github.event_name == 'workflow_dispatch' && inputs.exact_release",
+    );
+    expect(remoteJob).toContain("timeout-minutes: 45");
+    expect(remoteJob).toContain("contents: read");
+    expect(remoteJob).toContain("persist-credentials: false");
+    expect(remoteJob).toContain("cancel-in-progress: false");
+    expect(remoteJob).toContain("npm run release:verify");
+    expect(remoteJob).toContain("npm audit --omit=dev --audit-level=high");
+    expect(remoteJob).toContain("actions/upload-artifact@v7");
+    expect(remoteJob).toContain("retention-days: 7");
+    expect(remoteJob).toContain("test-results/release-gate/*/candidate.tgz");
+    expect(remoteJob).toContain("test-results/release-gate/*/acceptance.json");
+    expect(remoteJob).toContain("test-results/release-gate/*/acceptance.md");
+    expect(remoteJob).not.toContain("environment: npm");
+    expect(remoteJob).not.toContain("id-token: write");
+    expect(remoteJob).not.toContain("npm publish");
+    expect(remoteJob).not.toContain("secrets.");
+    expect(remoteJob).not.toContain("NODE_AUTH_TOKEN");
+    expect(remoteJob).not.toContain("BLENDCALC_ALLOW_RESOURCE_PRESSURE");
   });
 
   it("keeps npm publication behind an exact-artifact human gate", async () => {

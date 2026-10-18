@@ -9,9 +9,11 @@ Report suspected vulnerabilities through the
 in this repository. A GitHub account is required. Do not open a
 public issue containing an exploit, secret, hosted target, or source record.
 
-Supported security updates cover the latest released 0.x minor during beta. A security
-fix may deliberately tighten configuration or refuse a workflow that an earlier beta
-accepted. During beta, reports apply to the latest published release and current `main`.
+Security updates target the latest released 1.x version. Update to the latest 1.x
+release to receive fixes; older release candidates are not a maintained security line.
+Reports concerning current `main` and prereleases are also welcome. A security fix may
+tighten validation or refuse an unsafe workflow; it must not silently reinterpret
+existing data or claim that a refused operation succeeded.
 
 The threat boundary and remaining responsibilities live in
 [docs/security-model.md](docs/security-model.md). Every

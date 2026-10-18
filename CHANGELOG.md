@@ -5,6 +5,23 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-17
+
+### Stable compatibility
+
+- Establish the documented CLI, configuration, policy, baseline, TypeScript and
+  JSON contracts as the 1.x compatibility boundary. This preserves rc.10's database,
+  authentication and restore behavior.
+- Keep the complete MIT CLI free. The separately distributed Free Starter editor,
+  future Pro plans and additional database families do not expand the core support
+  matrix or change its safety boundaries.
+
+### Fixed
+
+- Report unknown CLI commands and options as invalid input (exit 2), rather than
+  letting words in the input or help text misclassify them as migration or baseline
+  failures. The command remains refused and supported-command help is retained.
+
 ## [0.1.0-rc.10] - 2026-10-17
 
 ### Fixed
@@ -755,7 +772,14 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.4...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.10...v1.0.0
+[0.1.0-rc.10]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.9...v0.1.0-rc.10
+[0.1.0-rc.9]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.8...v0.1.0-rc.9
+[0.1.0-rc.8]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.7...v0.1.0-rc.8
+[0.1.0-rc.7]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.6...v0.1.0-rc.7
+[0.1.0-rc.6]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.5...v0.1.0-rc.6
+[0.1.0-rc.5]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.4...v0.1.0-rc.5
 [0.1.0-rc.4]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.3...v0.1.0-rc.4
 [0.1.0-rc.3]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.2...v0.1.0-rc.3
 [0.1.0-rc.2]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.1...v0.1.0-rc.2

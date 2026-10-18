@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      exact_release:
+        description: Run the existing complete release gate and retain its exact candidate
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -106,3 +111,42 @@ jobs:
       - run: npm run test:fixture:postgresql
       - run: npm run test:fixture:dependent
       - run: npm run test:fixture:standalone
+
+  # An optional execution location for the existing release gate, not a new
+  # required branch check. Never runs automatically or receives publish authority.
+  exact-release:
+    if: github.event_name == 'workflow_dispatch' && inputs.exact_release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    concurrency:
+      group: exact-release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.117.0
+      - run: docker pull postgres:17-alpine
+      - run: npm run release:verify
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Retain only the exact candidate and bounded release reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: exact-release-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            test-results/release-gate/*/candidate.tgz
+            test-results/release-gate/*/acceptance.json
+            test-results/release-gate/*/acceptance.md
+          if-no-files-found: error
+          retention-days: 7

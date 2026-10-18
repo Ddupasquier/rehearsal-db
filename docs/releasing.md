@@ -154,6 +154,28 @@ The independent Rehearsal Test Lab is the primary pre-release consumer environme
 Real product integrations provide additional compatibility evidence; they do not
 replace the package-owned release gate or Test Lab.
 
+### Optional remote verification
+
+When local resource guards refuse a heavy run, the existing full release check can
+run on an isolated GitHub-hosted runner instead:
+
+```bash
+gh workflow run verify.yml --ref YOUR_REVIEWED_RELEASE_BRANCH -f exact_release=true
+```
+
+This manual-only option runs `npm run release:verify` and the production dependency
+audit. It adds no required branch check and has no publishing permission or npm
+environment. It does not bypass a local resource guard or start local services.
+The other existing verification jobs still run normally.
+
+Download the run's `exact-release-<commit>-<attempt>` artifact within seven days.
+It contains only the frozen tarball and release reports. Require a successful job
+and all nine passed stages in `acceptance.json`, match the reviewed source commit
+and tarball SHA-256, then use those exact bytes for consumer checks and publication
+authorization. Reports retained after failure are failure evidence, not approval.
+This is an execution option for the same release requirements, not a substitute for
+consumer acceptance, supported-platform observations or human publication approval.
+
 The workflow publishes beta and release-candidate versions under the `beta` dist-tag.
 While Rehearsal has no stable release, it also moves `latest` to the same reviewed
 prerelease. This keeps the npm package page and the ordinary
