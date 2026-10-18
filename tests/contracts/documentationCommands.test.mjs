@@ -523,7 +523,13 @@ describe("documented CLI contract", () => {
     expect(workflow).not.toContain("NPM_TOKEN");
     expect(workflow).not.toContain("NODE_AUTH_TOKEN");
     expect(releaseGuide).toContain("Trusted publication boundary");
-    expect(releaseGuide).toContain("explicit publication authorization");
+    expect(normalizedReleaseGuide).toContain(
+      "ordinary GitHub approval is the publication authorization",
+    );
+    expect(normalizedReleaseGuide).toContain(
+      "no separate chat approval, secret phrase or pasted block is required",
+    );
+    expect(normalizedReleaseGuide).toContain("Comments are optional.");
     expect(normalizedReleaseGuide).toContain(
       "short-lived GitHub OIDC identity",
     );
