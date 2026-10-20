@@ -7,6 +7,7 @@ import {
 } from "../runtime/topology.mjs";
 import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
 import { redactDiagnosticValue } from "../shared/diagnostics.mjs";
+import { inspectHostPlatform } from "../shared/host_platform.mjs";
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -83,6 +84,10 @@ export const buildRuntimeStackPlan = async (
 export const runRuntimeStackDoctor = async (
   planOptions: RehearsalConfigPathOptions,
 ) => {
+  const host = await inspectHostPlatform({
+    projectRoot: planOptions.projectRoot ?? process.cwd(),
+  });
+  if (!host.supported) return runRehearsalDoctor(planOptions);
   let topology;
   try {
     topology = await loadRuntimeTopology(planOptions);

@@ -5,6 +5,18 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## [Unreleased]
 
+### Platform compatibility
+
+- Keep macOS Intel/Apple Silicon and Linux execution distinct from Windows desktop
+  access through WSL 2. Require the WSL project's Linux filesystem; document the
+  preview's actual component and runtime limits rather than claiming every OS works.
+- Verify installed package version/discovery on real desktop OS runners and exercise
+  PostgreSQL/dependent targets in an owned Windows 2025 WSL2 Ubuntu distribution.
+  Provision checksum-verified official Node and signed Docker Engine packages without
+  Docker Desktop, a daemon TCP endpoint or new branch-protection requirements.
+- Document native Windows runtime refusal and the Linux/Remote-WSL setup path; version,
+  help and project discovery remain distinct from database-runtime support.
+
 ## [1.0.0] - 2026-10-17
 
 ### Stable compatibility

@@ -1,6 +1,6 @@
 {
   "name": "@rehearsal-db/core",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": false,
   "description": "Catch PostgreSQL and Supabase migrations that pass on empty databases but fail on real data—before deploy.",
   "repository": {
@@ -78,7 +78,7 @@
     "test:fixture:resources": "npm run build && node scripts/verification/run_scenario.mjs resources",
     "release:verify": "npm run build && node scripts/verification/release_gate.mjs",
     "check": "npm run check:syntax && npm run typecheck && npm run test && npm run docs:build && npm run format:check && npm run package:audit",
-    "check:syntax": "find scripts tests -type f -name '*.mjs' -exec node --check {} +",
+    "check:syntax": "node scripts/verification/check_syntax.mjs",
     "typecheck": "npm run build && tsc --project tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -41,6 +41,8 @@ import {
   buildBaselineScopeReview,
 } from "./project_review.mjs";
 import { readVerifiedBaselineShapeEvidence } from "../source/shape_files.mjs";
+import { inspectHostPlatform } from "../shared/host_platform.mjs";
+import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
 
 type LoadedRehearsalConfig = Awaited<ReturnType<typeof loadRehearsalConfig>>;
 type RuntimeReceipt = Readonly<{
@@ -71,11 +73,7 @@ const commandAvailable = (
 ): Readonly<{ available: boolean; version: string | null }> => {
   const result = spawnSync(command, args, {
     encoding: "utf8",
-    env: Object.fromEntries(
-      ["HOME", "LANG", "LC_ALL", "PATH", "SHELL", "TMPDIR"].flatMap((key) =>
-        process.env[key] === undefined ? [] : [[key, process.env[key]]],
-      ),
-    ),
+    env: createCleanProcessEnvironment(),
     stdio: ["ignore", "pipe", "pipe"],
   });
   return {
@@ -500,6 +498,23 @@ export const inspectRehearsalMigrations = async (
 export const runRehearsalDoctor = async (
   options: RehearsalConfigPathOptions = {},
 ) => {
+  const host = await inspectHostPlatform({
+    projectRoot: options.projectRoot ?? process.cwd(),
+  });
+  if (!host.supported) {
+    return {
+      state: "NOT READY",
+      checks: [
+        {
+          id: "operating-system",
+          label: "Operating-system support",
+          status: "fail",
+          detail: host.detail,
+          remediation: host.remediation,
+        },
+      ],
+    };
+  }
   let loaded: LoadedRehearsalConfig;
   try {
     loaded = await loadRehearsalConfig(options);
@@ -548,15 +563,9 @@ export const runRehearsalDoctor = async (
       id: "operating-system",
       label: "Operating-system support",
       run: async () => {
-        if (!["darwin", "linux"].includes(process.platform)) {
-          throw new Error(
-            `${process.platform} is not supported by the version-1 contract.`,
-          );
-        }
-        return `${process.platform} is in the supported matrix`;
+        return host.detail;
       },
-      remediation:
-        "Use macOS or Linux; WSL and native Windows require separate proof before support.",
+      remediation: host.remediation,
     },
     {
       id: "package-manager",
@@ -741,14 +750,7 @@ export const runRehearsalDoctor = async (
               {
                 cwd: projectRoot,
                 encoding: "utf8",
-                env: Object.fromEntries(
-                  ["HOME", "LANG", "LC_ALL", "PATH", "SHELL", "TMPDIR"].flatMap(
-                    (key) =>
-                      process.env[key] === undefined
-                        ? []
-                        : [[key, process.env[key]]],
-                  ),
-                ),
+                env: createCleanProcessEnvironment(),
                 stdio: ["ignore", "pipe", "pipe"],
               },
             );
@@ -776,17 +778,9 @@ export const runRehearsalDoctor = async (
             {
               cwd: projectRoot,
               encoding: "utf8",
-              env: {
-                ...Object.fromEntries(
-                  ["HOME", "LANG", "LC_ALL", "PATH", "SHELL", "TMPDIR"].flatMap(
-                    (key) =>
-                      process.env[key] === undefined
-                        ? []
-                        : [[key, process.env[key]]],
-                  ),
-                ),
-                ...serviceEnvironment,
-              },
+              env: createCleanProcessEnvironment({
+                overrides: serviceEnvironment,
+              }),
               stdio: ["ignore", "pipe", "pipe"],
             },
           );

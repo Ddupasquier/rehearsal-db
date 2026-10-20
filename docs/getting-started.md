@@ -5,6 +5,54 @@ your computer. Normal setup and rehearsal commands never connect to a hosted dat
 
 Want to experiment first? Use the [safe hands-on tutorial](tutorial.md).
 
+## OS-specific setup files (optional)
+
+Separate setup folders are available for
+[Windows / WSL 2](https://github.com/Ddupasquier/rehearsal-db/tree/main/installers/windows),
+[macOS](https://github.com/Ddupasquier/rehearsal-db/tree/main/installers/macos) and
+[Linux](https://github.com/Ddupasquier/rehearsal-db/tree/main/installers/linux).
+They are readable helpers, not native executables or bundled Node/Docker installers.
+Existing Node.js 24 or 26 is required. The default only checks an existing project;
+installation needs an explicit option and does not start a database. Review the
+[shared behavior and release availability](https://github.com/Ddupasquier/rehearsal-db/blob/main/installers/README.md)
+before choosing an install option. An exact core 1.0.1 install requires that version to
+be published; a checked-in helper is not proof of publication.
+
+### Windows: use a WSL 2 Linux workspace
+
+The Windows compatibility route is Linux execution inside **WSL 2**, not a native
+PowerShell/Command Prompt database runtime. Core 1.0.1 and extension 0.1.20 make that
+boundary explicit; native Windows version/help/discovery do not authorize runtime work.
+
+1. Follow Microsoft's [WSL installation guide](https://learn.microsoft.com/en-us/windows/wsl/install)
+   to prepare a WSL 2 Linux distribution, such as Ubuntu 24.04. Do not use WSL 1.
+2. Clone or open the project inside the distribution's Linux home directory, such as
+   `/home/your-name/projects/app`. Do not keep the runtime project under `/mnt/c`, a
+   Windows share or a Windows-mounted drive. Rehearsal does not relocate your files.
+3. Install a supported **Linux** Node/npm and a Docker-compatible Linux engine in that
+   environment. Docker Engine in WSL or an already configured Docker Desktop WSL
+   integration are user-controlled setup choices; Rehearsal does not install or license
+   Docker Desktop for you. In the Linux terminal, check:
+
+   ```bash
+   node -p "process.platform"
+   pwd
+   docker info --format '{{.OSType}}'
+   ```
+
+   Both platform results must be `linux`, and `pwd` must be in the Linux filesystem.
+
+4. For editor use, install Microsoft's **WSL** extension, then run `code .` from that
+   Linux project directory. Confirm the VS Code window says **WSL** in its remote
+   indicator, and install Rehearsal into **WSL**, not only the Windows-side extension host.
+5. Continue below from that Linux terminal. Keep the existing baseline, approval and
+   local-only checks; do not substitute a hosted database to make setup pass.
+
+WSL is a compatibility preview. A real WSL PostgreSQL fixture and a native Remote-WSL
+editor walkthrough are different evidence; do not infer the latter from Linux unit
+tests. Supabase/Auth/Storage in WSL and other remote hosts remain unclaimed until their
+own checks pass. See the [complete platform boundary](https://github.com/Ddupasquier/rehearsal-db/blob/main/COMPATIBILITY.md#operating-systems-and-execution-location).
+
 ## 1. Check the required tools
 
 You need Node.js 22, 24, or 26, npm, and a running Docker-compatible engine. Node.js 24

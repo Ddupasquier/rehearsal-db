@@ -6,12 +6,20 @@ import {
   createInstalledRehearsalScaffold,
   renderInstalledRehearsalScaffold,
 } from "../../src/project/install_scaffold.mjs";
+import { inspectHostPlatform } from "../../src/shared/host_platform.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
 try {
-  const result = await createInstalledRehearsalScaffold({ packageRoot });
-  console.log(renderInstalledRehearsalScaffold(result));
+  const host = await inspectHostPlatform();
+  if (!host.supported) {
+    console.log(
+      `Rehearsal installed without creating project files. ${host.remediation}`,
+    );
+  } else {
+    const result = await createInstalledRehearsalScaffold({ packageRoot });
+    console.log(renderInstalledRehearsalScaffold(result));
+  }
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   console.warn(

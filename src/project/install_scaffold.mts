@@ -11,6 +11,7 @@ import {
   inspectDetectedProject,
   loadRehearsalConfig,
 } from "./configuration.mjs";
+import { inspectHostPlatform } from "../shared/host_platform.mjs";
 
 const PACKAGE_NAME = "@rehearsal-db/core";
 const DEPENDENCY_GROUPS = Object.freeze([
@@ -214,7 +215,9 @@ const uniqueProjects = (
   ).values(),
 ];
 
-const skip = (reason: string): ConsumerRootResolution => ({
+const skip = (
+  reason: string,
+): Extract<ConsumerRootResolution, { status: "skipped" }> => ({
   status: "skipped",
   reason,
 });
@@ -381,6 +384,13 @@ export const createInstalledRehearsalScaffold = async ({
       : { workspace: environment.npm_config_workspace }),
   });
   if (resolution.status !== "resolved") return resolution;
+
+  const host = await inspectHostPlatform({
+    projectRoot: resolution.projectRoot,
+  });
+  if (!host.supported) {
+    return skip(`${host.detail} ${host.remediation}`.replace(/\.$/u, ""));
+  }
 
   const detected = await inspectDetectedProject({
     projectRoot: resolution.projectRoot,
