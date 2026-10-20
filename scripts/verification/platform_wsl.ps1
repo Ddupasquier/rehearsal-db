@@ -48,7 +48,9 @@ try {
     if ($ownedVersion -ne 2) { throw 'The owned distribution must be proven WSL2.' }
     Write-Output 'Owned Ubuntu distribution reports WSL2; real kernel and filesystem checks follow.'
     $archive = Join-Path $ciRoot 'reviewed-source.tar'
-    & git archive --format=tar --output=$archive HEAD
+    # Windows archive export honors Git EOL settings; Linux scripts require LF.
+    # Scope this normalization to the archive command, not the user's Git config.
+    & git -c core.autocrlf=false -c core.eol=lf archive --format=tar --output=$archive HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Could not archive the reviewed source.' }
     $linuxArchive = @(& wsl.exe --distribution $distribution --user root --exec wslpath -u $archive) -join ''
     if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the task-owned source archive.' }
