@@ -35,8 +35,13 @@ const context = () => ({
   state: createCliSessionState(),
 });
 
-const services = ({ mode = "stop-after-run", proofError } = {}) => {
+const services = ({
+  mode = "stop-after-run",
+  proofError,
+  readiness = null,
+} = {}) => {
   const activeTopology = topology(mode);
+  activeTopology.primary.config.application.readiness = readiness;
   const runRuntimeStack = vi.fn(async ({ command }) => ({
     topology: activeTopology,
     runtime: {
@@ -60,6 +65,34 @@ const services = ({ mode = "stop-after-run", proofError } = {}) => {
 };
 
 describe("runtime action lifecycle policy", () => {
+  it("does not send a database-only project to an application launch after run, start or reset", async () => {
+    for (const command of ["run", "start", "reset"]) {
+      const [handler] = createRuntimeActionHandlers(
+        services({ mode: "keep-until-stop" }),
+      );
+      const result = await handler.handle({ ...context(), command });
+      const output = result.render("normal");
+      expect(output).not.toContain("rehearsal open");
+      expect(output).toContain("rehearsal verify");
+      if (command === "run")
+        expect(output).toContain(
+          "rehearsal command is complete; the database remains running",
+        );
+    }
+  });
+  it("preserves the application-open next step when a launch readiness contract is configured", async () => {
+    const [handler] = createRuntimeActionHandlers(
+      services({
+        readiness: {
+          url: "http://127.0.0.1:5173/health",
+          expectedStatus: 200,
+          timeoutSeconds: 5,
+        },
+      }),
+    );
+    const result = await handler.handle({ ...context(), command: "start" });
+    expect(result.render("normal")).toContain("rehearsal open");
+  });
   it("stops after a successful run and reports preserved data", async () => {
     const injected = services();
     const [handler] = createRuntimeActionHandlers(injected);

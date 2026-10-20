@@ -162,46 +162,68 @@ Swap: 0 0 0
     });
   });
 
-  it("returns actionable runtime diagnostics for a failed container startup", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "rehearsal-diagnostics-"));
-    const managerPath = join(directory, "manager.mjs");
-    await writeFile(
-      managerPath,
-      `console.error("supabase_studio_fixture container is not ready: starting");\nprocess.exit(1);\n`,
-    );
-
-    try {
-      await copyFile(
-        join(
-          process.cwd(),
-          "tests/fixtures/rehearsal-project/rehearsal.config.mjs",
-        ),
-        join(directory, "rehearsal.config.mjs"),
-      );
-      const commands = createRuntimeCommands({
-        packageRoot: directory,
-        projectRoot: directory,
+  it.each([
+    ["health", "supabase_studio_fixture container is not ready: starting"],
+    [
+      "port",
+      "Error: PostgreSQL startup failed (exit 1).\nReported startup evidence: port_unavailable.",
+    ],
+  ])(
+    "returns actionable %s diagnostics for a failed container startup",
+    async (kind, output) => {
+      const directory = await mkdtemp(join(tmpdir(), "rehearsal-diagnostics-"));
+      const managerPath = join(directory, "manager.mjs");
+      await writeFile(
         managerPath,
-        getActivePackageFingerprint: () => null,
-      });
-      let failure;
-      try {
-        await commands.runManager({
-          action: "run",
-          flags: { json: true, plain: true },
-          configPath: "rehearsal.config.mjs",
-        });
-      } catch (error) {
-        failure = error;
-      }
-
-      expect(failure?.category).toBe("runtime_dependency_failure");
-      expect(failure?.code).toBe("MANAGER_RUN_FAILED");
-      expect(failure?.suggestions.join(" ")).toContain(
-        "Stop unrelated local stacks",
+        `console.error(${JSON.stringify(output)});\nprocess.exit(1);\n`,
       );
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
+
+      try {
+        await copyFile(
+          join(
+            process.cwd(),
+            "tests/fixtures/rehearsal-project/rehearsal.config.mjs",
+          ),
+          join(directory, "rehearsal.config.mjs"),
+        );
+        const commands = createRuntimeCommands({
+          packageRoot: directory,
+          projectRoot: directory,
+          managerPath,
+          getActivePackageFingerprint: () => null,
+        });
+        let failure;
+        try {
+          await commands.runManager({
+            action: "run",
+            flags: { json: true, plain: true },
+            configPath: "rehearsal.config.mjs",
+          });
+        } catch (error) {
+          failure = error;
+        }
+
+        expect(failure?.category).toBe("runtime_dependency_failure");
+        expect(failure?.code).toBe("MANAGER_RUN_FAILED");
+        if (kind === "health") {
+          expect(failure?.suggestions.join(" ")).toContain(
+            "If startup evidence confirms a resource shortage",
+          );
+        } else {
+          expect(failure?.suggestions.join(" ")).toContain(
+            "runtime.databasePort",
+          );
+          expect(failure?.suggestions.join(" ")).toContain(
+            "netsh interface ipv4 show excludedportrange protocol=tcp",
+          );
+          expect(failure?.suggestions.join(" ")).not.toMatch(
+            /increase.*capacity|docker stats|memory/iu,
+          );
+          expect(failure?.context).not.toHaveProperty("engineCapacity");
+        }
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 });

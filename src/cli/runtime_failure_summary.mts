@@ -1,5 +1,30 @@
 /** Keep useful manager failures rather than debug advice and trailing Node stacks. */
 import { redactDiagnosticValue } from "../shared/diagnostics.mjs";
+import {
+  readManagerMigrationFailure,
+  renderMigrationFailureDiagnostic,
+} from "../runtime/migration_failure.mjs";
+import { portStartupGuidance } from "../targets/port_start_failure.mjs";
+
+export const runtimePortFailureGuidance = (
+  output: string,
+): readonly string[] => {
+  const provider = output.match(
+    /^(?:Error:\s*)?(PostgreSQL|Supabase) startup failed \((?:exit -?\d+|process failure)\)\.$/mu,
+  )?.[1];
+  const evidence = output
+    .match(/^Reported startup evidence: ([a-z_, ]+)\.$/mu)?.[1]
+    ?.split(/,\s*/u);
+  const port = evidence?.find(
+    (value) => value === "port_in_use" || value === "port_unavailable",
+  );
+  return provider && (port === "port_in_use" || port === "port_unavailable")
+    ? portStartupGuidance(
+        port,
+        provider === "PostgreSQL" ? "postgresql" : "supabase",
+      ).split("\n")
+    : [];
+};
 
 export const summarizeRuntimeManagerFailure = (output: string): string => {
   let nodeSourceContext = false;
@@ -36,7 +61,7 @@ export const summarizeRuntimeManagerFailure = (output: string): string => {
         ),
     );
   const startup = lines.findIndex((line) =>
-    /Supabase startup failed \(/u.test(line),
+    /(?:PostgreSQL|Supabase) startup failed \(/u.test(line),
   );
   const failure = lines.reduce(
     (last, line, index) => (/^[A-Za-z]*Error:/u.test(line) ? index : last),
@@ -51,17 +76,24 @@ export const summarizeRuntimeManagerFailure = (output: string): string => {
     /The runtime operation failed and its owned runtime could not be removed automatically\./u.test(
       output,
     );
+  const migrationDiagnostic =
+    migration >= 0 ? readManagerMigrationFailure(lines.join("\n")) : undefined;
   const selected =
     startup >= 0
       ? lines
-          .slice(startup, startup + 4)
+          .slice(startup, startup + 12)
           .filter((line) =>
-            /^(?:Error:\s*)?Supabase startup failed \(|^Reported startup evidence:|^Reported service states:|^Provider logs, paths, environment values and connection URLs are omitted\./u.test(
+            /^(?:Error:\s*)?(?:PostgreSQL|Supabase) startup failed \(|^Reported startup evidence:|^Reported service states:|^Provider logs, (?:command arguments, )?paths, environment values and connection URLs are omitted\./u.test(
               line,
             ),
           )
       : migration >= 0
-        ? [lines[migration]!]
+        ? [
+            lines[migration]!,
+            ...(migrationDiagnostic
+              ? [renderMigrationFailureDiagnostic(migrationDiagnostic)]
+              : []),
+          ]
         : rollbackFailed
           ? [
               "Error: The operation failed; the original cause could not be safely summarized.",
@@ -69,6 +101,8 @@ export const summarizeRuntimeManagerFailure = (output: string): string => {
           : failure >= 0
             ? lines.slice(failure, failure + 8)
             : lines.slice(-8);
+  if (startup >= 0)
+    selected.push(...runtimePortFailureGuidance(selected.join("\n")));
   if (rollbackFailed)
     selected.push(
       "Owned rollback cleanup could not be confirmed. Resources may remain; inspect activity and status before retrying. No cleanup success is claimed.",
@@ -82,5 +116,11 @@ export const summarizeRuntimeManagerFailure = (output: string): string => {
     selected.push(
       "Owned startup cleanup could not be proved; resources and data were retained. Inspect activity and status before retrying.",
     );
+  if (selected.join("\n").length > 2_000 && migrationDiagnostic?.source) {
+    // Human summary stays bounded and retains cleanup warnings; structured output
+    // independently reads the complete, bounded manager frame.
+    const { source: _source, ...diagnostic } = migrationDiagnostic;
+    selected[1] = renderMigrationFailureDiagnostic(diagnostic);
+  }
   return selected.join("\n").slice(0, 2_000);
 };

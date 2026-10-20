@@ -5,6 +5,37 @@ a Changelog, and versions will follow Semantic Versioning after the package exis
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-20
+
+### Fixed
+
+- Explain recognized PostgreSQL/Supabase migration failures with bounded native
+  SQLSTATE evidence and safe syntax, schema, constraint, permission, connectivity
+  and timeout guidance. Unsupported or ambiguous evidence remains unknown; raw
+  SQL, provider details, credentials and private rows are not exposed.
+- Preserve the original diagnosis across cleanup and bounded operation history so
+  the CLI and editor can show the same failure after refresh. Failed operations
+  never claim verification or unconditional rollback success.
+- Optionally identify the exact approved PostgreSQL input file by hash, without
+  inventing a failing SQL origin, line or column. Reject invalid UTF-8 before
+  execution rather than submitting replacement-decoded bytes.
+- Point recognized bind failures at the configured local ports, including safe
+  Windows/WSL exclusion-inspection guidance. Do not infer a reservation from every
+  denial or suggest terminating unknown listeners.
+- Keep database-only command guidance separate from optional application launch.
+
+### Documentation and distribution
+
+- Add a main-tutorial existing-row constraint failure, reviewed backfill/fix and
+  verification sequence, plus a same-project VS Code handoff and safe local-copy
+  recovery for unsupported external npm links.
+- Pair with Starter 0.1.22 for actionable persistent failures, safe exact-byte
+  source opening, distinct command/database states and truthful recorded proof.
+- Refresh the separate macOS, Linux and Windows/WSL 2 setup bundles to exact core
+  1.0.2. Native Windows database execution remains unsupported.
+
+## [1.0.1] - 2026-10-19
+
 ### Platform compatibility
 
 - Keep macOS Intel/Apple Silicon and Linux execution distinct from Windows desktop
@@ -784,7 +815,9 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.10...v1.0.0
 [0.1.0-rc.10]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.9...v0.1.0-rc.10
 [0.1.0-rc.9]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.8...v0.1.0-rc.9

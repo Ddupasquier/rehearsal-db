@@ -5,11 +5,13 @@
 
 import {
   cp,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
   readdir,
   readlink,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -153,6 +155,290 @@ const physicalDemoObservation = (cwd, projectId, expectations) => {
     ),
     expectations,
   );
+};
+
+const proveTutorialPackageCopyRecovery = async ({
+  cwd,
+  temporaryRoot,
+  artifact,
+  projectId,
+}) => {
+  const cli = (args, label) =>
+    JSON.parse(executeCliOrThrow({ cwd, args, label }).stdout);
+  const requireIdle = () => {
+    const activity = cli(
+      ["activity", "--json"],
+      "package recovery activity",
+    ).data;
+    if (activity.state !== "idle" || activity.operation !== null)
+      throw new Error("Package recovery requires an idle tutorial project.");
+  };
+  requireIdle();
+  const initialStatus = cli(["status", "--json"], "package recovery status");
+  if (initialStatus.data.runtimeStatus?.state !== "running")
+    cli(["start", "--json"], "package recovery bounded resume");
+  requireIdle();
+
+  const protectedPaths = [
+    "package.json",
+    "rehearsal.config.mjs",
+    "database",
+    "rehearsal",
+    ".rehearsal/secrets",
+    ".rehearsal/runtime.env",
+    ".rehearsal/runtime/baseline.json",
+    ".rehearsal/runtime/candidate-receipt.json",
+  ];
+  const projectInputs = async () => {
+    const files = [];
+    const visit = async (relative) => {
+      const path = join(cwd, relative);
+      const details = await lstat(path).catch((error) => {
+        if (error.code === "ENOENT") return null;
+        throw error;
+      });
+      if (!details) {
+        files.push([relative, "absent"]);
+        return;
+      }
+      if (details.isSymbolicLink())
+        throw new Error(
+          "A protected tutorial input unexpectedly became a link.",
+        );
+      if (details.isDirectory()) {
+        files.push([relative, "directory", details.mode & 0o777]);
+        for (const name of await readdir(path))
+          await visit(join(relative, name));
+      } else if (details.isFile() && details.size <= 1024 * 1024) {
+        files.push([
+          relative,
+          "file",
+          details.mode & 0o777,
+          sha256(await readFile(path)),
+        ]);
+      } else
+        throw new Error(
+          "A protected tutorial input exceeded its file boundary.",
+        );
+      if (files.length > 128)
+        throw new Error(
+          "Tutorial package-recovery inputs exceeded their bound.",
+        );
+    };
+    for (const path of protectedPaths) await visit(path);
+    return files.sort(([a], [b]) => a.localeCompare(b));
+  };
+  const runtimeIdentity = () => {
+    const container = ownedDemoContainers(cwd, projectId);
+    if (!/^[a-f0-9]{64}$/u.test(container))
+      throw new Error("Package recovery requires one exact owned runtime.");
+    return run(
+      "docker",
+      [
+        "inspect",
+        "--format",
+        "{{.Id}}|{{.State.Running}}|{{.State.StartedAt}}|{{.Image}}|{{json .Mounts}}",
+        container,
+      ],
+      { cwd },
+    ).trim();
+  };
+  const physicalRows = () => {
+    physicalDemoObservation(cwd, projectId, {
+      expectedRows: 1,
+      descriptionRequired: false,
+    });
+    return sha256(
+      run(
+        "docker",
+        [
+          "exec",
+          ownedDemoContainers(cwd, projectId),
+          "psql",
+          "--quiet",
+          "--no-align",
+          "--tuples-only",
+          "--username",
+          "postgres",
+          "--dbname",
+          "postgres",
+          "--command",
+          "select json_build_object('public', (select jsonb_agg(to_jsonb(w) order by id) from public.widgets w), 'publication', (select jsonb_agg(to_jsonb(w) order by id) from blendcalc_api.widgets w));",
+        ],
+        { cwd },
+      ).trim(),
+    );
+  };
+  const baseline = await immutableBaselineFingerprint(cwd);
+  const inputs = await projectInputs();
+  const identity = runtimeIdentity();
+  const rows = physicalRows();
+  const preserved = async () => {
+    requireIdle();
+    if (
+      (await immutableBaselineFingerprint(cwd)) !== baseline ||
+      JSON.stringify(await projectInputs()) !== JSON.stringify(inputs) ||
+      runtimeIdentity() !== identity ||
+      physicalRows() !== rows
+    )
+      throw new Error(
+        "Package link/copy recovery changed protected tutorial state.",
+      );
+  };
+
+  if (sha256(await readFile(artifact.path)) !== artifact.sha256)
+    throw new Error("The package recovery artifact changed before unpacking.");
+  const packedEntries = run("tar", ["-tzf", artifact.path], { cwd })
+    .trim()
+    .split("\n");
+  const packedFiles = packedEntries.filter((name) => !name.endsWith("/"));
+  if (
+    packedFiles.length === 0 ||
+    packedFiles.length > 1000 ||
+    packedEntries.length > 2000 ||
+    new Set(packedFiles).size !== packedFiles.length ||
+    packedEntries.some(
+      (name) =>
+        (name !== "package/" && !name.startsWith("package/")) ||
+        /[\u0000-\u001f\u007f]/u.test(name) ||
+        name.includes("\\") ||
+        name
+          .replace(/\/$/u, "")
+          .split("/")
+          .some((part) => !part || part === "." || part === ".."),
+    )
+  )
+    throw new Error("The exact package payload has unsafe or unbounded paths.");
+  if (
+    run("tar", ["-tvzf", artifact.path], { cwd })
+      .trim()
+      .split("\n")
+      .some((line) => !/^[-d]/u.test(line))
+  )
+    throw new Error(
+      "The exact package payload contains a link or special entry.",
+    );
+  const outside = join(temporaryRoot, "tutorial-outside-package");
+  await mkdir(outside);
+  run("tar", ["-xzf", artifact.path, "-C", outside], { cwd });
+  const source = join(outside, "package");
+  const payload = [];
+  let payloadBytes = 0;
+  for (const packed of packedFiles) {
+    const relative = packed.slice("package/".length);
+    const details = await lstat(join(source, relative));
+    payloadBytes += details.size;
+    if (
+      !details.isFile() ||
+      details.isSymbolicLink() ||
+      details.size > 8 * 1024 * 1024 ||
+      payloadBytes > 64 * 1024 * 1024
+    )
+      throw new Error(
+        "The exact package payload contains an unsupported file.",
+      );
+    payload.push([relative, sha256(await readFile(join(source, relative)))]);
+  }
+  run(
+    "npm",
+    [
+      "install",
+      "--ignore-scripts",
+      "--omit=dev",
+      "--no-package-lock",
+      "--no-save",
+      "--no-audit",
+      "--no-fund",
+    ],
+    { cwd: source, inheritEnvironment: true, timeout: 120_000 },
+  );
+  const install = (copy) =>
+    run(
+      "npm",
+      [
+        "install",
+        "--ignore-scripts",
+        "--no-save",
+        "--no-audit",
+        "--no-fund",
+        copy ? "--install-links" : "--install-links=false",
+        source,
+      ],
+      { cwd, inheritEnvironment: true, timeout: 120_000 },
+    );
+  const installed = join(cwd, "node_modules/@rehearsal-db/core");
+  const verifyCli = (label) => {
+    const version = cli(["version", "--json"], `${label} installed version`);
+    const status = cli(["status", "--json"], `${label} runtime status`);
+    if (
+      version.name !== artifact.name ||
+      version.version !== artifact.version ||
+      status.data.runtimeStatus?.state !== "running"
+    )
+      throw new Error(
+        "Package recovery did not retain its exact CLI and running runtime.",
+      );
+    cli(["verify", "--json"], `${label} runtime Verify`);
+  };
+  install(false);
+  if (
+    !(await lstat(installed)).isSymbolicLink() ||
+    (await realpath(installed)) !== (await realpath(source))
+  )
+    throw new Error(
+      "The tutorial control did not create the external package link.",
+    );
+  verifyCli("external package link");
+  await preserved();
+  install(true);
+  if (
+    !(await lstat(installed)).isDirectory() ||
+    (await lstat(installed)).isSymbolicLink() ||
+    (await realpath(installed)) !==
+      join(await realpath(cwd), "node_modules/@rehearsal-db/core")
+  )
+    throw new Error(
+      "The tutorial recovery did not create a canonical project-local package.",
+    );
+  for (const [relative, digest] of payload) {
+    const details = await lstat(join(installed, relative));
+    if (
+      !details.isFile() ||
+      details.isSymbolicLink() ||
+      sha256(await readFile(join(installed, relative))) !== digest
+    )
+      throw new Error(
+        "The copied package differs from the exact candidate payload.",
+      );
+  }
+  if (sha256(await readFile(artifact.path)) !== artifact.sha256)
+    throw new Error(
+      "The package recovery artifact changed during installation.",
+    );
+  verifyCli("project-local package copy");
+  await preserved();
+  return {
+    transition: "external-link-to-project-local-copy",
+    linkedCliVerified: true,
+    copiedCliVerified: true,
+    copiedArtifactFiles: payload.length,
+    exactArtifactBytes: true,
+    immutableBaselinePreserved: true,
+    configurationAndMigrationsPreserved: true,
+    physicalDatabaseRowsPreserved: true,
+    runtimeIdentityPreserved: true,
+    privateKeyPresent: inputs.some(
+      ([path, kind]) =>
+        path === ".rehearsal/secrets/privacy.key" && kind === "file",
+    ),
+    privateKeyPreservation: inputs.some(
+      ([path, kind]) =>
+        path === ".rehearsal/secrets/privacy.key" && kind === "file",
+    )
+      ? "preserved"
+      : "absence-preserved",
+    extensionResolver: "not-exercised-by-cli-fixture",
+  };
 };
 
 const runDataSpecificMigrationDemo = async ({
@@ -308,13 +594,18 @@ const runDataSpecificMigrationDemo = async ({
         cli(["verify", "--json"], "empty control verify");
         cli(["stop", "--json"], "empty control bounded stop");
       } else {
+        const diagnosis = JSON.parse(result.stdout).error?.context
+          ?.migrationFailure;
         if (
           result.status === 0 ||
           JSON.parse(result.stdout).error?.category !==
-            "migration_candidate_failure"
+            "migration_candidate_failure" ||
+          diagnosis?.classification !== "constraint" ||
+          diagnosis?.sqlState !== "23502" ||
+          diagnosis?.evidence !== "provider_sqlstate"
         )
           throw new Error(
-            "The null-bearing control did not fail with the safe migration category.",
+            "The null-bearing control did not report its safe native NOT NULL diagnosis.",
           );
         if (
           /null value in column|contains null values|alter table public\.widgets/iu.test(
@@ -617,6 +908,12 @@ const main = async () => {
         "The PostgreSQL runtime environment is missing or unsafe.",
       );
     }
+    const tutorialPackageRecovery = await proveTutorialPackageCopyRecovery({
+      cwd,
+      temporaryRoot,
+      artifact,
+      projectId,
+    });
     const applicationUrl = `http://localhost:${ports.api}`;
     const firstOpenOutput = await openApplicationSession({
       cwd,
@@ -991,6 +1288,7 @@ const main = async () => {
           target: "postgresql",
           validCandidate: "20260101000100_add_widget_description.sql",
           invalidCandidate: "20260101000200_invalid_candidate.sql",
+          tutorialPackageRecovery,
           dataSpecificMigration,
         },
         null,

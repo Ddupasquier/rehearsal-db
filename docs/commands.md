@@ -238,6 +238,41 @@ provides a stable category, code, safe message, suggestions, diagnostic ID, and 
 context under `error`. Callers should use the category and code for decisions and show
 the message and suggestions to people.
 
+Failed migration execution additionally supplies `error.context.migrationFailure`:
+schema version `1`, provider (`postgresql` or `supabase`), classification (`syntax`,
+`schema`, `constraint`, `permission`, `connectivity`, `timeout_or_cancel`, or `unknown`),
+nullable `sqlState`, evidence (`provider_sqlstate`, `unavailable`, or `ambiguous`),
+fixed `summary` and fixed `suggestions`. Classification uses recognized native SQLSTATE
+envelopes, never SQL-text guessing. Unknown evidence does not establish syntax failure.
+Direct manager failures separately name the target in `error.context.target`; raw
+SQL, row values, provider DETAIL, absolute paths and connection strings are not
+included. Optional attempted-input metadata is described below; it does not locate
+the failing SQL statement. Existing exit codes and `MANAGER_RUN_FAILED` / `MANAGER_MIGRATE_FAILED`
+codes are unchanged. If cleanup also fails, the outer failure keeps its existing
+category, exit and cleanup warning while retaining the original fixed migration
+diagnosis. A diagnosis is not borrowed from a cleanup error, and is not evidence that
+cleanup completed.
+
+When PostgreSQL submits one known migration file, the diagnostic may include a closed
+`source` object: schema version `1`, `kind` (`baseline` or `candidate`), `filename`,
+`sha256`, nullable `workspaceRelativePath`, `line: null`, `column: null`, and
+`evidence: "owned_execution_input"`. The loaded bytes must match the reviewed hash.
+This identifies the attempted input, not the exact origin of failing SQL; statements,
+functions and included files can fail elsewhere. No statement counting, provider caret,
+or batch candidate count is converted into a source position. Baseline snapshot paths
+are not exposed; unavailable or ambiguous attribution is omitted, including the
+current Supabase batch path. The editor opens a project-local input only after fresh
+containment, regular-file, identity and exact-byte checks; a changed file needs manual
+review instead of a stale link.
+
+`activity --json` may also provide `data.recentFailures`: up to 20 entries with
+`operationId` and the same `diagnostic`, joined to a failed receipt in `data.recent`.
+Missing means an older producer; `null` means private history is unavailable; `[]`
+means no retained migration diagnosis. These are recent observations, not current
+runtime verification. Existing `recent[]` and progress object fields are unchanged,
+so older clients can ignore the new top-level projection. The local owner-only history
+stores only this fixed safe projection, not arbitrary errors or terminal output.
+
 Invalid positive-integer settings and rejected proposal structure or fields use
 `configuration_invalid` with code `CONFIGURATION_INVALID` (exit `2`), including
 baseline-retention settings and fields that require manual review. They are not

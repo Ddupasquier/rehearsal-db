@@ -11,7 +11,6 @@ import { fileURLToPath } from "node:url";
 import * as prompts from "@clack/prompts";
 import {
   RehearsalError,
-  normalizeRehearsalError,
   renderHumanError,
   serializeRehearsalError,
 } from "../shared/diagnostics.mjs";
@@ -38,6 +37,7 @@ import {
   resetCommandSessionState,
 } from "./command_contract.mjs";
 import { createCommandEmitter } from "./command_output.mjs";
+import { normalizeCliFailure } from "./failure_output.mjs";
 import { createGuidedHome } from "./guided.mjs";
 import { createProjectCommands } from "./project_commands.mjs";
 import {
@@ -270,7 +270,7 @@ const main = async () => {
 try {
   await main();
 } catch (error) {
-  const failure = normalizeRehearsalError(error, {
+  const failure = normalizeCliFailure(error, {
     expected: "a safe, versioned, local-only Rehearsal operation",
     actual: errorMessage(error),
     refused: "No further Rehearsal action was performed.",

@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import {
   readLocalSupabaseEnvironment,
@@ -33,6 +34,7 @@ import { streamApprovedSupabaseAssets } from "../../../dist/src/source/asset_tra
 import {
   installCandidateArtifact,
   prepareCandidateArtifact,
+  sha256Value,
 } from "../scenarios/artifact.mjs";
 import { executeInstalledCli } from "../scenarios/process.mjs";
 import {
@@ -169,6 +171,344 @@ const runtimeExists = (runtimeWorkdir) =>
       if (error?.code === "ENOENT") return false;
       throw error;
     });
+
+const proveMigrationFailureRecovery = async ({
+  cwd,
+  temporaryRoot,
+  runtimeWorkdir,
+  invalidFilename,
+}) => {
+  const fail = (stage) => {
+    throw new Error(`Supabase migration diagnosis proof failed: ${stage}.`);
+  };
+  const record = (value) =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
+  const cli = (args, stage, failed = false) => {
+    const result = executeCli({ cwd, args });
+    if (result.error || (failed ? result.status !== 6 : result.status !== 0))
+      fail(`${stage} exit`);
+    let envelope;
+    try {
+      envelope = JSON.parse(result.stdout);
+    } catch {
+      fail(`${stage} JSON`);
+    }
+    if (
+      envelope?.schemaVersion !== 1 ||
+      envelope.status !== (failed ? "error" : "success")
+    )
+      fail(`${stage} envelope`);
+    const rendered = `${result.stdout}\n${result.stderr}`;
+    if (
+      /Synthetic Widget|this is not valid postgres|private_backfill_canary|alter table public\.widgets|At statement:|fixture-client-secret|postgres(?:ql)?:\/\//iu.test(
+        rendered,
+      )
+    )
+      fail(`${stage} private output`);
+    const value = failed ? envelope.error : envelope.data;
+    if (!record(value)) fail(`${stage} result shape`);
+    return value;
+  };
+  const baseline = cli(["inspect", "baseline", "--json"], "baseline control");
+  if (
+    baseline.rowCount !== 1 ||
+    baseline.tableCount !== 1 ||
+    baseline.verification !== "checksums_verified"
+  )
+    fail("baseline counts");
+  const sentinelPath = join(temporaryRoot, "migration-outside-sentinel.txt");
+  const sentinel = "outside the fixture's runtime ownership\n";
+  await writeFile(sentinelPath, sentinel);
+  const inputs = await Promise.all(
+    [
+      "rehearsal.config.mjs",
+      "rehearsal/sanitized-data.ndjson",
+      "rehearsal/sanitization-policy.json",
+      "supabase/migrations/20260101000000_create_widgets.sql",
+      "supabase/migrations/20260101000100_add_widget_description.sql",
+    ].map(async (path) => [path, await readFile(join(cwd, path))]),
+  );
+  const assertPreserved = async (stage) => {
+    if (
+      !isDeepStrictEqual(
+        cli(["inspect", "baseline", "--json"], `${stage} baseline`),
+        baseline,
+      ) ||
+      (await readFile(sentinelPath, "utf8")) !== sentinel
+    )
+      fail(`${stage} baseline or outside sentinel changed`);
+    for (const [path, bytes] of inputs)
+      if (!bytes.equals(await readFile(join(cwd, path))))
+        fail(`${stage} reviewed input changed`);
+  };
+  const assertRuntimeAbsent = async (stage) => {
+    let resources;
+    try {
+      resources = [
+        runLocalCommand(
+          "docker",
+          [
+            "ps",
+            "--all",
+            "--filter",
+            `label=com.supabase.cli.project=${projectId}`,
+            "--format",
+            "{{.ID}}",
+          ],
+          { capture: true, cwd },
+        ),
+        runLocalCommand(
+          "docker",
+          [
+            "volume",
+            "ls",
+            "--filter",
+            `label=com.supabase.cli.project=${projectId}`,
+            "--format",
+            "{{.Name}}",
+          ],
+          { capture: true, cwd },
+        ),
+      ];
+    } catch {
+      fail(`${stage} cleanup inspection unavailable`);
+    }
+    if (
+      (await runtimeExists(runtimeWorkdir)) ||
+      resources.some((value) => value.trim())
+    )
+      fail(`${stage} owned runtime remains`);
+  };
+  const observedFailures = new Map();
+  const assertActivity = (stage, expected) => {
+    const activity = cli(["activity", "--json"], `${stage} activity`);
+    if (
+      !isDeepStrictEqual(Object.keys(activity).sort(), [
+        "operation",
+        "recent",
+        "recentFailures",
+        "schemaVersion",
+        "state",
+      ]) ||
+      activity.schemaVersion !== 1 ||
+      activity.state !== "idle" ||
+      activity.operation !== null ||
+      !Array.isArray(activity.recent) ||
+      activity.recent.length > 20 ||
+      !Array.isArray(activity.recentFailures) ||
+      activity.recentFailures.length > 20 ||
+      new Set(activity.recentFailures.map((entry) => entry?.operationId))
+        .size !== activity.recentFailures.length
+    )
+      fail(`${stage} activity shape`);
+    for (const entry of activity.recentFailures) {
+      const receipt = activity.recent.find(
+        (item) => item?.progress?.operationId === entry?.operationId,
+      );
+      if (
+        !record(entry) ||
+        !isDeepStrictEqual(Object.keys(entry).sort(), [
+          "diagnostic",
+          "operationId",
+        ]) ||
+        !/^[a-f0-9]{64}$/u.test(entry.operationId) ||
+        !record(receipt) ||
+        !isDeepStrictEqual(Object.keys(receipt).sort(), [
+          "kind",
+          "progress",
+          "rehearsalVersion",
+        ]) ||
+        receipt.kind !== "run" ||
+        !record(receipt.progress) ||
+        !isDeepStrictEqual(Object.keys(receipt.progress).sort(), [
+          "completedStages",
+          "currentStage",
+          "elapsedMilliseconds",
+          "events",
+          "operationId",
+          "schemaVersion",
+          "startedAt",
+          "state",
+          "truncated",
+          "updatedAt",
+        ]) ||
+        receipt.progress.schemaVersion !== 1 ||
+        receipt.progress.state !== "failed" ||
+        !Array.isArray(receipt.progress.events) ||
+        receipt.progress.events.at(-1)?.code !== "operation.failed"
+      )
+        fail(`${stage} failure receipt binding`);
+      if (
+        !isDeepStrictEqual(entry.diagnostic, expected) &&
+        !isDeepStrictEqual(
+          entry.diagnostic,
+          observedFailures.get(entry.operationId),
+        )
+      )
+        fail(`${stage} unexpected diagnosis fields`);
+    }
+    if (expected) {
+      const matches = activity.recentFailures.filter(
+        (entry) =>
+          !observedFailures.has(entry.operationId) &&
+          isDeepStrictEqual(entry.diagnostic, expected),
+      );
+      if (matches.length !== 1)
+        fail(`${stage} native diagnosis was not retained`);
+      observedFailures.set(matches[0].operationId, expected);
+    }
+    for (const [operationId, diagnostic] of observedFailures)
+      if (
+        !activity.recentFailures.some(
+          (entry) =>
+            entry.operationId === operationId &&
+            isDeepStrictEqual(entry.diagnostic, diagnostic),
+        )
+      )
+        fail(`${stage} retained diagnosis changed`);
+  };
+  const cases = [
+    {
+      label: "syntax",
+      filename: invalidFilename,
+      sqlState: "42601",
+      classification: "syntax",
+      summary: "The database reported a SQL syntax error.",
+      suggestion:
+        "Review the candidate SQL for missing keywords, punctuation or malformed statements; then review the new exact plan before retrying.",
+      correctedSql: "select 1;\n",
+    },
+    {
+      label: "existing-row NOT NULL",
+      filename: "20260101000300_require_widget_description.sql",
+      sqlState: "23502",
+      classification: "constraint",
+      summary: "Rows do not satisfy a NOT NULL requirement.",
+      suggestion:
+        "Review existing NULL values and any new writes. Backfill or transform incompatible rows before enforcing NOT NULL.",
+      failingSql:
+        "alter table public.widgets alter column description set not null;\n",
+      correctedSql:
+        "update public.widgets set description = 'private_backfill_canary' where description is null;\nalter table public.widgets alter column description set not null;\n",
+    },
+  ];
+  for (const testCase of cases) {
+    const path = join(cwd, "supabase/migrations", testCase.filename);
+    if (testCase.failingSql) await writeFile(path, testCase.failingSql);
+    const before = cli(["explain", "--json"], `${testCase.label} plan`);
+    if (
+      !/^[a-f0-9]{64}$/u.test(before.migrations.candidateSha256) ||
+      before.migrations.candidates.find(
+        (entry) => entry.filename === testCase.filename,
+      )?.sha256 !== sha256Value(await readFile(path))
+    )
+      fail(`${testCase.label} reviewed candidate bytes`);
+    const failure = cli(
+      [
+        "run",
+        `--confirm-candidates=${before.migrations.candidateSha256}`,
+        "--json",
+      ],
+      `${testCase.label} failure`,
+      true,
+    );
+    const expected = {
+      schemaVersion: 1,
+      provider: "supabase",
+      classification: testCase.classification,
+      sqlState: testCase.sqlState,
+      evidence: "provider_sqlstate",
+      summary: testCase.summary,
+      suggestions: [
+        testCase.suggestion,
+        "No automatic SQL change or retry was performed. The failure itself does not prove rollback or cleanup; inspect runtime status before retrying.",
+      ],
+    };
+    if (
+      failure?.category !== "migration_candidate_failure" ||
+      failure.code !== "MANAGER_RUN_FAILED" ||
+      !isDeepStrictEqual(failure.context?.migrationFailure, expected)
+    )
+      fail(`${testCase.label} native diagnosis`);
+    assertActivity(testCase.label, expected);
+    await assertRuntimeAbsent(testCase.label);
+    await assertPreserved(testCase.label);
+    await writeFile(path, testCase.correctedSql);
+    const corrected = cli(
+      ["explain", "--json"],
+      `${testCase.label} correction plan`,
+    );
+    if (
+      !/^[a-f0-9]{64}$/u.test(corrected.migrations.candidateSha256) ||
+      corrected.migrations.candidateSha256 ===
+        before.migrations.candidateSha256 ||
+      corrected.migrations.candidates.find(
+        (entry) => entry.filename === testCase.filename,
+      )?.sha256 !== sha256Value(testCase.correctedSql)
+    )
+      fail(`${testCase.label} correction digest`);
+    const recovered = cli(
+      [
+        "run",
+        `--confirm-candidates=${corrected.migrations.candidateSha256}`,
+        "--json",
+      ],
+      `${testCase.label} correction run`,
+    );
+    if (
+      !recovered.applicationProof?.output?.includes(
+        "synthetic fixture proof passed",
+      )
+    )
+      fail(`${testCase.label} application proof`);
+    cli(["verify", "--json"], `${testCase.label} correction verify`);
+    assertActivity(`${testCase.label} correction`);
+    await assertPreserved(`${testCase.label} correction`);
+  }
+  let physical;
+  try {
+    physical = runPsql({
+      cwd,
+      sql: `select count(*) = 1
+and bool_and(id = 1 and name = 'Synthetic Widget' and created_at = timestamptz '2026-01-01T00:00:00Z' and description = 'private_backfill_canary')
+and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'widgets' and column_name = 'description' and is_nullable = 'NO')
+from public.widgets;`,
+    }).trim();
+  } catch {
+    fail("corrected physical query");
+  }
+  if (physical !== "t") fail("corrected physical data or constraint");
+  let assetMatches = false;
+  try {
+    const environment = readLocalSupabaseEnvironment({
+      cwd,
+      workdir: runtimeWorkdir,
+    });
+    const asset = await fetch(
+      `${environment.apiUrl}/storage/v1/object/fixture-assets/proof/exact-byte.txt`,
+      {
+        headers: {
+          apikey: environment.serviceRoleKey,
+          authorization: `Bearer ${environment.serviceRoleKey}`,
+        },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+    assetMatches =
+      asset.ok &&
+      (await asset.text()) === "independent Rehearsal Storage proof\n";
+  } catch {
+    fail("corrected Storage query");
+  }
+  if (!assetMatches) fail("corrected exact Storage bytes");
+  cli(["discard", "--json"], "final discard");
+  await assertRuntimeAbsent("final discard");
+  await assertPreserved("final discard");
+  return {
+    sqlStates: cases.map((entry) => entry.sqlState),
+    retainedFailures: observedFailures.size,
+  };
+};
 
 const promoteActiveBaselineWithSchemaSnapshot = ({ cwd }) => {
   const script = `
@@ -1121,31 +1461,19 @@ where bucket_id = 'fixture-assets'
       join(cwd, "broken", invalidFilename),
       join(cwd, "supabase/migrations", invalidFilename),
     );
-    const invalidPlan = await buildRehearsalPlan({ projectRoot: cwd });
     startedAt = performance.now();
-    const invalidRun = executeCli({
+    const migrationFailureRecovery = await proveMigrationFailureRecovery({
       cwd,
-      args: [
-        "run",
-        `--confirm-candidates=${invalidPlan.migrations.candidateSha256}`,
-        "--json",
-      ],
+      temporaryRoot,
+      runtimeWorkdir,
+      invalidFilename,
     });
-    if (invalidRun.status === 0) {
-      throw new Error(
-        "The deliberately invalid fixture migration unexpectedly passed.",
-      );
-    }
-    const invalidFailure = JSON.parse(invalidRun.stdout);
-    if (invalidFailure.error?.category !== "migration_candidate_failure") {
-      throw new Error(
-        `The invalid fixture failed with the wrong category: ${invalidRun.stdout || invalidRun.stderr}`,
-      );
-    }
-    if (await runtimeExists(runtimeWorkdir)) {
-      throw new Error("The failed fixture runtime was not discarded.");
-    }
-    timings.invalidCandidateRefusalMs = Math.round(
+    commandsProven.push(
+      "native Supabase syntax and existing-row constraint diagnosis",
+      "persisted strict migration explanations",
+      "reviewed migration corrections and preservation",
+    );
+    timings.migrationFailureRecoveryMs = Math.round(
       performance.now() - startedAt,
     );
 
@@ -1159,6 +1487,7 @@ where bucket_id = 'fixture-assets'
           artifactSource: artifact.source,
           validCandidate: validFilename,
           invalidCandidate: invalidFilename,
+          migrationFailureRecovery,
           commandsProven,
           timings,
         },

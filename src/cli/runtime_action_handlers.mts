@@ -249,15 +249,22 @@ export const createRuntimeActionHandlers = ({
             "httpProofResults" in value ? value.httpProofResults : [];
           const renderedLifecycle =
             "lifecycle" in value ? value.lifecycle : undefined;
+          const hasApplicationLaunch =
+            topology.primary.config.application.readiness !== null;
           const nextAction = {
             run:
               renderedLifecycle?.runtimeState === "stopped"
-                ? "The runtime was stopped with its database and Storage changes preserved. Run rehearsal start or rehearsal open to resume."
-                : "Next: run rehearsal open for hands-on testing, then rehearsal verify.",
-            start:
-              "Next: run rehearsal open for hands-on testing or rehearsal status.",
+                ? `The runtime was stopped with its database and Storage changes preserved. Run rehearsal start${hasApplicationLaunch ? " or rehearsal open" : ""} to resume.`
+                : hasApplicationLaunch
+                  ? "Next: run rehearsal open for hands-on testing, then rehearsal verify."
+                  : "The rehearsal command is complete; the database remains running. Next: run rehearsal verify or inspect the local database. This database-only project has no application to open.",
+            start: hasApplicationLaunch
+              ? "Next: run rehearsal open for hands-on testing or rehearsal status."
+              : "The database is running. Next: run rehearsal status or rehearsal verify; no application launch is configured.",
             migrate: "Next: run rehearsal verify to prove the current runtime.",
-            reset: "Next: run rehearsal open or rehearsal verify.",
+            reset: hasApplicationLaunch
+              ? "Next: run rehearsal open or rehearsal verify."
+              : "Next: run rehearsal verify or inspect the local database; no application launch is configured.",
             status: "Next: run rehearsal verify, reset, stop, or discard.",
             stop: "Next: run rehearsal start when you want to resume.",
             discard:
