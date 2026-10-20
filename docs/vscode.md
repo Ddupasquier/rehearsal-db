@@ -63,7 +63,7 @@ VS Code, Codespaces, SSH and Dev Containers are not yet claimed as supported.
 
 GitHub VSIX installations do not auto-update. Download and verify the next reviewed
 release, then use **Install from VSIX…** again. Keep the previous reviewed file for
-rollback. See the extension's [installation guide](https://github.com/Ddupasquier/rehearsal-vscode#install-and-open-your-project)
+rollback. See the release's [installation guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.12/README.md#install-and-open-your-project)
 for checksum commands and the optional command-line installer.
 
 The preview offers optional, consented release checks through **Rehearsal: Check for
