@@ -11,6 +11,14 @@ function Invoke-Wsl([string[]] $Command) {
     & wsl.exe --distribution $distribution --user root --exec @Command
     if ($LASTEXITCODE -ne 0) { throw "Owned WSL command failed with exit $LASTEXITCODE." }
 }
+function Get-OwnedWslVersion {
+    $inventory = @(& wsl.exe --list --verbose) -join "`n"
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the owned WSL distribution version.' }
+    $pattern = '(?m)^\s*\*?\s*' + [regex]::Escape($distribution) + '\s+.+\s+([12])\s*$'
+    $rows = [regex]::Matches(($inventory -replace "`0", ''), $pattern)
+    if ($rows.Count -ne 1) { throw 'The owned WSL distribution must have exactly one proven version row.' }
+    return [int]$rows[0].Groups[1].Value
+}
 & wsl.exe --status
 if ($LASTEXITCODE -ne 0) { throw 'The runner cannot establish WSL2 availability.' }
 $existing = @(& wsl.exe --list --quiet) -join "`n"
@@ -31,8 +39,14 @@ try {
     & wsl.exe --install --distribution $distribution --web-download --no-launch
     if ($LASTEXITCODE -ne 0) { throw 'Fresh Ubuntu installation failed.' }
     $created = $true
-    & wsl.exe --set-version $distribution 2
-    if ($LASTEXITCODE -ne 0) { throw 'The owned distribution must use WSL2.' }
+    $ownedVersion = Get-OwnedWslVersion
+    if ($ownedVersion -eq 1) {
+        & wsl.exe --set-version $distribution 2
+        if ($LASTEXITCODE -ne 0) { throw 'Converting the owned distribution to WSL2 failed.' }
+        $ownedVersion = Get-OwnedWslVersion
+    }
+    if ($ownedVersion -ne 2) { throw 'The owned distribution must be proven WSL2.' }
+    Write-Output 'Owned Ubuntu distribution reports WSL2; real kernel and filesystem checks follow.'
     $archive = Join-Path $ciRoot 'reviewed-source.tar'
     & git archive --format=tar --output=$archive HEAD
     if ($LASTEXITCODE -ne 0) { throw 'Could not archive the reviewed source.' }

@@ -32,6 +32,7 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true });
 });
 const fixture = async (manifest = {}) => {
+  await mkdir(resolve("test-results"), { recursive: true });
   const root = await mkdtemp(resolve("test-results", "setup helpers ü "));
   roots.push(root);
   await writeFile(
