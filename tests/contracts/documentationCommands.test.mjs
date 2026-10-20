@@ -355,8 +355,8 @@ describe("documented CLI contract", () => {
     expect(guide).not.toContain(
       "Public purchase and download instructions will appear here only after",
     );
-    expect(guide).toContain("rehearsal-vscode/releases/tag/v0.1.12");
-    expect(guide).toContain("rehearsal-vscode/blob/v0.1.12/LICENSE");
+    expect(guide).toContain("rehearsal-vscode/releases/tag/v0.1.18");
+    expect(guide).toContain("rehearsal-vscode/blob/v0.1.18/LICENSE");
     expect(guide).toMatch(
       /free indefinitely for personal or commercial development/u,
     );
@@ -364,8 +364,9 @@ describe("documented CLI contract", () => {
       /No account, payment card, purchase, trial period, or license activation is required/u,
     );
     expect(guide).not.toMatch(/14-day\s+evaluation/u);
-    expect(guide).toContain("GitHub VSIX, not VS Code Marketplace");
-    expect(guide).toContain("GitHub VSIX installations do not auto-update");
+    expect(guide).toContain("verified GitHub VSIX");
+    expect(guide).toContain("initially unchecked choices");
+    expect(guide).toContain("Manual updating stays available");
     expect(guide).toContain("Support is best effort");
     expect(guide).toMatch(
       /Native Windows, browser-based\s+VS Code, Codespaces, SSH and Dev Containers are not yet claimed as supported/u,

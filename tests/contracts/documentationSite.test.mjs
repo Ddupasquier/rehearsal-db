@@ -136,19 +136,29 @@ describe("documentation site", () => {
     expect(home).not.toContain("@rehearsal-db/core@beta");
   });
 
-  it("documents the released free Starter channel rather than unpublished behavior", async () => {
+  it("documents the reviewed Starter delivery and its explicit update consent", async () => {
     const source = await readFile(
       join(repositoryRoot, "docs/vscode.md"),
       "utf8",
     );
-    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.12");
-    expect(source).toContain("rehearsal-vscode/blob/v0.1.12/LICENSE");
+    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.18");
+    expect(source).toContain("rehearsal-vscode/blob/v0.1.18/LICENSE");
     expect(source).toContain("free indefinitely");
     expect(source).toContain(
       "No account, payment card, purchase, trial period, or license activation",
     );
-    expect(source).toContain("GitHub VSIX, not VS Code Marketplace");
-    expect(source).toContain("GitHub VSIX installations do not auto-update");
+    expect(source).toContain("verified GitHub VSIX");
+    expect(source).toContain(
+      '"rehearsal.automaticUpdates": { "extension": true, "cli": false }',
+    );
+    expect(source).toContain("Save preferences");
+    expect(source).toContain("machine-scoped VS Code user settings");
+    expect(source).toContain("install scripts disabled");
+    expect(source).toContain("Turn either option off to revoke");
+    expect(source).toContain("never forces a window reload");
+    expect(source).not.toContain(
+      "GitHub VSIX installations do not auto-update",
+    );
     expect(source).not.toContain("bundled 14-day");
     expect(source).not.toContain(
       "Starter/Pro license terms and Marketplace distribution still need approval",
