@@ -36,7 +36,7 @@ date, with that change called out in the changelog.
 
 Core 1.0.1's platform boundary distinguishes the computer running VS Code from the
 operating system actually executing Node, Docker and Rehearsal. The corresponding editor
-changes start with extension 0.1.20. A Windows desktop connected to WSL is not native
+changes are delivered with extension 0.1.21. A Windows desktop connected to WSL is not native
 Windows execution.
 
 | Execution environment                                                  | Runtime boundary                                                                                                           |

@@ -141,8 +141,8 @@ describe("documentation site", () => {
       join(repositoryRoot, "docs/vscode.md"),
       "utf8",
     );
-    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.20");
-    expect(source).toContain("rehearsal-vscode/blob/v0.1.20/LICENSE");
+    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.21");
+    expect(source).toContain("rehearsal-vscode/blob/v0.1.21/LICENSE");
     expect(source).toContain(
       "marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db",
     );

@@ -355,13 +355,13 @@ describe("documented CLI contract", () => {
     expect(guide).not.toContain(
       "Public purchase and download instructions will appear here only after",
     );
-    expect(guide).toContain("rehearsal-vscode/releases/tag/v0.1.20");
-    expect(guide).toContain("rehearsal-vscode/blob/v0.1.20/LICENSE");
+    expect(guide).toContain("rehearsal-vscode/releases/tag/v0.1.21");
+    expect(guide).toContain("rehearsal-vscode/blob/v0.1.21/LICENSE");
     expect(guide).toContain(
       "marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db",
     );
-    expect(guide).toContain("rehearsal-db-0.1.20.vsix");
-    expect(guide).toContain("core **1.0.1** with Starter **0.1.20**");
+    expect(guide).toContain("rehearsal-db-0.1.21.vsix");
+    expect(guide).toContain("core **1.0.1** with Starter **0.1.21**");
     expect(guide).toContain(
       "both versions appear in their official release channels",
     );
@@ -381,7 +381,7 @@ describe("documented CLI contract", () => {
     expect(guide).toContain("Support is best effort");
     const normalized = guide.replace(/\s+/gu, " ");
     expect(normalized).toContain(
-      "native Windows inspection refuses before launching a child process",
+      "native Windows inspection and foreground actions refuse before launching a child process",
     );
     expect(guide).toContain(
       "getting-started.md#windows-use-a-wsl-2-linux-workspace",

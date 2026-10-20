@@ -185,7 +185,7 @@ See [COMPATIBILITY.md](COMPATIBILITY.md) for the exact support contract.
 Native Windows metadata commands are not database-runtime support. For Windows, follow
 the [WSL 2 setup path](docs/getting-started.md#windows-use-a-wsl-2-linux-workspace):
 Linux Node, project files and Docker must live in the Linux execution environment.
-Core 1.0.1 and editor 0.1.20 add explicit platform guidance/refusal; older immutable
+Core 1.0.1 and editor 0.1.21 add explicit platform guidance/refusal; older immutable
 releases retain their original behavior. Mobile, browser-only and unlisted systems are
 not implied by desktop or Linux compatibility.
 

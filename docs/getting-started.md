@@ -21,7 +21,7 @@ be published; a checked-in helper is not proof of publication.
 ### Windows: use a WSL 2 Linux workspace
 
 The Windows compatibility route is Linux execution inside **WSL 2**, not a native
-PowerShell/Command Prompt database runtime. Core 1.0.1 and extension 0.1.20 make that
+PowerShell/Command Prompt database runtime. Core 1.0.1 and extension 0.1.21 make that
 boundary explicit; native Windows version/help/discovery do not authorize runtime work.
 
 1. Follow Microsoft's [WSL installation guide](https://learn.microsoft.com/en-us/windows/wsl/install)
