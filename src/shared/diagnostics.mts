@@ -177,6 +177,19 @@ const errorMessage = (error: unknown): string =>
 
 const inferCategory = (error: unknown): RehearsalErrorCategory => {
   const message = errorMessage(error);
+  // Fixed driver phase precedes incidental words in safe remediation text.
+  if (
+    /^(?:Error:\s*)?The baseline (?:PostgreSQL|Supabase) migration failed \(/mu.test(
+      message,
+    )
+  )
+    return "baseline_invalid";
+  if (
+    /^(?:Error:\s*)?The confirmed candidate (?:PostgreSQL|Supabase) migration failed \(/mu.test(
+      message,
+    )
+  )
+    return "migration_candidate_failure";
   if (/checksum/iu.test(message)) return "baseline_checksum_mismatch";
   if (
     /container\b.*\b(?:is not ready|starting|unhealthy)|health(?:check)?\b.*\b(?:failed|starting|unhealthy)|out of memory|\boom\b|no space left|resource temporarily unavailable/iu.test(

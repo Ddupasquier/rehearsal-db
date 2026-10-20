@@ -103,9 +103,10 @@ export const openApplicationSession = async ({ cwd, url, whileReady }) => {
 };
 
 export const openApplicationTerminalSession = async ({ cwd, url }) => {
+  // Exercise the exact installed CLI's PTY lifecycle, not npm's wrapper/spinner.
   const terminal = spawnTerminal(
-    "npx",
-    ["--no-install", "rehearsal", "open", "--plain"],
+    join(cwd, "node_modules/.bin/rehearsal"),
+    ["open", "--plain"],
     {
       name: "xterm-256color",
       cols: 100,
@@ -115,12 +116,22 @@ export const openApplicationTerminalSession = async ({ cwd, url }) => {
     },
   );
   let output = "";
+  let exited = false;
   terminal.onData((chunk) => {
     output += chunk;
   });
-  const exit = new Promise((resolve) => terminal.onExit(resolve));
+  const exit = new Promise((resolve) =>
+    terminal.onExit((result) => {
+      exited = true;
+      resolve(result);
+    }),
+  );
   try {
-    await waitForReady({ output: () => output, url });
+    await waitForReady({
+      childExited: () => exited,
+      output: () => output,
+      url,
+    });
   } catch (error) {
     terminal.kill();
     await exit;
@@ -173,15 +184,8 @@ export const connectIdentityTerminalSession = async ({
   confirm = true,
 }) => {
   const terminal = spawnTerminal(
-    "npx",
-    [
-      "--no-install",
-      "rehearsal",
-      "identity",
-      "connect",
-      "--identity=approved-owner",
-      "--plain",
-    ],
+    join(cwd, "node_modules/.bin/rehearsal"),
+    ["identity", "connect", "--identity=approved-owner", "--plain"],
     {
       name: "xterm-256color",
       cols: 110,
@@ -275,15 +279,8 @@ export const cancelIdentityTerminalSession = async ({
   control = "z",
 }) => {
   const terminal = spawnTerminal(
-    "npx",
-    [
-      "--no-install",
-      "rehearsal",
-      "identity",
-      "connect",
-      "--identity=approved-owner",
-      "--plain",
-    ],
+    join(cwd, "node_modules/.bin/rehearsal"),
+    ["identity", "connect", "--identity=approved-owner", "--plain"],
     {
       name: "xterm-256color",
       cols: 110,

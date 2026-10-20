@@ -3,6 +3,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { performance } from "node:perf_hooks";
 import type { ProjectOperation } from "./operation_guard.mjs";
 import { isOperationCancelled } from "./cancellation.mjs";
+import { RehearsalError } from "./diagnostics.mjs";
+import {
+  parseMigrationFailureDiagnostic,
+  type MigrationFailureDiagnostic,
+} from "../runtime/migration_failure.mjs";
 import {
   MAX_OPERATION_PROGRESS_EVENTS,
   MAX_OPERATION_PROGRESS_STAGES,
@@ -40,6 +45,7 @@ interface ProgressContext {
   stageTruncated: boolean;
   eventTruncated: boolean;
   writes: Promise<void>;
+  migrationFailure?: MigrationFailureDiagnostic;
 }
 const contexts = new AsyncLocalStorage<ProgressContext>();
 export const getOwnedOperationProgressId = (): string | null =>
@@ -104,10 +110,42 @@ const snapshot = (context: ProgressContext): OperationProgressSnapshot => {
 
 const publish = async (context: ProgressContext): Promise<void> => {
   const value = parseOperationProgressSnapshot(snapshot(context));
+  const migrationFailure = context.migrationFailure;
   context.writes = context.writes.then(() =>
-    context.operation.writeProgress(value),
+    context.operation.writeProgress(value, migrationFailure),
   );
   await context.writes;
+};
+
+/** Cleanup aggregates retain the original error first; never inspect sibling failures. */
+const originalMigrationFailure = (
+  error: unknown,
+): MigrationFailureDiagnostic | undefined => {
+  try {
+    let original = error;
+    for (let depth = 0; depth <= 4; depth += 1) {
+      if (original instanceof AggregateError) {
+        if (depth === 4 || !Array.isArray(original.errors)) return undefined;
+        original = original.errors[0];
+        continue;
+      }
+      if (
+        original instanceof RehearsalError &&
+        !isOperationCancelled(original) &&
+        original.context !== null &&
+        typeof original.context === "object" &&
+        !Array.isArray(original.context) &&
+        "migrationFailure" in original.context
+      )
+        return parseMigrationFailureDiagnostic(
+          original.context.migrationFailure,
+        );
+      return undefined;
+    }
+  } catch {
+    /* Invalid error metadata is not evidence and cannot replace the original failure. */
+  }
+  return undefined;
 };
 
 export const withOperationProgress = async <Value,>({
@@ -158,6 +196,10 @@ export const withOperationProgress = async <Value,>({
       return result;
     } catch (error) {
       context.state = isOperationCancelled(error) ? "cancelled" : "failed";
+      if (context.state === "failed") {
+        const diagnostic = originalMigrationFailure(error);
+        if (diagnostic !== undefined) context.migrationFailure = diagnostic;
+      }
       appendEvent(
         context,
         context.state === "cancelled"

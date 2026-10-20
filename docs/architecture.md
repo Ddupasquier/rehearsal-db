@@ -70,6 +70,24 @@ typed registry and produce the same result contract:
 Command handlers receive an explicit context containing parsed flags, selected config,
 guided state, and session-local caches. They return a rendered, text, or silent result;
 only the shared output boundary creates JSON envelopes or writes final human output.
+`runtime/migration_failure.mts` owns bounded provider-envelope SQLSTATE recognition,
+fixed classification/remediation and closed safe diagnostic validation. Target drivers
+never forward SQL or provider error details. The manager summary reconstructs that
+fixed diagnostic across the child-process boundary; CLI JSON and private operation
+history expose the same projection. Activity adds a separate `recentFailures` list,
+leaving existing strict progress/recent receipt shapes unchanged for old clients.
+The optional `source` projection is owned by `runtime/migration_failure_source.mts`.
+For individually dispatched PostgreSQL files, it identifies the attempted execution
+input by its reviewed filename, exact SHA-256 and baseline/candidate kind. The driver
+hashes the bytes it loads before dispatch; changed reviewed bytes refuse execution.
+Only a safe project-relative candidate path may be included, never an absolute path;
+baseline inputs keep that path null. This is not attribution of the failing SQL's actual
+origin: included scripts, functions and triggers can fail elsewhere. SQL line and column
+remain null. Supabase batch execution currently supplies no file attribution, and
+ambiguous or unavailable evidence is not inferred from candidate count or provider text.
+`cli/failure_output.mts` preserves the outer category and cleanup warning when a
+stack failure wraps the original migration error. It projects only a validated fixed
+diagnosis from at most four original-error wrappers, never cleanup siblings or causes.
 Session caches never appear in the public parsed-flags type.
 Owned child output has a byte boundary. If a process floods it, Rehearsal sends TERM
 and forcibly reaps only that owned process group after one second; a child ignoring
@@ -129,20 +147,32 @@ Each scenario remains independently runnable through its `test:fixture:*` script
 complete release gate runs every catalog entry against the same immutable tarball and
 writes its version, SHA-256, tool environment, commands, timings, and results under
 `test-results/release-gate/`.
+The existing Supabase scenario includes native syntax and populated-row constraint
+failures, fixed public error/history diagnostics, reviewed corrections and independent
+data/Storage preservation checks. It does not infer a rollback from a failed migration.
 
 ## Runtime lifecycle
 
 `runtime/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
 PostgreSQL and Supabase use it to dispatch commands, verify active baseline inputs,
 calculate and confirm the exact migration set, write target-bound receipts, validate
-runtime markers, and roll back a failed reset or migration without hiding the original
-failure.
+runtime markers, and attempt owned failure cleanup without hiding the original error.
+That cleanup can remove the disposable runtime; a failure message does not establish a
+SQL transaction rollback, restoration of sandbox edits, or successful resource removal.
 
 The files in `src/targets/` remain drivers. They prove ownership before deleting local
 resources and implement only the behavior that genuinely differs: Docker PostgreSQL
 containers and SQL setup on one side; Supabase CLI, Auth, Storage, and generated config
 on the other. An ordinary `stop` never enters rollback or discard, so later `start`
 preserves the sandbox database and Storage contents.
+
+CLI command completion and database lifecycle are separate. A successful `run` can finish
+and release its project lock while the configured keep-until-stop database remains
+running. The project-owned CLI proof has its own primary `application-proof` stage;
+HTTP readiness is optional and is not a prerequisite for a database-only proof. Public
+operation receipts record those past stages, not fresh proof of subsequently changed
+configuration, baseline or migration bytes. Editor presentation consumes that evidence
+without interpreting database liveness as an active command or successful proof.
 
 Repository contracts keep each target driver at 900 lines or fewer and the shared
 lifecycle engine at 300 lines or fewer. A new database target must use this lifecycle

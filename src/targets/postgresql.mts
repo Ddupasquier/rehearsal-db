@@ -43,12 +43,13 @@ import {
   signalOwnedProcessGroup,
 } from "../shared/owned_process.mjs";
 import {
-  runOwnedPostgresqlSql,
+  runOwnedPostgresqlMigration,
   runPostgresqlCommand,
 } from "./postgresql_process.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
 import { guardRuntimeManagerAction } from "../runtime/runtime_manager_guards.mjs";
 import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
+import { runPostgresqlStartupCommand } from "./port_start_failure.mjs";
 import { assertDockerResourceLabels } from "./docker_resource_ownership.mjs";
 import {
   buildRuntimeFinalizationSql,
@@ -322,13 +323,13 @@ const applyMigration = async ({
   directory: string;
   kind: "baseline" | "candidate";
 }): Promise<void> => {
-  const source = await readFile(join(directory, migration.filename), "utf8");
-  await runOwnedPostgresqlSql({
+  await runOwnedPostgresqlMigration({
     containerName,
     database,
     databaseUser,
     repositoryRoot,
-    sql: source,
+    migration,
+    directory,
     migrationKind: kind,
   });
   runPsql(`insert into rehearsal_internal.schema_migrations
@@ -628,30 +629,26 @@ const createContainer = async (password: string): Promise<void> => {
   runCommand("docker", ["volume", "create", "--label", label, volumeName], {
     capture: true,
   });
-  runCommand(
-    "docker",
-    [
-      "run",
-      "--detach",
-      "--pull=never",
-      "--name",
-      containerName,
-      "--label",
-      label,
-      "--publish",
-      `127.0.0.1:${databasePort}:5432`,
-      "--env",
-      `POSTGRES_PASSWORD=${password}`,
-      "--env",
-      `POSTGRES_DB=${database}`,
-      "--env",
-      `POSTGRES_USER=${databaseUser}`,
-      "--volume",
-      `${volumeName}:/var/lib/postgresql/data`,
-      image,
-    ],
-    { capture: true },
-  );
+  runPostgresqlStartupCommand(runCommand, [
+    "run",
+    "--detach",
+    "--pull=never",
+    "--name",
+    containerName,
+    "--label",
+    label,
+    "--publish",
+    `127.0.0.1:${databasePort}:5432`,
+    "--env",
+    `POSTGRES_PASSWORD=${password}`,
+    "--env",
+    `POSTGRES_DB=${database}`,
+    "--env",
+    `POSTGRES_USER=${databaseUser}`,
+    "--volume",
+    `${volumeName}:/var/lib/postgresql/data`,
+    image,
+  ]);
   await waitForDatabase();
 };
 
@@ -749,7 +746,7 @@ const startRuntime = async () => {
     { capture: true },
   ).stdout.trim();
   if (running !== "true") {
-    runCommand("docker", ["start", containerName], { capture: true });
+    runPostgresqlStartupCommand(runCommand, ["start", containerName]);
   }
   await waitForDatabase();
   const environment = databaseEnvironment(marker.databasePassword);

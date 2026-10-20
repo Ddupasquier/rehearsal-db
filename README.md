@@ -47,7 +47,7 @@ it through a reviewed privacy policy, and retire the access again. It is never p
 production deployment tool.
 
 The CLI is free and MIT-licensed, with stable releases on
-[npm](https://www.npmjs.com/package/@rehearsal-db/core). This guide targets **1.0.1**;
+[npm](https://www.npmjs.com/package/@rehearsal-db/core). This guide targets **1.0.2**;
 install only a version actually published there. Prefer a visual workflow?
 [Install the free VS Code Starter preview](docs/vscode.md). Its included features are
 free indefinitely for personal or commercial development—no account, card, or trial.

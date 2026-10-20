@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createOperationCancelledError } from "../../../dist/src/shared/cancellation.mjs";
+import { RehearsalError } from "../../../dist/src/shared/diagnostics.mjs";
+import { migrationFailureDiagnostic } from "../../../dist/src/runtime/migration_failure.mjs";
 import {
   acquireProjectOperation,
   inspectProjectOperationState,
@@ -217,6 +219,197 @@ describe("bounded owned operation progress", () => {
     await release(second);
   });
 
+  it("archives only fixed migration diagnosis separately from legacy progress receipt keys", async () => {
+    const root = await rootForTest();
+    const diagnostic = migrationFailureDiagnostic({
+      provider: "postgresql",
+      sqlState: "23514",
+    });
+    const operation = await acquire(root);
+    const failure = new RehearsalError({
+      category: "migration_candidate_failure",
+      code: "migration_execution_failed",
+      message: "SECRET_SQL_AND_ROWS",
+      context: { migrationFailure: diagnostic },
+    });
+    await expect(
+      withOperationProgress({
+        operation,
+        task: async () => {
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
+    const otherRoot = await rootForTest();
+    const other = await acquire(otherRoot);
+    const active = await inspectProjectOperationState({ projectRoot: root });
+    await expect(
+      other.writeProgress(active.operation.progress, diagnostic),
+    ).rejects.toThrow();
+    await release(other);
+    expect(
+      (await inspectProjectOperationState({ projectRoot: otherRoot }))
+        .recentFailures,
+    ).toEqual([]);
+    await release(operation);
+    const activity = await inspectProjectOperationState({ projectRoot: root });
+    expect(activity.recentFailures).toEqual([
+      { operationId: operation.id, diagnostic },
+    ]);
+    expect(Object.keys(activity.recent[0]).sort()).toEqual([
+      "kind",
+      "progress",
+      "rehearsalVersion",
+    ]);
+    expect(activity.recent[0].progress).not.toHaveProperty("migrationFailure");
+    expect(JSON.stringify(activity)).not.toContain("SECRET_SQL_AND_ROWS");
+    const next = await acquire(root);
+    await withOperationProgress({ operation: next, task: async () => null });
+    await release(next);
+    expect(
+      (await inspectProjectOperationState({ projectRoot: root }))
+        .recentFailures,
+    ).toEqual(activity.recentFailures);
+  });
+
+  it("does not retain arbitrary or malformed error context or lend another project its diagnosis", async () => {
+    const diagnostic = migrationFailureDiagnostic({
+      provider: "supabase",
+      sqlState: "42601",
+    });
+    for (const failure of [
+      Object.assign(new Error("SECRET"), {
+        context: { migrationFailure: diagnostic },
+      }),
+      new RehearsalError({
+        category: "migration_candidate_failure",
+        code: "invalid_context",
+        message: "SECRET",
+        context: { migrationFailure: { ...diagnostic, summary: "SECRET" } },
+      }),
+      new RehearsalError({
+        category: "migration_candidate_failure",
+        code: "invalid_context",
+        message: "SECRET",
+        context: { migrationFailure: { ...diagnostic, sql: "SECRET" } },
+      }),
+      new RehearsalError({
+        category: "operation_cancelled",
+        code: "operation_cancelled",
+        message: "Cancelled",
+        context: { migrationFailure: diagnostic },
+      }),
+    ]) {
+      const root = await rootForTest();
+      const operation = await acquire(root);
+      await expect(
+        withOperationProgress({
+          operation,
+          task: async () => {
+            throw failure;
+          },
+        }),
+      ).rejects.toBe(failure);
+      await release(operation);
+      const activity = await inspectProjectOperationState({
+        projectRoot: root,
+      });
+      expect(activity.recentFailures).toEqual([]);
+      expect(JSON.stringify(activity)).not.toContain("SECRET");
+    }
+    expect(
+      (await inspectProjectOperationState({ projectRoot: await rootForTest() }))
+        .recentFailures,
+    ).toEqual([]);
+  });
+
+  it("retains diagnosis from only the bounded original-error branch of cleanup aggregates", async () => {
+    const diagnostic = migrationFailureDiagnostic({
+      provider: "postgresql",
+      sqlState: "23514",
+    });
+    const original = new RehearsalError({
+      category: "migration_candidate_failure",
+      code: "migration_execution_failed",
+      message: "SECRET_ORIGINAL",
+      context: { migrationFailure: diagnostic },
+    });
+    const wrap = (error, depth) => {
+      for (let index = 0; index < depth; index += 1)
+        error = new AggregateError(
+          [error, new Error("SECRET_CLEANUP")],
+          "Cleanup incomplete",
+        );
+      return error;
+    };
+    const cancelled = new RehearsalError({
+      category: "operation_cancelled",
+      code: "OPERATION_CANCELLED",
+      message: "Cancelled",
+      context: { migrationFailure: diagnostic },
+    });
+    for (const [error, retained] of [
+      [wrap(original, 1), true],
+      [wrap(original, 4), true],
+      [wrap(original, 5), false],
+      [
+        new AggregateError(
+          [new Error("SECRET_UNKNOWN"), original],
+          "Cleanup failed",
+        ),
+        false,
+      ],
+      [new AggregateError([], "Missing original"), false],
+      [
+        new AggregateError(
+          [new Error("Unknown", { cause: original })],
+          "Unknown cause",
+        ),
+        false,
+      ],
+      [wrap(cancelled, 1), false],
+    ]) {
+      const root = await rootForTest();
+      const operation = await acquire(root);
+      await expect(
+        withOperationProgress({
+          operation,
+          task: async () => {
+            throw error;
+          },
+        }),
+      ).rejects.toBe(error);
+      await release(operation);
+      const activity = await inspectProjectOperationState({
+        projectRoot: root,
+      });
+      expect(activity.recent[0].progress.state).toBe("failed");
+      expect(activity.recentFailures).toEqual(
+        retained ? [{ operationId: operation.id, diagnostic }] : [],
+      );
+      expect(JSON.stringify(activity)).not.toContain("SECRET");
+    }
+  });
+
+  it("refuses corrupted private diagnosis without replacing its history", async () => {
+    const root = await rootForTest();
+    const operation = await acquire(root);
+    await withOperationProgress({ operation, task: async () => null });
+    await release(operation);
+    const path = ownedHistoryFiles.at(-1);
+    const history = JSON.parse(await readFile(path, "utf8"));
+    history.recent[0].migrationFailure = migrationFailureDiagnostic({
+      provider: "postgresql",
+      sqlState: "42601",
+    });
+    const bytes = JSON.stringify(history);
+    await writeFile(path, bytes, { mode: 0o600 });
+    const activity = await inspectProjectOperationState({ projectRoot: root });
+    expect(activity.recent).toBeNull();
+    expect(activity.recentFailures).toBeNull();
+    expect(await readFile(path, "utf8")).toBe(bytes);
+  });
+
   it("bounds stage/event history and rejects arbitrary metadata before executing a stage", async () => {
     const root = await rootForTest();
     const operation = await acquire(root);
@@ -333,7 +526,26 @@ describe("bounded owned operation progress", () => {
     for (let index = 0; index < 22; index += 1) {
       const operation = await acquire(root);
       ids.push(operation.id);
-      await withOperationProgress({ operation, task: async () => null });
+      if (index === 0) {
+        await expect(
+          withOperationProgress({
+            operation,
+            task: async () => {
+              throw new RehearsalError({
+                category: "migration_candidate_failure",
+                code: "migration_failed",
+                message: "Failed",
+                context: {
+                  migrationFailure: migrationFailureDiagnostic({
+                    provider: "postgresql",
+                    sqlState: "42601",
+                  }),
+                },
+              });
+            },
+          }),
+        ).rejects.toBeInstanceOf(RehearsalError);
+      } else await withOperationProgress({ operation, task: async () => null });
       await release(operation);
     }
     const recent = (await inspectProjectOperationState({ projectRoot: root }))
@@ -342,5 +554,9 @@ describe("bounded owned operation progress", () => {
     expect(recent.map((entry) => entry.progress.operationId)).toEqual(
       ids.slice(-20),
     );
+    expect(
+      (await inspectProjectOperationState({ projectRoot: root }))
+        .recentFailures,
+    ).toEqual([]);
   });
 });

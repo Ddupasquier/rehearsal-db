@@ -54,7 +54,11 @@ import {
   shouldStopRuntime,
 } from "../runtime/persistence.mjs";
 import { executeRuntimeTargetStack } from "./runtime_stack_execution.mjs";
-import { summarizeRuntimeManagerFailure } from "./runtime_failure_summary.mjs";
+import {
+  summarizeRuntimeManagerFailure,
+  runtimePortFailureGuidance,
+} from "./runtime_failure_summary.mjs";
+import { readManagerMigrationFailure } from "../runtime/migration_failure.mjs";
 import { releaseOwnedColimaWhenIdle } from "../runtime/container_engine_ownership.mjs";
 import { inspectRehearsalResources } from "../runtime/resource_inventory.mjs";
 import { assertLocalDockerContext } from "../runtime/local_docker_context.mjs";
@@ -145,8 +149,20 @@ export const classifyManagerFailure = ({
   inferredCategory: RehearsalErrorCategory;
 }): RehearsalErrorCategory => {
   if (
+    /^(?:Error:\s*)?The baseline (?:PostgreSQL|Supabase) migration failed \(/mu.test(
+      output,
+    )
+  )
+    return "baseline_invalid";
+  if (
+    /^(?:Error:\s*)?The confirmed candidate (?:PostgreSQL|Supabase) migration failed \(/mu.test(
+      output,
+    )
+  )
+    return "migration_candidate_failure";
+  if (
     RUNTIME_STARTUP_FAILURE_PATTERN.test(output) ||
-    /Supabase startup failed \(/u.test(output) ||
+    /(?:PostgreSQL|Supabase) startup failed \(/u.test(output) ||
     /^Error:\s*supabase start(?:\s|$)/imu.test(output)
   ) {
     return "runtime_dependency_failure";
@@ -431,22 +447,32 @@ export const createRuntimeCommands = ({
         inferredCategory: inferred.category,
       });
       const startupFailure = category === "runtime_dependency_failure";
-      const engineCapacity = startupFailure
-        ? inspectContainerCapacity()
-        : undefined;
+      const migrationFailure = readManagerMigrationFailure(completeOutput);
+      const portGuidance = runtimePortFailureGuidance(conciseOutput);
+      const engineCapacity =
+        startupFailure && portGuidance.length === 0
+          ? inspectContainerCapacity()
+          : undefined;
       throw new RehearsalError({
         category,
         code: `MANAGER_${action.toUpperCase()}_FAILED`,
-        message: `The local Rehearsal ${action} operation did not complete.`,
+        message: `The local Rehearsal ${action} operation did not complete.${migrationFailure ? ` ${migrationFailure.summary}` : ""}`,
         expected: "the isolated runtime operation to finish and verify",
         actual: conciseOutput || `exit ${result.status}`,
-        context: { action, ...(engineCapacity ? { engineCapacity } : {}) },
+        context: {
+          action,
+          target: targetName ?? "primary",
+          ...(migrationFailure ? { migrationFailure } : {}),
+          ...(engineCapacity ? { engineCapacity } : {}),
+        },
         refused: "The runtime was not reported as trusted.",
         suggestions: [
+          ...(migrationFailure?.suggestions ?? []),
+          ...portGuidance,
           "Review the concise failure above, then rerun rehearsal doctor before retrying.",
-          ...(startupFailure
+          ...(startupFailure && portGuidance.length === 0
             ? [
-                "Stop unrelated local stacks or increase Docker/Colima capacity, then retry. Rehearsal will not change engine settings or bypass service health checks.",
+                "If startup evidence confirms a resource shortage, stop only stacks you own or increase Docker/Colima capacity, then retry. Rehearsal will not change engine settings or bypass service health checks.",
                 "Run docker stats --no-stream to identify active containers using the shared engine.",
               ]
             : []),

@@ -15,6 +15,7 @@ import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { REHEARSAL_VERSION } from "./diagnostics.mjs";
+import type { MigrationFailureDiagnostic } from "../runtime/migration_failure.mjs";
 import {
   refreshLiveOperationProgress,
   type OperationProgressSnapshot,
@@ -23,8 +24,10 @@ import {
 import {
   archiveOperationProgress,
   readOwnedOperationProgress,
-  readRecentOperationProgress,
+  readOwnedOperationProgressRecord,
+  readRecentOperationHistory,
   writeOwnedOperationProgress,
+  type RecentOperationFailure,
 } from "./operation_progress_storage.mjs";
 
 const LOCK_ROOT = join(tmpdir(), "rehearsal-db-operation-locks");
@@ -62,7 +65,10 @@ export interface ProjectOperation {
   readonly command: string;
   readonly id: string;
   readonly startedAt: string;
-  writeProgress(progress: OperationProgressSnapshot): Promise<void>;
+  writeProgress(
+    progress: OperationProgressSnapshot,
+    migrationFailure?: MigrationFailureDiagnostic,
+  ): Promise<void>;
   release(): Promise<void>;
   releaseSync(): void;
 }
@@ -87,6 +93,7 @@ export type ProjectOperationState = Readonly<{
     progress: OperationProgressSnapshot | null;
   }> | null;
   recent: readonly RecentOperationProgress[] | null;
+  recentFailures?: readonly RecentOperationFailure[] | null;
 }>;
 
 const hasErrorCode = (error: unknown, code: string): boolean =>
@@ -261,7 +268,10 @@ export const acquireProjectOperation = async ({
         command,
         id: digest(token),
         startedAt: owner.startedAt,
-        async writeProgress(progress: OperationProgressSnapshot) {
+        async writeProgress(
+          progress: OperationProgressSnapshot,
+          migrationFailure?: MigrationFailureDiagnostic,
+        ) {
           const current = await readPrivateLockOwner(ownerPath);
           assertOwnership(current);
           if (progress.startedAt !== owner.startedAt)
@@ -273,25 +283,29 @@ export const acquireProjectOperation = async ({
             token,
             operationId: digest(token),
             progress,
+            ...(migrationFailure === undefined ? {} : { migrationFailure }),
           });
         },
         async release() {
           const current = await readPrivateLockOwner(ownerPath);
           assertOwnership(current);
-          const progress = await readOwnedOperationProgress({
+          const stored = await readOwnedOperationProgressRecord({
             lockDirectory,
             token,
             operationId: digest(token),
             startedAt: owner.startedAt,
           });
-          if (progress) {
+          if (stored) {
             try {
               await archiveOperationProgress({
                 projectHash,
                 operationKinds: OPERATION_KINDS,
                 kind: command,
                 rehearsalVersion: REHEARSAL_VERSION,
-                progress,
+                progress: stored.progress,
+                ...(stored.migrationFailure === undefined
+                  ? {}
+                  : { migrationFailure: stored.migrationFailure }),
               });
             } catch {
               /* Missing private history never fabricates success or prevents owned lock release. */
@@ -343,6 +357,7 @@ const operationState = (
   owner: LockOwner | null = null,
   progress: OperationProgressSnapshot | null = null,
   recent: readonly RecentOperationProgress[] | null = null,
+  recentFailures: readonly RecentOperationFailure[] | null = null,
 ): ProjectOperationState =>
   Object.freeze({
     schemaVersion: 1,
@@ -356,6 +371,7 @@ const operationState = (
         })
       : null,
     recent,
+    recentFailures,
   });
 
 export const inspectProjectOperationState = async ({
@@ -368,7 +384,7 @@ export const inspectProjectOperationState = async ({
   const projectHash = digest(canonicalRoot);
   const lockDirectory = join(LOCK_ROOT, projectHash);
   const ownerPath = join(lockDirectory, "owner.json");
-  const recent = await readRecentOperationProgress({
+  const { recent, recentFailures } = await readRecentOperationHistory({
     projectHash,
     operationKinds: OPERATION_KINDS,
   });
@@ -377,7 +393,7 @@ export const inspectProjectOperationState = async ({
     details = await lstat(lockDirectory);
   } catch (error) {
     if (hasErrorCode(error, "ENOENT"))
-      return operationState("idle", null, null, recent);
+      return operationState("idle", null, null, recent, recentFailures);
     throw error;
   }
   if (
@@ -386,18 +402,18 @@ export const inspectProjectOperationState = async ({
     (details.mode & 0o077) !== 0 ||
     (typeof process.getuid === "function" && details.uid !== process.getuid())
   ) {
-    return operationState("invalid", null, null, recent);
+    return operationState("invalid", null, null, recent, recentFailures);
   }
   let owner: LockOwner;
   try {
     owner = await readPrivateLockOwner(ownerPath);
   } catch (error) {
     if (hasErrorCode(error, "ENOENT"))
-      return operationState("idle", null, null, recent);
-    return operationState("invalid", null, null, recent);
+      return operationState("idle", null, null, recent, recentFailures);
+    return operationState("invalid", null, null, recent, recentFailures);
   }
   if (owner.projectHash !== projectHash)
-    return operationState("invalid", null, null, recent);
+    return operationState("invalid", null, null, recent, recentFailures);
   const live = processIsAlive(owner.pid);
   const progress = await readOwnedOperationProgress({
     lockDirectory,
@@ -410,6 +426,7 @@ export const inspectProjectOperationState = async ({
     owner,
     live && progress ? refreshLiveOperationProgress(progress) : progress,
     recent,
+    recentFailures,
   );
 };
 

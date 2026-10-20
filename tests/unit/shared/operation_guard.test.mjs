@@ -49,6 +49,7 @@ describe("project operation guard", () => {
       state: "idle",
       operation: null,
       recent: [],
+      recentFailures: [],
     });
   });
 
@@ -100,6 +101,7 @@ describe("project operation guard", () => {
         state: "idle",
         operation: null,
         recent: [],
+        recentFailures: [],
       });
     } finally {
       await operation.release();

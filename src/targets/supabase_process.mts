@@ -10,6 +10,10 @@ import {
   type ProcessEnvironment,
 } from "../shared/process_environment.mjs";
 import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
+import {
+  diagnoseMigrationFailure,
+  renderMigrationFailureDiagnostic,
+} from "../runtime/migration_failure.mjs";
 
 export const runOwnedSupabaseMigration = async ({
   environment,
@@ -37,7 +41,7 @@ export const runOwnedSupabaseMigration = async ({
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(
-      `The confirmed candidate Supabase migration failed (exit ${Number.isInteger(result.status) ? result.status : "unknown"}; stderr ${result.stderrByteCount} bytes). SQL and provider output are withheld.`,
+      `The confirmed candidate Supabase migration failed (exit ${Number.isInteger(result.status) ? result.status : "unknown"}; stderr ${result.stderrByteCount} bytes). SQL and provider output are withheld.\n${renderMigrationFailureDiagnostic(diagnoseMigrationFailure({ provider: "supabase", stderr: result.stderr }))}`,
     );
   }
 };

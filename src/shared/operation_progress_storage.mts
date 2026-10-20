@@ -11,6 +11,10 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
+  parseMigrationFailureDiagnostic,
+  type MigrationFailureDiagnostic,
+} from "../runtime/migration_failure.mjs";
+import {
   MAX_RECENT_OPERATION_PROGRESS,
   parseOperationProgressSnapshot,
   type OperationProgressSnapshot,
@@ -20,6 +24,17 @@ import {
 const HISTORY_ROOT = join(tmpdir(), "rehearsal-db-operation-activity");
 const MAX_PROGRESS_BYTES = 32 * 1024;
 const MAX_HISTORY_BYTES = 1024 * 1024;
+interface StoredOperationProgress extends RecentOperationProgress {
+  readonly migrationFailure?: MigrationFailureDiagnostic;
+}
+export interface RecentOperationFailure {
+  readonly operationId: string;
+  readonly diagnostic: MigrationFailureDiagnostic;
+}
+interface OwnedOperationProgress {
+  readonly progress: OperationProgressSnapshot;
+  readonly migrationFailure?: MigrationFailureDiagnostic;
+}
 const missing = (error: unknown): boolean =>
   error instanceof Error && "code" in error && error.code === "ENOENT";
 const requireProjectHash = (projectHash: string): void => {
@@ -79,23 +94,31 @@ export const writeOwnedOperationProgress = async ({
   token,
   operationId,
   progress,
+  migrationFailure,
 }: {
   readonly lockDirectory: string;
   readonly token: string;
   readonly operationId: string;
   readonly progress: OperationProgressSnapshot;
+  readonly migrationFailure?: MigrationFailureDiagnostic;
 }): Promise<void> => {
   const validated = parseOperationProgressSnapshot(progress);
   if (validated.operationId !== operationId)
     throw new Error("Operation telemetry belongs to another owner.");
+  const failure =
+    migrationFailure === undefined
+      ? {}
+      : { migrationFailure: parseMigrationFailureDiagnostic(migrationFailure) };
+  if (migrationFailure !== undefined && validated.state !== "failed")
+    throw new Error("Migration failure evidence requires a failed operation.");
   await writePrivateJson(
     join(lockDirectory, "progress.json"),
-    { formatVersion: 1, ownerToken: token, progress: validated },
+    { formatVersion: 1, ownerToken: token, progress: validated, ...failure },
     MAX_PROGRESS_BYTES,
   );
 };
 
-export const readOwnedOperationProgress = async ({
+export const readOwnedOperationProgressRecord = async ({
   lockDirectory,
   token,
   operationId,
@@ -105,7 +128,7 @@ export const readOwnedOperationProgress = async ({
   readonly token: string;
   readonly operationId: string;
   readonly startedAt: string;
-}): Promise<OperationProgressSnapshot | null> => {
+}): Promise<OwnedOperationProgress | null> => {
   try {
     const value = (await readPrivateJson(
       join(lockDirectory, "progress.json"),
@@ -115,19 +138,40 @@ export const readOwnedOperationProgress = async ({
       value.formatVersion !== 1 ||
       value.ownerToken !== token ||
       Object.keys(value).some(
-        (key) => !["formatVersion", "ownerToken", "progress"].includes(key),
+        (key) =>
+          ![
+            "formatVersion",
+            "ownerToken",
+            "progress",
+            "migrationFailure",
+          ].includes(key),
       )
     )
       return null;
     const snapshot = parseOperationProgressSnapshot(value.progress);
+    const failure =
+      value.migrationFailure === undefined
+        ? {}
+        : {
+            migrationFailure: parseMigrationFailureDiagnostic(
+              value.migrationFailure,
+            ),
+          };
+    if (value.migrationFailure !== undefined && snapshot.state !== "failed")
+      return null;
     return snapshot.operationId === operationId &&
       snapshot.startedAt === startedAt
-      ? snapshot
+      ? { progress: snapshot, ...failure }
       : null;
   } catch {
     return null;
   }
 };
+
+export const readOwnedOperationProgress = async (
+  input: Parameters<typeof readOwnedOperationProgressRecord>[0],
+): Promise<OperationProgressSnapshot | null> =>
+  (await readOwnedOperationProgressRecord(input))?.progress ?? null;
 
 const assertHistoryRoot = async (): Promise<void> => {
   await mkdir(HISTORY_ROOT, { recursive: true, mode: 0o700 });
@@ -141,13 +185,13 @@ const assertHistoryRoot = async (): Promise<void> => {
     throw new Error("Operation history directory is not private.");
 };
 
-export const readRecentOperationProgress = async ({
+const readStoredOperationProgress = async ({
   projectHash,
   operationKinds,
 }: {
   readonly projectHash: string;
   readonly operationKinds: ReadonlySet<string>;
-}): Promise<readonly RecentOperationProgress[] | null> => {
+}): Promise<readonly StoredOperationProgress[] | null> => {
   requireProjectHash(projectHash);
   try {
     const root = await lstat(HISTORY_ROOT);
@@ -186,7 +230,13 @@ export const readRecentOperationProgress = async ({
               record.rehearsalVersion,
             ))) ||
         Object.keys(record).some(
-          (key) => !["kind", "rehearsalVersion", "progress"].includes(key),
+          (key) =>
+            ![
+              "kind",
+              "rehearsalVersion",
+              "progress",
+              "migrationFailure",
+            ].includes(key),
         )
       )
         throw new Error("Invalid history metadata.");
@@ -195,10 +245,21 @@ export const readRecentOperationProgress = async ({
         throw new Error(
           "An unfinished operation cannot be reported as completed history.",
         );
+      const failure =
+        record.migrationFailure === undefined
+          ? {}
+          : {
+              migrationFailure: parseMigrationFailureDiagnostic(
+                record.migrationFailure,
+              ),
+            };
+      if (record.migrationFailure !== undefined && progress.state !== "failed")
+        throw new Error("Migration failure history contradicts its outcome.");
       return Object.freeze({
         kind: record.kind,
         rehearsalVersion: record.rehearsalVersion as string | null,
         progress,
+        ...failure,
       });
     });
     if (
@@ -212,23 +273,59 @@ export const readRecentOperationProgress = async ({
   }
 };
 
+export const readRecentOperationHistory = async (
+  input: Parameters<typeof readStoredOperationProgress>[0],
+): Promise<{
+  readonly recent: readonly RecentOperationProgress[] | null;
+  readonly recentFailures: readonly RecentOperationFailure[] | null;
+}> => {
+  const stored = await readStoredOperationProgress(input);
+  if (stored === null) return { recent: null, recentFailures: null };
+  return {
+    recent: Object.freeze(
+      stored.map(({ kind, rehearsalVersion, progress }) =>
+        Object.freeze({ kind, rehearsalVersion, progress }),
+      ),
+    ),
+    recentFailures: Object.freeze(
+      stored.flatMap(({ progress, migrationFailure }) =>
+        migrationFailure === undefined
+          ? []
+          : [
+              Object.freeze({
+                operationId: progress.operationId,
+                diagnostic: migrationFailure,
+              }),
+            ],
+      ),
+    ),
+  };
+};
+
+export const readRecentOperationProgress = async (
+  input: Parameters<typeof readStoredOperationProgress>[0],
+): Promise<readonly RecentOperationProgress[] | null> =>
+  (await readRecentOperationHistory(input)).recent;
+
 export const archiveOperationProgress = async ({
   projectHash,
   operationKinds,
   kind,
   rehearsalVersion,
   progress,
+  migrationFailure,
 }: {
   readonly projectHash: string;
   readonly operationKinds: ReadonlySet<string>;
   readonly kind: string;
   readonly rehearsalVersion: string | null;
   readonly progress: OperationProgressSnapshot;
+  readonly migrationFailure?: MigrationFailureDiagnostic;
 }): Promise<void> => {
   requireProjectHash(projectHash);
   if (progress.state === "running") return;
   await assertHistoryRoot();
-  const previous = await readRecentOperationProgress({
+  const previous = await readStoredOperationProgress({
     projectHash,
     operationKinds,
   });
@@ -240,7 +337,14 @@ export const archiveOperationProgress = async ({
     kind,
     rehearsalVersion,
     progress: parseOperationProgressSnapshot(progress),
+    ...(migrationFailure === undefined
+      ? {}
+      : {
+          migrationFailure: parseMigrationFailureDiagnostic(migrationFailure),
+        }),
   };
+  if (migrationFailure !== undefined && progress.state !== "failed")
+    throw new Error("Migration failure history requires a failed operation.");
   const recent = [
     ...previous.filter(
       (item) => item.progress.operationId !== progress.operationId,

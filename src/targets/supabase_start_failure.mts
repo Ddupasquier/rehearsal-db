@@ -1,4 +1,9 @@
 /** Summarize provider startup evidence without retaining container logs or secrets. */
+import {
+  classifyPortStartupFailure,
+  portStartupGuidance,
+} from "./port_start_failure.mjs";
+
 const SERVICE_NAMES: Readonly<Record<string, string>> = Object.freeze({
   db: "database",
   auth: "auth",
@@ -19,7 +24,6 @@ const SERVICE_NAMES: Readonly<Record<string, string>> = Object.freeze({
 const REASONS = Object.freeze([
   ["out_of_memory", /out of memory|oom[- ]killed|memory allocation failed/iu],
   ["disk_full", /no space left on device|disk quota exceeded/iu],
-  ["port_in_use", /address already in use|port is already allocated/iu],
   ["image_architecture", /exec format error/iu],
   ["image_pull", /failed to pull|pull access denied|manifest unknown/iu],
   [
@@ -51,6 +55,8 @@ export const summarizeSupabaseStartupFailure = ({
   if (processErrorCode === "ENOENT") reasons.add("cli_unavailable");
   if (processErrorCode === "ETIMEDOUT") reasons.add("process_timeout");
   if (processErrorCode === "ENOBUFS") reasons.add("provider_output_limit");
+  const portFailure = classifyPortStartupFailure(bounded);
+  if (portFailure) reasons.add(portFailure);
   for (const [code, pattern] of REASONS)
     if (pattern.test(bounded)) reasons.add(code);
   const services = new Set<string>();
@@ -74,6 +80,7 @@ export const summarizeSupabaseStartupFailure = ({
     ...(services.size
       ? [`Reported service states: ${[...services].slice(0, 16).join(", ")}.`]
       : []),
+    ...(portFailure ? [portStartupGuidance(portFailure, "supabase")] : []),
     "Provider logs, paths, environment values and connection URLs are omitted. This summary does not establish the underlying cause.",
   ].join("\n");
 };

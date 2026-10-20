@@ -68,7 +68,9 @@ owner-only startup receipt. This cannot stop a manually started engine.
 When a container stays in `starting` or becomes `unhealthy`, Rehearsal reports a runtime
 dependency failure rather than a migration failure. The safe diagnostic includes Docker
 CPU, memory, and container counts; Colima also includes available VM memory when it can
-be read. Stop unrelated local stacks or increase the engine's resources before retrying.
+be read. These measurements alone do not establish a capacity problem. Review the
+reported startup evidence first; for a proven resource shortage, stop only stacks you
+own or increase the engine's resources before retrying.
 Rehearsal never changes engine settings or bypasses service health checks.
 
 Supabase startup failures retain a bounded summary of recognized provider evidence,
@@ -135,13 +137,63 @@ docker pull postgres:17-alpine
 npx rehearsal doctor
 ```
 
-## A port is already in use
+## A port is already in use or cannot be bound
 
 Rerun `rehearsal setup` to select a different available block. Setup checks both active
 listeners and whether every selected port can be bound, then checks again before writing.
 For an existing configuration, choose unique non-privileged ports and mirror them in the
 dedicated Supabase config when using Supabase. Do not stop an unrelated database to make
 defaults fit.
+
+`port_in_use` reports an occupied bind; `port_unavailable` reports a denied or
+unavailable bind. Neither proves a memory shortage. On Windows/WSL, an excluded TCP
+range or host access policy can prevent binding even when no listener is visible.
+In **Windows PowerShell**, inspect the host without changing it:
+
+```powershell
+netsh interface ipv4 show excludedportrange protocol=tcp
+```
+
+If the configured port (for example the tutorial's `59422`) is excluded, select a
+different available port outside those ranges. For PostgreSQL, review
+`runtime.databasePort` in `rehearsal.config.mjs`. For Supabase, review the configured
+runtime ports and matching dedicated Supabase configuration together. Keep loopback
+binding. Do not delete reservations, disable host security, prune resources or stop
+someone else's listener to make the default work. Access-denied output is evidence
+of a bind problem, not proof of a particular Windows reservation.
+
+Microsoft documents the [read-only excluded-port command](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/netsh-interface).
+Windows database execution still uses the [WSL 2 compatibility preview](../COMPATIBILITY.md#operating-systems-and-execution-location), not native Windows database support.
+
+## A candidate migration failed, but SQL and provider output are withheld
+
+Rehearsal keeps SQL, row values, constraint names and raw provider output private.
+When the provider supplies a recognized SQLSTATE envelope, it reports that code plus
+a fixed explanation and next step. PostgreSQL codes are
+[provider-defined conditions](https://www.postgresql.org/docs/17/errcodes-appendix.html),
+not guesses from the SQL text:
+
+| Code              | Meaning                | Next step                                                                                 |
+| ----------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
+| `42601`           | SQL syntax error       | Review malformed statements and punctuation.                                              |
+| `23502`           | NOT NULL violation     | Review NULL values and backfill before enforcing the requirement.                         |
+| `23503`           | Foreign-key violation  | Review missing referenced rows and migration ordering.                                    |
+| `23505`           | Uniqueness violation   | Review duplicates before enforcing uniqueness.                                            |
+| `23514`           | CHECK violation        | Existing or newly written rows do not satisfy the constraint; review/backfill them.       |
+| `42P01` / `42703` | Missing table / column | Review schema qualification and migration ordering; this is not a confirmed syntax error. |
+
+Unknown, unsupported, oversized or conflicting evidence remains explicitly unknown;
+it must not be labeled a syntax error from wording alone. JSON failures include the
+versioned `error.context.migrationFailure` projection with provider, classification,
+SQLSTATE, evidence, fixed summary and suggestions. PostgreSQL may identify its exact
+attempted input file, not the actual origin of the failing SQL or a line/column location.
+No automatic rewrite, retry, reset or hosted connection follows a diagnosis.
+
+Inspect `rehearsal status` after failure. Owned runtime cleanup and baseline preservation
+are separate facts; a failed operation does not prove SQL rollback or preservation of
+your disposable sandbox edits. A warning that cleanup could not be confirmed requires
+review before retrying. Follow the [break-and-fix tutorial](tutorial.md#5-break-a-migration-on-existing-data)
+to practice safely on synthetic data.
 
 ## Baseline checksum mismatch
 
