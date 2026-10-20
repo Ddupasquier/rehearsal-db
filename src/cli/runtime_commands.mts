@@ -38,6 +38,7 @@ import {
   throwIfOperationCancelled,
 } from "../shared/cancellation.mjs";
 import { runOwnedProcess } from "../shared/owned_process.mjs";
+import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
 import {
   getOwnedOperationProgressId,
   trackOperationStage,
@@ -128,27 +129,8 @@ const parseCommand = (source: string): [string, ...string[]] => {
 
 const projectCommandEnvironment = (
   additional: NodeJS.ProcessEnv = {},
-): NodeJS.ProcessEnv => ({
-  ...Object.fromEntries(
-    [
-      "CI",
-      "COLORTERM",
-      "FORCE_COLOR",
-      "HOME",
-      "LANG",
-      "LC_ALL",
-      "NO_COLOR",
-      "PATH",
-      "SHELL",
-      "TERM",
-      "TMPDIR",
-      "USER",
-    ].flatMap((key) =>
-      process.env[key] === undefined ? [] : [[key, process.env[key]]],
-    ),
-  ),
-  ...additional,
-});
+): NodeJS.ProcessEnv =>
+  createCleanProcessEnvironment({ overrides: additional });
 
 const RUNTIME_STARTUP_FAILURE_PATTERN =
   /container\b.*\b(?:is not ready|starting|unhealthy)|health(?:check)?\b.*\b(?:failed|starting|unhealthy)|out of memory|\boom\b|no space left|resource temporarily unavailable/iu;

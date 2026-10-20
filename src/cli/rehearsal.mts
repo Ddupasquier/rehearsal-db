@@ -57,6 +57,7 @@ import {
   supportsOperationCancellation,
 } from "../shared/cancellation.mjs";
 import { withOperationProgress } from "../shared/operation_progress.mjs";
+import { assertSupportedHostPlatform } from "../shared/host_platform.mjs";
 
 const packageRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const projectRoot = process.cwd();
@@ -148,8 +149,21 @@ const main = async () => {
     !flags.json &&
     process.stdin.isTTY &&
     process.stdout.isTTY;
-  const guided = command === "guide" || wantsAutomaticGuide;
-  const mutating = commandMutatesProject({ command, flags, guided });
+  const guided =
+    !flags.help &&
+    !flags.version &&
+    (command === "guide" || wantsAutomaticGuide);
+  if (
+    !flags.help &&
+    !flags.version &&
+    (guided || !["help", "version", "discover", "doctor"].includes(command))
+  ) {
+    await assertSupportedHostPlatform({ projectRoot });
+  }
+  const mutating =
+    !flags.help &&
+    !flags.version &&
+    commandMutatesProject({ command, flags, guided });
   const operation: ProjectOperation | null = mutating
     ? await acquireProjectOperation({
         projectRoot,

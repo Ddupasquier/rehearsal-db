@@ -46,8 +46,9 @@ it through a reviewed privacy policy, and retire the access again. It is never p
 `run`, `reset`, `migrate`, or application launch. Rehearsal is not a backup system or a
 production deployment tool.
 
-The CLI is free and MIT-licensed, with stable **1.0.0** available on
-[npm](https://www.npmjs.com/package/@rehearsal-db/core). Prefer a visual workflow?
+The CLI is free and MIT-licensed, with stable releases on
+[npm](https://www.npmjs.com/package/@rehearsal-db/core). This guide targets **1.0.1**;
+install only a version actually published there. Prefer a visual workflow?
 [Install the free VS Code Starter preview](docs/vscode.md). Its included features are
 free indefinitely for personal or commercial development—no account, card, or trial.
 
@@ -67,6 +68,12 @@ No database experience is required to follow the guide, but you should understan
 your migration is intended to change.
 
 ## Quick start
+
+Prefer OS-specific files? Use the [Windows / WSL 2](installers/windows/README.md),
+[macOS](installers/macos/README.md) or [Linux](installers/linux/README.md) setup folder.
+These readable helpers require existing Node.js 24 or 26 and check prerequisites by
+default; installation is an explicit option. They do not install OS tools or start a
+database. See [their exact behavior and release availability](installers/README.md).
 
 From your project directory:
 
@@ -163,18 +170,24 @@ loads.
 
 ## Supported today
 
-| Environment                                      | Support                |
-| ------------------------------------------------ | ---------------------- |
-| Supabase CLI projects                            | Supported              |
-| Ordinary PostgreSQL in local Docker              | Supported              |
-| macOS and Linux                                  | Supported              |
-| WSL                                              | Experimental           |
-| Native Windows                                   | Not yet supported      |
-| Hosted database URLs                             | Intentionally rejected |
-| Optional read-only PostgreSQL source preparation | Explicit opt-in beta   |
-| MySQL, MongoDB, and other database families      | Not yet supported      |
+| Environment                                      | Support                      |
+| ------------------------------------------------ | ---------------------------- |
+| Supabase CLI projects                            | Supported                    |
+| Ordinary PostgreSQL in local Docker              | Supported                    |
+| macOS and Linux                                  | Supported                    |
+| Windows via WSL 2 on its Linux filesystem        | Compatibility preview        |
+| Native Windows runtime                           | Not yet supported; use WSL 2 |
+| Hosted database URLs                             | Intentionally rejected       |
+| Optional read-only PostgreSQL source preparation | Explicit opt-in beta         |
+| MySQL, MongoDB, and other database families      | Not yet supported            |
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the exact support contract.
+Native Windows metadata commands are not database-runtime support. For Windows, follow
+the [WSL 2 setup path](docs/getting-started.md#windows-use-a-wsl-2-linux-workspace):
+Linux Node, project files and Docker must live in the Linux execution environment.
+Core 1.0.1 and editor 0.1.21 add explicit platform guidance/refusal; older immutable
+releases retain their original behavior. Mobile, browser-only and unlisted systems are
+not implied by desktop or Linux compatibility.
 
 ## Documentation
 

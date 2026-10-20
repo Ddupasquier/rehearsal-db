@@ -47,4 +47,80 @@ describe("process environment", () => {
       DATABASE_URL: "postgresql://localhost/rehearsal",
     });
   });
+
+  it("copies Windows infrastructure case-insensitively without credentials", () => {
+    expect(
+      createCleanProcessEnvironment({
+        platform: "win32",
+        inheritedEnvironment: {
+          Path: "C:\\Windows\\System32",
+          SYSTEMROOT: "C:\\Windows",
+          windir: "C:\\Windows",
+          COMSPEC: "C:\\Windows\\System32\\cmd.exe",
+          pathext: ".COM;.EXE;.BAT;.CMD",
+          userprofile: "C:\\Users\\fixture",
+          appdata: "C:\\Users\\fixture\\AppData\\Roaming",
+          localappdata: "C:\\Users\\fixture\\AppData\\Local",
+          database_url: "not-inherited",
+          SUPABASE_ACCESS_TOKEN: "not-inherited",
+          NODE_OPTIONS: "not-inherited",
+          NPM_CONFIG_TOKEN: "not-inherited",
+          DOCKER_AUTH_CONFIG: "not-inherited",
+        },
+      }),
+    ).toEqual({
+      PATH: "C:\\Windows\\System32",
+      SystemRoot: "C:\\Windows",
+      WINDIR: "C:\\Windows",
+      ComSpec: "C:\\Windows\\System32\\cmd.exe",
+      PATHEXT: ".COM;.EXE;.BAT;.CMD",
+      USERPROFILE: "C:\\Users\\fixture",
+      APPDATA: "C:\\Users\\fixture\\AppData\\Roaming",
+      LOCALAPPDATA: "C:\\Users\\fixture\\AppData\\Local",
+    });
+  });
+
+  it("emits one Windows key per name and applies explicit overrides last", () => {
+    expect(
+      createCleanProcessEnvironment({
+        platform: "win32",
+        inheritedEnvironment: {
+          PATH: "canonical",
+          Path: "duplicate",
+          SYSTEMROOT: "inherited",
+          CUSTOM: "explicitly-allowed",
+        },
+        passthroughKeys: ["Path", "custom"],
+        overrides: {
+          path: "override",
+          SystemRoot: undefined,
+          DATABASE_URL: "postgresql://localhost/explicit-local-target",
+        },
+      }),
+    ).toEqual({
+      PATH: "override",
+      SystemRoot: "inherited",
+      custom: "explicitly-allowed",
+      DATABASE_URL: "postgresql://localhost/explicit-local-target",
+    });
+  });
+
+  it("preserves POSIX case-sensitive allowlisting and excludes Windows-only keys", () => {
+    for (const platform of ["linux", "darwin"]) {
+      expect(
+        createCleanProcessEnvironment({
+          platform,
+          inheritedEnvironment: {
+            Path: "not-PATH",
+            PATH: "/usr/bin",
+            SystemRoot: "not-inherited",
+            ComSpec: "not-inherited",
+            APPDATA: "not-inherited",
+            HOME: "/home/fixture",
+            DATABASE_URL: "not-inherited",
+          },
+        }),
+      ).toEqual({ PATH: "/usr/bin", HOME: "/home/fixture" });
+    }
+  });
 });

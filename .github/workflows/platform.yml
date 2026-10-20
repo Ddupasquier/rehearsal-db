@@ -1,0 +1,60 @@
+name: Platform compatibility
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: Installed CLI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, macos-15-intel, windows-2025]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: node scripts/verification/platform_smoke.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: installed-cli-${{ matrix.os }}
+          path: test-results/platform/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  wsl-postgresql:
+    name: WSL2 PostgreSQL (Windows 2025)
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify the installed CLI against real PostgreSQL inside WSL2
+        shell: pwsh
+        run: ./scripts/verification/platform_wsl.ps1
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: wsl2-postgresql-evidence
+          path: test-results/platform/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+# These jobs establish platform evidence. They do not change protected check names,
+# release approval, supported-platform claims, or any publication permissions.
