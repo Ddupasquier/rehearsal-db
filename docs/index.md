@@ -12,6 +12,11 @@ Rehearsal catches those problems before deployment. It restores a reviewed, sani
 baseline into a disposable local PostgreSQL or Supabase environment, applies only the
 exact migrations you approve, and runs your application's own proof.
 
+The [CLI is free and MIT-licensed](https://www.npmjs.com/package/@rehearsal-db/core).
+Prefer clicks to commands? [Install the free VS Code Starter preview](vscode.md).
+All features included in its Starter-licensed releases are free indefinitely, with no
+account, payment card, or trial period.
+
 | Empty-database tests miss…                        | Rehearsal exercises…                                      |
 | ------------------------------------------------- | --------------------------------------------------------- |
 | old rows and edge cases                           | a reviewed, production-shaped baseline                    |
@@ -23,15 +28,16 @@ exact migrations you approve, and runs your application's own proof.
 You do not need to read everything before your first rehearsal. Start with the outcome
 you want, then follow the links when a term or safety check is new.
 
-| I want to…                              | Go here                                                           |
-| --------------------------------------- | ----------------------------------------------------------------- |
-| Set up my own project                   | [Getting started](getting-started.md)                             |
-| Try Rehearsal without touching my app   | [Hands-on tutorial](tutorial.md)                                  |
-| Understand what makes a copy safe       | [Baselines](baselines.md) and [Sanitization](sanitization.md)     |
-| Look up a command or setting            | [CLI commands](commands.md) and [Configuration](configuration.md) |
-| Reduce Docker and Supabase resource use | [Container runtime lifecycle](runtime-lifecycle.md)               |
-| Add editor and compiler type checks     | [TypeScript](typescript.md)                                       |
-| Fix something that did not work         | [Troubleshooting](troubleshooting.md)                             |
+| I want to…                               | Go here                                                           |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| Set up my own project                    | [Getting started](getting-started.md)                             |
+| Use the free visual workbench in VS Code | [Install VS Code Starter](vscode.md)                              |
+| Try Rehearsal without touching my app    | [Hands-on tutorial](tutorial.md)                                  |
+| Understand what makes a copy safe        | [Baselines](baselines.md) and [Sanitization](sanitization.md)     |
+| Look up a command or setting             | [CLI commands](commands.md) and [Configuration](configuration.md) |
+| Reduce Docker and Supabase resource use  | [Container runtime lifecycle](runtime-lifecycle.md)               |
+| Add editor and compiler type checks      | [TypeScript](typescript.md)                                       |
+| Fix something that did not work          | [Troubleshooting](troubleshooting.md)                             |
 
 ## The short version
 

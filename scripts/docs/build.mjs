@@ -52,6 +52,7 @@ export const buildDocs = async (options = {}) => {
       .replaceAll(/-+/gu, "-");
 
   const hrefFor = (slug) => `${base}${slug ? `${slug}/` : ""}`;
+  const canonicalFor = (slug) => new URL(slug ? `${slug}/` : "", site.url).href;
 
   const sourceToPage = new Map(pages.map((page) => [page.source, page]));
 
@@ -166,7 +167,7 @@ export const buildDocs = async (options = {}) => {
     <p class="hero-lede">Existing rows, relationships, identities, files, and migration history are where risky changes break. Rehearse them locally before you deploy.</p>
     <div class="hero-actions">
       <a class="button primary" href="${hrefFor("getting-started")}">Get started ${icon("arrow")}</a>
-      <a class="button secondary" href="${hrefFor("tutorial")}">Try the tutorial</a>
+      <a class="button secondary" href="${hrefFor("vscode")}">Free VS Code Starter</a>
     </div>
     <a class="download-count" href="${site.package}" target="_blank" rel="noreferrer">
       <img src="${site.downloadsBadge}" alt="Monthly downloads of @rehearsal-db/core from npm" />
@@ -206,8 +207,7 @@ export const buildDocs = async (options = {}) => {
     const group = groupForPage(page.slug);
     const home = page.slug === "";
     const pageTitle = home ? site.homeTitle : `${page.title} · ${site.name}`;
-    const canonicalUrl = new URL(page.slug ? `${page.slug}/` : "", site.url)
-      .href;
+    const canonicalUrl = canonicalFor(page.slug);
     const articleContent = home
       ? content.replace(/^<h1[^>]*>[\s\S]*?<\/h1>/u, "")
       : content;
@@ -225,6 +225,7 @@ export const buildDocs = async (options = {}) => {
   <meta property="og:url" content="${escapeHtml(canonicalUrl)}" />
   <meta name="twitter:card" content="summary" />
   <link rel="canonical" href="${escapeHtml(canonicalUrl)}" />
+  <link rel="sitemap" type="application/xml" href="${escapeHtml(new URL("sitemap.xml", site.url).href)}" />
   <title>${escapeHtml(pageTitle)}</title>
   <link rel="icon" href="${base}assets/logo-mark.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="${base}assets/site.css" />
@@ -246,7 +247,7 @@ export const buildDocs = async (options = {}) => {
       <article class="prose${home ? " home-prose" : ""}">${articleContent}${renderPager(page)}</article>
       ${home ? "" : renderOutline(headings)}
     </div>
-    <footer class="site-footer"><p>Built for careful changes and calm launches.</p><div>${site.documentationSource === false ? "" : `<a href="${site.repository}/edit/main/docs/${page.source}">Edit this page ↗</a>`}${site.securityUrl ? `<a href="${site.securityUrl}">Report a security concern ↗</a>` : ""}<a href="${site.repository}">GitHub ↗</a></div></footer>
+    <footer class="site-footer"><p>Built for careful changes and calm launches.</p><div>${site.documentationSource === false ? "" : `<a href="${site.repository}/edit/main/docs/${page.source}">Edit this page ↗</a>`}${site.securityUrl ? `<a href="${site.securityUrl}">Report a security concern ↗</a>` : ""}<a href="${base}sitemap.xml">Sitemap</a><a href="${site.repository}">GitHub ↗</a></div></footer>
   </main>
   ${renderSearch()}
   <script type="module" src="${base}assets/site.js"></script>
@@ -341,6 +342,11 @@ export const buildDocs = async (options = {}) => {
   await writeFile(
     join(assets, "search-index.json"),
     `${JSON.stringify(searchIndex)}\n`,
+  );
+  await writeFile(
+    join(outputRoot, "sitemap.xml"),
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map(({ slug }) => `  <url><loc>${escapeHtml(canonicalFor(slug))}</loc></url>`).join("\n")}\n</urlset>\n`,
+    "utf8",
   );
   await writeFile(join(outputRoot, ".nojekyll"), "", "utf8");
   return { outputRoot, pages: pages.length, base };

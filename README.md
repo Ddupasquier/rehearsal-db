@@ -16,6 +16,7 @@
 <p align="center">
   <a href="https://ddupasquier.github.io/rehearsal-db/">Read the documentation</a> ·
   <a href="https://www.npmjs.com/package/@rehearsal-db/core">View on npm</a> ·
+  <a href="https://ddupasquier.github.io/rehearsal-db/vscode/">Free VS Code Starter</a> ·
   <a href="https://github.com/Ddupasquier/rehearsal-db">Source on GitHub</a> ·
   <a href="https://github.com/Ddupasquier/rehearsal-db/issues">Report a problem</a>
 </p>
@@ -45,8 +46,13 @@ it through a reviewed privacy policy, and retire the access again. It is never p
 `run`, `reset`, `migrate`, or application launch. Rehearsal is not a backup system or a
 production deployment tool.
 
-> **Pre-1.0 safety note:** use Rehearsal on a branch and keep a working backup of your
-> project.
+The CLI is free and MIT-licensed, with stable **1.0.0** available on
+[npm](https://www.npmjs.com/package/@rehearsal-db/core). Prefer a visual workflow?
+[Install the free VS Code Starter preview](docs/vscode.md). Its included features are
+free indefinitely for personal or commercial development—no account, card, or trial.
+
+Work on a branch and keep a working backup of your project. Rehearsal's local safety
+boundaries do not replace version control or backups.
 
 ## What you need
 

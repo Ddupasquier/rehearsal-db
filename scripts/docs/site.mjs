@@ -178,7 +178,7 @@ export const pages = Object.freeze([
     source: "stability.md",
     title: "Stability contract",
     description:
-      "The public compatibility promise and objective gate for leaving beta.",
+      "The stable core compatibility promise and evidence-based release verification policy.",
   },
   {
     slug: "runtime-lifecycle",

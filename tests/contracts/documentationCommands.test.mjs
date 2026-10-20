@@ -355,8 +355,32 @@ describe("documented CLI contract", () => {
     expect(guide).not.toContain(
       "Public purchase and download instructions will appear here only after",
     );
-    expect(guide).toMatch(/14-day\s+evaluation/u);
-    expect(guide).toContain("not a Marketplace listing");
+    expect(guide).toContain("rehearsal-vscode/releases/tag/v0.1.19");
+    expect(guide).toContain("rehearsal-vscode/blob/v0.1.19/LICENSE");
+    expect(guide).toContain(
+      "marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db",
+    );
+    expect(guide).toContain("rehearsal-db-0.1.19.vsix");
+    expect(guide).toContain("@id:rehearsal-db.rehearsal");
+    expect(guide).toContain("Explicitly uninstall the legacy extension");
+    expect(guide).toContain("Developer: Reload Window");
+    expect(guide).toMatch(
+      /free indefinitely for personal or commercial development/u,
+    );
+    expect(guide).toMatch(
+      /No account, payment card, purchase, trial period, or license activation is required/u,
+    );
+    expect(guide).not.toMatch(/14-day\s+evaluation/u);
+    expect(guide).toContain("verified GitHub VSIX");
+    expect(guide).toContain("initially unchecked choices");
+    expect(guide).toContain("Manual updating stays available");
+    expect(guide).toContain("Support is best effort");
+    expect(guide).toMatch(
+      /Native Windows, browser-based\s+VS Code, Codespaces, SSH and Dev Containers are not yet claimed as supported/u,
+    );
+    expect(guide).toContain(
+      "a development candidate is not released merely because its version",
+    );
   });
 
   it("keeps the beginner journey aligned with the guide labels", async () => {
