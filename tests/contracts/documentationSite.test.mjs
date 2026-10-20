@@ -141,8 +141,15 @@ describe("documentation site", () => {
       join(repositoryRoot, "docs/vscode.md"),
       "utf8",
     );
-    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.18");
-    expect(source).toContain("rehearsal-vscode/blob/v0.1.18/LICENSE");
+    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.19");
+    expect(source).toContain("rehearsal-vscode/blob/v0.1.19/LICENSE");
+    expect(source).toContain(
+      "marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db",
+    );
+    expect(source).toContain("Private per-extension view state");
+    expect(source).toMatch(
+      /Shared VS Code user settings[\s\S]+retain your existing\s+values/u,
+    );
     expect(source).toContain("free indefinitely");
     expect(source).toContain(
       "No account, payment card, purchase, trial period, or license activation",
