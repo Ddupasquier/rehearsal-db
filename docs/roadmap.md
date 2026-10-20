@@ -1,8 +1,13 @@
 # Next steps
 
-Rehearsal supports guided Supabase and ordinary PostgreSQL migration rehearsals. The
-current development track removes the need for consumer-owned Rehearsal engines while
-keeping application meaning and privacy decisions project-owned.
+Rehearsal core **1.0.0 is available on
+[npm](https://www.npmjs.com/package/@rehearsal-db/core)** for guided Supabase and
+ordinary PostgreSQL migration rehearsals. The [free VS Code Starter preview](vscode.md)
+adds a visual workbench. Neither requires a purchase or account.
+
+The standalone workflow keeps the rehearsal engine in the package while application
+meaning and privacy decisions remain project-owned. The sequence below explains its
+dependencies, not a list of features withheld from the published release.
 
 ## Standalone workflow
 

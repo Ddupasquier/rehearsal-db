@@ -1,7 +1,10 @@
 # Stability and the first stable release
 
-Rehearsal leaves beta when the workflow it already promises is dependable. Stable
-`1.0.0` does not require every planned database, desktop interface, or paid feature.
+Rehearsal core **1.0.0 is published** on
+[npm](https://www.npmjs.com/package/@rehearsal-db/core). This page defines its
+compatibility promise and the verification policy for releases; it is not an
+unfinished launch checklist. Stable core does not require every planned database,
+editor interface, or paid feature.
 
 ## What becomes a compatibility promise
 

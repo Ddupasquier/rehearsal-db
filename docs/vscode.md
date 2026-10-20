@@ -4,6 +4,13 @@ The Rehearsal extension turns the local CLI into a project-aware database-change
 workbench. It is for developers who want the safety of exact migration plans and disposable
 local runtimes without memorizing every command.
 
+**Free Starter is available now** as a
+[reviewed GitHub VSIX preview](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.12).
+All included features are free indefinitely for personal or commercial development.
+No account, payment card, purchase, trial period, or license activation is required.
+The CLI is separately available on [npm](https://www.npmjs.com/package/@rehearsal-db/core)
+under the MIT license. There is no paid CLI tier.
+
 ## What you can do
 
 - See what Rehearsal detected, what it suggests, and what still needs your decision.
@@ -30,19 +37,27 @@ Use desktop VS Code 1.101 or newer on macOS or Linux and a supported Node.js rel
    npm install --save-dev @rehearsal-db/core
    ```
 
-2. Open the [reviewed GitHub prereleases](https://github.com/Ddupasquier/rehearsal-vscode/releases).
-   Download the chosen release's `.vsix` and `SHA256SUMS`. Compare the file's SHA-256
-   with that release's checksum; do not substitute an unreviewed rebuild.
+2. Open the [Starter 0.1.12 release](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.12).
+   Under **Assets**, download `rehearsal-0.1.12.vsix` and `SHA256SUMS`. In a terminal,
+   run `shasum -a 256 /path/to/rehearsal-0.1.12.vsix` on macOS or
+   `sha256sum /path/to/rehearsal-0.1.12.vsix` on Linux. Compare the result with that
+   release's `SHA256SUMS`; stop if they differ. Do not substitute a local rebuild.
 3. In VS Code, open **Extensions → … → Install from VSIX…** and choose that file.
-   Reload the extension host if VS Code asks.
+   If VS Code asks for a reload, save your work and choose **Reload**.
 4. Review Workspace Trust, then open the Command Palette and choose
    **Rehearsal: Open Dashboard**. The Rehearsal sidebar also has a dashboard button.
 5. Follow **Next best step**. Review the detected project and active configuration;
    setup, source access, migration execution and cleanup keep their own confirmations.
 
-The extension needs `@rehearsal-db/core@0.1.0-rc.4` or newer. A project that is not ready
-should show setup guidance, not require you to build the extension. Use
+Install the current stable core, **1.0.0**, for the reviewed pairing with Starter 0.1.12.
+The extension's minimum core is `0.1.0-rc.4`. A project that is not ready should show
+setup guidance, not require you to build the extension. Opening the dashboard does not
+start a database or run a migration. Use
 [Getting started](getting-started.md) for the CLI and safe baseline inputs.
+
+The public installation channel is GitHub VSIX, not VS Code Marketplace. Searching
+Marketplace is not an installation step for this preview. Native Windows, browser-based
+VS Code, Codespaces, SSH and Dev Containers are not yet claimed as supported.
 
 ## Updates
 
@@ -50,6 +65,12 @@ GitHub VSIX installations do not auto-update. Download and verify the next revie
 release, then use **Install from VSIX…** again. Keep the previous reviewed file for
 rollback. See the extension's [installation guide](https://github.com/Ddupasquier/rehearsal-vscode#install-and-open-your-project)
 for checksum commands and the optional command-line installer.
+
+The preview offers optional, consented release checks through **Rehearsal: Check for
+Updates**. Checks provide guidance; they do not install an extension or change project
+dependencies automatically. The header shows the loaded extension and project core
+versions separately. A newer version is shown only after a successful release check;
+unknown or offline availability is not proof that you are up to date.
 
 Updating the project's core package is separate: its manifest, lockfile and installed
 metadata trigger a narrow read-only refresh automatically. You do not reload the VS Code
@@ -63,28 +84,37 @@ database access, or account. It does not read environment files, credentials, pr
 baseline contents, or project source. User-approved package operations and external links
 may use their own services.
 
-## Licensing and planned editions
+## License, support and future Pro
 
-The approved direction is a complete free MIT CLI, a useful free VS Code Starter, and
-optional paid Pro editor workflows. The [extension's edition guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/main/docs/commercial-readiness.md)
-owns that planned split. Database and safety capabilities stay in the free CLI.
+Starter 0.1.12 carries the
+[free Starter license](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.12/LICENSE).
+Its current review, configuration, comparison and reporting tools are included; they
+are not a timed evaluation or a paid feature gate. Free use does not mean the extension
+is MIT-licensed: its bundled terms govern copying and redistribution. Core remains MIT.
 
-The split is not implemented yet: current preview artifacts retain their bundled 14-day
-evaluation and per-user license, without a technical trial countdown or feature paywall.
-GitHub VSIX installations do not auto-update, so each reviewed delivery includes its exact
-version, compatible core range, checksum, privacy statement, license, and support policy.
+Future optional Pro editor workflows must be separately identified. They cannot
+retroactively remove Starter rights already granted for a received version. Pro pricing,
+billing and entitlements are not implemented; no payment is needed to use Starter.
+Database and safety capabilities stay in the free CLI. The
+[edition guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.12/docs/commercial-readiness.md)
+owns the detailed boundary.
 
-Technical GitHub prereleases are already public; they are not a Marketplace listing or
-an announcement of paid availability. A development candidate is not a released artifact
-merely because it has the same version number. Read the release's license, privacy and
-support documents before evaluation.
+Preview describes stability, not a trial countdown. Support is best effort, with no
+service-level agreement, database hosting, backups or production support. Before use,
+read the release's [privacy statement](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.12/PRIVACY.md)
+and [support policy](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.12/SUPPORT.md).
+Report editor problems in the
+[Rehearsal issue tracker](https://github.com/Ddupasquier/rehearsal-db/issues), as
+described in the support policy.
+Use its [private security process](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.12/SECURITY.md)
+for vulnerabilities; never post credentials, private rows or baseline files publicly.
 
-Starter/Pro license terms and Marketplace distribution still need approval. Paid Pro
-availability also needs reviewed seller identity, checkout/refund arrangements and support
-ownership. Do not send payment based on an unofficial download or message. Native Windows,
-browser-based VS Code, Codespaces, SSH and Dev Containers are not yet claimed as supported.
+Historical VSIX files retain their bundled terms. Choose a reviewed release carrying
+the Starter license; a development candidate is not released merely because its version
+number matches. The [release list](https://github.com/Ddupasquier/rehearsal-vscode/releases)
+is the authority for downloadable artifacts and their checksums.
 
 ## Try the free engine first
 
 Start with [Getting started](getting-started.md). A successful CLI rehearsal proves the
-project and local runtime are compatible before you evaluate the visual workflow.
+project and local runtime are compatible before you use the visual workflow.

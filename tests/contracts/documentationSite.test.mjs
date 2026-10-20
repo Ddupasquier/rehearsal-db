@@ -27,6 +27,10 @@ describe("documentation site", () => {
       href: site.package,
       label: "View on npm",
     });
+    expect(textLinks).toContainEqual({
+      href: new URL("vscode/", site.url).href,
+      label: "Free VS Code Starter",
+    });
     expect(site.package).toBe(`https://www.npmjs.com/package/${metadata.name}`);
     expect(metadata.repository.type).toBe("git");
     expect(metadata.repository.url).toBe(`git+${site.repository}.git`);
@@ -66,9 +70,10 @@ describe("documentation site", () => {
       ].map((match) => match[1]);
       for (const reference of localReferences) {
         const relative = reference.slice("/rehearsal-db/".length);
-        const target = relative.startsWith("assets/")
-          ? join(result.outputRoot, relative)
-          : join(result.outputRoot, relative, "index.html");
+        const target =
+          relative.startsWith("assets/") || relative === "sitemap.xml"
+            ? join(result.outputRoot, relative)
+            : join(result.outputRoot, relative, "index.html");
         await expect(access(target)).resolves.toBeUndefined();
       }
     }
@@ -84,6 +89,31 @@ describe("documentation site", () => {
         slug ? `/rehearsal-db/${slug}/` : "/rehearsal-db/",
       ),
     );
+    const sitemap = await readFile(
+      join(result.outputRoot, "sitemap.xml"),
+      "utf8",
+    );
+    expect(sitemap).toContain('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(sitemap).toContain(
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    );
+    const locations = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/gu)].map(
+      ([, url]) => url,
+    );
+    expect(locations).toEqual(
+      pages.map(({ slug }) => new URL(slug ? `${slug}/` : "", site.url).href),
+    );
+    expect(new Set(locations).size).toBe(pages.length);
+    for (const [index, page] of pages.entries()) {
+      const output = join(result.outputRoot, page.slug, "index.html");
+      const html = await readFile(output, "utf8");
+      expect(html).toContain(
+        `<link rel="canonical" href="${locations[index]}" />`,
+      );
+      expect(html).toContain(
+        `<link rel="sitemap" type="application/xml" href="${new URL("sitemap.xml", site.url).href}" />`,
+      );
+    }
   });
 
   it("leads with the problem and publishes complete sharing metadata", async () => {
@@ -100,7 +130,29 @@ describe("documentation site", () => {
       '<link rel="canonical" href="https://ddupasquier.github.io/rehearsal-db/" />',
     );
     expect(home).toContain("npm install --save-dev @rehearsal-db/core");
+    expect(home).toContain(
+      'href="/rehearsal-db/vscode/">Free VS Code Starter</a>',
+    );
     expect(home).not.toContain("@rehearsal-db/core@beta");
+  });
+
+  it("documents the released free Starter channel rather than unpublished behavior", async () => {
+    const source = await readFile(
+      join(repositoryRoot, "docs/vscode.md"),
+      "utf8",
+    );
+    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.12");
+    expect(source).toContain("rehearsal-vscode/blob/v0.1.12/LICENSE");
+    expect(source).toContain("free indefinitely");
+    expect(source).toContain(
+      "No account, payment card, purchase, trial period, or license activation",
+    );
+    expect(source).toContain("GitHub VSIX, not VS Code Marketplace");
+    expect(source).toContain("GitHub VSIX installations do not auto-update");
+    expect(source).not.toContain("bundled 14-day");
+    expect(source).not.toContain(
+      "Starter/Pro license terms and Marketplace distribution still need approval",
+    );
   });
 
   it("uses reviewed source and public links without replacing an existing output", async () => {
@@ -114,7 +166,7 @@ describe("documentation site", () => {
         outputRoot,
         base: "/preview/",
         site: {
-          url: "https://example.com/preview/",
+          url: "https://example.com/preview/?channel=free&source=docs",
           repository: "https://github.com/example/documentation",
           version: "reviewed-release",
           documentationSource: false,
@@ -125,7 +177,28 @@ describe("documentation site", () => {
       expect(home).toContain(
         'href="https://github.com/example/documentation/issues"',
       );
-      expect(home).toContain('href="https://example.com/preview/"');
+      expect(home).toContain(
+        'href="https://example.com/preview/?channel=free&amp;source=docs"',
+      );
+      const sitemap = await readFile(join(outputRoot, "sitemap.xml"), "utf8");
+      expect(sitemap).toContain(
+        "<loc>https://example.com/preview/?channel=free&amp;source=docs</loc>",
+      );
+      expect(sitemap).not.toContain("channel=free&source=docs");
+      expect(sitemap).not.toContain(site.url);
+      for (const page of pages) {
+        const canonical = new URL(
+          page.slug ? `${page.slug}/` : "",
+          "https://example.com/preview/?channel=free&source=docs",
+        ).href.replaceAll("&", "&amp;");
+        const html = await readFile(
+          join(outputRoot, page.slug, "index.html"),
+          "utf8",
+        );
+        expect(html).toContain(`<link rel="canonical" href="${canonical}" />`);
+        expect(sitemap).toContain(`<loc>${canonical}</loc>`);
+        expect(html).toContain('href="/preview/sitemap.xml">Sitemap</a>');
+      }
       expect(home).toContain("reviewed-release");
       expect(home).not.toContain("Edit this page");
       await expect(
