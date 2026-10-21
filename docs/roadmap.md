@@ -1,8 +1,8 @@
 # Next steps
 
-Rehearsal core **1.0.0 is available on
+Rehearsal core **1.0.2 is available on
 [npm](https://www.npmjs.com/package/@rehearsal-db/core)** for guided Supabase and
-ordinary PostgreSQL migration rehearsals. The [free VS Code Starter preview](vscode.md)
+ordinary PostgreSQL migration rehearsals. The [free VS Code Starter 0.1.23 preview](vscode.md)
 adds a visual workbench. Neither requires a purchase or account.
 
 The standalone workflow keeps the rehearsal engine in the package while application
