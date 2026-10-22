@@ -17,6 +17,7 @@ accomplish and follow that path.
 | Add Rehearsal to a project          | [Getting started](getting-started.md) |
 | Use the visual database workbench   | [VS Code extension](vscode.md)        |
 | Try it in a disposable project      | [Hands-on tutorial](tutorial.md)      |
+| Update an existing installation     | [Updates](updating.md)                |
 | Fix a setup or runtime problem      | [Troubleshooting](troubleshooting.md) |
 | Browse the friendlier web-docs home | [Documentation home](index.md)        |
 
@@ -42,8 +43,14 @@ accomplish and follow that path.
 
 - [Roadmap](roadmap.md)
 - [Stability and release verification](stability.md)
+
+## For maintainers
+
+These pages explain developing and publishing Rehearsal itself, not using it in
+your application. Installing or updating does not require the publisher checklist.
+
 - [Repository architecture](architecture.md)
-- [Release process](releasing.md)
+- [Maintainer release process](releasing.md)
 
 To preview the styled documentation locally, run `npm run docs:preview`, then open the
 address it prints.

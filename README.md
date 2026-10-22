@@ -198,6 +198,7 @@ Start here:
 - [VS Code extension](docs/vscode.md) — use the project-aware visual workbench
 - [Safe hands-on tutorial](docs/tutorial.md) — try the full flow in a disposable project
 - [Troubleshooting](docs/troubleshooting.md) — fix common setup problems
+- [Updates](docs/updating.md) — update the CLI or extension without resetting data
 - [Next steps](docs/roadmap.md) — see the current product sequence
 
 Reference:
@@ -214,9 +215,12 @@ Reference:
 - [Standalone workflow and security gates](docs/standalone-workflow.md)
 - [Runtime and local identity policies](docs/runtime-policies.md)
 - [Glossary](docs/glossary.md)
-- [Repository architecture](docs/architecture.md)
 - [Stability and the first stable release](docs/stability.md)
-- [Release process](docs/releasing.md)
+
+For maintainers developing and publishing Rehearsal:
+
+- [Repository architecture](docs/architecture.md)
+- [Maintainer release process](docs/releasing.md)
 
 ## Getting support
 

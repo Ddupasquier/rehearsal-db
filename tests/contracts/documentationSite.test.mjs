@@ -49,6 +49,30 @@ describe("documentation site", () => {
     for (const slug of navigationSlugs) expect(pageBySlug.has(slug)).toBe(true);
   });
 
+  it("separates ordinary updates from maintainer publication instructions", async () => {
+    expect(
+      groups.find((group) => group.label === "Start here").pages,
+    ).toContain("updating");
+    expect(groups.find((group) => group.label === "Maintainers").pages).toEqual(
+      ["architecture", "releasing"],
+    );
+    expect(
+      groups.find((group) => group.label === "Project").pages,
+    ).not.toContain("releasing");
+    const [updating, publishing] = await Promise.all([
+      readFile(join(repositoryRoot, "docs/updating.md"), "utf8"),
+      readFile(join(repositoryRoot, "docs/releasing.md"), "utf8"),
+    ]);
+    expect(updating).toContain(
+      "npm install --save-dev --save-exact @rehearsal-db/core@",
+    );
+    expect(updating).not.toContain("npm publish");
+    expect(publishing).toContain(
+      "Audience: Rehearsal maintainers publishing a release.",
+    );
+    expect(publishing).toContain("updating.md");
+  });
+
   it("builds every declared Markdown page and searchable route", async () => {
     const result = await buildDocs();
     expect(result.pages).toBe(pages.length);

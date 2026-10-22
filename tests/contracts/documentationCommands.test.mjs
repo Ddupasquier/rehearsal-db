@@ -361,9 +361,11 @@ describe("documented CLI contract", () => {
       "marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db",
     );
     expect(guide).toContain("rehearsal-db-0.1.23.vsix");
-    expect(guide).toContain("core **1.0.2** with Starter **0.1.23**");
-    expect(guide).toContain(
-      "both versions appear in their official release channels",
+    expect(guide).toContain("independent version numbers");
+    expect(guide).toContain("current stable core");
+    expect(guide).toContain("this guide describes Starter **0.1.23**");
+    expect(guide.replace(/\s+/gu, " ")).toContain(
+      "Confirm the target version appears in its official channel before installing.",
     );
     expect(guide).toContain("@id:rehearsal-db.rehearsal");
     expect(guide).toContain("Explicitly uninstall the legacy extension");
