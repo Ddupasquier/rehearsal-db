@@ -39,6 +39,11 @@ rehearsal-db/
 - Public consumers use only the paths declared in `package.json#exports`.
 - Unit tests mirror their source domain. Cross-domain workflows belong in
   `tests/integration/`; durable public promises belong in `tests/contracts/`.
+- `tests/helpers/public_cli.mjs` bounds setup-test child output and projects only
+  fixed failure categories, exit/signal metadata and recognized setup refusal kinds.
+  It never retains raw child errors, argv, provider text or output in failure reports.
+  An unrecognized failure stays unclassified; a later green test does not establish
+  the cause of a historical failure. This test helper is not shipped product code.
 
 ## CLI modules
 

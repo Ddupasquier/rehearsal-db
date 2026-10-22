@@ -17,7 +17,14 @@ export const groups = Object.freeze([
   {
     label: "Start here",
     eyebrow: "First steps",
-    pages: ["", "getting-started", "vscode", "tutorial", "troubleshooting"],
+    pages: [
+      "",
+      "getting-started",
+      "vscode",
+      "tutorial",
+      "updating",
+      "troubleshooting",
+    ],
   },
   {
     label: "Work safely",
@@ -45,13 +52,12 @@ export const groups = Object.freeze([
   {
     label: "Project",
     eyebrow: "Behind the scenes",
-    pages: [
-      "roadmap",
-      "stability",
-      "runtime-lifecycle",
-      "architecture",
-      "releasing",
-    ],
+    pages: ["roadmap", "stability", "runtime-lifecycle"],
+  },
+  {
+    label: "Maintainers",
+    eyebrow: "Contribute and publish",
+    pages: ["architecture", "releasing"],
   },
 ]);
 
@@ -82,6 +88,14 @@ export const pages = Object.freeze([
     source: "tutorial.md",
     title: "Hands-on tutorial",
     description: "Try the complete workflow in a disposable synthetic project.",
+  },
+  {
+    slug: "updating",
+    source: "updating.md",
+    title: "Keeping Rehearsal up to date",
+    shortTitle: "Updates",
+    description:
+      "Update the project CLI or VS Code extension without resetting your sandbox.",
   },
   {
     slug: "troubleshooting",
@@ -198,9 +212,10 @@ export const pages = Object.freeze([
   {
     slug: "releasing",
     source: "releasing.md",
-    title: "Release process",
+    title: "Maintainer release process",
+    shortTitle: "Publishing releases",
     description:
-      "The reviewed path from a clean candidate to a trusted npm release.",
+      "For maintainers: publish exact tested bytes through the trusted release process.",
   },
 ]);
 
