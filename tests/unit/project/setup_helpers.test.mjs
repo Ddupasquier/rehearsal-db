@@ -1,6 +1,5 @@
 import {
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rm,
@@ -12,6 +11,7 @@ import { dirname } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createUnitTemporaryDirectory } from "../../helpers/unit_temporary_global.mjs";
 import {
   assertSetupHost,
   CORE_VERSION,
@@ -37,8 +37,7 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true });
 });
 const fixture = async (manifest = {}) => {
-  await mkdir(resolve("test-results"), { recursive: true });
-  const root = await mkdtemp(resolve("test-results", "setup helpers ü "));
+  const root = await createUnitTemporaryDirectory("setup helpers ü ");
   roots.push(root);
   await writeFile(
     join(root, "package.json"),
