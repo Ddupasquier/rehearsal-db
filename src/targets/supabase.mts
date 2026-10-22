@@ -124,7 +124,6 @@ interface ProjectRuntimeResult {
   readonly environmentVariables: Readonly<Record<string, string>>;
   readonly message: string;
 }
-
 interface RuntimeAdapter {
   prepareSchema?(input: { runSql: typeof runDatabaseSql }): { message: string };
   configureRuntime?(input: {
@@ -634,6 +633,7 @@ const resetRuntime = async () => {
         path: runtimeMarkerPath,
         marker: {
           formatVersion: active.baseline.formatVersion,
+          target: "supabase",
           generationId: active.baseline.generationId,
           dataSha256: readBaselineDataSha256(active.baseline),
           schemaSha256:

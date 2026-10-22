@@ -1,9 +1,16 @@
 # Next steps
 
-Rehearsal core **1.0.2 is available on
+Rehearsal core **1.1.0 is available on
 [npm](https://www.npmjs.com/package/@rehearsal-db/core)** for guided Supabase and
 ordinary PostgreSQL migration rehearsals. The [free VS Code Starter 0.1.23 preview](vscode.md)
-adds a visual workbench. Neither requires a purchase or account.
+adds a visual workbench and is distributed through Marketplace and reviewed GitHub
+VSIX releases. Neither requires a purchase or account. Core is MIT-licensed; all
+features included in Starter are free indefinitely for personal or commercial development.
+
+Stable core, the editor preview and a future paid Pro offer have separate completion
+boundaries. A downloadable preview does not imply that every native accessibility,
+provider or real-user acceptance observation has been completed. Publication does not
+authorize a new database operation or migrate a running legacy extension.
 
 The standalone workflow keeps the rehearsal engine in the package while application
 meaning and privacy decisions remain project-owned. The sequence below explains its
@@ -30,10 +37,18 @@ Track the full breakdown in
 For questions or feature requests, use
 [GitHub issues](https://github.com/Ddupasquier/rehearsal-db/issues).
 
-## Acceptance still required
+## Verification and supported-journey work
 
-These are verification requirements, not a live checklist of unfinished releases or
-consumer migrations. Record the observed results for each exact candidate separately.
+The [release verification policy](stability.md) owns promotion requirements. The
+[Environment Workbench epic](https://github.com/Ddupasquier/rehearsal-db/issues/130)
+and its children track remaining editor acceptance; the issue tracker owns current
+status and pickup order, not this page. Supported-journey compatibility work,
+including the [Supabase grant-preservation review](https://github.com/Ddupasquier/rehearsal-db/issues/199),
+is distinct from adding new database families or paid features.
+
+For each exact candidate, retain the checks already proved and complete the missing
+observations. The following describe evidence boundaries, not a claim that a shipped
+release or consumer upgrade remains unfinished:
 
 - Install the exact packed candidate in clean Supabase and PostgreSQL consumers.
 - Exercise two unrelated synthetic schemas, bounded large data, interruption, drift,
@@ -48,6 +63,12 @@ consumer migrations. Record the observed results for each exact candidate separa
 
 ## Later database targets
 
-After the PostgreSQL family is stable in real projects, evaluate individual PostgreSQL
-services. MySQL, MongoDB, and unrelated database families require different migration,
-restore, and safety behavior and remain out of scope.
+Additional database, runtime, identity-provider and migration-tool integrations require
+their own reviewed capability contracts and independent acceptance. Research or a roadmap
+ticket is not a support claim. MySQL, MongoDB, SQLite and other database families are not
+supported by this PostgreSQL/Supabase release. They remain separate future work rather
+than prerequisites for the current local workflow.
+
+The complete CLI and its database/safety capabilities stay free. Optional paid Pro
+workflows, licensing and commercial readiness remain separate owner decisions; this
+roadmap does not approve a paywall, price, billing service or new distribution operation.

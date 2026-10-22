@@ -1,6 +1,6 @@
 # macOS
 
-Requires macOS and an existing Node.js 24 or 26 installation. Open Terminal in this
+Requires macOS and an existing Node.js 22, 24 or 26 installation. Open Terminal in this
 folder. Check your existing application without installing anything:
 
 ```sh

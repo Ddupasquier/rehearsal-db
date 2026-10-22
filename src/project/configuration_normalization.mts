@@ -16,6 +16,7 @@ import {
 import { normalizeConfigurationProfiles } from "./configuration_profiles.mjs";
 import { normalizeApplicationUrls } from "./configuration_application_urls.mjs";
 import { normalizeApplicationActivity } from "./configuration_activity.mjs";
+import { assertRuntimeProjectId } from "./runtime_project_identity.mjs";
 import {
   assertBoolean,
   assertCommand,
@@ -649,9 +650,9 @@ export const normalizeRehearsalConfig = (input: unknown) => {
       ),
       target: runtimeTarget,
       applicationUrl: applicationUrls.applicationUrl,
-      projectId: assertNonEmptyString(
+      projectId: assertRuntimeProjectId(
         runtime.projectId ?? REHEARSAL_DEFAULTS.runtime.projectId,
-        "config.runtime.projectId",
+        runtimeTarget,
       ),
       ports: Object.freeze(ports),
     }),

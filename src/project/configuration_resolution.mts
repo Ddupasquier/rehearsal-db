@@ -7,7 +7,6 @@ import {
   type RehearsalConfigPathOptions,
 } from "./configuration_discovery.mjs";
 import { normalizeRehearsalConfig } from "./configuration_normalization.mjs";
-import { assertIdentifier } from "./configuration_validation.mjs";
 
 export type NormalizedRehearsalConfig = ReturnType<
   typeof normalizeRehearsalConfig
@@ -112,7 +111,6 @@ export const loadRehearsalConfig = async ({
       );
     }
   }
-  assertIdentifier(config.runtime.projectId, "config.runtime.projectId");
   return Object.freeze({
     config,
     configPath: path,

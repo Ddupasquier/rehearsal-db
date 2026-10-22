@@ -138,7 +138,9 @@ release-source migration.
 4. When an unfamiliar developer is available, have them follow clean-project onboarding.
    Correct and retest the first confusing, missing, or wrong instruction. Record when
    this human observation was unavailable; automated checks must not impersonate it.
-5. Change `private` to `false` only in the reviewed release change.
+5. Confirm package metadata keeps `private: false` for this public npm package. Any
+   metadata change belongs in the reviewed release change; do not toggle visibility
+   or package privacy as an incidental publishing step.
 6. Record the exact tarball filename, SHA-1, SHA-256, allowlisted files, unpacked size,
    executable, declared runtime dependency inventory, and dependency audit result.
 7. Review the release change and its exact artifact evidence.
@@ -195,7 +197,7 @@ This is mutual exclusion, not a guaranteed ordered queue: reconcile a superseded
 pending workflow before deliberately requesting another run.
 
 The objective promotion checklist and compatibility boundary live in
-[Stability and the first stable release](stability.md).
+[Stability and release verification](stability.md).
 
 The trusted publisher allows `npm dist-tag` only so this workflow can maintain those two
 tags without a stored npm token. A manual workflow run from `main` can repair the correct

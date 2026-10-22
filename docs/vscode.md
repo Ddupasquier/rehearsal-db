@@ -44,8 +44,8 @@ boundaries, baselines, migration digests, runtime isolation, locks, rollback, an
 Use desktop VS Code 1.101 or newer on macOS or Linux and a supported Node.js release
 (22, 24, or 26). You do not need the extension source repository or Test Lab.
 For a Windows desktop, use the [WSL 2 Linux-workspace setup](getting-started.md#windows-use-a-wsl-2-linux-workspace).
-With editor 0.1.21, native Windows inspection and foreground actions refuse before launching a child
-process and directs you to Remote-WSL. Install the extension into the Linux extension
+Since editor 0.1.21, native Windows inspection and foreground actions refuse before launching a child
+process and direct you to Remote-WSL. Install the extension into the Linux extension
 host and keep the project on its Linux filesystem. WSL compatibility remains a preview;
 real WSL core fixtures do not certify a native Remote-WSL editor walkthrough.
 

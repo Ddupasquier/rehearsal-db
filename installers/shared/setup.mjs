@@ -8,7 +8,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-export const CORE_VERSION = "1.0.2";
+export const CORE_VERSION = "1.1.0";
 export const EXTENSION_ID = "rehearsal-db.rehearsal-db";
 // Standalone pre-install projection of src/shared/host_platform.mts's contract.
 // The focused contract test keeps these values aligned without importing core.
@@ -25,6 +25,12 @@ const versionParts = (value) =>
   typeof value === "string" && /^(\d+)\.(\d+)\.(\d+)$/u.test(value)
     ? value.split(".").map(Number)
     : null;
+const compareVersions = (left, right) => {
+  for (let index = 0; index < 3; index++) {
+    if (left[index] !== right[index]) return left[index] - right[index];
+  }
+  return 0;
+};
 const inside = (root, path) => {
   const local = relative(root, path);
   return (
@@ -134,14 +140,15 @@ export const planCoreInstallation = (manifest, installedVersion) => {
     throw new Error(
       "The installed Rehearsal package cannot be safely adopted or downgraded by this helper.",
     );
-  if (installed && (installed[1] > 0 || installed[2] >= 1))
+  const target = versionParts(CORE_VERSION);
+  if (installed && compareVersions(installed, target) >= 0)
     return {
       arguments: null,
       reason: `Preserving installed compatible Rehearsal ${installedVersion}.`,
     };
   if (declaration && declaration !== "latest") {
     const minimum = versionParts(declaration.replace(/^[~^]/u, ""));
-    if (minimum && (minimum[1] > 0 || minimum[2] > 1))
+    if (minimum && compareVersions(minimum, target) > 0)
       throw new Error(
         "The declared Rehearsal version is newer than this helper; no downgrade will be attempted.",
       );
@@ -171,9 +178,9 @@ export const assertSetupHost = ({
   home,
 }) => {
   const major = Number(nodeVersion.split(".")[0]);
-  if (![24, 26].includes(major))
+  if (![22, 24, 26].includes(major))
     throw new Error(
-      "Use a maintained Node.js 24 or 26 installation. This helper never installs Node or changes your OS.",
+      "Use Node.js 22, 24 or 26 (24 LTS recommended). See https://nodejs.org/en/download . This helper never installs Node or changes your OS.",
     );
   if (platform !== "darwin" && platform !== "linux")
     throw new Error(

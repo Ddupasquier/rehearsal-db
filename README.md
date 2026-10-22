@@ -47,7 +47,7 @@ it through a reviewed privacy policy, and retire the access again. It is never p
 production deployment tool.
 
 The CLI is free and MIT-licensed, with stable releases on
-[npm](https://www.npmjs.com/package/@rehearsal-db/core). This guide targets **1.0.2**;
+[npm](https://www.npmjs.com/package/@rehearsal-db/core). This guide targets **1.1.0**;
 install only a version actually published there. Prefer a visual workflow?
 [Install the free VS Code Starter preview](docs/vscode.md). Its included features are
 free indefinitely for personal or commercial development—no account, card, or trial.
@@ -71,7 +71,7 @@ your migration is intended to change.
 
 Prefer OS-specific files? Use the [Windows / WSL 2](installers/windows/README.md),
 [macOS](installers/macos/README.md) or [Linux](installers/linux/README.md) setup folder.
-These readable helpers require existing Node.js 24 or 26 and check prerequisites by
+These readable helpers accept existing Node.js 22, 24 or 26 and check prerequisites by
 default; installation is an explicit option. They do not install OS tools or start a
 database. See [their exact behavior and release availability](installers/README.md).
 

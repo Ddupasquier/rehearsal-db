@@ -10,11 +10,20 @@ the current host's `code` command and the Docker CLI are available. They do not
 start Docker, a database, a container or Rehearsal; install Node/WSL/OS packages;
 change security settings; create a project; or overwrite Rehearsal configuration.
 
-Use maintained Node.js **24 or 26**. The setup target is exactly
-`@rehearsal-db/core@1.0.2`; the canonical extension is
+Use Node.js **22, 24 or 26** (24 LTS recommended). The setup target is exactly
+`@rehearsal-db/core@1.1.0`; the canonical extension is
 `rehearsal-db.rehearsal-db` (**Rehearsal DB**). A checked-in helper or generated
 bundle does not mean that npm version or a release asset is already published.
 An unavailable version stops the explicit install rather than selecting another.
+
+If Node is installed but unavailable to the launcher, select the project's supported
+version through its existing version manager first. macOS/Linux helpers also accept
+`REHEARSAL_NODE_PATH=/absolute/path/to/node`; the Windows helper accepts `-NodePath`
+with an absolute **Linux** executable path in the chosen WSL distribution. Paths with
+spaces are supported when quoted. The selected binary is checked against the same
+supported versions before tool or installation checks. No shell startup file is sourced,
+runtime is downloaded, project selector is changed, or system runtime is replaced.
+For a new installation, use [Node's official download/setup page](https://nodejs.org/en/download).
 
 Explicit `--install-cli` uses npm with scripts disabled and an exact version,
 preserving a single existing dependency group or using devDependencies for a new

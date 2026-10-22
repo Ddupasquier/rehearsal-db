@@ -4,6 +4,7 @@ import {
   readFile,
   readdir,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -100,7 +101,7 @@ describe("OS-specific source setup helpers", () => {
   );
   it.skipIf(
     !["darwin", "linux"].includes(process.platform) ||
-      ![24, 26].includes(Number(process.versions.node.split(".")[0])),
+      ![22, 24, 26].includes(Number(process.versions.node.split(".")[0])),
   )(
     "runs the real current-OS check wrapper without changing the disposable project",
     async () => {
@@ -142,6 +143,107 @@ describe("OS-specific source setup helpers", () => {
     ]);
     expect(await readdir(f.root)).toEqual(["package.json"]);
     expect(await readFile(join(f.root, "package.json"), "utf8")).toBe(before);
+  });
+  it.skipIf(!["darwin", "linux"].includes(process.platform))(
+    "uses an explicitly selected Node path without changing the shell or project",
+    async () => {
+      const f = await fixture();
+      const runtimeDirectory = join(f.root, "Node runtime ü with spaces");
+      await mkdir(runtimeDirectory);
+      const executable = join(runtimeDirectory, "node executable");
+      await symlink(process.execPath, executable);
+      const wrapper =
+        process.platform === "darwin"
+          ? "macos/setup.command"
+          : "linux/setup.sh";
+      const result = await promisify(execFile)(
+        "/bin/sh",
+        [resolve("installers", wrapper), f.root],
+        {
+          env: {
+            ...process.env,
+            PATH: "/usr/bin:/bin",
+            REHEARSAL_NODE_PATH: executable,
+          },
+          encoding: "utf8",
+          timeout: 15_000,
+          maxBuffer: 1024 * 1024,
+        },
+      );
+      expect(JSON.parse(result.stdout).coreTarget).toBe(CORE_VERSION);
+      expect(await readdir(f.root)).toEqual([
+        "Node runtime ü with spaces",
+        "package.json",
+      ]);
+    },
+  );
+  it.each(["macos/setup.command", "linux/setup.sh"])(
+    "refuses relative executable overrides before starting Node: %s",
+    async (wrapper) => {
+      const f = await fixture();
+      await expect(
+        promisify(execFile)(
+          "/bin/sh",
+          [resolve("installers", wrapper), f.root],
+          {
+            env: {
+              ...process.env,
+              REHEARSAL_NODE_PATH: "./node --eval=unsafe",
+            },
+            encoding: "utf8",
+            timeout: 5_000,
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: 1,
+        stdout: expect.stringContaining("absolute Node executable path"),
+      });
+      expect(await readdir(f.root)).toEqual(["package.json"]);
+    },
+  );
+  it.each(["22.21.1", "24.21.0", "26.10.0"])(
+    "accepts supported Node %s for check-only setup",
+    async (nodeVersion) => {
+      const f = await fixture();
+      await expect(
+        runSetup(parseSetupArguments([f.root]), {
+          ...f.injected,
+          nodeVersion,
+        }),
+      ).resolves.toMatchObject({ coreTarget: CORE_VERSION });
+      expect(await readdir(f.root)).toEqual(["package.json"]);
+    },
+  );
+  it.each(["20.20.2", "23.11.1", "25.9.0", "27.0.0"])(
+    "refuses unmaintained or unverified Node %s before checking tools",
+    async (nodeVersion) => {
+      const f = await fixture();
+      await expect(
+        runSetup(parseSetupArguments([f.root]), {
+          ...f.injected,
+          nodeVersion,
+        }),
+      ).rejects.toThrow(/22, 24 or 26/u);
+      expect(f.run).not.toHaveBeenCalled();
+    },
+  );
+  it("updates older compatible installations to the exact helper target", () => {
+    for (const installed of ["1.0.0", "1.0.1", "1.0.2"]) {
+      expect(
+        planCoreInstallation(
+          { devDependencies: { "@rehearsal-db/core": installed } },
+          installed,
+        ).arguments,
+      ).toContain(`@rehearsal-db/core@${CORE_VERSION}`);
+    }
+    for (const installed of [CORE_VERSION, "1.1.1", "1.2.0"]) {
+      expect(
+        planCoreInstallation(
+          { devDependencies: { "@rehearsal-db/core": installed } },
+          installed,
+        ).arguments,
+      ).toBeNull();
+    }
   });
   it.each(["dependencies", "devDependencies", "optionalDependencies"])(
     "preserves %s and requests only exact script-disabled core installation",
@@ -334,7 +436,7 @@ describe("OS-specific source setup helpers", () => {
     expect(() =>
       assertSetupHost({ ...host, nodeVersion: "24.21.0" }),
     ).not.toThrow();
-    expect(() => assertSetupHost({ ...host, nodeVersion: "22.0.0" })).toThrow(
+    expect(() => assertSetupHost({ ...host, nodeVersion: "20.20.2" })).toThrow(
       /Node.js/u,
     );
     expect(() => parseSetupArguments(["--project"])).toThrow();
