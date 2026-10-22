@@ -5,6 +5,8 @@ import { basename, join, resolve } from "node:path";
 
 export interface DetectedProject {
   projectName: string;
+  /** Untruncated normalized name keeps shortened new runtime identities distinct. */
+  projectIdSeed?: string;
   packageManager: "npm" | "pnpm" | "yarn";
   hasSupabaseConfig: boolean;
   hasMigrations: boolean;
@@ -57,6 +59,7 @@ export const inspectDetectedProject = async ({
     "rehearsal-project";
   return {
     projectName,
+    projectIdSeed: normalizedProjectName || projectName,
     packageManager,
     hasSupabaseConfig: await hasPath("supabase/config.toml"),
     hasMigrations: await hasPath("supabase/migrations"),

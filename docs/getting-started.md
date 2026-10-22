@@ -12,17 +12,17 @@ Separate setup folders are available for
 [macOS](https://github.com/Ddupasquier/rehearsal-db/tree/main/installers/macos) and
 [Linux](https://github.com/Ddupasquier/rehearsal-db/tree/main/installers/linux).
 They are readable helpers, not native executables or bundled Node/Docker installers.
-Existing Node.js 24 or 26 is required. The default only checks an existing project;
+Existing Node.js 22, 24 or 26 is required. The default only checks an existing project;
 installation needs an explicit option and does not start a database. Review the
 [shared behavior and release availability](https://github.com/Ddupasquier/rehearsal-db/blob/main/installers/README.md)
-before choosing an install option. An exact core 1.0.2 install requires that version to
+before choosing an install option. An exact core 1.1.0 install requires that version to
 be published; a checked-in helper is not proof of publication.
 
 ### Windows: use a WSL 2 Linux workspace
 
 The Windows compatibility route is Linux execution inside **WSL 2**, not a native
-PowerShell/Command Prompt database runtime. Core 1.0.1 and extension 0.1.21 make that
-boundary explicit; native Windows version/help/discovery do not authorize runtime work.
+PowerShell/Command Prompt database runtime. Since core 1.0.1 and extension 0.1.21, that
+boundary is explicit; native Windows version/help/discovery do not authorize runtime work.
 
 1. Follow Microsoft's [WSL installation guide](https://learn.microsoft.com/en-us/windows/wsl/install)
    to prepare a WSL 2 Linux distribution, such as Ubuntu 24.04. Do not use WSL 1.

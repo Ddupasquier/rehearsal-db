@@ -137,6 +137,7 @@ export interface RehearsalConfig {
     protected?: boolean;
     target?: "supabase" | "postgresql";
     applicationUrl?: string;
+    /** Exact lowercase/digit/hyphen ownership ID: 2–40 Supabase, 2–63 PostgreSQL. */
     projectId?: string;
     apiPort?: number;
     databasePort: number;

@@ -27,8 +27,8 @@ then repeat the command.
 
 Setting `autoStartColima: true` is an explicit convenience opt-in. If Docker is
 unavailable and the `colima` command exists, Rehearsal runs plain `colima start` and
-reports it. Rehearsal does not resize Colima and does not stop the shared engine
-automatically. Starting Docker can also wake unrelated containers that use Docker's
+reports it. Rehearsal does not resize Colima. Engine shutdown remains off unless the
+separate ownership-guarded policy below is explicitly enabled. Starting Docker can also wake unrelated containers that use Docker's
 `always` or `unless-stopped` restart policy. Rehearsal changes only the selected
 Supabase stack to Docker's `no` restart policy after it starts successfully.
 
@@ -84,8 +84,9 @@ lifecycle: {
 `run` accepts `keep-until-stop` or `stop-after-run`. `open` accepts
 `keep-until-stop` or `stop-on-application-exit`. The bounded choices stop every
 configured Rehearsal target in reverse dependency order after the command finishes,
-fails after startup, times out, or is interrupted. They never stop the shared Docker
-engine.
+fails after startup, times out, or is interrupted. Lifecycle choices govern targets,
+not engine ownership; they do not enable Colima shutdown. The separate
+`stopOwnedColimaWhenIdle` policy still requires its own opt-in and ownership checks.
 
 Stopping is non-destructive: database and Storage volumes, applied migrations, and
 sandbox edits remain available to `start` or `open`. Only the existing explicit `reset`

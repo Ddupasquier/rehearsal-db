@@ -1,9 +1,34 @@
 # Changelog
 
-All notable Rehearsal package changes will be documented here. The format follows Keep
-a Changelog, and versions will follow Semantic Versioning after the package exists.
+All notable Rehearsal package changes are documented here. The format follows Keep
+a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
+
+## [1.1.0] - 2026-10-21
+
+### Added
+
+- Optional read-only runtime privilege expectations for reviewed schemas, tables,
+  sequences and exact function signatures. Required and forbidden effective access is
+  separate from RLS, includes inherited and column-only permissions, and never repairs
+  grants automatically. Existing policies without this field keep their behavior.
+- Document explicit least-privilege Data API grants, forward-only correction and
+  positive/negative API proofs for Supabase's October 30 opt-in table-exposure change.
+
+### Fixed
+
+- Record the Supabase provider in newly written runtime receipts, so inventory can
+  distinguish recorded format/provider compatibility from unknown legacy provenance.
+  Older receipts remain unknown rather than being silently rewritten or reverified.
+- Bound newly generated Supabase project IDs to the provider's 40-character limit
+  with a deterministic suffix. Preserve valid existing identities; reject invalid
+  configured IDs without renaming or adopting resources.
+- Align OS setup helpers with core's Node.js 22, 24 and 26 support. macOS/Linux
+  helpers accept an explicit `REHEARSAL_NODE_PATH`, and missing-Node guidance points
+  to version-manager selection or the official installer without installing an OS tool.
+- Update compatible older CLI installations to the helper's exact current target
+  instead of treating every 1.0.1-or-newer installation as already current.
 
 ## [1.0.2] - 2026-10-20
 
@@ -815,7 +840,8 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v0.1.0-rc.10...v1.0.0

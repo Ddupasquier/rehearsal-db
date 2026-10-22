@@ -1,13 +1,14 @@
-# Stability and the first stable release
+# Stability and release verification
 
-Rehearsal core **1.0.2 is published** on
+Rehearsal core **1.1.0 is published** on
 [npm](https://www.npmjs.com/package/@rehearsal-db/core). This page defines its
 compatibility promise and the verification policy for releases; it is not an
 unfinished launch checklist. Stable core does not require every planned database,
 editor interface, or paid feature.
 
-The separate [VS Code Starter 0.1.23 preview](vscode.md) has its own support and
-verification boundary; it does not change the core compatibility promise.
+The compatibility promise began with **1.0.0**. The separate
+[VS Code Starter 0.1.23 preview](vscode.md) has its own editor acceptance and does
+not turn a core release into a completed accessibility or provider walkthrough.
 
 ## What becomes a compatibility promise
 
@@ -68,7 +69,7 @@ ready. The sequence below is policy, not a claim that its checks have passed.
    corrected candidate. Reuse sufficient unchanged evidence with its original scope;
    do not relabel old or unavailable manual checks as new results. No minimum number
    of calendar days replaces these checks.
-6. Publish `1.0.0` only when no blocking issue remains and the exact tarball has passed
+6. Publish the selected stable version only when no blocking issue remains and the exact tarball has passed
    the required release checks and consumer acceptance. The protected GitHub npm
    review is the single human authorization for its displayed exact version and
    checksum; no separate chat approval or pasted phrase is required.
@@ -97,7 +98,7 @@ baseline. Automatic compatible updates do not cross the 0.x-to-1.x version bound
 review the changelog and deliberately select the stable version:
 
 ```bash
-npm install --save-dev --save-exact @rehearsal-db/core@1.0.2
+npm install --save-dev --save-exact @rehearsal-db/core@1.1.0
 npx --no-install rehearsal --version
 npx --no-install rehearsal doctor
 ```

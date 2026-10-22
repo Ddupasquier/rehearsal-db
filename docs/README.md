@@ -41,7 +41,7 @@ accomplish and follow that path.
 ## Follow the project
 
 - [Roadmap](roadmap.md)
-- [Stability and the first stable release](stability.md)
+- [Stability and release verification](stability.md)
 - [Repository architecture](architecture.md)
 - [Release process](releasing.md)
 

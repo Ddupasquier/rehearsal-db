@@ -1,6 +1,6 @@
 # Linux
 
-Requires Linux and an existing Node.js 24 or 26 installation. Check an existing
+Requires Linux and an existing Node.js 22, 24 or 26 installation. Check an existing
 application without installing anything:
 
 ```sh

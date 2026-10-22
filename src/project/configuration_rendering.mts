@@ -1,6 +1,7 @@
 /** Render reviewed starter configurations without reading or writing a project. */
 
 import type { DetectedProject } from "./project_detection.mjs";
+import { createRuntimeProjectId } from "./runtime_project_identity.mjs";
 
 export const renderDetectedConfig = (
   detected: DetectedProject,
@@ -145,7 +146,7 @@ export default defineRehearsalConfig({
 		protected: false, // Pin data against reset, run, migrate, discard, and runtime cleanup.
 		target: "supabase",
 		applicationUrl: ${JSON.stringify(applicationUrl)},
-		projectId: "${detected.projectName}-rehearsal",
+		projectId: ${JSON.stringify(createRuntimeProjectId(detected.projectName, "supabase", detected.projectIdSeed))},
 		apiPort: ${ports.api},
 		databasePort: ${ports.database},
 		studioPort: ${ports.studio},
@@ -284,7 +285,7 @@ export default defineRehearsalConfig({
 		protected: false, // Pin data against reset, run, migrate, discard, and runtime cleanup.
 		target: "postgresql",
 		applicationUrl: ${JSON.stringify(applicationUrl)},
-		projectId: "${detected.projectName}-rehearsal",
+		projectId: ${JSON.stringify(createRuntimeProjectId(detected.projectName, "postgresql", detected.projectIdSeed))},
 		databasePort: ${databasePort},
 	},
 

@@ -26,11 +26,17 @@ The first `1.0.0` release requires external beta evidence, a support policy and 
 settled public API described in [the stability policy](docs/stability.md). Supporting
 additional database families, package managers or operating systems is not implied.
 
-Rehearsal supports maintained even-numbered Node.js release lines that pass its CI
-matrix. Rehearsal 1.0 supports Node.js 22, 24, and 26; Node.js 24 LTS is the recommended
-default and the release-build runtime. End-of-life and odd-numbered Node.js releases are
-not supported. A future release may remove a Node.js line after its upstream end-of-life
+Rehearsal supports the maintained Node.js release lines verified by its existing CI
+matrix: Node.js 22, 24, and 26. Node.js 24 LTS is the recommended default and the
+release-build runtime. End-of-life and unverified future release lines are not
+supported. A future release may remove a Node.js line after its upstream end-of-life
 date, with that change called out in the changelog.
+
+Core 1.1.0's OS helpers accept the same three lines. A terminal or desktop launcher
+that cannot find Node does not mean an installed version is unsupported. Select it
+through the project's existing version manager or use the helper's explicit executable
+path; see [OS setup](installers/README.md). Helpers never install Node or switch a
+project's runtime automatically.
 
 ## Operating systems and execution location
 

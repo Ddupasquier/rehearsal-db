@@ -1,6 +1,6 @@
 # Windows: WSL 2, not native Windows runtime
 
-Requires an existing WSL 2 distribution with Linux Node.js 24 or 26 and an existing
+Requires an existing WSL 2 distribution with Linux Node.js 22, 24 or 26 and an existing
 application inside that distribution's Linux home directory. The helper does not
 install/convert WSL, move a project, install Node/Docker, request administrator access
 or bypass PowerShell execution policy. Use scripts only under your existing policy.
@@ -19,7 +19,7 @@ Then check a selected existing project (the quoted path is a Linux path):
 
 This executes only the Node prerequisite/setup checks inside the selected distro;
 an existing stopped distro may start. No Docker engine, container or database is
-started. Save work, then add `-InstallCli` to explicitly install exact core 1.0.2.
+started. Save work, then add `-InstallCli` to explicitly install exact core 1.1.0.
 If Linux Node is managed by nvm and is absent from WSL's non-login PATH, pass its
 absolute path with `-NodePath "/home/you/.nvm/versions/node/v24.21.0/bin/node"`.
 The helper does not load shell startup files or install/change Node versions.

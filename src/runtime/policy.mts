@@ -1,5 +1,11 @@
 /** Build narrowly validated local restore prerequisites and structural checks. */
 
+import {
+  buildRuntimePrivilegeVerificationChecks,
+  validateRuntimePrivileges,
+  type RuntimePrivilege,
+} from "./privileges.mjs";
+
 const IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/u;
 const IDENTITY_NAME = /^[a-z0-9][a-z0-9-]{1,62}$/u;
 const UUID =
@@ -75,6 +81,7 @@ export interface RuntimePolicy {
   readonly triggers: readonly RuntimeTrigger[];
   readonly localRows: readonly RuntimeLocalRow[];
   readonly expectations: readonly RuntimeExpectation[];
+  readonly privileges?: readonly RuntimePrivilege[];
 }
 
 const object = (value: unknown, label: string): PolicyObject => {
@@ -135,7 +142,14 @@ export const validateRuntimePolicy = (input: unknown): RuntimePolicy => {
   const policy = object(input, "runtimePolicy");
   keys(
     policy,
-    ["policyVersion", "prerequisites", "triggers", "localRows", "expectations"],
+    [
+      "policyVersion",
+      "prerequisites",
+      "triggers",
+      "localRows",
+      "expectations",
+      "privileges",
+    ],
     "runtimePolicy",
   );
   if (policy.policyVersion !== 1)
@@ -364,6 +378,9 @@ export const validateRuntimePolicy = (input: unknown): RuntimePolicy => {
     triggers: Object.freeze(triggers),
     localRows: Object.freeze(localRows),
     expectations: Object.freeze(expectations),
+    ...(Object.hasOwn(policy, "privileges")
+      ? { privileges: validateRuntimePrivileges(policy.privileges) }
+      : {}),
   });
 };
 
@@ -525,6 +542,9 @@ export const buildRuntimeVerificationSql = (input: unknown): string => {
   }
   checks.push(`if exists (select 1 from pg_constraint where not convalidated) then
     raise exception 'Rehearsal found an unvalidated structural constraint'; end if;`);
+  checks.push(
+    ...buildRuntimePrivilegeVerificationChecks(policy.privileges ?? []),
+  );
   return `do $rehearsal_verify$
 begin
   ${checks.join("\n  ")}

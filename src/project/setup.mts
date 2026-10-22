@@ -23,6 +23,7 @@ import {
   renderDetectedPostgresqlConfig,
 } from "./configuration.mjs";
 import { resolveRuntimeTarget } from "../targets/target.mjs";
+import { createRuntimeProjectId } from "./runtime_project_identity.mjs";
 export {
   assertSupportedRehearsalNodeRuntime,
   inspectRehearsalNodeRuntime,
@@ -396,7 +397,12 @@ export const planRehearsalSetup = async ({
   const applicationUrl =
     existing?.config.runtime.applicationUrl ?? "http://localhost:5175";
   const projectId =
-    existing?.config.runtime.projectId ?? `${detected.projectName}-rehearsal`;
+    existing?.config.runtime.projectId ??
+    createRuntimeProjectId(
+      detected.projectName,
+      runtimeTarget,
+      detected.projectIdSeed,
+    );
   const sourceSupabaseConfig =
     runtimeTarget === "supabase"
       ? await readOptionalFile(join(root, "supabase/config.toml"))

@@ -229,6 +229,10 @@ approval sequence.
 
 `runtimePolicy` replaces common restore adapters with reviewed schemas, allowlisted
 extensions, managed triggers, local-only singleton rows, and structural expectations.
+The [runtime policy guide](runtime-policies.md#explicit-data-api-grants) also owns the
+least-privilege Data API migration checklist and core 1.1.0's optional read-only
+required/forbidden privilege declarations. Earlier releases do not accept that new
+declaration. Rehearsal never infers or automatically grants API access.
 `identityPolicy` declares a hashed verified-email or provider-subject matcher, copied
 placeholder, safe signup defaults, required role/reference transfers, Storage path
 rewrites, and token checks. Provider credentials stay in the local Supabase runtime
@@ -300,8 +304,10 @@ Rehearsal stacks.
 `keep-until-stop` preserves today's interactive behavior, while `stop-after-run` stops
 the targets after proofs, proof failures, or interruption. `lifecycle.open` uses
 `keep-until-stop` or `stop-on-application-exit` after the app closes. Every mode stops
-only Rehearsal's configured targets, never the shared engine. Ordinary stopping keeps
-database and Storage volumes and all sandbox edits; it does not reset or discard them.
+only Rehearsal's configured targets; lifecycle selection does not enable engine shutdown.
+The separately opted-in `stopOwnedColimaWhenIdle` policy above is the only guarded Colima
+shutdown path. Ordinary stopping keeps database and Storage volumes and all sandbox
+edits; it does not reset or discard them.
 See [Container runtime lifecycle](runtime-lifecycle.md).
 
 ### Foreground application idle shutdown
@@ -637,8 +643,17 @@ The VS Code Local Resources manager reviews an exact diff before changing either
 See [Local Resources](runtime-lifecycle.md#local-resources-manager) for image and volume rules.
 
 Use unique, non-privileged ports that do not overlap. `projectId` accepts lowercase
-letters, numbers, and hyphens. It labels the local Docker resources so cleanup targets
-only this project.
+letters, numbers, and hyphens: 2–40 characters for Supabase, or 2–63 for PostgreSQL.
+It labels the local Docker resources so cleanup targets only this exact project.
+Overlong configured IDs are refused before a provider starts; Rehearsal never truncates
+them or adopts resources using a shortened prefix. Review existing resources before
+changing a configured ID, and use a distinct reviewed identity for a new disposable
+runtime rather than assuming that a renamed config owns old containers or volumes.
+
+For new setup only, the generated `<project-name>-rehearsal` ID stays unchanged when it
+fits the selected provider. Longer new IDs use a readable prefix and a deterministic
+hash suffix within that provider's limit. Setup uses the same exact ID in the generated
+Rehearsal config and Supabase TOML. Existing configuration files are never rewritten.
 
 Application and readiness URLs must use a different port from the configured database,
 API, and Studio services. Editing a URL does not rewrite your framework's development

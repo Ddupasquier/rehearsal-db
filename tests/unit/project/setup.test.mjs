@@ -178,6 +178,33 @@ describe("guided Rehearsal setup", () => {
     );
   });
 
+  it("uses one stable bounded Supabase identity in setup and both generated configs", async () => {
+    const ids = [];
+    for (const name of [
+      "a".repeat(30),
+      "a".repeat(31),
+      `${"a".repeat(52)}-one`,
+      `${"a".repeat(52)}-two`,
+    ]) {
+      const root = await makeProject();
+      await writeFile(join(root, "package.json"), JSON.stringify({ name }));
+      const options = { projectRoot: root, isPortAvailable: async () => true };
+      const plan = await planRehearsalSetup(options);
+      const repeated = await planRehearsalSetup(options);
+      expect(plan.projectId.length).toBeLessThanOrEqual(40);
+      expect(plan.projectId).toBe(repeated.projectId);
+      expect(
+        plan.files.find((file) => file.path === "rehearsal.config.mjs").content,
+      ).toContain(`projectId: "${plan.projectId}"`);
+      expect(
+        plan.files.find((file) => file.path.endsWith("config.toml")).content,
+      ).toContain(`project_id = "${plan.projectId}"`);
+      ids.push(plan.projectId);
+    }
+    expect(ids[0]).toBe(`${"a".repeat(30)}-rehearsal`);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
   it("creates minimal plain PostgreSQL scaffolding without Supabase files", async () => {
     const root = await makeProject();
     const plan = await planRehearsalSetup({
