@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { createServer } from "node:net";
 import {
   chmod,
@@ -13,8 +12,8 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { executePublicCli } from "../../helpers/public_cli.mjs";
 import {
   applyRehearsalSetup,
   assertSupportedRehearsalNodeRuntime,
@@ -26,7 +25,7 @@ import {
 } from "../../../dist/src/project/setup.mjs";
 
 const roots = [];
-const execute = promisify(execFile);
+const execute = executePublicCli;
 const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 
 const makeProject = async () => {
