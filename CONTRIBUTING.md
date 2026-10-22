@@ -46,6 +46,15 @@ The unit suite uses two workers to limit overlapping CLI imports and memory pres
 On a slow filesystem, `npm test -- --maxWorkers=1` runs the same checks serially;
 it does not relax timeouts or skip safety assertions. Keep live database scenarios serial.
 
+The PostgreSQL impact fixture supplements public-CLI count, lock and cancellation
+checks with fixed read-only deadline probes through the **installed package's private
+transport**. One statement exceeds 5 seconds; separate short statements exceed the
+30-second server transaction limit. Its test-only 35-second cancellation signal lets
+server expiry reach the transport and verifies the backend is gone. It does not
+change or prove the public command's 30-second end-to-end budget, production aggregate
+performance, or another provider/platform. Independent Test Lab coverage continues to
+consume only public interfaces. These probes never execute pending migration SQL.
+
 Never use real production data in an issue, test, fixture, or pull request. Use small
 synthetic examples. Security findings belong in private vulnerability reporting, not a
 public issue.

@@ -10,6 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import pg from "pg";
 import { assertLocalDockerContext } from "../../../dist/src/runtime/local_docker_context.mjs";
@@ -323,6 +324,30 @@ const childClient = (command, args, { cwd, environment = {}, timeout }) => {
 };
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
 
+/** Fixed read-only transport probes, never derived from pending migration SQL. */
+export const buildImpactDeadlineProbe = (kind, application) => {
+  if (
+    !["statement", "transaction"].includes(kind) ||
+    typeof application !== "string" ||
+    !/^rehearsal-impact-deadline-[1-9][0-9]{0,9}-(?:statement|transaction)$/u.test(
+      application,
+    )
+  )
+    fail();
+  const queries =
+    kind === "statement"
+      ? "select pg_catalog.pg_sleep(6);"
+      : Array(32).fill("select pg_catalog.pg_sleep(1);").join("\n");
+  return `set application_name = '${application}';
+begin isolation level repeatable read read only;
+set local lock_timeout = '1000ms';
+set local statement_timeout = '5000ms';
+set local transaction_timeout = '30000ms';
+${queries}
+rollback;
+`;
+};
+
 /** Observe short-lived locks without repeatedly starting a Docker/psql client. */
 export const waitForImpactLock = async ({
   client,
@@ -482,7 +507,8 @@ export const provePostgresqlMigrationImpact = async ({
     holderCounter = 0;
   const nonce = randomUUID();
   const clients = [],
-    holders = [];
+    holders = [],
+    deadlineApplications = [];
   const noBackend = (pid) =>
     observe(
       `select not exists (select 1 from pg_catalog.pg_stat_activity where pid = ${pid});`,
@@ -717,6 +743,69 @@ export const provePostgresqlMigrationImpact = async ({
     await waitGone(backend);
     await release(cancelledHolder);
     if (json(["activity"]).envelope.data.state !== "idle") fail();
+    // Core-owned acceptance may exercise the installed private transport. The
+    // independent Lab remains a public-CLI consumer. A 35s fixture signal lets
+    // the real server's 30s transaction expiry reach the transport before the
+    // harness cancels it; the public operation's 30s budget is NOT changed.
+    const installedModule = (relative) =>
+      import(
+        pathToFileURL(
+          join(cwd, "node_modules/@rehearsal-db/core/dist/src", relative),
+        ).href
+      );
+    const [{ loadRuntimeTopology }, { verifyActiveBaseline }, transport] =
+      await Promise.all([
+        installedModule("runtime/topology.mjs"),
+        installedModule("baseline/artifact.mjs"),
+        installedModule("targets/migration_impact_runtime.mjs"),
+      ]);
+    const topology = await loadRuntimeTopology({ projectRoot: cwd });
+    const target = topology.targets.find((entry) => entry.name === "primary");
+    if (
+      !target ||
+      topology.targets.length !== 1 ||
+      target.config.runtime.projectId !== projectId ||
+      target.config.runtime.ports.database !== databasePort
+    )
+      fail();
+    const baseline = await verifyActiveBaseline({
+      artifactRoot: target.paths.artifactDirectory,
+    });
+    const serverDeadlines = {};
+    for (const kind of ["statement", "transaction"]) {
+      assertPinned();
+      const application = `rehearsal-impact-deadline-${process.pid}-${kind}`;
+      deadlineApplications.push(application);
+      const runtime = await transport.openMigrationImpactRuntime({
+        projectRoot: cwd,
+        target,
+        baseline,
+        signal: AbortSignal.timeout(35000),
+      });
+      const started = performance.now();
+      let reason;
+      try {
+        await runtime.runSql(buildImpactDeadlineProbe(kind, application));
+      } catch (error) {
+        if (error instanceof transport.MigrationImpactRuntimeError)
+          reason = error.reason;
+        else fail();
+      }
+      const elapsedMilliseconds = Math.round(performance.now() - started);
+      if (reason !== `${kind}_timeout`) fail();
+      const remaining = await observer.query(
+        "select count(*)::integer as count from pg_stat_activity where datname = 'postgres' and application_name = $1;",
+        [application],
+      );
+      if (remaining.rows[0]?.count !== 0) fail();
+      await runtime.assertCurrent();
+      assertPinned();
+      serverDeadlines[kind] = {
+        reason,
+        elapsedMilliseconds,
+        backendGone: true,
+      };
+    }
     const retained = JSON.parse(
       sql(
         `select pg_catalog.json_build_object('parent', (select pg_catalog.count(*) from ${SCHEMA}.parent), 'child', (select pg_catalog.count(*) from ${SCHEMA}.child), 'edited', (select payload = '${ROW_CANARY}' from ${SCHEMA}.parent where id = 1));`,
@@ -741,13 +830,37 @@ export const provePostgresqlMigrationImpact = async ({
       backendGone: true,
       immutableInputsPreserved: true,
       runtimeIdentityPreserved: true,
+      serverDeadlines,
       deadlineLimitation:
-        "Native lock timeout and cancellation were exercised. Full 5-second statement and 30-second total deadline execution are not forced by this 11-row fixture.",
+        "Fixed read-only sleep probes exercised the installed private transport's real 5-second statement and 30-second server transaction deadlines. Their fixture-only 35-second signal does not change or prove the public CLI's 30-second end-to-end budget or aggregate performance.",
     };
   } catch (error) {
     operationFailure = error;
   }
   const cleanupFailures = [];
+  for (const application of deadlineApplications) {
+    try {
+      const pids = JSON.parse(
+        sql(
+          `select coalesce(json_agg(pid), '[]'::json) from pg_catalog.pg_stat_activity where datname = 'postgres' and application_name = '${application}';`,
+        ),
+      );
+      if (
+        !Array.isArray(pids) ||
+        pids.length > 1 ||
+        pids.some((pid) => !Number.isSafeInteger(pid) || pid < 1)
+      )
+        fail();
+      for (const pid of pids) {
+        sql(
+          `select pg_catalog.pg_terminate_backend(pid) from pg_catalog.pg_stat_activity where pid = ${pid} and datname = 'postgres' and application_name = '${application}';`,
+        );
+        await waitGone(pid);
+      }
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+  }
   if (observer) {
     try {
       await observer.end();

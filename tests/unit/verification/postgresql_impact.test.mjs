@@ -5,6 +5,7 @@ import {
   IMPACT_FIXTURE_SQL,
   assertImpactFixtureCounts,
   assertImpactPublicOutput,
+  buildImpactDeadlineProbe,
   waitForImpactLock,
 } from "../../../scripts/verification/fixtures/postgresql_impact.mjs";
 
@@ -95,6 +96,40 @@ const options = (values = counts, reasons) => ({
 });
 
 describe("installed PostgreSQL impact fixture's independent oracles", () => {
+  it("forces real server deadlines using only fixed read-only statements", () => {
+    for (const kind of ["statement", "transaction"]) {
+      const script = buildImpactDeadlineProbe(
+        kind,
+        `rehearsal-impact-deadline-42-${kind}`,
+      );
+      expect(script).toContain(
+        "begin isolation level repeatable read read only;",
+      );
+      expect(script).toContain("set local lock_timeout = '1000ms';");
+      expect(script).toContain("set local statement_timeout = '5000ms';");
+      expect(script).toContain("set local transaction_timeout = '30000ms';");
+      expect(script.endsWith("rollback;\n")).toBe(true);
+      const statements = script
+        .split("\n")
+        .filter((line) => line.startsWith("select "));
+      expect(statements).toEqual(
+        Array(kind === "statement" ? 1 : 32).fill(
+          `select pg_catalog.pg_sleep(${kind === "statement" ? 6 : 1});`,
+        ),
+      );
+      for (const canary of IMPACT_FIXTURE_CANARIES)
+        expect(script).not.toContain(canary);
+    }
+  });
+  it.each([
+    ["other", "rehearsal-impact-deadline-42-statement"],
+    ["statement", "rehearsal-impact-deadline-0-statement"],
+    ["statement", "rehearsal-impact-deadline-42-statement'; select 1; --"],
+    ["transaction", "rehearsal-impact-deadline-42-transaction\n"],
+    ["statement", null],
+  ])("refuses an unreviewed deadline probe kind or label", (kind, label) => {
+    expect(() => buildImpactDeadlineProbe(kind, label)).toThrow();
+  });
   it("observes a short-lived lock on the existing client without extending its deadline", async () => {
     let clock = 0;
     const observations = [[], [0], [41, 42], [42]];
