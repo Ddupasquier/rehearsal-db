@@ -187,6 +187,7 @@ export const commandMutatesProject = ({
     "open",
     "start",
     "migrate",
+    "measure impact",
     "reset",
     "stop",
     "discard",

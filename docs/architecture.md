@@ -62,7 +62,8 @@ typed registry and produce the same result contract:
 - `runtime_commands.mts` coordinates local runtimes and project proofs.
 - `runtime_planning.mts` owns read-only stack plans and exact candidate summaries.
 - `editor_command_handlers.mts` exposes bounded migration and configuration review
-  contracts plus digest-bound, non-destructive stale-environment stop review.
+  contracts plus digest-bound, non-destructive stale-environment stop review. It also
+  keeps impact preview/measurement dispatch thin; aggregate policy stays in runtime.
 - `source_commands.mts` coordinates approved source access and refresh.
 - `renderers.mts` formats human-readable results without changing state.
 - `terminal.mts` owns prompts, colors, and terminal exit behavior.
@@ -111,6 +112,42 @@ or a filesystem sandbox; leaf checks and existing workspace trust remain necessa
 validation. `migration_insights.mts` alone projects redacted public findings and explicit
 coverage/unknown states. The editor consumes that contract; it must not reimplement SQL
 analysis or infer runtime measurements from static warnings.
+
+Migration impact is a separate optional contract, not a new rehearsal gate.
+`runtime/migration_impact_plan.mts` recognizes only bounded simple SQL forms and retains
+private relation/column specifications; it does not execute migrations or claim SQL
+validity. `migration_impact_queries.mts` validates those specifications and generates
+fixed, identifier-quoted aggregate queries. `migration_impact_catalog.mts` owns the
+closed native index, statistics and operator-family predicates. Metadata checks refuse unsupported
+table, type and operator semantics; public output contains count strings or explicit
+unknowns, never those private specifications, SQL, object names or row contents.
+`migration_impact.mts` binds preview and measurement reports to the whole candidate
+digest, selected target, immutable baseline and exact input bytes. It rechecks the
+binding after measurement and never interprets current counts as sequential migration
+simulation or a production prediction.
+
+`targets/migration_impact_runtime.mts` owns access to an already-running, verified,
+ownership-proven local sandbox and its unchanged identity. It does not start/repair
+an engine, reset data or apply migrations. Measurement uses one read-only repeatable
+read count transaction with bounded locks, statements, output and total duration.
+A separate read-only catalog preflight retains relation OIDs; globally ordered
+`SHARE ROW EXCLUSIVE` locks precede the first repeatable-read snapshot, preventing
+index/statistics DDL from outrunning its metadata checks. Counts recheck the retained
+OIDs and supported semantics after locking. A concurrent name-to-view swap can
+transiently lock view dependencies within the selected sandbox, but cannot make the
+compiler execute that view query or return its counts. This is not atomic name/OID
+resolution or a sandbox for a compromised database server. The private transport
+also takes a bounded database-local namespace-catalog `SHARE` lock before relation
+name resolution, preventing schema rename/swap during checks and aggregates.
+This can temporarily block schema-catalog changes anywhere in that selected
+disposable database; it does not change another database or acquire a cluster-wide lock.
+The transport invokes the script compiler after final identity preflight so a slow check cannot
+leave an earlier, larger server deadline embedded in the submitted script. The CLI
+classifies `measure impact` for the existing project-operation lock and cancellation
+owner despite the SQL being read-only; operation metadata/history may be written.
+`inspect impact` is an offline preview. Both require one explicit configured target;
+measurement additionally requires the exact whole-plan confirmation. Neither command
+is a prerequisite for ordinary `run` or `migrate`, and both remain free CLI features.
 
 ## Configuration pipeline
 

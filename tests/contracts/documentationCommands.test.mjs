@@ -39,6 +39,8 @@ const documentedCommands = [
   "candidates",
   "inspect baseline",
   "inspect migrations",
+  "inspect impact",
+  "measure impact",
   "start",
   "migrate --confirm-candidates=",
   "reset",

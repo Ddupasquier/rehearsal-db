@@ -7,6 +7,14 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ### Added
 
+- An optional `migrationImpact: 1` contract: offline `inspect impact` and explicitly
+  confirmed `measure impact` for one selected, already-verified disposable local
+  sandbox. Bounded read-only snapshot aggregates cover narrow supported row,
+  populated/NULL, duplicate and foreign-key orphan counts; unsupported or incomplete
+  evidence stays unknown. No pending migration is executed, no runtime is started
+  or repaired, and no SQL, object names or row contents are returned. Counts are
+  not sequential simulation, production prediction or a safety verdict. Existing
+  project locking/cancellation is reused without adding a rehearsal gate or CLI fee.
 - An optional versioned `inspect insights` contract for bounded, read-only static
   migration warnings. Findings bind to exact pending file bytes and the complete
   existing candidate digest, with fixed explanations and lexical locations.

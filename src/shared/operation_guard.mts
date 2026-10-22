@@ -44,6 +44,7 @@ const OPERATION_KINDS = new Set([
   "identity connect",
   "init",
   "migrate",
+  "measure impact",
   "open",
   "privacy key",
   "refresh",

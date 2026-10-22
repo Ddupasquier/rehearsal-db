@@ -28,6 +28,7 @@
     "resourceManager": 1,
     "migrationReview": 1,
     "migrationInsights": 1,
+    "migrationImpact": 1,
     "configurationReview": 1,
     "baselineShape": 1
   },

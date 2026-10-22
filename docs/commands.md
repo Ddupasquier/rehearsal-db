@@ -48,6 +48,97 @@ paths, unsafe filenames, invalid UTF-8 and changed input refuse inspection. Exce
 lexical/finding bounds produce incomplete coverage rather than a safety verdict.
 The CLI and these essential safety warnings remain free.
 
+### Current-sandbox data impact
+
+A source build advertising `rehearsalContracts.migrationImpact: 1` adds two free,
+optional commands. This is unpublished development work, not a capability of an
+already-installed release. It does not change migration-plan v1, static Insights,
+failure diagnosis, or the gates for `run` and `migrate`.
+
+```bash
+npx --no-install rehearsal inspect impact --target=primary --json
+npx --no-install rehearsal measure impact --target=primary \
+  --confirm-candidates=<whole-plan-sha256-from-the-preview> --json
+```
+
+Both commands require an explicit configured target name, even for `primary`.
+`inspect impact` reads the reviewed project inputs only: it does not contact a
+database, start an engine, run SQL, apply migrations, or change files. Its preview
+binds planned aggregate kinds to the exact whole-project candidate digest, selected
+target, baseline generation, and each candidate filename and hash. In a multi-target
+project, confirmation still uses the **whole-plan** digest, not the selected target's
+digest. Editing any target's pending migrations requires a fresh preview.
+
+`measure impact` requires that exact confirmation and an already-running, verified,
+ownership-proven disposable local sandbox. It refuses an unavailable, stale or
+unmanaged runtime rather than starting, repairing or resetting it. The existing
+project-operation lock prevents a concurrent Rehearsal mutation; operation lock files
+and bounded local activity history may be written. A bounded read-only catalog
+preflight retains eligible relation identities. The counts then use one
+`REPEATABLE READ READ ONLY` transaction, which is rolled back after the counts.
+Neither command executes pending migrations or application commands.
+
+Before the count snapshot, Rehearsal locks eligible measured relations in a fixed
+order with `SHARE ROW EXCLUSIVE`. These locks temporarily block writers and
+index/statistics/schema changes on that disposable sandbox; ordinary readers can
+continue. They use the same 1-second lock wait and remaining total budget. Name
+lookup also holds a bounded `SHARE` lock on the selected database's namespace
+catalog to prevent concurrent schema renames; this temporarily blocks schema
+catalog changes across that database and requires sufficient local privileges.
+A relation name swapped to a view between preflight and locking may transiently lock that view's
+dependencies inside the selected sandbox, but the retained-identity/type check
+refuses its counts without executing the view query. This is not atomic name
+resolution or protection against a compromised PostgreSQL server/catalog.
+See PostgreSQL's [locking behavior](https://www.postgresql.org/docs/17/sql-lock.html).
+
+The narrow recognizer supports simple, schema-qualified, unquoted SQL forms for:
+
+| Recognized change                                               | Aggregate on the current sandbox                        |
+| --------------------------------------------------------------- | ------------------------------------------------------- |
+| Drop a table, truncate one table, or delete without a predicate | Row count                                               |
+| Drop one column                                                 | Rows whose current column is not NULL                   |
+| Set one column NOT NULL                                         | Rows whose current column is NULL                       |
+| Add a simple UNIQUE constraint                                  | Rows in non-NULL duplicate groups, not only excess rows |
+| Add a simple FOREIGN KEY with MATCH SIMPLE semantics            | Non-NULL referencing rows with no match                 |
+
+Measurements require PostgreSQL 17 or newer with server-side transaction deadlines,
+ordinary non-inherited, non-partitioned heap tables without RLS, and supported built-in
+column/operator semantics. Older or unsupported server semantics remain unknown;
+Rehearsal never upgrades a database to obtain counts. Quoted identifiers, CHECK constraints,
+UPDATE, predicates, CASCADE, expressions, routines, custom types/operators and other
+unsupported forms remain unknown. The recognizer is not a PostgreSQL parser. A table
+created or a column changed by an earlier pending migration is **not** simulated: all
+counts describe the same current snapshot before any pending migration. Row counts
+do not measure cascade, trigger or external effects, prove constraint validity, or
+predict production locking, performance, data loss or safety.
+
+The version-1 result includes the exact candidate/target bindings, `mode`
+(`preview` or `measurement`), `measurementStatus`, nullable snapshot time and runtime
+identity hash, per-file coverage/unknown reasons, and fixed operation/metric kinds
+with lexical locations. Public counts are decimal **strings**, including `"0"`;
+`null` means unavailable, never zero. No SQL, database object names or row contents
+are returned. `planned` preview status may contain unsupported input and is not
+measurement evidence. Measurement status is `measured`, `partial`, `unknown`, or
+`not_required`. Partial or unknown measurement returns envelope `status: "not_ready"`
+and exit `1`, retaining only the available evidence; neither a successful envelope
+nor zero counts is a safety verdict.
+
+The same bounded migration-input rules as static Insights apply. A review plans at
+most 100 aggregates. Measurement uses a 1-second lock timeout, 5-second statement
+timeout, 30-second total budget, 128 KiB output limit and 256 KiB generated-script
+limit. The server transaction budget is reduced after runtime identity checks and
+catalog preflight; it is never increased to compensate for a slow check.
+Lock/statement/budget failures remain unknown instead of returning guessed counts.
+Client cancellation is not by itself proof of immediate server-backend termination;
+server-side deadlines additionally bound owned query/transaction lifetime.
+Package-owned cancellation supports the ordinary cancellation signals,
+releases the project lock and returns exit `130`; it does not reset or discard data.
+Older editor versions may refuse the new `measure impact` operation kind in current
+activity or retained history. This source command does not itself update the editor;
+use the CLI until a compatible editor consumer is released.
+Continue to use the normal reviewed rehearsal and application proof for actual
+migration behavior.
+
 `npx rehearsal configuration --json` identifies the exact active config, its source
 fingerprint, validated field metadata, and saved named profiles. To validate an edit
 without writing it, use `npx rehearsal configuration review --proposal=review.json --json`.
@@ -170,20 +261,22 @@ obsolete placeholder key.
 
 ## Check and inspect
 
-| Command                            | What it does                                                            |
-| ---------------------------------- | ----------------------------------------------------------------------- |
-| `npx rehearsal doctor`             | Check dependencies, inputs, and safety rules.                           |
-| `npx rehearsal discover`           | Explain detected facts, suggestions, and decisions.                     |
-| `npx rehearsal support`            | Print a privacy-safe report for a support request.                      |
-| `npx rehearsal activity`           | Report whether another Rehearsal operation is active.                   |
-| `npx rehearsal environments`       | Show owned runtimes, live resource use, and Docker capacity.            |
-| `npx rehearsal resources`          | Browse images, volumes, container references, and cleanup explanations. |
-| `npx rehearsal explain`            | Show the exact plan without changing anything.                          |
-| `npx rehearsal run --dry-run`      | Show the same non-mutating plan.                                        |
-| `npx rehearsal candidates`         | List pending migrations and their approval digest.                      |
-| `npx rehearsal inspect baseline`   | Show active and retained baseline metadata without row values.          |
-| `npx rehearsal inspect migrations` | Classify every historical and candidate migration.                      |
-| `npx rehearsal status`             | Report baseline, candidates, and local runtime state.                   |
+| Command                                                                      | What it does                                                            |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `npx rehearsal doctor`                                                       | Check dependencies, inputs, and safety rules.                           |
+| `npx rehearsal discover`                                                     | Explain detected facts, suggestions, and decisions.                     |
+| `npx rehearsal support`                                                      | Print a privacy-safe report for a support request.                      |
+| `npx rehearsal activity`                                                     | Report whether another Rehearsal operation is active.                   |
+| `npx rehearsal environments`                                                 | Show owned runtimes, live resource use, and Docker capacity.            |
+| `npx rehearsal resources`                                                    | Browse images, volumes, container references, and cleanup explanations. |
+| `npx rehearsal explain`                                                      | Show the exact plan without changing anything.                          |
+| `npx rehearsal run --dry-run`                                                | Show the same non-mutating plan.                                        |
+| `npx rehearsal candidates`                                                   | List pending migrations and their approval digest.                      |
+| `npx rehearsal inspect baseline`                                             | Show active and retained baseline metadata without row values.          |
+| `npx rehearsal inspect migrations`                                           | Classify every historical and candidate migration.                      |
+| `npx rehearsal inspect impact --target=<name>`                               | Preview exact aggregate kinds without contacting a database.            |
+| `npx rehearsal measure impact --target=<name> --confirm-candidates=<sha256>` | Read bounded aggregates from that current verified sandbox.             |
+| `npx rehearsal status`                                                       | Report baseline, candidates, and local runtime state.                   |
 
 State-reporting commands accept `--json` for scripts. Scripts should use the JSON fields
 and process exit code, not parse human-facing text.
@@ -397,7 +490,7 @@ Clients should disable conflicting actions unless the state is `idle`.
 
 ### Cancelling a mutation
 
-`run`, `reset`, `migrate`, confirmed `refresh`, and direct or guided `open` preparation support
+`run`, `reset`, `migrate`, `measure impact`, confirmed `refresh`, and direct or guided `open` preparation support
 package-owned cancellation.
 Send `SIGINT`, `SIGTERM`, `SIGHUP`, or `SIGTSTP` to the Rehearsal CLI process. Rehearsal
 handles repeated delivery as one request, forwards it only to the detached process group
@@ -510,25 +603,26 @@ belonging to other projects are never included. This follows
 
 ## Common options
 
-| Option                                 | Meaning                                                          |
-| -------------------------------------- | ---------------------------------------------------------------- |
-| `--help`, `-h`                         | Show the installed command reference.                            |
-| `--version`, `-V`                      | Print the installed package version and exit.                    |
-| `--json`                               | Return the versioned machine-readable result.                    |
-| `--verbose`                            | Show more safe detail.                                           |
-| `--debug`                              | Show the most diagnostic detail; still review it before sharing. |
-| `--plain`                              | Disable decorative interactive prompts.                          |
-| `--config=<path>`                      | Use only this config for planning and every runtime action.      |
-| `--target=supabase\|postgresql`        | Choose the setup target.                                         |
-| `--include-runtime`                    | Include this project's runtime in a cleanup preview.             |
-| `--include-images`                     | Include older unused Supabase images in a cleanup preview.       |
-| `--confirm-cleanup=<digest>`           | Confirm the exact cleanup set printed by the preview.            |
-| `--confirm-source-access=<digest>`     | Confirm one exact temporary source-access plan.                  |
-| `--confirm-source-retirement=<digest>` | Confirm exact source-access retirement.                          |
-| `--confirm-refresh=<digest>`           | Confirm an exact refresh, runtime reset, and old-copy removal.   |
-| `--identity=<name>`                    | Choose one declared local identity association.                  |
-| `--confirm-identity=<digest>`          | Confirm that exact local identity plan.                          |
-| `--write`                              | Apply a setup, policy, or cleanup preview.                       |
+| Option                                 | Meaning                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `--help`, `-h`                         | Show the installed command reference.                                                           |
+| `--version`, `-V`                      | Print the installed package version and exit.                                                   |
+| `--json`                               | Return the versioned machine-readable result.                                                   |
+| `--verbose`                            | Show more safe detail.                                                                          |
+| `--debug`                              | Show the most diagnostic detail; still review it before sharing.                                |
+| `--plain`                              | Disable decorative interactive prompts.                                                         |
+| `--config=<path>`                      | Use only this config for planning and every runtime action.                                     |
+| `--target=<name>`                      | Choose a setup provider or configured runtime target; impact commands require an explicit name. |
+| `--confirm-candidates=<digest>`        | Confirm the exact whole-plan candidates for run, migrate or impact measurement.                 |
+| `--include-runtime`                    | Include this project's runtime in a cleanup preview.                                            |
+| `--include-images`                     | Include older unused Supabase images in a cleanup preview.                                      |
+| `--confirm-cleanup=<digest>`           | Confirm the exact cleanup set printed by the preview.                                           |
+| `--confirm-source-access=<digest>`     | Confirm one exact temporary source-access plan.                                                 |
+| `--confirm-source-retirement=<digest>` | Confirm exact source-access retirement.                                                         |
+| `--confirm-refresh=<digest>`           | Confirm an exact refresh, runtime reset, and old-copy removal.                                  |
+| `--identity=<name>`                    | Choose one declared local identity association.                                                 |
+| `--confirm-identity=<digest>`          | Confirm that exact local identity plan.                                                         |
+| `--write`                              | Apply a setup, policy, or cleanup preview.                                                      |
 
 Run `npx rehearsal --help` to print the command list available in your installed version.
 Run `npx rehearsal --version` to print only its version number. Add `--json` when a

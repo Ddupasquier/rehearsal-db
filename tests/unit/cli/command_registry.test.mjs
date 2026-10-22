@@ -59,6 +59,9 @@ describe("typed CLI command registry", () => {
     const help = await registry.execute(context("help"));
     expect(help).toMatchObject({ kind: "text" });
     expect(help.output).toContain("Usage: rehearsal <command> [options]");
+    expect(help.output).toContain("inspect impact");
+    expect(help.output).toContain("measure impact");
+    expect(help.output).toContain("--confirm-candidates=<whole-plan digest");
   });
 
   it("emits one stable JSON envelope for typed rendered results", () => {
