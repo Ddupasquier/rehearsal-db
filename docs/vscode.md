@@ -66,8 +66,9 @@ real WSL core fixtures do not certify a native Remote-WSL editor walkthrough.
 4. Follow **Next best step**. Review the detected project and active configuration;
    setup, source access, migration execution and cleanup keep their own confirmations.
 
-The release pairing described here is core **1.0.2** with Starter **0.1.23**.
-Install it once both versions appear in their official release channels.
+Core and the extension have independent version numbers. The current stable core
+is **1.1.0**; this guide describes Starter **0.1.23**. See [Updates](updating.md)
+when moving an existing installation forward.
 The extension's minimum core is `0.1.0-rc.4`. A project that is not ready should show
 setup guidance, not require you to build the extension. Opening the dashboard does not
 start a database or run a migration. Use

@@ -1,4 +1,8 @@
-# Release process
+# Maintainer release process
+
+**Audience: Rehearsal maintainers publishing a release.** To install or update
+Rehearsal in your own project, use [Keeping Rehearsal up to date](updating.md).
+The publisher controls below are not steps that ordinary users need to perform.
 
 This page defines required release controls, not a certification that a publisher is
 currently ready. Verify the live repository, trusted-publisher identity and approval
