@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   assertNoCrossDatabaseMigrationVersions,
   buildMigrationLedgerInventory,
   compareSourceToReplay,
   createMigrationReplayReceipt,
   readMigrationSourceBundle,
+  readMigrationFileInventory,
 } from "../../../dist/src/runtime/migration_history.mjs";
 
 const files = [
@@ -38,6 +40,39 @@ const rows = [
 ];
 
 describe("Rehearsal migration history", () => {
+  it("bounds optional directory iteration before reading SQL while preserving default inventory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-inventory-bound-"));
+    try {
+      await writeFile(join(root, "20260101000000_first.sql"), "SELECT 1;");
+      await writeFile(join(root, "20260101000001_second.sql"), "SELECT 2;");
+      await writeFile(join(root, "README.txt"), "synthetic metadata");
+      const directory = pathToFileURL(`${root}/`);
+      let reads = 0;
+      await expect(
+        readMigrationFileInventory(directory, {
+          maximumDirectoryEntries: 2,
+          readBytes: async () => {
+            reads++;
+            return Buffer.from("unused");
+          },
+        }),
+      ).rejects.toThrow("bounded directory inventory");
+      expect(reads).toBe(0);
+      const original = await readMigrationFileInventory(directory);
+      expect(
+        await readMigrationFileInventory(directory, {
+          maximumDirectoryEntries: 3,
+          maximumFiles: 2,
+        }),
+      ).toEqual(original);
+      expect(original.map((entry) => entry.version)).toEqual([
+        "20260101000000",
+        "20260101000001",
+      ]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("accepts an exact source prefix and identifies the candidate suffix", () => {
     const ledger = buildMigrationLedgerInventory(rows);
     const receipt = createMigrationReplayReceipt({ files, ledger });

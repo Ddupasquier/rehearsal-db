@@ -196,6 +196,7 @@ const candidateSummary = (inspection: MigrationInspection) => {
 
 export const inspectRuntimeTopologyCandidates = async (
   options: RehearsalConfigPathOptions = {},
+  inspectMigrations: typeof inspectRehearsalMigrations = inspectRehearsalMigrations,
 ) => {
   const topology = await loadRuntimeTopology(options);
   const targets: Array<
@@ -206,7 +207,7 @@ export const inspectRuntimeTopologyCandidates = async (
       Object.freeze({
         ...target,
         summary: candidateSummary(
-          await inspectRehearsalMigrations({
+          await inspectMigrations({
             projectRoot: topology.projectRoot,
             configPath: target.configPath,
           }),

@@ -38,6 +38,7 @@ Commands:
   inspect baseline           Show verified baseline provenance
   inspect migrations         Classify represented, applied, and candidate migrations
   inspect plan               Review ordered migrations, required dependencies, and warnings
+  inspect insights           Review bounded static SQL warnings; never a safety verdict
   start                      Start an existing verified local runtime
   migrate --confirm-candidates= Apply the exact candidate suffix without resetting
   reset                      Restore and verify the immutable local baseline

@@ -5,6 +5,24 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- An optional versioned `inspect insights` contract for bounded, read-only static
+  migration warnings. Findings bind to exact pending file bytes and the complete
+  existing candidate digest, with fixed explanations and lexical locations.
+  Unsupported, malformed or truncated analysis remains unknown; no detected
+  warning is never SQL validity, database verification or a safety verdict.
+- Project-local input bounds, unchanged leaf/directory identity checks and shared
+  input hash binding. Inspection neither executes SQL nor starts an engine or
+  contacts a database. Existing migration-plan v1 and failure diagnosis remain
+  separate, unchanged contracts.
+
+### Documentation
+
+- Clarify reviewed PostgreSQL/application/full service dependencies and resource
+  measurement limits without adding service exclusions or a new acceptance gate.
+- Distinguish project runtime hooks from native migration-tool history support.
+
 ## [1.1.0] - 2026-10-21
 
 ### Added

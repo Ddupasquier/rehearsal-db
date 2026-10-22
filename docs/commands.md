@@ -10,6 +10,44 @@ versioned migration history with required predecessor links, statuses, warnings,
 the exact complete candidate digest. Filters never change the required ordered suffix;
 Rehearsal does not infer SQL safety from filenames.
 
+### Static Migration Insights
+
+In a core build advertising `rehearsalContracts.migrationInsights: 1`, run
+`npx --no-install rehearsal inspect insights --json` to inspect pending SQL without
+starting an engine, connecting to a database, running application commands or changing
+files. This additive contract does not change `inspect plan` version 1. It is new
+development work, not a capability of the original tested core 1.1.0 candidate.
+
+The normal version-1 command envelope contains `data.schemaVersion: 1`, the exact
+complete `candidateSha256`, candidate count, aggregate verdict and per-target entries.
+Each entry binds its version, filename, SHA-256 and nullable safe workspace-relative
+path to fixed findings. Findings expose only a rule, severity, one-based line and
+UTF-16 column, fixed summary and suggestion—never SQL snippets, object names or row
+values. Locations identify the static construct, not the origin of a later provider
+error. Refresh after editing; editor navigation must recheck the source hash.
+
+Rules flag table/column removal, truncation, UPDATE/DELETE without an outer WHERE,
+NOT NULL requirements, new constraints and recognized CASCADE clauses. Comments,
+strings, quoted identifiers and routine bodies are not reinterpreted as executable
+statements. CTE mutations are considered separately from the outer statement.
+
+Verdicts are `static_warnings`, `no_detected_warning`, and `unknown`.
+**No detected warning does not mean safe, syntactically valid or database-verified.**
+Coverage describes recognized lexical rules only. Unsupported statements, malformed
+lexical input, runtime-dependent plain-string escaping and bounded/truncated analysis
+remain unknown. A file can retain a warning while its overall coverage is unknown.
+This is not a full PostgreSQL parser or a predictor of row loss, constraint compliance,
+locks, rollback, permissions, production performance or external effects. Use the
+ordinary reviewed rehearsal and application proof for actual behavior.
+
+Input is limited to 10,000 SQL files across targets, 10,000 directory entries per
+migration directory (including non-SQL entries), 1,000 pending candidates, 2 MiB per
+file and 16 MiB total. Lexical analysis is bounded to 20,000 tokens and depth
+128 per file; findings are bounded to 1,000 per file and 5,000 total. Symlinks, escaping
+paths, unsafe filenames, invalid UTF-8 and changed input refuse inspection. Exceeded
+lexical/finding bounds produce incomplete coverage rather than a safety verdict.
+The CLI and these essential safety warnings remain free.
+
 `npx rehearsal configuration --json` identifies the exact active config, its source
 fingerprint, validated field metadata, and saved named profiles. To validate an edit
 without writing it, use `npx rehearsal configuration review --proposal=review.json --json`.

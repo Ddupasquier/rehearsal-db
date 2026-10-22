@@ -289,11 +289,29 @@ Colima. It warns at `diskWarningPercent` and refuses to start below
 generated PostgreSQL configs reserve 2 GiB. Engines that do not expose a portable disk
 measurement continue normally and report capacity as unavailable in `environments`.
 
-`supabase.serviceProfile` is `application` by default. It retains the database, Auth,
-Storage, PostgREST, gateway, and local mail service while omitting Studio, Realtime, Edge
-Functions, analytics, Vector, and image transforms. Choose `full` only when the project
-proof actually exercises one of those services. PostgreSQL remains the lighter choice
-when the proof needs only SQL, migrations, triggers, or sanitized relational data.
+Choose the smallest reviewed environment that supplies the proof's dependencies:
+
+| Proof needs                                                      | Select                                                                                   | Retained dependencies and boundary                                                                                                         |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| SQL migrations, schema, triggers, or sanitized relational data   | `runtime.target: "postgresql"`                                                           | One PostgreSQL container; no native Supabase Auth, Storage, or Data API.                                                                   |
+| Supabase Auth, Storage, or Data API behavior                     | `runtime.target: "supabase"` with `supabase.serviceProfile: "application"` (the default) | Keep database, Auth, Storage, PostgREST, gateway, and local mail together. Direct SQL alone does not prove these application-facing paths. |
+| Studio, Realtime, Edge Functions, analytics, or image transforms | Supabase with `serviceProfile: "full"`                                                   | Remove Rehearsal's exclusions, retain the application dependencies, and explicitly enable the needed services in the reviewed TOML.        |
+
+The application profile omits Studio, Realtime, Edge Functions, analytics, Vector, and
+image transforms. These are reviewed bundles, not permission to trim individual services
+with ad hoc CLI flags. Declare what the proof uses through
+[`application.requiredServices`](#required-application-services); a conflicting profile
+or disabled required service refuses before startup. Profile selection does not change
+data retention, shared-engine ownership, or supported-platform boundaries.
+
+Compare resource measurements only for the same exact package, fixture, engine, and
+hardware. Test Lab's fresh-container startup measurement includes provisioning, health
+checks, and baseline restoration on an already-running engine; record whether images
+were cached. It does not measure VM boot or uncached-image downloads. Owned-container CPU/memory
+samples are not host/VM memory reservations or an application-load soak test. Keep these
+limits with the results rather than comparing mixed-version samples as an optimization.
+Do not prune shared images or restart another project's engine to obtain a benchmark.
+See [resource inspection](runtime-lifecycle.md#diagnosing-unexpected-activity).
 
 After each Supabase start, Rehearsal changes only the exact target's containers to
 Docker's `no` restart policy. Its database and Storage volumes remain intact,

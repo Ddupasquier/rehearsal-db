@@ -238,7 +238,10 @@ const assertConfiguredCommand = async ({
   return `package script ${scriptName} exists`;
 };
 
-const loadPlanInputs = async (options: RehearsalConfigPathOptions = {}) => {
+const loadPlanInputs = async (
+  options: RehearsalConfigPathOptions = {},
+  inventoryReader: typeof readMigrationFileInventory = readMigrationFileInventory,
+) => {
   const loaded = await loadRehearsalConfig(options);
   const [baseline, policyBytes] = await Promise.all([
     verifyActiveBaseline({
@@ -250,7 +253,7 @@ const loadPlanInputs = async (options: RehearsalConfigPathOptions = {}) => {
     bytes: policyBytes,
     expectedSha256: baseline.sanitizationPolicySha256,
   });
-  const currentFiles = await readMigrationFileInventory(
+  const currentFiles = await inventoryReader(
     new URL("./", pathToFileURL(`${loaded.paths.migrationDirectory}/`)),
   );
   const candidateReceipt = createCandidateMigrationReceipt({
@@ -473,8 +476,9 @@ export const inspectRehearsalBaseline = async (
 
 export const inspectRehearsalMigrations = async (
   options: RehearsalConfigPathOptions = {},
+  inventoryReader: typeof readMigrationFileInventory = readMigrationFileInventory,
 ) => {
-  const inputs = await loadPlanInputs(options);
+  const inputs = await loadPlanInputs(options, inventoryReader);
   return {
     baselineGenerationId: inputs.baseline.generationId,
     baselineCutoff: inputs.baseline.migrationCutoff,

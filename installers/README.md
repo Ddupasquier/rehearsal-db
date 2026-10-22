@@ -11,7 +11,7 @@ start Docker, a database, a container or Rehearsal; install Node/WSL/OS packages
 change security settings; create a project; or overwrite Rehearsal configuration.
 
 Use Node.js **22, 24 or 26** (24 LTS recommended). The setup target is exactly
-`@rehearsal-db/core@1.1.0`; the canonical extension is
+`@rehearsal-db/core@1.2.0`; the canonical extension is
 `rehearsal-db.rehearsal-db` (**Rehearsal DB**). A checked-in helper or generated
 bundle does not mean that npm version or a release asset is already published.
 An unavailable version stops the explicit install rather than selecting another.

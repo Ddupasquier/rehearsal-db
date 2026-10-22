@@ -1,5 +1,9 @@
 /** Versioned, read-only contracts for editor review; never a second runtime engine. */
 import { inspectMigrationReviewPlan } from "../runtime/migration_plan.mjs";
+import {
+  inspectMigrationInsights,
+  renderMigrationInsights,
+} from "../runtime/migration_insights.mjs";
 import { exactCommands, renderedCommand } from "./command_contract.mjs";
 import type { CommandDefinition } from "./command_contract.mjs";
 import {
@@ -12,6 +16,14 @@ import {
   reviewConfigurationProposal,
 } from "../project/configuration_review.mjs";
 export const createEditorCommandHandlers = (): readonly CommandDefinition[] => [
+  exactCommands(
+    "migration-insights",
+    ["inspect insights"],
+    async ({ planOptions }) => {
+      const data = await inspectMigrationInsights(planOptions);
+      return renderedCommand({ data, render: renderMigrationInsights });
+    },
+  ),
   exactCommands(
     "configuration",
     ["configuration", "configuration review"],

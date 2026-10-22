@@ -98,6 +98,20 @@ handler-family module at 350 lines or fewer. A new command belongs in the narrow
 existing family, or in a new focused family when it represents a genuinely separate
 responsibility.
 
+Static Migration Insights has a separate additive contract from migration-plan v1 and
+post-failure SQLSTATE diagnosis. `runtime/migration_insights_input.mts` owns bounded
+regular-file reads and private exact-input text; the existing inventory, baseline-prefix
+and topology owners still calculate the candidate digest. Repeated shared-directory
+inputs must keep the same raw hash; findings retrieve text only by its expected hash.
+`shared/held_path_ancestry.mts` retains canonical directory identities and timestamps
+to refuse detected concurrent ancestry changes. This is not atomic `openat` resolution
+or a filesystem sandbox; leaf checks and existing workspace trust remain necessary.
+`migration_sql_lexer.mts` and
+`migration_sql_scan.mts` own bounded lexical positions and fixed review hints, not SQL
+validation. `migration_insights.mts` alone projects redacted public findings and explicit
+coverage/unknown states. The editor consumes that contract; it must not reimplement SQL
+analysis or infer runtime measurements from static warnings.
+
 ## Configuration pipeline
 
 The stable `project/configuration.mts` facade keeps existing imports compatible while

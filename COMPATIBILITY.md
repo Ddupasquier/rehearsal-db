@@ -38,6 +38,13 @@ through the project's existing version manager or use the helper's explicit exec
 path; see [OS setup](installers/README.md). Helpers never install Node or switch a
 project's runtime automatically.
 
+The 1.2.0 source candidate adds optional capability
+`rehearsalContracts.migrationInsights: 1` and `inspect insights --json`. It preserves
+existing migration-plan v1, baseline formats, digest meaning and failure diagnosis.
+Consumers must check the capability and exact plan/file bindings; absent or
+unavailable static analysis is not safety evidence. This candidate version and its
+setup target do not establish publication or completed editor/native acceptance.
+
 ## Operating systems and execution location
 
 Core 1.0.1's platform boundary distinguishes the computer running VS Code from the
