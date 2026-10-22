@@ -5,6 +5,7 @@ import {
   IMPACT_FIXTURE_SQL,
   assertImpactFixtureCounts,
   assertImpactPublicOutput,
+  waitForImpactLock,
 } from "../../../scripts/verification/fixtures/postgresql_impact.mjs";
 
 const candidateSha256 = "a".repeat(64),
@@ -94,6 +95,40 @@ const options = (values = counts, reasons) => ({
 });
 
 describe("installed PostgreSQL impact fixture's independent oracles", () => {
+  it("observes a short-lived lock on the existing client without extending its deadline", async () => {
+    let clock = 0;
+    const observations = [[], [0], [41, 42], [42]];
+    const pid = await waitForImpactLock({
+      client: { child: { exitCode: null, signalCode: null } },
+      readPids: async () => observations.shift(),
+      now: () => clock,
+      wait: async () => {
+        clock += 25;
+      },
+    });
+    expect(pid).toBe(42);
+    expect(clock).toBe(75);
+  });
+  it("refuses an expired observation, an exited client and a terminated client", async () => {
+    for (const child of [
+      { exitCode: 1, signalCode: null },
+      { exitCode: null, signalCode: "SIGTERM" },
+      { exitCode: null, signalCode: null },
+    ]) {
+      let clock = 0;
+      await expect(
+        waitForImpactLock({
+          client: { child },
+          readPids: async () => [],
+          now: () => clock,
+          wait: async () => {
+            clock += 5000;
+          },
+        }),
+      ).rejects.toThrow(/private output withheld/u);
+      expect(clock).toBeLessThanOrEqual(5000);
+    }
+  });
   it("requires all seven exact current-row counts and preserves unrelated unsupported SQL", () => {
     const report = sample();
     expect(assertImpactFixtureCounts(report, options())).toBe(report.data);

@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import pg from "pg";
 import { assertLocalDockerContext } from "../../../dist/src/runtime/local_docker_context.mjs";
 import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import { spawnScenarioCommand } from "../scenarios/process.mjs";
@@ -322,6 +323,32 @@ const childClient = (command, args, { cwd, environment = {}, timeout }) => {
 };
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
 
+/** Observe short-lived locks without repeatedly starting a Docker/psql client. */
+export const waitForImpactLock = async ({
+  client,
+  readPids,
+  now = () => performance.now(),
+  wait = pause,
+}) => {
+  const deadline = now() + 5000;
+  while (
+    now() < deadline &&
+    client.child.exitCode === null &&
+    client.child.signalCode === null
+  ) {
+    const pids = await readPids();
+    if (
+      Array.isArray(pids) &&
+      pids.length === 1 &&
+      Number.isSafeInteger(pids[0]) &&
+      pids[0] > 0
+    )
+      return pids[0];
+    await wait();
+  }
+  fail();
+};
+
 export const provePostgresqlMigrationImpact = async ({
   cwd,
   projectId,
@@ -450,6 +477,7 @@ export const provePostgresqlMigrationImpact = async ({
     fail();
   let schemaAttempted = false,
     fileCreated = false,
+    observer,
     operationFailure,
     holderCounter = 0;
   const nonce = randomUUID();
@@ -504,6 +532,34 @@ export const provePostgresqlMigrationImpact = async ({
   };
   let summary;
   try {
+    // All fields are explicit: no PG* environment/service fallback and no secret
+    // in argv. This fixture already pins the sole owned loopback container/port.
+    observer = new pg.Client({
+      host: "127.0.0.1",
+      port: databasePort,
+      database: "postgres",
+      user: "postgres",
+      password: marker.databasePassword,
+      ssl: false,
+      application_name: `rehearsal-impact-observer-${process.pid}`,
+      connectionTimeoutMillis: 2000,
+      query_timeout: 1000,
+      options:
+        "-c statement_timeout=750ms -c default_transaction_read_only=on -c search_path=pg_catalog",
+    });
+    observer.on("error", () => {});
+    await observer.connect();
+    const waiting = (client, application, query = null) =>
+      waitForImpactLock({
+        client,
+        readPids: async () => {
+          const result = await observer.query(
+            "select coalesce(json_agg(pid), '[]'::json) as pids from pg_stat_activity where datname = 'postgres' and state = 'active' and wait_event_type = 'Lock' and application_name = $1 and ($2::text is null or query = $2);",
+            [application, query],
+          );
+          return result.rows[0]?.pids;
+        },
+      });
     schemaAttempted = true;
     sql(
       `begin; create schema ${SCHEMA}; comment on schema ${SCHEMA} is '${nonce}'; commit;`,
@@ -596,28 +652,7 @@ export const provePostgresqlMigrationImpact = async ({
     indexClient.child.stdin.end(
       `set application_name = '${indexApplication}';\nset lock_timeout = '4s';\ncreate index impact_review_race_index on ${SCHEMA}.parent ((${SCHEMA}.guard(id)));\n`,
     );
-    const waiting = async (client, predicate) => {
-      const deadline = performance.now() + 5000;
-      while (
-        performance.now() < deadline &&
-        client.child.exitCode === null &&
-        client.child.signalCode === null
-      ) {
-        const pids = JSON.parse(
-          observe(
-            `select coalesce(pg_catalog.json_agg(pid), '[]'::json) from pg_catalog.pg_stat_activity where datname = 'postgres' and state = 'active' and wait_event_type = 'Lock' and ${predicate};`,
-          ),
-        );
-        if (pids.length === 1 && Number.isSafeInteger(pids[0]) && pids[0] > 0)
-          return pids[0];
-        await pause();
-      }
-      fail();
-    };
-    const indexPid = await waiting(
-      indexClient,
-      `application_name = '${indexApplication}'`,
-    );
+    const indexPid = await waiting(indexClient, indexApplication);
     const raceMeasurement = childClient(
       cliPath,
       ["measure", "impact", "--target=primary", confirmation, "--json"],
@@ -627,7 +662,8 @@ export const provePostgresqlMigrationImpact = async ({
     raceMeasurement.child.stdin.end();
     const racePid = await waiting(
       raceMeasurement,
-      `application_name = 'psql' and query = 'lock table only "${SCHEMA}"."parent" in share row exclusive mode;'`,
+      "psql",
+      `lock table only "${SCHEMA}"."parent" in share row exclusive mode;`,
     );
     await release(raceHolder);
     const indexResult = await indexClient.completion;
@@ -660,21 +696,11 @@ export const provePostgresqlMigrationImpact = async ({
     );
     clients.push(measurement);
     measurement.child.stdin.end();
-    let backend;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const pids = JSON.parse(
-        observe(
-          `select coalesce(pg_catalog.json_agg(pid), '[]'::json) from pg_catalog.pg_stat_activity where datname = 'postgres' and state = 'active' and wait_event_type = 'Lock' and application_name = 'psql' and query = 'lock table only "${SCHEMA}"."parent" in share row exclusive mode;';`,
-        ),
-      );
-      if (pids.length === 1 && Number.isSafeInteger(pids[0]) && pids[0] > 0) {
-        backend = pids[0];
-        break;
-      }
-      if (measurement.child.exitCode !== null) fail();
-      await pause();
-    }
-    if (!backend) fail();
+    const backend = await waiting(
+      measurement,
+      "psql",
+      `lock table only "${SCHEMA}"."parent" in share row exclusive mode;`,
+    );
     const cancellationStarted = performance.now();
     measurement.child.kill("SIGINT");
     const cancelled = await measurement.completion;
@@ -722,6 +748,13 @@ export const provePostgresqlMigrationImpact = async ({
     operationFailure = error;
   }
   const cleanupFailures = [];
+  if (observer) {
+    try {
+      await observer.end();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+  }
   for (const client of clients)
     if (client.child.exitCode === null && client.child.signalCode === null) {
       client.stop();
