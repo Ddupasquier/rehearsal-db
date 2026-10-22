@@ -10,8 +10,10 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { describe, expect, it } from "vitest";
-import setup from "../../helpers/unit_temporary_global.mjs";
+import { describe, expect, it, vi } from "vitest";
+import setup, {
+  createUnitTemporaryDirectory,
+} from "../../helpers/unit_temporary_global.mjs";
 import { holdPathAncestry } from "../../../dist/src/shared/held_path_ancestry.mjs";
 
 describe("parallel unit scratch ownership", () => {
@@ -37,7 +39,23 @@ describe("parallel unit scratch ownership", () => {
       await writeFile(join(directory, "input.sql"), "INSIDE");
       held = await holdPathAncestry(directory);
       await mkdir(join(workers[1], "independent-project"));
+      // The real setup-helper and PostgreSQL-process fixtures use this helper,
+      // not checkout/test-results (a shared ancestor of both worker trees).
+      for (const name of ["TMPDIR", "TMP", "TEMP"])
+        vi.stubEnv(name, workers[1]);
+      for (const prefix of ["setup helpers ü ", "rehearsal-migration-input-"]) {
+        const fixture = await createUnitTemporaryDirectory(prefix);
+        expect(relative(workers[1], fixture)).not.toMatch(/^\.\./u);
+        expect(relative(workers[1], fixture)).not.toBe("");
+      }
       await held.assertUnchanged();
+      await held.close();
+      held = undefined;
+      // Reproduce the old checkout/test-results placement: changing its shared
+      // parent invalidates the held project even though this is a new sibling.
+      held = await holdPathAncestry(directory);
+      await mkdtemp(join(root, "test-results", "legacy-shared-fixture-"));
+      await expect(held.assertUnchanged()).rejects.toThrow("Path ancestry");
       await held.close();
       held = undefined;
       // The strict guard is not relaxed: same-ancestor sibling churn still refuses.
@@ -45,6 +63,7 @@ describe("parallel unit scratch ownership", () => {
       await mkdir(join(workers[0], "same-worker-sibling"));
       await expect(held.assertUnchanged()).rejects.toThrow("Path ancestry");
     } finally {
+      vi.unstubAllEnvs();
       await held?.close();
       await cleanup();
       await rm(root, { recursive: true, force: true });

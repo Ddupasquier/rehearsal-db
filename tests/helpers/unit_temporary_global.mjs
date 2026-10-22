@@ -9,6 +9,11 @@ import {
   rm,
 } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+/** Test fixtures must not create siblings of the shared checkout scratch root. */
+export const createUnitTemporaryDirectory = (prefix) =>
+  mkdtemp(join(tmpdir(), prefix));
 
 export default async function setup(project) {
   const root = await realpath(project.config.root);

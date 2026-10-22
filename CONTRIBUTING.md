@@ -45,6 +45,10 @@ Before opening a pull request:
 The unit suite uses two workers to limit overlapping CLI imports and memory pressure.
 On a slow filesystem, `npm test -- --maxWorkers=1` runs the same checks serially;
 it does not relax timeouts or skip safety assertions. Keep live database scenarios serial.
+Temporary test fixtures must use the worker-provided `tmpdir()` (or the shared
+test-only directory helper), never create children directly in the checkout's
+`test-results`. That shared-parent churn invalidates another worker's strict
+ancestry checks even when the individual fixture directories differ.
 
 Never use real production data in an issue, test, fixture, or pull request. Use small
 synthetic examples. Security findings belong in private vulnerability reporting, not a
