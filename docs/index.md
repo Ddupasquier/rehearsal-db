@@ -33,6 +33,7 @@ you want, then follow the links when a term or safety check is new.
 | Set up my own project                    | [Getting started](getting-started.md)                             |
 | Use the free visual workbench in VS Code | [Install VS Code Starter](vscode.md)                              |
 | Try Rehearsal without touching my app    | [Hands-on tutorial](tutorial.md)                                  |
+| Check changes, compatibility or updates  | [Releases and updates](updating.md)                               |
 | Understand what makes a copy safe        | [Baselines](baselines.md) and [Sanitization](sanitization.md)     |
 | Look up a command or setting             | [CLI commands](commands.md) and [Configuration](configuration.md) |
 | Reduce Docker and Supabase resource use  | [Container runtime lifecycle](runtime-lifecycle.md)               |

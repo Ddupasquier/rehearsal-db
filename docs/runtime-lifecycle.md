@@ -191,6 +191,16 @@ These observations help compare profiles, not promise a machine-wide memory budg
 A cold-image or fresh-VM benchmark needs its own disposable, exclusive test environment.
 Do not prune shared images or restart a shared engine to manufacture a cold measurement.
 
+### Free local efficiency and planned managed execution
+
+Efficient local profiles, the complete CLI and essential lifecycle/data protections stay
+free. Choose the smallest profile that still proves the requested behavior; Rehearsal
+does not silently remove declared Auth, Storage or API dependencies to save memory.
+
+Optional managed execution is planned separately and is not available in this release.
+Choosing a local profile does not upload data or authorize a hosted operation. See the
+[product direction](roadmap.md#efficient-local-execution-and-optional-managed-runs).
+
 ## Scheduled review and stale-stop safety
 
 Resource policies configure advisory retention, measured-volume budgets, and scheduled

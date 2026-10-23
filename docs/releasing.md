@@ -1,7 +1,7 @@
-# Maintainer release process
+# Maintainers: publishing Rehearsal
 
 **Audience: Rehearsal maintainers publishing a release.** To install or update
-Rehearsal in your own project, use [Keeping Rehearsal up to date](updating.md).
+Rehearsal in your own project, use [Releases and updates](updating.md).
 The publisher controls below are not steps that ordinary users need to perform.
 
 This page defines required release controls, not a certification that a publisher is
@@ -19,9 +19,9 @@ back to a token or disable provenance. The release preflight described below enf
 that refusal; an actual held approval and the npm account settings still need direct
 verification. A local working tree is never the release source.
 
-`0.1.0-beta.0` was prepared under the unavailable `@rehearsal` npm scope and was never
-published. `0.1.0-beta.1` supersedes that candidate under `@rehearsal-db/core` without
-rewriting the earlier Git tag or GitHub prerelease.
+This runbook describes the current controls. Historical candidates and release incidents
+belong in [release history](https://github.com/Ddupasquier/rehearsal-db/releases) and
+[issues](https://github.com/Ddupasquier/rehearsal-db/issues), not the installation path.
 
 ## Trusted publication boundary
 
@@ -41,11 +41,9 @@ private therefore cannot preserve this release contract unchanged. Keep the revi
 release source public; never silently remove provenance. See
 [npm's trusted-publisher guidance](https://docs.npmjs.com/trusted-publishers/).
 
-The initial `0.1.0-beta.1` package creation required a one-time bootstrap credential
-because npm cannot configure a trusted publisher before a package exists. That
-credential is not part of the maintained release architecture: it was deleted from the
-GitHub environment after publication, must remain revoked at npm, and cannot be consumed
-by this workflow.
+Bootstrap credentials are not part of the maintained release architecture. Any historical
+bootstrap credential must remain removed from GitHub and revoked at npm; this workflow
+cannot consume it. Do not replace a failing trusted publisher with a stored token.
 
 A failed candidate does not permit moving or deleting its release tag. If its pinned
 workflow needs a source correction, prepare a new version and artifact through the same
