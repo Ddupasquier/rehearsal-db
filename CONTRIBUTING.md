@@ -58,6 +58,9 @@ server expiry reach the transport and verifies the backend is gone. It does not
 change or prove the public command's 30-second end-to-end budget, production aggregate
 performance, or another provider/platform. Independent Test Lab coverage continues to
 consume only public interfaces. These probes never execute pending migration SQL.
+The transport rechecks receipt, engine and container identity before returning a
+server timeout; the fixture additionally checks the pinned resources and absent
+backend. It does not repeat the same transport check with an already-spent signal.
 
 The existing Supabase installed-consumer scenario also measures seven current-sandbox
 aggregates on two nonce-owned temporary tables, then checks a deliberate current-row

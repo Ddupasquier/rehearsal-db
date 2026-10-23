@@ -501,6 +501,11 @@ describe("non-starting migration impact runtime transport", () => {
       expect(
         f.runner.mock.calls.filter(([call]) => call.args[0] === "info").length,
       ).toBeGreaterThan(2);
+      const calls = f.runner.mock.calls.map(([call]) => call.args[0]);
+      expect(calls.slice(calls.indexOf("exec") + 1)).toEqual([
+        "info",
+        "container",
+      ]);
     },
   );
   it("ambiguous provider codes are generic query failure, not guessed timeouts", async () => {

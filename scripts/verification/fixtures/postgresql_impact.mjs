@@ -832,12 +832,16 @@ export const provePostgresqlMigrationImpact = async ({
         [application],
       );
       if (remaining.rows[0]?.count !== 0) fail();
-      await runtime.assertCurrent();
+      // runSql rechecks receipt/engine/container before exposing a timeout.
+      // Reusing its nearly spent signal for another duplicate inspection makes
+      // slow WSL Docker round-trips look like a failed server deadline. Retain
+      // the independent pinned-resource check and absent-backend proof below.
       assertPinned();
       serverDeadlines[kind] = {
         reason,
         elapsedMilliseconds,
         backendGone: true,
+        postQueryIdentity: "verified-by-transport-before-timeout",
       };
     }
     const retained = JSON.parse(
