@@ -99,6 +99,17 @@ describe("documentation site", () => {
   it("builds every declared Markdown page and searchable route", async () => {
     const result = await buildDocs();
     expect(result.pages).toBe(pages.length);
+    const updatesHtml = await readFile(
+      join(result.outputRoot, "updating/index.html"),
+      "utf8",
+    );
+    expect(updatesHtml).toContain(
+      'href="#where-can-i-verify-the-package39s-origin">Where can I verify the package&#039;s origin?</a>',
+    );
+    expect(updatesHtml).toContain(
+      'aria-label="Link to Where can I verify the package&#039;s origin?"',
+    );
+    expect(updatesHtml).not.toContain("package&amp;#39;s");
     for (const page of pages) {
       await expect(
         access(join(repositoryRoot, "docs", page.source)),

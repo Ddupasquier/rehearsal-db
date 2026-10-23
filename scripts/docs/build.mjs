@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Marked } from "marked";
+import { Marked, TextRenderer } from "marked";
 import {
   groupForPage,
   groups,
@@ -74,14 +74,18 @@ export const buildDocs = async (options = {}) => {
       renderer: {
         heading({ tokens, depth }) {
           const content = this.parser.parseInline(tokens);
+          // Derive labels before HTML escaping; preserve the existing anchor IDs.
+          const text = stripHtml(
+            this.parser.parseInline(tokens, new TextRenderer()),
+          );
           const baseId = slugify(content) || "section";
           const occurrence = usedIds.get(baseId) ?? 0;
           usedIds.set(baseId, occurrence + 1);
           const id = occurrence === 0 ? baseId : `${baseId}-${occurrence + 1}`;
           if (depth >= 2 && depth <= 3) {
-            headings.push({ id, depth, text: stripHtml(content) });
+            headings.push({ id, depth, text });
           }
-          return `<h${depth} id="${id}">${content}<a class="heading-anchor" href="#${id}" aria-label="Link to ${escapeHtml(stripHtml(content))}">#</a></h${depth}>`;
+          return `<h${depth} id="${id}">${content}<a class="heading-anchor" href="#${id}" aria-label="Link to ${escapeHtml(text)}">#</a></h${depth}>`;
         },
         link({ href, title, tokens }) {
           const destination = rewriteHref(href);
