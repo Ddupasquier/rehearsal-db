@@ -15,49 +15,35 @@ export const site = Object.freeze({
 
 export const groups = Object.freeze([
   {
-    label: "Start here",
+    label: "Getting started",
     eyebrow: "First steps",
-    pages: [
-      "",
-      "getting-started",
-      "vscode",
-      "tutorial",
-      "updating",
-      "troubleshooting",
-    ],
+    pages: ["", "getting-started", "vscode", "tutorial"],
   },
   {
-    label: "Work safely",
-    eyebrow: "Core ideas",
+    label: "User reference",
+    eyebrow: "Find your next answer",
     pages: [
+      "updating",
+      "troubleshooting",
+      "commands",
+      "configuration",
+      "runtime-lifecycle",
       "baselines",
       "sanitization",
       "production-source",
       "security-model",
       "standalone-workflow",
-    ],
-  },
-  {
-    label: "Reference",
-    eyebrow: "Look it up",
-    pages: [
-      "commands",
-      "configuration",
       "typescript",
       "runtime-policies",
       "adapters",
       "glossary",
+      "roadmap",
     ],
-  },
-  {
-    label: "Project",
-    eyebrow: "Behind the scenes",
-    pages: ["roadmap", "stability", "runtime-lifecycle"],
   },
   {
     label: "Maintainers",
     eyebrow: "Contribute and publish",
-    pages: ["architecture", "releasing"],
+    pages: ["architecture", "stability", "releasing"],
   },
 ]);
 
@@ -92,8 +78,7 @@ export const pages = Object.freeze([
   {
     slug: "updating",
     source: "updating.md",
-    title: "Keeping Rehearsal up to date",
-    shortTitle: "Updates",
+    title: "Releases and updates",
     description:
       "Update the project CLI or VS Code extension without resetting your sandbox.",
   },
@@ -212,7 +197,7 @@ export const pages = Object.freeze([
   {
     slug: "releasing",
     source: "releasing.md",
-    title: "Maintainer release process",
+    title: "Maintainers: publishing Rehearsal",
     shortTitle: "Publishing releases",
     description:
       "For maintainers: publish exact tested bytes through the trusted release process.",
