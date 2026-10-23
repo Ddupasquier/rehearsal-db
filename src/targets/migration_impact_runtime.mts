@@ -423,7 +423,10 @@ export async function openMigrationImpactRuntime(
             "--set",
             "VERBOSITY=sqlstate",
             "--username",
-            postgres?.user ?? "postgres",
+            // Supabase's application-facing postgres role is NOSUPERUSER.
+            // The fixed disk bound and namespace lock require its built-in
+            // local administrator; no role changes or credentials are needed.
+            postgres?.user ?? "supabase_admin",
             "--dbname",
             postgres?.database ?? "postgres",
           ],

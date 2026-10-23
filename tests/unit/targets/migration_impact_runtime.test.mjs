@@ -11,6 +11,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   MigrationImpactRuntimeError,
   openMigrationImpactRuntime,
@@ -34,9 +35,7 @@ const result = (stdout = "", status = 0, stderr = "") => ({
   stderrByteCount: Buffer.byteLength(stderr),
 });
 async function fixture(provider = "postgresql") {
-  const output = join(process.cwd(), "test-results");
-  await mkdir(output, { recursive: true });
-  const root = await realpath(await mkdtemp(join(output, "impact-runtime-")));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "impact-runtime-")));
   roots.push(root);
   const runtime = join(root, ".rehearsal/runtime");
   await mkdir(runtime, { recursive: true });
@@ -199,7 +198,7 @@ describe("non-starting migration impact runtime transport", () => {
         "--set",
         "VERBOSITY=sqlstate",
         "--username",
-        "postgres",
+        provider === "postgresql" ? "postgres" : "supabase_admin",
         "--dbname",
         provider === "postgresql" ? "rehearsal" : "postgres",
       ]);

@@ -59,6 +59,14 @@ change or prove the public command's 30-second end-to-end budget, production agg
 performance, or another provider/platform. Independent Test Lab coverage continues to
 consume only public interfaces. These probes never execute pending migration SQL.
 
+The existing Supabase installed-consumer scenario also measures seven current-sandbox
+aggregates on two nonce-owned temporary tables, then checks a deliberate current-row
+edit, RLS unknowns and stale whole-plan refusal. It preserves the original widgets,
+live migration ledger, configuration, keys, immutable baseline and runtime identity.
+Only its exact owned migration file and nonce-identified schema are removed; pending
+migration SQL is never applied. This provider slice is not hosted, native editor or
+Supabase-specific statement/cancellation-deadline evidence.
+
 Never use real production data in an issue, test, fixture, or pull request. Use small
 synthetic examples. Security findings belong in private vulnerability reporting, not a
 public issue.

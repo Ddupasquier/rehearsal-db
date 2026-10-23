@@ -77,6 +77,9 @@ and bounded local activity history may be written. A bounded read-only catalog
 preflight retains eligible relation identities. The counts then use one
 `REPEATABLE READ READ ONLY` transaction, which is rolled back after the counts.
 Neither command executes pending migrations or application commands.
+Measurements use the selected local sandbox's administrative connection, not the
+application's role. They inspect stored data, not application permissions; RLS-enabled
+or otherwise unsupported objects remain unknown. No application grants are changed.
 
 Before the count snapshot, Rehearsal locks eligible measured relations in a fixed
 order with `SHARE ROW EXCLUSIVE`. These locks temporarily block writers and

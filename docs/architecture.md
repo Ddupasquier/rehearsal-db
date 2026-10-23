@@ -135,6 +135,12 @@ simulation or a production prediction.
 ownership-proven local sandbox and its unchanged identity. It does not start/repair
 an engine, reset data or apply migrations. Measurement uses one read-only repeatable
 read count transaction with bounded locks, statements, output and total duration.
+The environment-scrubbed client connects only through the proven owned container's
+fixed local socket. PostgreSQL uses its configured local owner; Supabase uses its
+built-in `supabase_admin`, not the restricted application-facing `postgres` role.
+The fixed temporary-file bound and namespace-catalog lock require that local
+administrator. No grants, role promotion, password access, network connection or
+caller-selected SQL is added; the same read-only compiler and metadata refusals apply.
 A separate read-only catalog preflight retains relation OIDs; globally ordered
 `SHARE ROW EXCLUSIVE` locks precede the first repeatable-read snapshot, preventing
 index/statistics DDL from outrunning its metadata checks. Counts recheck the retained

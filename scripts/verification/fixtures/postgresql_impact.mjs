@@ -17,8 +17,10 @@ import { assertLocalDockerContext } from "../../../dist/src/runtime/local_docker
 import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import { spawnScenarioCommand } from "../scenarios/process.mjs";
 
-const SCHEMA = "impact_private_fixture";
-const FILE = "20260101000200_impact_review.sql";
+export const IMPACT_FIXTURE_SCHEMA = "impact_private_fixture";
+export const IMPACT_FIXTURE_FILENAME = "20260101000200_impact_review.sql";
+const SCHEMA = IMPACT_FIXTURE_SCHEMA;
+const FILE = IMPACT_FIXTURE_FILENAME;
 const SQL_CANARY = "PRIVATE_IMPACT_SQL_CANARY";
 const ROW_CANARY = "PRIVATE_IMPACT_ROW_CANARY";
 const UDF_CANARY = "PRIVATE_IMPACT_UDF_CANARY";
@@ -109,11 +111,18 @@ export const assertImpactPublicOutput = (
 /** Independent fixed seven-metric oracle; unknown never substitutes a zero count. */
 export const assertImpactFixtureCounts = (
   envelope,
-  { candidateSha256, counts, reasons = counts.map(() => null), version },
+  {
+    candidateSha256,
+    counts,
+    reasons = counts.map(() => null),
+    version,
+    provider = "postgresql",
+  },
 ) => {
   const report = envelope?.data;
   const entries = report?.entries?.filter((entry) => entry.filename === FILE);
   if (
+    !["postgresql", "supabase"].includes(provider) ||
     !ID.test(candidateSha256) ||
     counts.length !== 7 ||
     reasons.length !== 7 ||
@@ -122,7 +131,7 @@ export const assertImpactFixtureCounts = (
     report.mode !== "measurement" ||
     report.candidateSha256 !== candidateSha256 ||
     report.target?.name !== "primary" ||
-    report.target.provider !== "postgresql" ||
+    report.target.provider !== provider ||
     entries?.length !== 1 ||
     entries[0].sha256 !== digest(IMPACT_FIXTURE_SQL) ||
     entries[0].coverage !== "recognized_forms" ||
@@ -154,8 +163,29 @@ export const assertImpactFixtureCounts = (
         count,
         unknownReason: reason,
       })
-    )
-      fail();
+    ) {
+      const observedCount =
+        measurement?.count === null
+          ? "null"
+          : typeof measurement?.count === "string" &&
+              /^[0-9]{1,20}$/u.test(measurement.count)
+            ? measurement.count
+            : "withheld";
+      const observedReason = [
+        null,
+        "unsupported_runtime_metadata",
+        "unsupported_server_version",
+        "query_failed",
+        "lock_timeout",
+        "statement_timeout",
+        "total_timeout",
+      ].includes(measurement?.unknownReason)
+        ? String(measurement.unknownReason)
+        : "withheld";
+      throw new Error(
+        `The bounded impact fixture did not match metric ${index}: count=${observedCount}, reason=${observedReason}; private output withheld.`,
+      );
+    }
     if ((count === null) !== (typeof reason === "string" && reason.length > 0))
       fail();
   }
@@ -221,7 +251,7 @@ const PSQL = [
   "postgres",
 ];
 
-const protectedFingerprint = async (cwd, excluded) => {
+export const protectedFingerprint = async (cwd, excluded) => {
   const entries = [];
   let bytes = 0;
   const visit = async (relative) => {
@@ -267,6 +297,9 @@ const protectedFingerprint = async (cwd, excluded) => {
     "package.json",
     "rehearsal.config.mjs",
     "database/migrations",
+    "supabase/migrations",
+    "supabase/config.toml",
+    ".env.rehearsal-service.local",
     "rehearsal",
     ".rehearsal/current",
     ".rehearsal/generations",
@@ -274,6 +307,7 @@ const protectedFingerprint = async (cwd, excluded) => {
     ".rehearsal/runtime.env",
     ".rehearsal/runtime/baseline.json",
     ".rehearsal/runtime/candidate-receipt.json",
+    ".rehearsal/runtime/supabase/config.toml",
   ])
     await visit(path);
   return digest(JSON.stringify(entries));

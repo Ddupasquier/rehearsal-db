@@ -96,6 +96,30 @@ const options = (values = counts, reasons) => ({
 });
 
 describe("installed PostgreSQL impact fixture's independent oracles", () => {
+  it("binds the same SQL oracle to the explicitly selected Supabase provider", () => {
+    const report = sample();
+    report.data.target.provider = "supabase";
+    expect(() => assertImpactFixtureCounts(report, options())).toThrow();
+    expect(
+      assertImpactFixtureCounts(report, { ...options(), provider: "supabase" }),
+    ).toBe(report.data);
+    expect(() =>
+      assertImpactFixtureCounts(report, { ...options(), provider: "other" }),
+    ).toThrow();
+  });
+  it("keeps mismatch diagnostics to bounded counts and fixed reasons", () => {
+    const report = sample();
+    report.data.entries[1].measurements[0].count = "PRIVATE_DIAGNOSTIC_CANARY";
+    report.data.entries[1].measurements[0].unknownReason =
+      "PRIVATE_DIAGNOSTIC_CANARY";
+    try {
+      assertImpactFixtureCounts(report, options());
+      throw Error("Expected oracle refusal");
+    } catch (error) {
+      expect(error.message).toContain("count=withheld, reason=withheld");
+      expect(error.message).not.toContain("PRIVATE_DIAGNOSTIC_CANARY");
+    }
+  });
   it("forces real server deadlines using only fixed read-only statements", () => {
     for (const kind of ["statement", "transaction"]) {
       const script = buildImpactDeadlineProbe(

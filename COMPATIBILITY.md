@@ -53,6 +53,9 @@ without applying migrations, starting/repairing a runtime or changing database d
 Aggregate execution requires PostgreSQL 17 or newer with server-side transaction
 deadlines and narrowly supported ordinary-table/built-in semantics; older servers
 remain unknown, with no automatic database upgrade.
+Supabase measurement uses the ownership-proven local container's built-in
+`supabase_admin` socket role so the fixed disk bound and catalog lock can be enforced.
+It does not promote `postgres`, change grants, load credentials or connect remotely.
 Read-only catalog preflight is separate from the count snapshot. Bounded strong
 relation locks precede that snapshot and temporarily block writers and metadata
 changes in the selected disposable sandbox; this is not a nonblocking query promise.
