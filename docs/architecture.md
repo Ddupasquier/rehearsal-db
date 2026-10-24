@@ -77,6 +77,15 @@ typed registry and produce the same result contract:
   `update_advisory.mts` bounds public release metadata, private preferences and
   installation-origin checks. Neither participates in passive JSON inspection.
 - `runtime_commands.mts` coordinates local runtimes and project proofs.
+- `runtime_stack_runner.mts` selects configured targets, binds their reviewed engine
+  and configuration identities, executes the serial stack and retains receipt-bound
+  cleanup. `runtime_workload_admission.mts` applies optional lifecycle admission before
+  that work; application proofs and interactive sessions are deliberately outside it.
+- `workload_command_handlers.mts` exposes local queue inspection and exact dead-holder
+  metadata recovery without a project lock or Docker. `runtime/workload_queue.mts`
+  owns cooperative lifecycle admission; its store owns bounded private atomic tickets,
+  and its location helper binds the local user, boot and PID namespace independently
+  of per-command temporary directories. No background scheduler is installed.
 - `runtime_planning.mts` owns read-only stack plans and exact candidate summaries.
 - `editor_command_handlers.mts` exposes bounded migration and configuration review
   contracts plus digest-bound, non-destructive stale-environment stop review. It also

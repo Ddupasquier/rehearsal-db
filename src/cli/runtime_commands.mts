@@ -1,7 +1,6 @@
 /** Orchestrate isolated database runtimes and project-owned application proofs. */
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
@@ -48,25 +47,18 @@ import {
   parseRuntimeStatusSnapshot,
   renderRuntimeStatusSnapshot,
 } from "../runtime/status.mjs";
-import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
+import { applyRuntimePersistence } from "../runtime/persistence.mjs";
 import {
-  applyRuntimePersistence,
-  shouldStopRuntime,
-} from "../runtime/persistence.mjs";
-import { executeRuntimeTargetStack } from "./runtime_stack_execution.mjs";
+  createRuntimeStackRunner,
+  type ManagerReceipt,
+  type RuntimeAction,
+} from "./runtime_stack_runner.mjs";
 import {
   summarizeRuntimeManagerFailure,
   runtimePortFailureGuidance,
 } from "./runtime_failure_summary.mjs";
 import { readManagerMigrationFailure } from "../runtime/migration_failure.mjs";
-import { releaseOwnedColimaWhenIdle } from "../runtime/container_engine_ownership.mjs";
-import { inspectRehearsalResources } from "../runtime/resource_inventory.mjs";
-import { assertLocalDockerContext } from "../runtime/local_docker_context.mjs";
 import { runtimeConfigurationSha256 } from "../runtime/configuration_binding.mjs";
-import {
-  assertResourcePolicyAllowsStartup,
-  evaluateResourcePolicy,
-} from "../runtime/resource_policy.mjs";
 import {
   formatDuration,
   isHumanTerminal,
@@ -79,35 +71,6 @@ import type { RehearsalErrorCategory } from "../shared/diagnostics.mjs";
 import type { CliSessionState } from "./command_contract.mjs";
 
 type RuntimeTopology = Awaited<ReturnType<typeof loadRuntimeTopology>>;
-type RuntimeAction =
-  | "run"
-  | "start"
-  | "migrate"
-  | "reset"
-  | "status"
-  | "stop"
-  | "discard"
-  | "verify";
-
-interface ManagerReceipt {
-  readonly action: RuntimeAction;
-  readonly target: string;
-  readonly durationMs: number;
-  readonly output: string;
-  readonly runtimeStatus?: RuntimeStatusSnapshot;
-}
-
-interface RuntimeStackResult {
-  readonly topology: RuntimeTopology;
-  readonly runtime:
-    | ManagerReceipt
-    | Readonly<{
-        action: RuntimeAction;
-        durationMs: number;
-        output: string;
-        targets: readonly ManagerReceipt[];
-      }>;
-}
 
 const parseCommand = (source: string): [string, ...string[]] => {
   const values: string[] = [];
@@ -524,117 +487,7 @@ export const createRuntimeCommands = ({
           () => executeManager(options),
         );
 
-  const runRuntimeStack = async ({
-    command,
-    flags,
-    planOptions,
-    session,
-  }: {
-    command: RuntimeAction;
-    flags: RehearsalCliFlags;
-    planOptions: RehearsalConfigPathOptions;
-    session: CliSessionState;
-  }): Promise<RuntimeStackResult> => {
-    const topology =
-      (session.runtimeTopology as RuntimeTopology | undefined) ??
-      (await loadRuntimeTopology(planOptions));
-    const reverse = ["stop", "discard"].includes(command);
-    if (
-      ["start", "run", "reset"].includes(command) &&
-      topology.primary.config.resources.maximumBytes !== null
-    ) {
-      assertResourcePolicyAllowsStartup(
-        evaluateResourcePolicy({
-          inventory: await inspectRehearsalResources(planOptions),
-          policy: topology.primary.config.resources,
-        }),
-      );
-    }
-    const selectedTargets = selectRuntimeTargets(
-      topology.targets,
-      flags.target,
-      command,
-    );
-    const targets = reverse ? [...selectedTargets].reverse() : selectedTargets;
-    const engine =
-      command === "status"
-        ? null
-        : assertLocalDockerContext({ cwd: topology.projectRoot });
-    const engineBinding = engine
-      ? { dockerContext: engine.context, dockerIdentity: engine.identity }
-      : {};
-    const operationId = randomUUID();
-    const results = await executeRuntimeTargetStack({
-      targets,
-      cleanupOnFailure:
-        command === "run"
-          ? shouldStopRuntime(topology.primary.config.lifecycle.run)
-          : command === "start" &&
-            shouldStopRuntime(topology.primary.config.lifecycle.open),
-      execute: async (target) => {
-        const confirmation = (
-          session.targetConfirmations as Map<string, string> | undefined
-        )?.get(target.configPath);
-        return runManager({
-          action: command,
-          flags,
-          configPath: target.configPath,
-          ...(confirmation === undefined ? {} : { confirmation }),
-          ...(topology.targets.length > 1 ? { targetName: target.name } : {}),
-          operationId,
-          ...engineBinding,
-          configSha256: runtimeConfigurationSha256(target.config),
-        });
-      },
-      stop: (target) =>
-        runManager({
-          action: "stop",
-          flags,
-          configPath: target.configPath,
-          targetName: target.name,
-          operationId,
-          ...engineBinding,
-          configSha256: runtimeConfigurationSha256(target.config),
-        }),
-    });
-    const release = ["stop", "discard"].includes(command)
-      ? releaseOwnedColimaWhenIdle({
-          projectRoot: topology.projectRoot,
-          targets: topology.targets,
-        })
-      : null;
-    const withRelease = (receipt: ManagerReceipt): ManagerReceipt =>
-      release
-        ? {
-            ...receipt,
-            output: [receipt.output, release.message]
-              .filter(Boolean)
-              .join("\n"),
-          }
-        : receipt;
-    if (results.length === 1)
-      return { topology, runtime: withRelease(results[0]!) };
-    return {
-      topology,
-      runtime: {
-        action: command,
-        durationMs:
-          Math.round(
-            results.reduce((total, result) => total + result.durationMs, 0) *
-              100,
-          ) / 100,
-        output: [
-          results
-            .map((result) => `[${result.target}]\n${result.output}`)
-            .join("\n\n"),
-          release?.message,
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
-        targets: results,
-      },
-    };
-  };
+  const runRuntimeStack = createRuntimeStackRunner(runManager);
 
   const runApplicationProof = async (
     planOptions: RehearsalConfigPathOptions,

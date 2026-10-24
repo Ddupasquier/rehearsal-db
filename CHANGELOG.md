@@ -3,6 +3,18 @@
 All notable Rehearsal package changes are documented here. The format follows Keep
 a Changelog, and published versions follow Semantic Versioning.
 
+## Unreleased
+
+### Added
+
+- Optional free local-user workload admission for participating `start`, `reset`,
+  `run` and `migrate` lifecycle phases. Bounded waits, cancellation and explicit
+  dead-holder metadata recovery do not interrupt another project or expire live
+  owners. Read-only `workloads` reports participation, not available host/VM memory.
+  Existing configurations and editor field metadata remain unchanged when omitted.
+  Application proofs, interactive sessions and nonparticipating tools are outside
+  this first lifecycle-only queue; this is not a distributed or hard-memory scheduler.
+
 ## [1.2.0] - 2026-10-24
 
 ### Added

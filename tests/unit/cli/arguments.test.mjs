@@ -10,6 +10,19 @@ import {
 } from "../../../dist/src/shared/diagnostics.mjs";
 
 describe("CLI arguments", () => {
+  it("classifies workload recovery as local-user metadata, not a project mutation", () => {
+    const flags = parseArguments([
+      "workloads",
+      "recover",
+      `--confirm-workloads=${"a".repeat(64)}`,
+    ]).flags;
+    expect(flags.workloadConfirmation).toBe("a".repeat(64));
+    expect(commandMutatesProject({ command: "workloads recover", flags })).toBe(
+      false,
+    );
+    resetGuidedFlags(flags);
+    expect(flags.workloadConfirmation).toBeUndefined();
+  });
   it("separates commands from supported flags", () => {
     const { flags, positionals } = parseArguments([
       "identity",

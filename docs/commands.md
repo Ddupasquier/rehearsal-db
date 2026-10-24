@@ -3,6 +3,26 @@
 Run commands from the project directory containing `rehearsal.config.mjs`. The examples
 use `npx`, so a global install is not required.
 
+## Participating local workloads
+
+Development builds advertising `rehearsalContracts.workloadQueue: 1` support
+`npx --no-install rehearsal workloads --json`. This read-only command needs no
+project configuration or Docker. Its version-1 `data` lists lifecycle ticket IDs,
+commands, PIDs, phases (`choosing`, `queued`, `held`), owner liveness and creation
+times. It reports `capacity: "not-measured"`: this is cooperative admission, not
+a claim about spare host/VM memory. Project paths, migration SQL and credentials
+are not included. Enable participation with
+[`resources.workloadQueue`](configuration.md#resource-review-policies).
+
+A dead holder blocks new admission until explicitly reviewed. Confirm its owned
+commands and descendants have ended before running
+`npx --no-install rehearsal workloads recover --confirm-workloads=<recoveryDigest>`.
+The exact inspection digest binds only the dead held records; changed records,
+missing confirmation and live owners refuse recovery. This operation clears local
+queue metadata only. It does not stop processes/containers or alter databases.
+Waiting requests can be cancelled; expiry never steals a live holder. Read-only
+inspection does not clean stale records or create state directories.
+
 ## Guided mode
 
 For editor-style review, `npx rehearsal inspect plan --json` returns a bounded,
