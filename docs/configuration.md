@@ -386,7 +386,8 @@ inspection remain explicit command choices. See [CLI commands](commands.md).
 
 ### Resource review policies
 
-`resources` applies to the configured project topology, not the shared Docker engine:
+Resource review limits apply to the configured project topology, not the shared Docker
+engine. The optional workload queue instead coordinates participating local projects:
 
 ```ts
 resources: {
@@ -394,6 +395,7 @@ resources: {
   retainedEnvironmentCount: 2,
   maximumBytes: null,
   cleanupSchedule: "daily-preview",
+  workloadQueue: { enabled: true, waitTimeoutSeconds: 30 },
 },
 ```
 
@@ -410,6 +412,36 @@ resources: {
   shown on the next resource inspection. There is no daemon, operating-system scheduler,
   or automatic deletion. An approved cleanup records an owner-only, project/policy-bound
   review time; ordinary read-only inspection writes nothing.
+- `workloadQueue` is optional and off when omitted. With `enabled: true`, participating
+  Rehearsal clients serialize their `start`, `reset`, `run` and `migrate` runtime phases
+  across projects for the same local OS user, boot and process namespace. Waiting is
+  bounded to `waitTimeoutSeconds` (integer 0–300; default 30); zero refuses immediately
+  when busy. Ctrl+C cancels the waiting request without interrupting its holder.
+  Stop, discard, inspection and cleanup remain available. `open` releases admission
+  after startup, before its interactive session; application proofs run outside this
+  first lifecycle-only queue. This does **not** measure available RAM, stop existing
+  runtimes, limit other tools, or promise an entire Docker/VM memory budget. All projects
+  that should cooperate must opt in. Older clients and different OS users/namespaces do
+  not participate. Local filesystems with coherent atomic file operations are required;
+  this is not a network-filesystem or distributed scheduler.
+  Configure it in the source configuration for now; the existing editor field-metadata
+  contract is unchanged so older supported Starter clients keep working.
+
+Run `rehearsal workloads` (or `--json`) without Docker to inspect this queue. Waiting
+requests whose processes have died can be removed automatically because guarded work
+never began. A dead **holder** remains blocking: its child may still be running.
+After checking its owned commands and descendants, use the exact digest shown by
+inspection with `rehearsal workloads recover --confirm-workloads=<digest>`. Recovery
+removes only those reviewed dead-holder metadata records. It never kills a process,
+stops a container, removes data or treats age alone as permission to steal admission.
+Live owners cannot be recovered, even after a wait expires. Malformed or inaccessible
+state refuses admission; it is not silently deleted.
+
+Queue state is private to the local OS user under `~/Library/Application Support/Rehearsal`
+on macOS or `~/.local/state/rehearsal` on Linux/WSL, independent of `TMPDIR`. Advanced
+launchers can set `REHEARSAL_USER_STATE_DIRECTORY` to one absolute local directory;
+every cooperating client must use the same value. Do not delete or move active queue
+state. Boot/namespace-separated records are retained, not automatically pruned.
 
 Temporary files and application processes created by an operation are cleaned up by
 that operation's existing ownership boundary. These policies do not turn a persistent

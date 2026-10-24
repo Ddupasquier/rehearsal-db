@@ -2,6 +2,8 @@
 
 import type { ApplicationRequiredService } from "./configuration_contract.mjs";
 import {
+  assertKnownKeys,
+  assertPlainObject,
   assertPositiveInteger,
   type PlainObject,
 } from "./configuration_validation.mjs";
@@ -40,6 +42,30 @@ const nullablePositiveInteger = (
 };
 
 export const normalizeResourcePolicy = (resources: PlainObject) => {
+  let workloadQueue:
+    { enabled: boolean; waitTimeoutSeconds: number } | undefined;
+  if (resources.workloadQueue !== undefined) {
+    const path = "config.resources.workloadQueue";
+    const value = assertPlainObject(resources.workloadQueue, path);
+    assertKnownKeys(value, ["enabled", "waitTimeoutSeconds"], path);
+    if (typeof value.enabled !== "boolean")
+      throw new Error(`${path}.enabled must be a boolean.`);
+    const waitTimeoutSeconds =
+      value.waitTimeoutSeconds === undefined ? 30 : value.waitTimeoutSeconds;
+    if (
+      !Number.isInteger(waitTimeoutSeconds) ||
+      typeof waitTimeoutSeconds !== "number" ||
+      waitTimeoutSeconds < 0 ||
+      waitTimeoutSeconds > 300
+    )
+      throw new Error(
+        `${path}.waitTimeoutSeconds must be an integer from 0 to 300.`,
+      );
+    workloadQueue = Object.freeze({
+      enabled: value.enabled,
+      waitTimeoutSeconds,
+    });
+  }
   const schedule = resources.cleanupSchedule ?? "manual";
   if (
     typeof schedule !== "string" ||
@@ -59,6 +85,7 @@ export const normalizeResourcePolicy = (resources: PlainObject) => {
     );
   }
   return Object.freeze({
+    ...(workloadQueue === undefined ? {} : { workloadQueue }),
     staleAfterSeconds: nullablePositiveInteger(
       resources.staleAfterSeconds,
       "config.resources.staleAfterSeconds",

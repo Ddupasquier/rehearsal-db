@@ -20,6 +20,8 @@ export type ApplicationRequiredService =
   | "image-transforms";
 
 export interface RehearsalResourcePolicy {
+  /** Cooperatively serialize participating local runtime lifecycle phases. */
+  workloadQueue?: { enabled: boolean; waitTimeoutSeconds?: number };
   /** Review cutoff based on container start/stop, not application or database use. */
   staleAfterSeconds?: number | null;
   /** Advisory limit; retained databases are never automatically deleted. */

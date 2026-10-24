@@ -26,6 +26,7 @@ const CANCELLABLE_COMMANDS = new Set([
   "refresh",
   "reset",
   "run",
+  "start",
   "stop-stale",
 ]);
 

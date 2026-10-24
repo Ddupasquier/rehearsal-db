@@ -30,6 +30,40 @@ const supabase = () => {
 };
 
 describe("resource configuration", () => {
+  it("normalizes only explicitly configured lifecycle queues and validates every bound", () => {
+    expect(normalizeRehearsalConfig(input()).resources).not.toHaveProperty(
+      "workloadQueue",
+    );
+    expect(
+      normalizeRehearsalConfig({
+        ...input(),
+        resources: { workloadQueue: { enabled: true } },
+      }).resources.workloadQueue,
+    ).toEqual({ enabled: true, waitTimeoutSeconds: 30 });
+    for (const waitTimeoutSeconds of [0, 300])
+      expect(
+        normalizeRehearsalConfig({
+          ...input(),
+          resources: { workloadQueue: { enabled: false, waitTimeoutSeconds } },
+        }).resources.workloadQueue.waitTimeoutSeconds,
+      ).toBe(waitTimeoutSeconds);
+    for (const workloadQueue of [
+      null,
+      [],
+      {},
+      { enabled: "yes" },
+      { enabled: true, force: true },
+      ...[null, -1, 301, 0.5, "30", NaN, Infinity].map(
+        (waitTimeoutSeconds) => ({
+          enabled: true,
+          waitTimeoutSeconds,
+        }),
+      ),
+    ])
+      expect(() =>
+        normalizeRehearsalConfig({ ...input(), resources: { workloadQueue } }),
+      ).toThrow();
+  });
   it("refuses application/readiness/profile URLs that collide with native service ports", () => {
     const config = input();
     expect(() =>

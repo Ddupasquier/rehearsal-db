@@ -169,6 +169,7 @@ export const validateConfigurationSchema = (
       "retainedEnvironmentCount",
       "maximumBytes",
       "cleanupSchedule",
+      "workloadQueue",
     ],
     "config.resources",
   );

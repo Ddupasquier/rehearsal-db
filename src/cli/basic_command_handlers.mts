@@ -30,6 +30,8 @@ Commands:
   activity                   Report idle, busy, stale, or invalid operation state
   environments               List owned runtimes and Docker capacity without starting it
   resources                  Browse individual images, volumes, and other local resources
+  workloads                  Inspect participating local lifecycle queue metadata
+  workloads recover --confirm-workloads= Recover reviewed dead-holder metadata only
   explain                    Show the immutable execution plan
   run --dry-run              Alias the exact explain plan without mutations
   run --confirm-candidates=  Execute reset, migration, and verification locally

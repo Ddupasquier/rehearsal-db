@@ -24,6 +24,7 @@ export interface RehearsalCliFlags {
   imagesOnly: boolean;
   cleanupConfirmation: string | undefined;
   stopConfirmation: string | undefined;
+  workloadConfirmation: string | undefined;
   proposalPath: string | undefined;
   sourceAccessConfirmation: string | undefined;
   sourceRetirementConfirmation: string | undefined;
@@ -62,6 +63,7 @@ export const parseArguments = (
     imagesOnly: false,
     cleanupConfirmation: undefined,
     stopConfirmation: undefined,
+    workloadConfirmation: undefined,
     proposalPath: undefined,
     sourceAccessConfirmation: undefined,
     sourceRetirementConfirmation: undefined,
@@ -90,6 +92,10 @@ export const parseArguments = (
       flags.cleanupConfirmation = argument.slice("--confirm-cleanup=".length);
     else if (argument.startsWith("--confirm-stop="))
       flags.stopConfirmation = argument.slice("--confirm-stop=".length);
+    else if (argument.startsWith("--confirm-workloads="))
+      flags.workloadConfirmation = argument.slice(
+        "--confirm-workloads=".length,
+      );
     else if (argument.startsWith("--proposal="))
       flags.proposalPath = argument.slice("--proposal=".length);
     else if (argument.startsWith("--confirm-source-access="))
@@ -149,6 +155,7 @@ export const resetGuidedFlags = (flags: RehearsalCliFlags): void => {
     imagesOnly: false,
     cleanupConfirmation: undefined,
     stopConfirmation: undefined,
+    workloadConfirmation: undefined,
     proposalPath: undefined,
     sourceAccessConfirmation: undefined,
     sourceRetirementConfirmation: undefined,

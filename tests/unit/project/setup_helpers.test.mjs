@@ -1,4 +1,5 @@
 import {
+  copyFile,
   mkdir,
   readFile,
   readdir,
@@ -447,10 +448,32 @@ describe("OS-specific source setup helpers", () => {
   });
   it("creates identical allowlisted OS ZIPs without building or overwriting output", async () => {
     const f = await fixture();
+    // Assembly uses a self-contained release fixture. An unreleased development
+    // package must not retarget the maintained public installer to nonexistent bytes.
+    const bundleRoot = join(f.root, "bundle-source");
+    await mkdir(bundleRoot);
+    await writeFile(
+      join(bundleRoot, "package.json"),
+      JSON.stringify({ version: CORE_VERSION }),
+    );
+    for (const source of [
+      "LICENSE",
+      "installers/README.md",
+      "installers/shared/setup.mjs",
+      "installers/windows/README.md",
+      "installers/windows/setup.ps1",
+      "installers/macos/README.md",
+      "installers/macos/setup.command",
+      "installers/linux/README.md",
+      "installers/linux/setup.sh",
+    ]) {
+      await mkdir(dirname(join(bundleRoot, source)), { recursive: true });
+      await copyFile(resolve(source), join(bundleRoot, source));
+    }
     const first = join(f.root, "first"),
       second = join(f.root, "second");
-    const a = await buildSetupBundles(first),
-      b = await buildSetupBundles(second);
+    const a = await buildSetupBundles(first, bundleRoot),
+      b = await buildSetupBundles(second, bundleRoot);
     expect(a).toEqual(b);
     expect(a.map(({ platform }) => platform)).toEqual([
       "windows",
@@ -461,11 +484,19 @@ describe("OS-specific source setup helpers", () => {
       expect(await readFile(join(first, result.filename))).toEqual(
         await readFile(join(second, result.filename)),
       );
-    await expect(buildSetupBundles(first)).rejects.toMatchObject({
+    await expect(buildSetupBundles(first, bundleRoot)).rejects.toMatchObject({
       code: "EEXIST",
     });
     expect(() =>
       deterministicZip([{ name: "../escape", bytes: "unsafe" }]),
     ).toThrow(/Unsafe/u);
+    await writeFile(
+      join(bundleRoot, "package.json"),
+      JSON.stringify({ version: newerMinor }),
+    );
+    await expect(
+      buildSetupBundles(join(f.root, "mismatched"), bundleRoot),
+    ).rejects.toThrow("Setup target and package version differ");
+    expect(await readdir(f.root)).not.toContain("mismatched");
   });
 });
