@@ -358,6 +358,27 @@ const childClient = (command, args, { cwd, environment = {}, timeout }) => {
 };
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
 
+export const IMPACT_RACE_FIXTURE_LIMITS = Object.freeze({
+  observationMilliseconds: 5000,
+  serverMilliseconds: 8000,
+  indexClientMilliseconds: 10000,
+  holderClientMilliseconds: 15000,
+});
+
+/** Auxiliary DDL gets the holder's existing bound, not a shorter startup race. */
+export const buildImpactRaceIndexProbe = (application) => {
+  if (
+    typeof application !== "string" ||
+    !/^rehearsal-impact-index-[1-9][0-9]{0,9}$/u.test(application)
+  )
+    fail();
+  return `set application_name = '${application}';
+set lock_timeout = '${IMPACT_RACE_FIXTURE_LIMITS.serverMilliseconds}ms';
+set statement_timeout = '${IMPACT_RACE_FIXTURE_LIMITS.serverMilliseconds}ms';
+create index impact_review_race_index on ${SCHEMA}.parent ((${SCHEMA}.guard(id)));
+`;
+};
+
 /** Fixed auxiliary-client diagnostics, never provider text or fixture SQL. */
 export const assertImpactRaceIndexResult = (result) => {
   if (result?.fault === false && result.status === 0 && !result.signal) return;
@@ -412,7 +433,7 @@ export const waitForImpactLock = async ({
   now = () => performance.now(),
   wait = pause,
 }) => {
-  const deadline = now() + 5000;
+  const deadline = now() + IMPACT_RACE_FIXTURE_LIMITS.observationMilliseconds;
   while (
     now() < deadline &&
     client.child.exitCode === null &&
@@ -583,13 +604,13 @@ export const provePostgresqlMigrationImpact = async ({
     const client = childClient(
       "docker",
       ["--host", local.endpoint, "exec", "--interactive", id, ...PSQL],
-      { cwd, timeout: 15000 },
+      { cwd, timeout: IMPACT_RACE_FIXTURE_LIMITS.holderClientMilliseconds },
     );
     clients.push(client);
     const holder = { client, application, pid: null };
     holders.push(holder);
     client.child.stdin.write(
-      `set application_name = '${application}'; begin; set local idle_in_transaction_session_timeout = '8s'; set local transaction_timeout = '8s'; lock table only ${SCHEMA}.parent in access exclusive mode; select pg_backend_pid();\n`,
+      `set application_name = '${application}'; begin; set local idle_in_transaction_session_timeout = '${IMPACT_RACE_FIXTURE_LIMITS.serverMilliseconds}ms'; set local transaction_timeout = '${IMPACT_RACE_FIXTURE_LIMITS.serverMilliseconds}ms'; lock table only ${SCHEMA}.parent in access exclusive mode; select pg_backend_pid();\n`,
     );
     for (let attempt = 0; attempt < 100; attempt++) {
       const pid = client.output().trim();
@@ -729,12 +750,10 @@ export const provePostgresqlMigrationImpact = async ({
     const indexClient = childClient(
       "docker",
       ["--host", local.endpoint, "exec", "--interactive", id, ...PSQL],
-      { cwd, timeout: 10000 },
+      { cwd, timeout: IMPACT_RACE_FIXTURE_LIMITS.indexClientMilliseconds },
     );
     clients.push(indexClient);
-    indexClient.child.stdin.end(
-      `set application_name = '${indexApplication}';\nset lock_timeout = '4s';\ncreate index impact_review_race_index on ${SCHEMA}.parent ((${SCHEMA}.guard(id)));\n`,
-    );
+    indexClient.child.stdin.end(buildImpactRaceIndexProbe(indexApplication));
     const indexPid = await waiting(indexClient, indexApplication);
     const raceMeasurement = childClient(
       cliPath,

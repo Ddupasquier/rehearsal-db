@@ -64,6 +64,13 @@ backend. It does not repeat the same transport check with an already-spent signa
 The separate queued-index race setup reports only bounded exit/signal values and
 four allowlisted timeout SQLSTATEs. Raw provider output, SQL and object names stay
 withheld; a setup failure is not reported as an impact-measurement result.
+Its auxiliary DDL lock/statement limits match the holder's existing 8-second bound,
+instead of expiring at 4 seconds while a 5-second queue observation is still valid.
+An expired holder still fails; it never becomes successful race evidence. The
+10/15-second owned-client bounds are unchanged. This fixture-only setup budget is
+separate from the product's unchanged 1-second lock, 5-second statement and
+30-second total limits. An earlier setup failure with no SQLSTATE remains
+unclassified; a later successful WSL run does not establish its historical cause.
 
 The existing Supabase installed-consumer scenario also measures seven current-sandbox
 aggregates on two nonce-owned temporary tables, then checks a deliberate current-row

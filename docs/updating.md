@@ -38,10 +38,11 @@ instead of installing both extension identities together.
 
 Finish active Rehearsal commands first. Read the [release notes](https://github.com/Ddupasquier/rehearsal-db/releases),
 then use your project's existing package manager and dependency location. For an npm
-project that keeps Rehearsal in development dependencies, the current stable version is:
+project that keeps Rehearsal in development dependencies, update to the reviewed 1.2.0
+release only after it appears in the official registry:
 
 ```bash
-npm install --save-dev --save-exact @rehearsal-db/core@1.1.0
+npm install --save-dev --save-exact @rehearsal-db/core@1.2.0
 npx --no-install rehearsal --version
 ```
 

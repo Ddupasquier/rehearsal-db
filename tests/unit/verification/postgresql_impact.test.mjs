@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   IMPACT_FIXTURE_CANARIES,
   IMPACT_FIXTURE_SQL,
+  IMPACT_RACE_FIXTURE_LIMITS,
   assertImpactFixtureCounts,
   assertImpactPublicOutput,
   assertImpactRaceIndexResult,
   buildImpactDeadlineProbe,
+  buildImpactRaceIndexProbe,
   waitForImpactLock,
 } from "../../../scripts/verification/fixtures/postgresql_impact.mjs";
 
@@ -97,6 +99,29 @@ const options = (values = counts, reasons) => ({
 });
 
 describe("installed PostgreSQL impact fixture's independent oracles", () => {
+  it("matches auxiliary DDL to the existing holder bound without changing product limits", () => {
+    const limits = IMPACT_RACE_FIXTURE_LIMITS;
+    expect(limits).toEqual({
+      observationMilliseconds: 5000,
+      serverMilliseconds: 8000,
+      indexClientMilliseconds: 10000,
+      holderClientMilliseconds: 15000,
+    });
+    const probe = buildImpactRaceIndexProbe("rehearsal-impact-index-42");
+    expect(probe).toContain("set lock_timeout = '8000ms';");
+    expect(probe).toContain("set statement_timeout = '8000ms';");
+    expect(probe).not.toContain("4s");
+    // The separate measurement oracle still requires the public 1/5/30s bounds.
+    expect(assertImpactFixtureCounts(sample(), options())).toBeDefined();
+  });
+  it.each([
+    "rehearsal-impact-index-0",
+    "other",
+    "rehearsal-impact-index-42';",
+    null,
+  ])("refuses an unreviewed queued-index label %s", (application) => {
+    expect(() => buildImpactRaceIndexProbe(application)).toThrow();
+  });
   it("accepts only a successfully closed queued-index client", () => {
     expect(() =>
       assertImpactRaceIndexResult({ status: 0, signal: null, fault: false }),

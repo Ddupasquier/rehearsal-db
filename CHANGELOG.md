@@ -3,7 +3,7 @@
 All notable Rehearsal package changes are documented here. The format follows Keep
 a Changelog, and published versions follow Semantic Versioning.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-24
 
 ### Added
 
