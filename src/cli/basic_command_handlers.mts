@@ -38,6 +38,9 @@ Commands:
   inspect baseline           Show verified baseline provenance
   inspect migrations         Classify represented, applied, and candidate migrations
   inspect plan               Review ordered migrations, required dependencies, and warnings
+  inspect insights           Review bounded static SQL warnings; never a safety verdict
+  inspect impact             Preview aggregate measurements for one explicit --target
+  measure impact             Measure reviewed aggregates on that running local sandbox
   start                      Start an existing verified local runtime
   migrate --confirm-candidates= Apply the exact candidate suffix without resetting
   reset                      Restore and verify the immutable local baseline
@@ -51,6 +54,7 @@ Commands:
 
 Options: --help, -h --version, -V --json --verbose --debug --plain
          --config=<path> --target=<provider for setup; configured name for runtime>
+         --confirm-candidates=<whole-plan digest for run, migrate, or measure impact>
          --confirm-source-access=<digest> --confirm-source-retirement=<digest>
          --confirm-refresh=<digest>`;
 

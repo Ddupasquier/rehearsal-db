@@ -38,6 +38,37 @@ through the project's existing version manager or use the helper's explicit exec
 path; see [OS setup](installers/README.md). Helpers never install Node or switch a
 project's runtime automatically.
 
+The 1.2.0 source candidate adds optional capability
+`rehearsalContracts.migrationInsights: 1` and `inspect insights --json`. It preserves
+existing migration-plan v1, baseline formats, digest meaning and failure diagnosis.
+Consumers must check the capability and exact plan/file bindings; absent or
+unavailable static analysis is not safety evidence. This candidate version and its
+setup target do not establish publication or completed editor/native acceptance.
+
+Further source work adds optional `rehearsalContracts.migrationImpact: 1` with
+`inspect impact` and `measure impact`. Consumers must explicitly select a configured
+local target and bind measurement consent to the exact whole-plan digest. Preview
+does not contact a database; measurement reads only the current verified sandbox,
+without applying migrations, starting/repairing a runtime or changing database data.
+Aggregate execution requires PostgreSQL 17 or newer with server-side transaction
+deadlines and narrowly supported ordinary-table/built-in semantics; older servers
+remain unknown, with no automatic database upgrade.
+Supabase measurement uses the ownership-proven local container's built-in
+`supabase_admin` socket role so the fixed disk bound and catalog lock can be enforced.
+It does not promote `postgres`, change grants, load credentials or connect remotely.
+Read-only catalog preflight is separate from the count snapshot. Bounded strong
+relation locks precede that snapshot and temporarily block writers and metadata
+changes in the selected disposable sandbox; this is not a nonblocking query promise.
+Counts are decimal strings or `null` with an explicit unknown reason, never a safety
+verdict, sequential simulation or production prediction. Partial/unknown measurement
+uses `not_ready` with the existing not-ready exit `1`; normal rehearsal gates and existing JSON contracts
+are unchanged. This unpublished source capability does not claim a new editor UI,
+new database family or additional platform/native acceptance.
+Older strict editor activity consumers can reject the new `measure impact` operation
+kind, including a retained completed receipt. Pair this capability with an editor
+consumer explicitly supporting that kind; the CLI does not silently rename the
+operation, relax unknown-kind validation or update an active editor installation.
+
 ## Operating systems and execution location
 
 Core 1.0.1's platform boundary distinguishes the computer running VS Code from the

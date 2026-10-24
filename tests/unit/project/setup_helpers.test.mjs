@@ -1,6 +1,5 @@
 import {
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   rm,
@@ -12,6 +11,7 @@ import { dirname } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createUnitTemporaryDirectory } from "../../helpers/unit_temporary_global.mjs";
 import {
   assertSetupHost,
   CORE_VERSION,
@@ -27,14 +27,17 @@ import {
 } from "../../../installers/build-bundles.mjs";
 
 const roots = [];
+const [targetMajor, targetMinor, targetPatch] =
+  CORE_VERSION.split(".").map(Number);
+const newerPatch = `${targetMajor}.${targetMinor}.${targetPatch + 1}`;
+const newerMinor = `${targetMajor}.${targetMinor + 1}.0`;
 afterEach(async () => {
   vi.unstubAllEnvs();
   for (const root of roots.splice(0))
     await rm(root, { recursive: true, force: true });
 });
 const fixture = async (manifest = {}) => {
-  await mkdir(resolve("test-results"), { recursive: true });
-  const root = await mkdtemp(resolve("test-results", "setup helpers ü "));
+  const root = await createUnitTemporaryDirectory("setup helpers ü ");
   roots.push(root);
   await writeFile(
     join(root, "package.json"),
@@ -228,7 +231,7 @@ describe("OS-specific source setup helpers", () => {
     },
   );
   it("updates older compatible installations to the exact helper target", () => {
-    for (const installed of ["1.0.0", "1.0.1", "1.0.2"]) {
+    for (const installed of ["1.0.0", "1.0.1", "1.0.2", "1.1.0", "1.1.1"]) {
       expect(
         planCoreInstallation(
           { devDependencies: { "@rehearsal-db/core": installed } },
@@ -236,7 +239,7 @@ describe("OS-specific source setup helpers", () => {
         ).arguments,
       ).toContain(`@rehearsal-db/core@${CORE_VERSION}`);
     }
-    for (const installed of [CORE_VERSION, "1.1.1", "1.2.0"]) {
+    for (const installed of [CORE_VERSION, newerPatch, newerMinor]) {
       expect(
         planCoreInstallation(
           { devDependencies: { "@rehearsal-db/core": installed } },
@@ -273,14 +276,14 @@ describe("OS-specific source setup helpers", () => {
     expect(
       planCoreInstallation(
         { dependencies: { "@rehearsal-db/core": "^1.0.0" } },
-        "1.1.0",
+        CORE_VERSION,
       ).arguments,
     ).toBeNull();
     for (const declaration of [
       "2.0.0",
       "file:../core",
       "git+https://example.invalid/core.git",
-      "1.2.0",
+      newerMinor,
     ])
       expect(() =>
         planCoreInstallation({

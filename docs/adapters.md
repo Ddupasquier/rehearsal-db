@@ -35,3 +35,13 @@ adapter responsibility.
 Keep adapters small, deterministic, tested, and visibly project-owned. If a behavior is
 generic across unrelated projects, propose it for the engine instead of copying it into
 every adapter.
+
+## Migration-tool histories are a separate contract
+
+Project runtime hooks do not add Prisma, Drizzle, Knex, Django or Alembic support.
+The current timestamped-SQL inventory and Rehearsal/Supabase migration ledger must
+not be presented as native compatibility with those tools. Do not flatten native
+migration directories, rewrite an applied ledger or use a schema-push shortcut to
+fit this adapter API. Versioned native history, exact review and owned-target
+execution belong to the separate core integration tracked by
+[issue #174](https://github.com/Ddupasquier/rehearsal-db/issues/174).

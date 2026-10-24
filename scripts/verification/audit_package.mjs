@@ -66,6 +66,7 @@ for (const repositoryOnly of [
   "scripts/verification/audit_package.mjs",
   "scripts/verification/fixtures/supabase.mjs",
   "scripts/verification/fixtures/postgresql.mjs",
+  "scripts/verification/fixtures/postgresql_impact.mjs",
   "scripts/verification/fixtures/dependent.mjs",
   "scripts/verification/fixtures/standalone.mjs",
   "scripts/verification/fixtures/privacy.mjs",

@@ -37,6 +37,7 @@ import {
   sha256Value,
 } from "../scenarios/artifact.mjs";
 import { executeInstalledCli } from "../scenarios/process.mjs";
+import { proveSupabaseMigrationImpact } from "./supabase_impact.mjs";
 import {
   cancelIdentityTerminalSession,
   connectIdentityTerminalSession,
@@ -925,6 +926,27 @@ from public.widgets;`,
         `The valid fixture migration did not preserve data and add its column; proof returned ${JSON.stringify(validProof)}.`,
       );
     }
+    const migrationImpact = await proveSupabaseMigrationImpact({
+      cwd,
+      artifact,
+      runSql: (sql) => runPsql({ cwd, sql }),
+      runtimeIdentity: () =>
+        sha256Value(
+          runLocalCommand(
+            "docker",
+            [
+              "inspect",
+              "--format",
+              '{"id":{{json .Id}},"image":{{json .Image}},"started":{{json .State.StartedAt}},"mounts":{{json .Mounts}},"ports":{{json .NetworkSettings.Ports}}}',
+              findContainer({ cwd }),
+            ],
+            { capture: true, cwd },
+          ),
+        ),
+    });
+    commandsProven.push(
+      "bounded Supabase current-sandbox impact and refusal controls",
+    );
     const fixtureEnvironment = readLocalSupabaseEnvironment({
       cwd,
       workdir: runtimeWorkdir,
@@ -1488,6 +1510,7 @@ where bucket_id = 'fixture-assets'
           validCandidate: validFilename,
           invalidCandidate: invalidFilename,
           migrationFailureRecovery,
+          migrationImpact,
           commandsProven,
           timings,
         },

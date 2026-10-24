@@ -40,6 +40,7 @@ import {
   runScenarioCommand,
 } from "../scenarios/process.mjs";
 import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
+import { provePostgresqlMigrationImpact } from "./postgresql_impact.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");
@@ -1058,6 +1059,12 @@ const main = async () => {
     ]) {
       executeCliOrThrow({ cwd, label, args });
     }
+    const migrationImpact = await provePostgresqlMigrationImpact({
+      cwd,
+      projectId,
+      databasePort: ports.database,
+      artifact,
+    });
     const slowMigrationPath = join(
       cwd,
       "database/migrations/20260101000200_slow_candidate.sql",
@@ -1290,6 +1297,7 @@ const main = async () => {
           invalidCandidate: "20260101000200_invalid_candidate.sql",
           tutorialPackageRecovery,
           dataSpecificMigration,
+          migrationImpact,
         },
         null,
         2,

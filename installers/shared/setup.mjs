@@ -8,7 +8,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-export const CORE_VERSION = "1.1.0";
+export const CORE_VERSION = "1.2.0";
 export const EXTENSION_ID = "rehearsal-db.rehearsal-db";
 // Standalone pre-install projection of src/shared/host_platform.mts's contract.
 // The focused contract test keeps these values aligned without importing core.

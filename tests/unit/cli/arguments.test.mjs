@@ -118,4 +118,38 @@ describe("CLI arguments", () => {
       }),
     ).toBe(false);
   });
+
+  it("keeps impact preview offline and locks measurement even without confirmation or with dry-run", () => {
+    const preview = parseArguments([
+      "inspect",
+      "impact",
+      "--target=publication",
+      "--json",
+    ]);
+    expect(preview.positionals).toEqual(["inspect", "impact"]);
+    expect(preview.flags.target).toBe("publication");
+    expect(
+      commandMutatesProject({
+        command: "inspect impact",
+        flags: preview.flags,
+      }),
+    ).toBe(false);
+    const measurement = parseArguments([
+      "measure",
+      "impact",
+      "--target=primary",
+      `--confirm-candidates=${"a".repeat(64)}`,
+    ]);
+    expect(measurement.flags.confirmation).toBe("a".repeat(64));
+    expect(measurement.flags.target).toBe("primary");
+    for (const flags of [
+      measurement.flags,
+      parseArguments([]).flags,
+      parseArguments(["--dry-run"]).flags,
+    ]) {
+      expect(commandMutatesProject({ command: "measure impact", flags })).toBe(
+        true,
+      );
+    }
+  });
 });

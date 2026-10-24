@@ -5,7 +5,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { opendir, readFile, readdir } from "node:fs/promises";
 
 const migrationNamePattern = /^(\d{14})_(.+)\.sql$/u;
 
@@ -79,10 +79,30 @@ const assertOrderedUniqueHistory = <Entry extends MigrationHistoryEntry>(
 
 export const readMigrationFileInventory = async (
   directory: URL,
+  options: {
+    readonly maximumFiles?: number;
+    readonly maximumDirectoryEntries?: number;
+    readonly readBytes?: (path: URL, filename: string) => Promise<Buffer>;
+  } = {},
 ): Promise<MigrationFileEntry[]> => {
-  const names = (await readdir(directory))
-    .filter((name) => name.endsWith(".sql"))
-    .sort();
+  let names: string[] = [];
+  if (options.maximumDirectoryEntries === undefined) {
+    names = (await readdir(directory)).filter((name) => name.endsWith(".sql"));
+  } else {
+    let visited = 0;
+    // Async directory iteration closes its descriptor on success and refusal.
+    // Bounded callers must not allocate an arbitrary directory listing first.
+    for await (const entry of await opendir(directory)) {
+      if (++visited > options.maximumDirectoryEntries)
+        throw new Error(
+          "Migration inspection exceeds its bounded directory inventory.",
+        );
+      if (entry.name.endsWith(".sql")) names.push(entry.name);
+    }
+  }
+  names.sort();
+  if (options.maximumFiles !== undefined && names.length > options.maximumFiles)
+    throw new Error("Migration inspection exceeds its bounded file inventory.");
   const entries: MigrationFileEntry[] = [];
   for (const filename of names) {
     const match = migrationNamePattern.exec(filename);
@@ -91,7 +111,10 @@ export const readMigrationFileInventory = async (
         `Invalid migration filename in ${directory}: ${filename}`,
       );
     }
-    const bytes = await readFile(new URL(filename, directory));
+    const path = new URL(filename, directory);
+    const bytes = options.readBytes
+      ? await options.readBytes(path, filename)
+      : await readFile(path);
     entries.push({
       version: match[1]!,
       name: match[2]!,

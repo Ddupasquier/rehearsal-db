@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   runOwnedPostgresqlMigration,
@@ -9,6 +9,7 @@ import {
 import { normalizeRehearsalError } from "../../../dist/src/shared/diagnostics.mjs";
 import { runOwnedSupabaseMigration } from "../../../dist/src/targets/supabase_process.mjs";
 import { readManagerMigrationFailure } from "../../../dist/src/runtime/migration_failure.mjs";
+import { createUnitTemporaryDirectory } from "../../helpers/unit_temporary_global.mjs";
 
 const roots = [];
 afterEach(async () => {
@@ -16,9 +17,7 @@ afterEach(async () => {
     await rm(root, { recursive: true, force: true });
 });
 const inputForTest = async (sql, filename = "20261020000100_broken.sql") => {
-  const output = join(process.cwd(), "test-results");
-  await mkdir(output, { recursive: true });
-  const root = await mkdtemp(join(output, "rehearsal-migration-input-"));
+  const root = await createUnitTemporaryDirectory("rehearsal-migration-input-");
   roots.push(root);
   const directory = join(root, "project migrations ü");
   await mkdir(directory);

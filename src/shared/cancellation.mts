@@ -21,6 +21,7 @@ type SignalTarget = Pick<EventEmitter, "prependListener" | "removeListener">;
 
 const CANCELLABLE_COMMANDS = new Set([
   "migrate",
+  "measure impact",
   "open",
   "refresh",
   "reset",

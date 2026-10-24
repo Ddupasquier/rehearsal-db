@@ -3,7 +3,33 @@
 All notable Rehearsal package changes are documented here. The format follows Keep
 a Changelog, and published versions follow Semantic Versioning.
 
-## [Unreleased]
+## [1.2.0] - 2026-10-24
+
+### Added
+
+- An optional `migrationImpact: 1` contract: offline `inspect impact` and explicitly
+  confirmed `measure impact` for one selected, already-verified disposable local
+  sandbox. Bounded read-only snapshot aggregates cover narrow supported row,
+  populated/NULL, duplicate and foreign-key orphan counts; unsupported or incomplete
+  evidence stays unknown. No pending migration is executed, no runtime is started
+  or repaired, and no SQL, object names or row contents are returned. Counts are
+  not sequential simulation, production prediction or a safety verdict. Existing
+  project locking/cancellation is reused without adding a rehearsal gate or CLI fee.
+- An optional versioned `inspect insights` contract for bounded, read-only static
+  migration warnings. Findings bind to exact pending file bytes and the complete
+  existing candidate digest, with fixed explanations and lexical locations.
+  Unsupported, malformed or truncated analysis remains unknown; no detected
+  warning is never SQL validity, database verification or a safety verdict.
+- Project-local input bounds, unchanged leaf/directory identity checks and shared
+  input hash binding. Inspection neither executes SQL nor starts an engine or
+  contacts a database. Existing migration-plan v1 and failure diagnosis remain
+  separate, unchanged contracts.
+
+### Documentation
+
+- Clarify reviewed PostgreSQL/application/full service dependencies and resource
+  measurement limits without adding service exclusions or a new acceptance gate.
+- Distinguish project runtime hooks from native migration-tool history support.
 
 ## [1.1.0] - 2026-10-21
 

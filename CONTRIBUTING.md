@@ -45,6 +45,40 @@ Before opening a pull request:
 The unit suite uses two workers to limit overlapping CLI imports and memory pressure.
 On a slow filesystem, `npm test -- --maxWorkers=1` runs the same checks serially;
 it does not relax timeouts or skip safety assertions. Keep live database scenarios serial.
+Temporary test fixtures must use the worker-provided `tmpdir()` (or the shared
+test-only directory helper), never create children directly in the checkout's
+`test-results`. That shared-parent churn invalidates another worker's strict
+ancestry checks even when the individual fixture directories differ.
+
+The PostgreSQL impact fixture supplements public-CLI count, lock and cancellation
+checks with fixed read-only deadline probes through the **installed package's private
+transport**. One statement exceeds 5 seconds; separate short statements exceed the
+30-second server transaction limit. Its test-only 35-second cancellation signal lets
+server expiry reach the transport and verifies the backend is gone. It does not
+change or prove the public command's 30-second end-to-end budget, production aggregate
+performance, or another provider/platform. Independent Test Lab coverage continues to
+consume only public interfaces. These probes never execute pending migration SQL.
+The transport rechecks receipt, engine and container identity before returning a
+server timeout; the fixture additionally checks the pinned resources and absent
+backend. It does not repeat the same transport check with an already-spent signal.
+The separate queued-index race setup reports only bounded exit/signal values and
+four allowlisted timeout SQLSTATEs. Raw provider output, SQL and object names stay
+withheld; a setup failure is not reported as an impact-measurement result.
+Its auxiliary DDL lock/statement limits match the holder's existing 8-second bound,
+instead of expiring at 4 seconds while a 5-second queue observation is still valid.
+An expired holder still fails; it never becomes successful race evidence. The
+10/15-second owned-client bounds are unchanged. This fixture-only setup budget is
+separate from the product's unchanged 1-second lock, 5-second statement and
+30-second total limits. An earlier setup failure with no SQLSTATE remains
+unclassified; a later successful WSL run does not establish its historical cause.
+
+The existing Supabase installed-consumer scenario also measures seven current-sandbox
+aggregates on two nonce-owned temporary tables, then checks a deliberate current-row
+edit, RLS unknowns and stale whole-plan refusal. It preserves the original widgets,
+live migration ledger, configuration, keys, immutable baseline and runtime identity.
+Only its exact owned migration file and nonce-identified schema are removed; pending
+migration SQL is never applied. This provider slice is not hosted, native editor or
+Supabase-specific statement/cancellation-deadline evidence.
 
 Never use real production data in an issue, test, fixture, or pull request. Use small
 synthetic examples. Security findings belong in private vulnerability reporting, not a

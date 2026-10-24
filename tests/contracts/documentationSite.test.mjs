@@ -1,11 +1,26 @@
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
-import { buildDocs } from "../../scripts/docs/build.mjs";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { buildDocs as buildPublicDocs } from "../../scripts/docs/build.mjs";
 import { groups, pageBySlug, pages, site } from "../../scripts/docs/site.mjs";
 
 const repositoryRoot = process.cwd();
+let ownedOutput;
+let builds = 0;
+beforeAll(async () => {
+  ownedOutput = await mkdtemp(join(tmpdir(), "documentation-site-"));
+});
+afterAll(async () => {
+  if (ownedOutput) await rm(ownedOutput, { recursive: true, force: true });
+});
+// Unit builds must not create/change a shared checkout output while another
+// worker is checking exact project ancestry. Production defaults are unchanged.
+const buildDocs = (options = {}) =>
+  buildPublicDocs({
+    outputRoot: join(ownedOutput, `site-${++builds}`),
+    ...options,
+  });
 
 describe("documentation site", () => {
   it("keeps visible reciprocal GitHub and npm links in the shared package README", async () => {
@@ -199,8 +214,11 @@ describe("documentation site", () => {
       join(repositoryRoot, "docs/vscode.md"),
       "utf8",
     );
-    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.23");
-    expect(source).toContain("rehearsal-vscode/blob/v0.1.23/LICENSE");
+    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.24");
+    expect(source).toContain("rehearsal-vscode/blob/v0.1.24/LICENSE");
+    expect(source).toContain("core also reads bounded");
+    expect(source).toContain("No SQL is executed or uploaded");
+    expect(source).not.toContain("or project source during passive inspection");
     expect(source).toContain(
       "marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db",
     );

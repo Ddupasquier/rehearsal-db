@@ -1,5 +1,14 @@
 /** Versioned, read-only contracts for editor review; never a second runtime engine. */
 import { inspectMigrationReviewPlan } from "../runtime/migration_plan.mjs";
+import {
+  inspectMigrationInsights,
+  renderMigrationInsights,
+} from "../runtime/migration_insights.mjs";
+import {
+  inspectMigrationImpact,
+  measureMigrationImpact,
+  renderMigrationImpact,
+} from "../runtime/migration_impact.mjs";
 import { exactCommands, renderedCommand } from "./command_contract.mjs";
 import type { CommandDefinition } from "./command_contract.mjs";
 import {
@@ -12,6 +21,42 @@ import {
   reviewConfigurationProposal,
 } from "../project/configuration_review.mjs";
 export const createEditorCommandHandlers = (): readonly CommandDefinition[] => [
+  exactCommands(
+    "migration-impact-preview",
+    ["inspect impact"],
+    async ({ planOptions, flags }) => {
+      const data = await inspectMigrationImpact(planOptions, flags.target);
+      return renderedCommand({ data, render: renderMigrationImpact });
+    },
+  ),
+  exactCommands(
+    "migration-impact-measurement",
+    ["measure impact"],
+    async ({ planOptions, flags }) => {
+      const data = await measureMigrationImpact({
+        options: planOptions,
+        targetName: flags.target,
+        confirmation: flags.confirmation,
+      });
+      const incomplete = ["partial", "unknown"].includes(
+        data.measurementStatus,
+      );
+      return renderedCommand({
+        data,
+        render: renderMigrationImpact,
+        status: incomplete ? "not_ready" : "success",
+        ...(incomplete ? { exitCode: 1 } : {}),
+      });
+    },
+  ),
+  exactCommands(
+    "migration-insights",
+    ["inspect insights"],
+    async ({ planOptions }) => {
+      const data = await inspectMigrationInsights(planOptions);
+      return renderedCommand({ data, render: renderMigrationInsights });
+    },
+  ),
   exactCommands(
     "configuration",
     ["configuration", "configuration review"],
