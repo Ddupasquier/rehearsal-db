@@ -5,6 +5,7 @@ import {
   IMPACT_FIXTURE_SQL,
   assertImpactFixtureCounts,
   assertImpactPublicOutput,
+  assertImpactRaceIndexResult,
   buildImpactDeadlineProbe,
   waitForImpactLock,
 } from "../../../scripts/verification/fixtures/postgresql_impact.mjs";
@@ -96,6 +97,43 @@ const options = (values = counts, reasons) => ({
 });
 
 describe("installed PostgreSQL impact fixture's independent oracles", () => {
+  it("accepts only a successfully closed queued-index client", () => {
+    expect(() =>
+      assertImpactRaceIndexResult({ status: 0, signal: null, fault: false }),
+    ).not.toThrow();
+    for (const result of [undefined, { status: 0, fault: true }, { status: 1 }])
+      expect(() => assertImpactRaceIndexResult(result)).toThrow(
+        /queued-index setup failed/u,
+      );
+  });
+  it.each(["55P03", "57014", "25P03", "25P04"])(
+    "reports only an allowlisted queued-index SQLSTATE %s",
+    (sqlstate) => {
+      expect(() =>
+        assertImpactRaceIndexResult({
+          status: 3,
+          signal: null,
+          fault: false,
+          stderr: `ERROR:  ${sqlstate}\n`,
+        }),
+      ).toThrow(`status=3, signal=unknown, sqlstate=${sqlstate};`);
+    },
+  );
+  it("withholds provider text, unknown codes and arbitrary result fields", () => {
+    for (const stderr of [
+      "ERROR: PRIVATE_DIAGNOSTIC_CANARY\n",
+      "ERROR:  XX000\n",
+      "ERROR:  55P03 PRIVATE_DIAGNOSTIC_CANARY\n",
+    ]) {
+      expect(() =>
+        assertImpactRaceIndexResult({
+          status: "PRIVATE_DIAGNOSTIC_CANARY",
+          signal: "PRIVATE_DIAGNOSTIC_CANARY",
+          stderr,
+        }),
+      ).toThrow("status=unknown, signal=unknown, sqlstate=withheld;");
+    }
+  });
   it("binds the same SQL oracle to the explicitly selected Supabase provider", () => {
     const report = sample();
     report.data.target.provider = "supabase";

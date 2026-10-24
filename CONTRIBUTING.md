@@ -61,6 +61,9 @@ consume only public interfaces. These probes never execute pending migration SQL
 The transport rechecks receipt, engine and container identity before returning a
 server timeout; the fixture additionally checks the pinned resources and absent
 backend. It does not repeat the same transport check with an already-spent signal.
+The separate queued-index race setup reports only bounded exit/signal values and
+four allowlisted timeout SQLSTATEs. Raw provider output, SQL and object names stay
+withheld; a setup failure is not reported as an impact-measurement result.
 
 The existing Supabase installed-consumer scenario also measures seven current-sandbox
 aggregates on two nonce-owned temporary tables, then checks a deliberate current-row

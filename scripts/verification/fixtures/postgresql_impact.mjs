@@ -358,6 +358,29 @@ const childClient = (command, args, { cwd, environment = {}, timeout }) => {
 };
 const pause = () => new Promise((resolve) => setTimeout(resolve, 25));
 
+/** Fixed auxiliary-client diagnostics, never provider text or fixture SQL. */
+export const assertImpactRaceIndexResult = (result) => {
+  if (result?.fault === false && result.status === 0 && !result.signal) return;
+  const sqlstate =
+    typeof result?.stderr === "string" &&
+    result.stderr.length <= MAX_BYTES &&
+    /(?:^|\n)ERROR:\s+(55P03|57014|25P03|25P04)\s*(?:\n|$)/u.exec(
+      result.stderr,
+    )?.[1];
+  const status =
+    Number.isInteger(result?.status) &&
+    result.status >= 0 &&
+    result.status <= 255
+      ? result.status
+      : "unknown";
+  const signal = ["SIGTERM", "SIGKILL"].includes(result?.signal)
+    ? result.signal
+    : "unknown";
+  throw new Error(
+    `The bounded impact queued-index setup failed: status=${status}, signal=${signal}, sqlstate=${sqlstate || "withheld"}; private output withheld.`,
+  );
+};
+
 /** Fixed read-only transport probes, never derived from pending migration SQL. */
 export const buildImpactDeadlineProbe = (kind, application) => {
   if (
@@ -727,7 +750,7 @@ export const provePostgresqlMigrationImpact = async ({
     );
     await release(raceHolder);
     const indexResult = await indexClient.completion;
-    if (indexResult.fault || indexResult.status !== 0) fail();
+    assertImpactRaceIndexResult(indexResult);
     const raceResult = await raceMeasurement.completion;
     assertImpactPublicOutput(raceResult, canaries);
     if (raceResult.fault || raceResult.status !== 1) fail();
