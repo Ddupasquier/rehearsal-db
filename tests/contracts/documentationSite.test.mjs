@@ -65,15 +65,24 @@ describe("documentation site", () => {
   });
 
   it("separates ordinary updates from maintainer publication instructions", async () => {
+    expect(groups.map((group) => group.label)).toEqual([
+      "Getting started",
+      "User reference",
+      "Maintainers",
+    ]);
     expect(
-      groups.find((group) => group.label === "Start here").pages,
+      groups.find((group) => group.label === "User reference").pages,
     ).toContain("updating");
     expect(groups.find((group) => group.label === "Maintainers").pages).toEqual(
-      ["architecture", "releasing"],
+      ["architecture", "stability", "releasing"],
     );
-    expect(
-      groups.find((group) => group.label === "Project").pages,
-    ).not.toContain("releasing");
+    for (const group of groups.filter(
+      (group) => group.label !== "Maintainers",
+    )) {
+      expect(group.pages).not.toContain("releasing");
+      expect(group.pages).not.toContain("architecture");
+      expect(group.pages).not.toContain("stability");
+    }
     const [updating, publishing] = await Promise.all([
       readFile(join(repositoryRoot, "docs/updating.md"), "utf8"),
       readFile(join(repositoryRoot, "docs/releasing.md"), "utf8"),
@@ -82,6 +91,20 @@ describe("documentation site", () => {
       "npm install --save-dev --save-exact @rehearsal-db/core@",
     );
     expect(updating).not.toContain("npm publish");
+    for (const question of [
+      "What changed?",
+      "Is my environment supported?",
+      "How do I update?",
+      "Breaking changes or known limitations?",
+      "Where can I verify the package's origin?",
+    ]) {
+      expect(updating).toContain(`## ${question}`);
+    }
+    expect(updating).toContain("Do not delete keys, baselines or sandbox data");
+    expect(updating).toContain("does not authorize\nproduction access");
+    expect(updating).not.toContain("bypass_actors");
+    expect(updating).not.toContain("owner attestation");
+    expect(publishing).toContain("# Maintainers: publishing Rehearsal");
     expect(publishing).toContain(
       "Audience: Rehearsal maintainers publishing a release.",
     );
@@ -91,6 +114,17 @@ describe("documentation site", () => {
   it("builds every declared Markdown page and searchable route", async () => {
     const result = await buildDocs();
     expect(result.pages).toBe(pages.length);
+    const updatesHtml = await readFile(
+      join(result.outputRoot, "updating/index.html"),
+      "utf8",
+    );
+    expect(updatesHtml).toContain(
+      'href="#where-can-i-verify-the-package39s-origin">Where can I verify the package&#039;s origin?</a>',
+    );
+    expect(updatesHtml).toContain(
+      'aria-label="Link to Where can I verify the package&#039;s origin?"',
+    );
+    expect(updatesHtml).not.toContain("package&amp;#39;s");
     for (const page of pages) {
       await expect(
         access(join(repositoryRoot, "docs", page.source)),

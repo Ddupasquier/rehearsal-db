@@ -45,6 +45,18 @@ rehearsal-db/
   An unrecognized failure stays unclassified; a later green test does not establish
   the cause of a historical failure. This test helper is not shipped product code.
 
+## Documentation audiences
+
+Site navigation separates Getting started, User reference and Maintainers. Installation,
+rehearsal, results and failure recovery belong in the first journey; configuration,
+supported environments, troubleshooting and data safety belong in reference. Keep
+deletion, production-access and unsupported-behavior warnings visible to users.
+
+`docs/updating.md` answers release changes, compatibility, updating, breaking changes
+and origin verification with links to deeper owners. Build, test and publishing details
+belong in maintainer guidance, not installation prerequisites. `docs/releasing.md` owns
+current publishing controls; historical incidents stay in release and issue history.
+
 ## CLI modules
 
 The executable is split by responsibility so no command file becomes a second

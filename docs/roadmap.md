@@ -61,6 +61,25 @@ release or consumer upgrade remains unfinished:
 - Remove consumer integration code only after its replacement passes and that deletion
   is separately approved.
 
+## Efficient local execution and optional managed runs
+
+Efficient local profiles, data-preserving lifecycle controls, essential safety and the
+complete CLI stay free. Resource improvements must preserve the services and representative
+data needed to prove the chosen scenario; a database-only pass is not full application
+acceptance. See [choosing a local profile](runtime-lifecycle.md#choosing-postgresql-or-supabase).
+
+Optional managed execution is the paid-service direction: run demanding rehearsals
+without a local database stack. It is not currently available. Its design must establish
+explicit upload consent, isolated execution, credential and retention boundaries,
+verifiable cleanup and bounded costs before a hosted launch. Sanitization does not
+automatically authorize uploading a baseline. Pricing and commercial terms remain separate.
+
+The [resource-efficiency initiative](https://github.com/Ddupasquier/rehearsal-db/issues/208)
+coordinates existing lifecycle work and bounded remote/native feasibility. Experimental
+upstream native runtimes are not a supported Rehearsal replacement merely because they
+can omit Docker. Moving an application's production host does not itself reduce the
+services a local rehearsal needs.
+
 ## Later database targets
 
 Additional database, runtime, identity-provider and migration-tool integrations require
