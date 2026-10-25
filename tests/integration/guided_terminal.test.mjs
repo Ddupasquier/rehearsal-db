@@ -105,6 +105,49 @@ const makeProject = async () => {
   return root;
 };
 
+const makeSupportTools = async (root) => {
+  // Both real PTY journeys own navigation/report presentation, not ambient
+  // tooling startup. Production probes and installed-tool fixtures stay real.
+  const toolPath = join(root, "support-tools");
+  const audit = join(root, "support-tool-calls.jsonl");
+  await mkdir(toolPath, { mode: 0o700 });
+  const toolSource = `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const { basename } = require("node:path");
+const command = basename(process.argv[1]);
+const args = process.argv.slice(2);
+const calls = {
+  npm: { "--version": "11.21.0" },
+  supabase: { "--version": "2.117.0" },
+  docker: { "--version": "Docker version 28.5.1", "info --format {{.ServerVersion}}": "28.5.1" },
+};
+const value = calls[command]?.[args.join(" ")];
+appendFileSync(${JSON.stringify(audit)}, JSON.stringify({ command, args, accepted: typeof value === "string" }) + "\\n", { mode: 0o600 });
+if (typeof value !== "string") process.exit(97);
+console.log(value);
+`;
+  for (const command of ["npm", "supabase", "docker"]) {
+    await writeFile(join(toolPath, command), toolSource, { mode: 0o700 });
+  }
+  return {
+    toolPath,
+    verify: async () => {
+      expect(
+        (await readFile(audit, "utf8")).trim().split("\n").map(JSON.parse),
+      ).toEqual([
+        { command: "npm", args: ["--version"], accepted: true },
+        { command: "supabase", args: ["--version"], accepted: true },
+        { command: "docker", args: ["--version"], accepted: true },
+        {
+          command: "docker",
+          args: ["info", "--format", "{{.ServerVersion}}"],
+          accepted: true,
+        },
+      ]);
+    },
+  };
+};
+
 const makePostgresqlProject = async () => {
   const root = await mkdtemp(join(tmpdir(), "rehearsal-guided-postgresql-"));
   roots.push(root);
@@ -526,36 +569,12 @@ describe("guided terminal journey", () => {
 
   it("offers a privacy-safe support report from the guide", async () => {
     const root = await makeProject();
-    // This real PTY scenario owns navigation and report presentation, not host
-    // tool startup. Each production version probe may take five seconds; using
-    // live Docker/Supabase here makes the ten-second interaction deadline race
-    // unrelated CI tooling. Installed-package fixtures still exercise real tools.
-    const toolPath = join(root, "support-tools");
-    const audit = join(root, "support-tool-calls.jsonl");
-    await mkdir(toolPath, { mode: 0o700 });
-    const toolSource = `#!/usr/bin/env node
-const { appendFileSync } = require("node:fs");
-const { basename } = require("node:path");
-const command = basename(process.argv[1]);
-const args = process.argv.slice(2);
-const calls = {
-  npm: { "--version": "11.21.0" },
-  supabase: { "--version": "2.117.0" },
-  docker: { "--version": "Docker version 28.5.1", "info --format {{.ServerVersion}}": "28.5.1" },
-};
-const value = calls[command]?.[args.join(" ")];
-appendFileSync(${JSON.stringify(audit)}, JSON.stringify({ command, args, accepted: typeof value === "string" }) + "\\n", { mode: 0o600 });
-if (typeof value !== "string") process.exit(97);
-console.log(value);
-`;
-    for (const command of ["npm", "supabase", "docker"]) {
-      await writeFile(join(toolPath, command), toolSource, { mode: 0o700 });
-    }
+    const tools = await makeSupportTools(root);
     const output = String(
       await runInPty({
         cwd: root,
         plain: true,
-        toolPath,
+        toolPath: tools.toolPath,
         interactions: [
           { after: "What would you like to do? [1]:", write: "2\n" },
           { after: "What would you like to do? [1]:", write: "4\n" },
@@ -563,18 +582,7 @@ console.log(value);
       }),
     ).replaceAll("\r", "");
 
-    expect(
-      (await readFile(audit, "utf8")).trim().split("\n").map(JSON.parse),
-    ).toEqual([
-      { command: "npm", args: ["--version"], accepted: true },
-      { command: "supabase", args: ["--version"], accepted: true },
-      { command: "docker", args: ["--version"], accepted: true },
-      {
-        command: "docker",
-        args: ["info", "--format", "{{.ServerVersion}}"],
-        accepted: true,
-      },
-    ]);
+    await tools.verify();
 
     expect(output).toContain("REHEARSAL SUPPORT REPORT");
     expect(output).toContain(
@@ -634,10 +642,12 @@ console.log(value);
 
   it("runs help actions from the styled menu and returns home", async () => {
     const root = await makeProject();
+    const tools = await makeSupportTools(root);
     const output = String(
       await runInPty({
         cwd: root,
         plain: false,
+        toolPath: tools.toolPath,
         interactions: [
           {
             after: "What would you like to do?",
@@ -668,6 +678,7 @@ console.log(value);
     expect(output).toContain("REHEARSAL SUPPORT REPORT");
     expect(output).toContain("Usage: rehearsal <command> [options]");
     expect(output).toContain("See you at the next rehearsal.");
+    await tools.verify();
   }, 15_000);
 
   it("keeps every action visible in the completed styled menu", async () => {
