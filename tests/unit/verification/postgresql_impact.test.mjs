@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   IMPACT_FIXTURE_CANARIES,
   IMPACT_FIXTURE_SQL,
@@ -7,6 +7,8 @@ import {
   assertImpactFixtureCounts,
   assertImpactPublicOutput,
   assertImpactRaceIndexResult,
+  assertImpactDeadlineResult,
+  withImpactDeadlineProbe,
   buildImpactDeadlineProbe,
   buildImpactRaceIndexProbe,
   waitForImpactLock,
@@ -99,6 +101,109 @@ const options = (values = counts, reasons) => ({
 });
 
 describe("installed PostgreSQL impact fixture's independent oracles", () => {
+  it("separates bounded runtime opening from the unchanged 35-second probe budget", async () => {
+    vi.useFakeTimers();
+    try {
+      let signal;
+      const result = withImpactDeadlineProbe(
+        async (value) => {
+          signal = value;
+          await new Promise((done) => setTimeout(done, 10000));
+          return "runtime";
+        },
+        async (runtime) => {
+          expect(runtime).toBe("runtime");
+          await new Promise((done) => setTimeout(done, 32000));
+          expect(signal.aborted).toBe(false);
+          return "server-deadline-observed";
+        },
+      );
+      await vi.advanceTimersByTimeAsync(42000);
+      await expect(result).resolves.toBe("server-deadline-observed");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("does not renew an expired opening or a running probe", async () => {
+    vi.useFakeTimers();
+    try {
+      const probe = vi.fn();
+      const opening = withImpactDeadlineProbe(async () => {
+        await new Promise((done) => setTimeout(done, 35001));
+      }, probe);
+      const refused = expect(opening).rejects.toThrow(
+        /private output withheld/u,
+      );
+      await vi.advanceTimersByTimeAsync(35001);
+      await refused;
+      expect(probe).not.toHaveBeenCalled();
+      let signal;
+      const running = withImpactDeadlineProbe(
+        async (value) => {
+          signal = value;
+          return "runtime";
+        },
+        async () =>
+          new Promise((done) =>
+            signal.addEventListener("abort", () => done("cancelled"), {
+              once: true,
+            }),
+          ),
+      );
+      await vi.advanceTimersByTimeAsync(34999);
+      expect(signal.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(running).resolves.toBe("cancelled");
+      expect(signal.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("clears each phase timer on failure without retrying", async () => {
+    vi.useFakeTimers();
+    try {
+      for (const phase of ["opening", "probe"]) {
+        const open = vi.fn(async () => {
+          if (phase === "opening") throw Error("fixed failure");
+          return "runtime";
+        });
+        const query = vi.fn(async () => {
+          throw Error("fixed failure");
+        });
+        await expect(withImpactDeadlineProbe(open, query)).rejects.toThrow(
+          "fixed failure",
+        );
+        expect(open).toHaveBeenCalledTimes(1);
+        expect(query).toHaveBeenCalledTimes(phase === "probe" ? 1 : 0);
+        expect(vi.getTimerCount()).toBe(0);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("reports only fixed deadline kinds/reasons and bounded timing", () => {
+    expect(() =>
+      assertImpactDeadlineResult("statement", "statement_timeout", 5000),
+    ).not.toThrow();
+    expect(() =>
+      assertImpactDeadlineResult("transaction", "transaction_timeout", 30000),
+    ).not.toThrow();
+    expect(() =>
+      assertImpactDeadlineResult("transaction", "cancelled", 35000),
+    ).toThrow("probe=transaction, reason=cancelled, elapsedMs=35000;");
+    expect(() =>
+      assertImpactDeadlineResult(
+        "PRIVATE_CANARY",
+        "PRIVATE_CANARY",
+        "PRIVATE_CANARY",
+      ),
+    ).toThrow("probe=withheld, reason=withheld, elapsedMs=withheld;");
+    expect(() =>
+      assertImpactDeadlineResult("statement", undefined, Infinity),
+    ).toThrow("reason=withheld, elapsedMs=withheld;");
+  });
   it("matches auxiliary DDL to the existing holder bound without changing product limits", () => {
     const limits = IMPACT_RACE_FIXTURE_LIMITS;
     expect(limits).toEqual({

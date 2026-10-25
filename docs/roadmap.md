@@ -1,11 +1,13 @@
 # Next steps
 
-Rehearsal core **1.1.0 is available on
-[npm](https://www.npmjs.com/package/@rehearsal-db/core)** for guided Supabase and
-ordinary PostgreSQL migration rehearsals. The [free VS Code Starter 0.1.23 preview](vscode.md)
-adds a visual workbench and is distributed through Marketplace and reviewed GitHub
-VSIX releases. Neither requires a purchase or account. Core is MIT-licensed; all
-features included in Starter are free indefinitely for personal or commercial development.
+Rehearsal core is available on
+[npm](https://www.npmjs.com/package/@rehearsal-db/core) for guided Supabase and
+ordinary PostgreSQL migration rehearsals. The [free VS Code Starter preview](vscode.md)
+adds a visual workbench through Marketplace and reviewed GitHub VSIX releases.
+[Releases and updates](updating.md) explains how to find and install the published
+versions; a roadmap or source version is not a publication claim. Neither requires
+a purchase or account. Core is MIT-licensed; all features included in Starter are
+free indefinitely for personal or commercial development.
 
 Stable core, the editor preview and a future paid Pro offer have separate completion
 boundaries. A downloadable preview does not imply that every native accessibility,

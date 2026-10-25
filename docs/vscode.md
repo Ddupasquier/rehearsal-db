@@ -70,7 +70,7 @@ real WSL core fixtures do not certify a native Remote-WSL editor walkthrough.
    setup, source access, migration execution and cleanup keep their own confirmations.
 
 Core and the extension have independent version numbers. This guide targets core
-**1.2.0** and Starter **0.1.24**, only once each is published. See [Updates](updating.md)
+**1.3.0** and Starter **0.1.24**, only once each is published. See [Updates](updating.md)
 when moving an existing installation forward.
 The extension's minimum core is `0.1.0-rc.4`. A project that is not ready should show
 setup guidance, not require you to build the extension. Opening the dashboard does not

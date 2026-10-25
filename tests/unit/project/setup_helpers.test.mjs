@@ -232,7 +232,14 @@ describe("OS-specific source setup helpers", () => {
     },
   );
   it("updates older compatible installations to the exact helper target", () => {
-    for (const installed of ["1.0.0", "1.0.1", "1.0.2", "1.1.0", "1.1.1"]) {
+    for (const installed of [
+      "1.0.0",
+      "1.0.1",
+      "1.0.2",
+      "1.1.0",
+      "1.1.1",
+      "1.2.0",
+    ]) {
       expect(
         planCoreInstallation(
           { devDependencies: { "@rehearsal-db/core": installed } },

@@ -1,13 +1,13 @@
 # Stability and release verification
 
-Rehearsal core **1.1.0 is published** on
-[npm](https://www.npmjs.com/package/@rehearsal-db/core). This page defines its
+Stable Rehearsal core releases are available on
+[npm](https://www.npmjs.com/package/@rehearsal-db/core). This page defines the
 compatibility promise and the verification policy for releases; it is not an
 unfinished launch checklist. Stable core does not require every planned database,
 editor interface, or paid feature.
 
 The compatibility promise began with **1.0.0**. The separate
-[VS Code Starter 0.1.23 preview](vscode.md) has its own editor acceptance and does
+[VS Code Starter preview](vscode.md) has its own editor acceptance and does
 not turn a core release into a completed accessibility or provider walkthrough.
 
 ## What becomes a compatibility promise
@@ -98,7 +98,7 @@ baseline. Automatic compatible updates do not cross the 0.x-to-1.x version bound
 review the changelog and deliberately select the stable version:
 
 ```bash
-npm install --save-dev --save-exact @rehearsal-db/core@1.1.0
+npm install --save-dev --save-exact @rehearsal-db/core@1.3.0
 npx --no-install rehearsal --version
 npx --no-install rehearsal doctor
 ```

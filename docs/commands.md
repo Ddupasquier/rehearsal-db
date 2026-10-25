@@ -5,7 +5,7 @@ use `npx`, so a global install is not required.
 
 ## Participating local workloads
 
-Development builds advertising `rehearsalContracts.workloadQueue: 1` support
+Core 1.3.0 and later builds advertising `rehearsalContracts.workloadQueue: 1` support
 `npx --no-install rehearsal workloads --json`. This read-only command needs no
 project configuration or Docker. Its version-1 `data` lists lifecycle ticket IDs,
 commands, PIDs, phases (`choosing`, `queued`, `held`), owner liveness and creation
@@ -35,8 +35,8 @@ Rehearsal does not infer SQL safety from filenames.
 In a core build advertising `rehearsalContracts.migrationInsights: 1`, run
 `npx --no-install rehearsal inspect insights --json` to inspect pending SQL without
 starting an engine, connecting to a database, running application commands or changing
-files. This additive contract does not change `inspect plan` version 1. It is new
-development work, not a capability of the original tested core 1.1.0 candidate.
+files. This additive contract, introduced in core 1.2.0, does not change
+`inspect plan` version 1. Older releases without the capability do not provide it.
 
 The normal version-1 command envelope contains `data.schemaVersion: 1`, the exact
 complete `candidateSha256`, candidate count, aggregate verdict and per-target entries.
@@ -70,10 +70,10 @@ The CLI and these essential safety warnings remain free.
 
 ### Current-sandbox data impact
 
-A source build advertising `rehearsalContracts.migrationImpact: 1` adds two free,
-optional commands. This is unpublished development work, not a capability of an
-already-installed release. It does not change migration-plan v1, static Insights,
-failure diagnosis, or the gates for `run` and `migrate`.
+A build advertising `rehearsalContracts.migrationImpact: 1` adds two free,
+optional commands, introduced in core 1.2.0. Check the installed capability rather
+than assuming an older release provides them. It does not change migration-plan v1,
+static Insights, failure diagnosis, or the gates for `run` and `migrate`.
 
 ```bash
 npx --no-install rehearsal inspect impact --target=primary --json
