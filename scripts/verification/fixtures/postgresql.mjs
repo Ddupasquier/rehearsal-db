@@ -1001,6 +1001,102 @@ const main = async () => {
         "Activity did not return to idle after application exit.",
       );
     }
+    // The PTY readiness budget measures application readiness and Ctrl+C, not
+    // cold reconstruction of the container retired by the first bounded open.
+    // Resume that retained database as a separate public, bounded preparation;
+    // keep the first open's automatic stop proof and all PTY budgets unchanged.
+    const retainedVolumes = run(
+      "docker",
+      [
+        "volume",
+        "ls",
+        "--filter",
+        `label=com.rehearsal-db.project=${projectId}`,
+        "--format",
+        "{{.Name}}",
+      ],
+      { cwd },
+    )
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    if (!retainedVolumes.length)
+      throw new Error(
+        "Bounded open did not preserve its owned database volume.",
+      );
+    const volumeFacts = retainedVolumes.map((name) => {
+      const fact = JSON.parse(
+        run("docker", ["volume", "inspect", name], { cwd }),
+      )[0];
+      if (
+        fact.Name !== name ||
+        fact.Labels?.["com.rehearsal-db.project"] !== projectId ||
+        !fact.CreatedAt ||
+        !fact.Driver
+      )
+        throw new Error("Retained database volume ownership is unknown.");
+      return {
+        Name: fact.Name,
+        CreatedAt: fact.CreatedAt,
+        Driver: fact.Driver,
+      };
+    });
+    executeCliOrThrow({
+      cwd,
+      label: "prepare retained database for PTY application proof",
+      args: ["start", "--json"],
+    });
+    for (const before of volumeFacts) {
+      const after = JSON.parse(
+        run("docker", ["volume", "inspect", before.Name], { cwd }),
+      )[0];
+      if (
+        after.Name !== before.Name ||
+        after.CreatedAt !== before.CreatedAt ||
+        after.Driver !== before.Driver ||
+        after.Labels?.["com.rehearsal-db.project"] !== projectId
+      )
+        throw new Error(
+          "Public PTY preparation replaced its retained database volume.",
+        );
+    }
+    const preparedContainer = run(
+      "docker",
+      [
+        "ps",
+        "--filter",
+        `label=com.rehearsal-db.project=${projectId}`,
+        "--format",
+        "{{.ID}}",
+      ],
+      { cwd },
+    ).trim();
+    if (!/^[a-f0-9]{12,64}$/u.test(preparedContainer))
+      throw new Error(
+        "PTY preparation did not resume exactly one owned database target.",
+      );
+    const preparedName = run(
+      "docker",
+      [
+        "exec",
+        preparedContainer,
+        "psql",
+        "--quiet",
+        "--no-align",
+        "--tuples-only",
+        "--username",
+        "postgres",
+        "--dbname",
+        "postgres",
+        "--command",
+        "select name from public.widgets where id = 1;",
+      ],
+      { cwd },
+    ).trim();
+    if (preparedName !== "Persisted sandbox edit")
+      throw new Error(
+        "Public PTY preparation discarded the preserved sandbox edit.",
+      );
     const terminalOpenOutput = await openApplicationTerminalSession({
       cwd,
       url: applicationUrl,

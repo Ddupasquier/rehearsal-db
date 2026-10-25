@@ -4,6 +4,10 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "../../../dist/src/runtime/local_docker_context.mjs";
+import {
   createScenarioWorkspace,
   removeScenarioWorkspace,
 } from "../scenarios/workspace.mjs";
@@ -21,12 +25,69 @@ const workspace = await createScenarioWorkspace({
   prefix: "rehearsal-resource-proof-",
 });
 const root = workspace.projectRoot;
-const identity = `rehearsal-resource-proof-${randomUUID().slice(0, 8)}`;
+const identity = `rehearsal-resource-proof-${randomUUID()}`;
 const repository = `public.ecr.aws/supabase/${identity}`;
 const tags = [`${repository}:v1`, `${repository}:v2`];
 const sourceDateEpoch = 1_609_459_200;
 let containerId = null;
-const docker = (args) => runScenarioCommand("docker", args, { cwd: root });
+const createdTags = new Set();
+// This is real-engine scratch-resource acceptance, never a fake engine or a DB/VM-memory proof.
+// Capture raw selectors before the common scenario process helper sanitizes them.
+const inheritedEnvironment = { ...process.env };
+const selected = assertLocalDockerContext({ cwd: root, inheritedEnvironment });
+const dockerEnvironment = scopedDockerEnvironment({
+  inheritedEnvironment,
+  endpoint: selected.endpoint,
+});
+const cliEnvironment = {
+  ...scopedDockerEnvironment({ inheritedEnvironment }),
+  DOCKER_CONTEXT: selected.context,
+  DOCKER_HOST: selected.endpoint,
+};
+const rawDocker = (args) =>
+  runScenarioCommand("docker", ["--host", selected.endpoint, ...args], {
+    cwd: root,
+    environment: dockerEnvironment,
+    timeout: args[0] === "build" ? 300000 : 30000,
+  });
+const readDaemon = () => {
+  const value = JSON.parse(rawDocker(["info", "--format", "{{json .ID}}"]));
+  assert(
+    typeof value === "string" &&
+      /^[a-zA-Z0-9][a-zA-Z0-9:_.-]{0,255}$/u.test(value),
+    "A finite local daemon identity is required",
+  );
+  return value;
+};
+const daemonId = readDaemon();
+const assertBinding = () => {
+  try {
+    const current = assertLocalDockerContext({
+      cwd: root,
+      inheritedEnvironment,
+      context: selected.context,
+    });
+    assert.equal(current.identity, selected.identity);
+    assert.equal(current.dockerConfig, selected.dockerConfig);
+    assert.equal(readDaemon(), daemonId);
+  } catch {
+    throw new Error(
+      `Resource fixture engine binding changed or is unavailable. No further resource action is permitted; preserve scratch recovery at ${root}.`,
+    );
+  }
+};
+const docker = (args) => {
+  assertBinding();
+  return rawDocker(args);
+};
+const installedCli = (args, throwing = false) => {
+  assertBinding();
+  return (throwing ? executeInstalledCliOrThrow : executeInstalledCli)({
+    cwd: root,
+    args,
+    environment: cliEnvironment,
+  });
+};
 const ids = (value) => value.trim().split(/\s+/u).filter(Boolean);
 const before = {
   containers: ids(
@@ -35,9 +96,7 @@ const before = {
   volumes: ids(docker(["volume", "ls", "--quiet"])),
 };
 const json = (args) =>
-  JSON.parse(
-    executeInstalledCliOrThrow({ cwd: root, args: [...args, "--json"] }).stdout,
-  ).data;
+  JSON.parse(installedCli([...args, "--json"], true).stdout).data;
 try {
   const artifact = await prepareCandidateArtifact({
     repositoryRoot: process.cwd(),
@@ -54,6 +113,11 @@ try {
   );
   installCandidateArtifact(root, artifact);
   for (const [index, tag] of tags.entries()) {
+    assert.deepEqual(
+      ids(docker(["image", "ls", "--quiet", "--no-trunc", tag])),
+      [],
+      "A scratch build must never replace an existing image tag",
+    );
     await writeFile(
       join(root, "Dockerfile"),
       `FROM scratch\nLABEL com.rehearsal-db.resource-test="${identity}"\nLABEL com.rehearsal-db.generation="${index}"\nCMD ["/never-executed"]\n`,
@@ -61,6 +125,7 @@ try {
     // Metadata-only scratch builds can omit Created. Give these synthetic images
     // explicit ages using Dockerfile 1.5 / BuildKit 0.11+'s predefined build arg.
     // https://docs.docker.com/reference/dockerfile/#buildkit-built-in-build-args
+    createdTags.add(tag);
     docker([
       "build",
       "--quiet",
@@ -108,10 +173,7 @@ try {
     "in-use",
   );
   const selection = ["cleanup", "--images-only", `--image-id=${imageId}`];
-  const refused = executeInstalledCli({
-    cwd: root,
-    args: [...selection, "--json"],
-  });
+  const refused = installedCli([...selection, "--json"]);
   assert.notEqual(
     refused.status,
     0,
@@ -137,6 +199,8 @@ try {
   );
   const preview = json(selection);
   assert.equal(preview.plan.imagesOnly, true);
+  assert.equal(preview.plan.docker.engineIdentity, selected.identity);
+  assert.equal(preview.plan.docker.daemonId, daemonId);
   assert.deepEqual(preview.plan.baselines.removed, []);
   assert.equal(preview.plan.runtime.included, false);
   assert.deepEqual(
@@ -159,10 +223,7 @@ try {
     "current",
   );
   for (const operation of ["run", "reset", "discard"]) {
-    const result = executeInstalledCli({
-      cwd: root,
-      args: [operation, "--json"],
-    });
+    const result = installedCli([operation, "--json"]);
     assert.notEqual(result.status, 0);
     assert.match(result.stdout, /protected/iu);
   }
@@ -179,6 +240,8 @@ try {
           "newest cached image preserved",
           "zero runtime/volume/baseline selection",
           "protected run/reset/discard refused",
+          "reviewed context/endpoint/client config retained",
+          "same daemon revalidated before resource and cleanup commands",
         ],
       },
       null,
@@ -246,12 +309,25 @@ try {
       identity,
     );
   }
-  for (const tag of tags) {
+  for (const tag of createdTags) {
     const available = JSON.parse(
       docker(["image", "ls", "--format", "{{json .Repository}}", tag]).trim() ||
         "null",
     );
-    if (available) docker(["image", "rm", tag]);
+    if (available) {
+      assert.equal(
+        docker([
+          "image",
+          "inspect",
+          "--format",
+          '{{index .Config.Labels "com.rehearsal-db.resource-test"}}',
+          tag,
+        ]).trim(),
+        identity,
+        "Only this fixture's labelled scratch tag may be removed",
+      );
+      docker(["image", "rm", tag]);
+    }
   }
   const after = {
     containers: new Set(
