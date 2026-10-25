@@ -56,6 +56,15 @@ test-only directory helper), never create children directly in the checkout's
 `test-results`. That shared-parent churn invalidates another worker's strict
 ancestry checks even when the individual fixture directories differ.
 
+The installed-consumer PTY check gives the application 10 seconds after Ctrl+C
+to close HTTP and reach the subsequent owned-runtime stop phase. Database cleanup
+then has a separate fixed 60-second fixture bound: PostgreSQL's existing graceful
+`docker stop --time 10` uses a 45-second transport bound, followed by ownership,
+volume and recovery-receipt verification. This does not change product timers.
+The fixture still requires successful exit, shutdown receipts and closed HTTP;
+a hung application or cleanup fails and the owned PTY is killed with a bounded
+exit wait. Application readiness remains 30 seconds.
+
 The PostgreSQL impact fixture supplements public-CLI count, lock and cancellation
 checks with fixed read-only deadline probes through the **installed package's private
 transport**. One statement exceeds 5 seconds; separate short statements exceed the
