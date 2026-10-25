@@ -426,6 +426,48 @@ rollback;
 `;
 };
 
+/** Setup and server observation each retain their own fixed, non-renewable bound. */
+export const withImpactDeadlineProbe = async (openRuntime, probe) => {
+  const controller = new AbortController();
+  let timer = setTimeout(() => controller.abort(), 35000);
+  try {
+    const runtime = await openRuntime(controller.signal);
+    if (controller.signal.aborted) fail();
+    clearTimeout(timer);
+    // The measured phase begins after opening, as its elapsed clock does.
+    // Never renew this timer during SQL or post-query identity verification.
+    timer = setTimeout(() => controller.abort(), 35000);
+    return await probe(runtime);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/** Fixed probe diagnostics, never arbitrary errors or provider output. */
+export const assertImpactDeadlineResult = (kind, reason, elapsed) => {
+  const probe = ["statement", "transaction"].includes(kind) ? kind : "withheld";
+  if (probe !== "withheld" && reason === `${kind}_timeout`) return;
+  const observed = [
+    "runtime_unavailable",
+    "ownership_mismatch",
+    "stale_runtime",
+    "query_failed",
+    "lock_timeout",
+    "statement_timeout",
+    "transaction_timeout",
+    "cancelled",
+  ].includes(reason)
+    ? reason
+    : "withheld";
+  const milliseconds =
+    Number.isSafeInteger(elapsed) && elapsed >= 0 && elapsed <= 120000
+      ? elapsed
+      : "withheld";
+  throw new Error(
+    `The bounded impact deadline probe failed: probe=${probe}, reason=${observed}, elapsedMs=${milliseconds}; private output withheld.`,
+  );
+};
+
 /** Observe short-lived locks without repeatedly starting a Docker/psql client. */
 export const waitForImpactLock = async ({
   client,
@@ -852,23 +894,31 @@ export const provePostgresqlMigrationImpact = async ({
       assertPinned();
       const application = `rehearsal-impact-deadline-${process.pid}-${kind}`;
       deadlineApplications.push(application);
-      const runtime = await transport.openMigrationImpactRuntime({
-        projectRoot: cwd,
-        target,
-        baseline,
-        signal: AbortSignal.timeout(35000),
-      });
-      const started = performance.now();
-      let reason;
-      try {
-        await runtime.runSql(buildImpactDeadlineProbe(kind, application));
-      } catch (error) {
-        if (error instanceof transport.MigrationImpactRuntimeError)
-          reason = error.reason;
-        else fail();
-      }
-      const elapsedMilliseconds = Math.round(performance.now() - started);
-      if (reason !== `${kind}_timeout`) fail();
+      const { reason, elapsedMilliseconds } = await withImpactDeadlineProbe(
+        (signal) =>
+          transport.openMigrationImpactRuntime({
+            projectRoot: cwd,
+            target,
+            baseline,
+            signal,
+          }),
+        async (runtime) => {
+          const started = performance.now();
+          let reason;
+          try {
+            await runtime.runSql(buildImpactDeadlineProbe(kind, application));
+          } catch (error) {
+            if (error instanceof transport.MigrationImpactRuntimeError)
+              reason = error.reason;
+            else fail();
+          }
+          return {
+            reason,
+            elapsedMilliseconds: Math.round(performance.now() - started),
+          };
+        },
+      );
+      assertImpactDeadlineResult(kind, reason, elapsedMilliseconds);
       const remaining = await observer.query(
         "select count(*)::integer as count from pg_stat_activity where datname = 'postgres' and application_name = $1;",
         [application],

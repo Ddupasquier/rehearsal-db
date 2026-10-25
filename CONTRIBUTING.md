@@ -53,8 +53,10 @@ ancestry checks even when the individual fixture directories differ.
 The PostgreSQL impact fixture supplements public-CLI count, lock and cancellation
 checks with fixed read-only deadline probes through the **installed package's private
 transport**. One statement exceeds 5 seconds; separate short statements exceed the
-30-second server transaction limit. Its test-only 35-second cancellation signal lets
-server expiry reach the transport and verifies the backend is gone. It does not
+30-second server transaction limit. Runtime opening and the subsequent server probe
+each have a separate fixed 35-second fixture bound. The probe timer starts after
+opening, like its elapsed clock, and is never renewed during SQL or post-query
+identity checks. This lets server expiry reach the transport and verifies the backend is gone. It does not
 change or prove the public command's 30-second end-to-end budget, production aggregate
 performance, or another provider/platform. Independent Test Lab coverage continues to
 consume only public interfaces. These probes never execute pending migration SQL.
