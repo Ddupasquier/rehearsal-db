@@ -38,14 +38,14 @@ through the project's existing version manager or use the helper's explicit exec
 path; see [OS setup](installers/README.md). Helpers never install Node or switch a
 project's runtime automatically.
 
-The 1.2.0 source candidate adds optional capability
+Core 1.2.0 introduced optional capability
 `rehearsalContracts.migrationInsights: 1` and `inspect insights --json`. It preserves
 existing migration-plan v1, baseline formats, digest meaning and failure diagnosis.
 Consumers must check the capability and exact plan/file bindings; absent or
-unavailable static analysis is not safety evidence. This candidate version and its
-setup target do not establish publication or completed editor/native acceptance.
+unavailable static analysis is not safety evidence. Package publication does not
+establish completed editor, accessibility or genuine-provider acceptance.
 
-Further source work adds optional `rehearsalContracts.migrationImpact: 1` with
+Core 1.2.0 also introduced optional `rehearsalContracts.migrationImpact: 1` with
 `inspect impact` and `measure impact`. Consumers must explicitly select a configured
 local target and bind measurement consent to the exact whole-plan digest. Preview
 does not contact a database; measurement reads only the current verified sandbox,
@@ -62,12 +62,21 @@ changes in the selected disposable sandbox; this is not a nonblocking query prom
 Counts are decimal strings or `null` with an explicit unknown reason, never a safety
 verdict, sequential simulation or production prediction. Partial/unknown measurement
 uses `not_ready` with the existing not-ready exit `1`; normal rehearsal gates and existing JSON contracts
-are unchanged. This unpublished source capability does not claim a new editor UI,
-new database family or additional platform/native acceptance.
+are unchanged. This capability does not claim a new database family or additional
+platform/native acceptance.
 Older strict editor activity consumers can reject the new `measure impact` operation
 kind, including a retained completed receipt. Pair this capability with an editor
 consumer explicitly supporting that kind; the CLI does not silently rename the
 operation, relax unknown-kind validation or update an active editor installation.
+
+Core 1.3.0 introduces optional `rehearsalContracts.workloadQueue: 1`: local
+`workloads` inspection, exact-confirmed dead-holder metadata recovery and opt-in
+`resources.workloadQueue` lifecycle admission. Omitted configuration preserves prior
+behavior. Participating clients cooperate within the same OS user, boot and process
+namespace; older clients and other tools do not participate. This does not measure
+available memory, govern standing runtimes or promise a hard machine-capacity budget.
+The existing editor field-metadata contract is unchanged. See
+[resource review policies](docs/configuration.md#resource-review-policies).
 
 ## Operating systems and execution location
 

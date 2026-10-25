@@ -15,7 +15,7 @@ They are readable helpers, not native executables or bundled Node/Docker install
 Existing Node.js 22, 24 or 26 is required. The default only checks an existing project;
 installation needs an explicit option and does not start a database. Review the
 [shared behavior and release availability](https://github.com/Ddupasquier/rehearsal-db/blob/main/installers/README.md)
-before choosing an install option. An exact core 1.1.0 install requires that version to
+before choosing an install option. The helper's exact target requires that version to
 be published; a checked-in helper is not proof of publication.
 
 ### Windows: use a WSL 2 Linux workspace

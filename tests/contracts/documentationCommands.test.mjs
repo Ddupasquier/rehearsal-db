@@ -366,7 +366,7 @@ describe("documented CLI contract", () => {
     expect(guide).toContain("independent version numbers");
     expect(guide).toContain("This guide targets core");
     expect(guide).toContain(
-      "**1.2.0** and Starter **0.1.24**, only once each is published",
+      "**1.3.0** and Starter **0.1.24**, only once each is published",
     );
     expect(guide.replace(/\s+/gu, " ")).toContain(
       "Confirm the target version appears in its official channel before installing.",
