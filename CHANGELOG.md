@@ -29,6 +29,13 @@ a Changelog, and published versions follow Semantic Versioning.
   on stop, with verified data-volume reconstruction on start. Explicit disposable run/app
   completion modes remove their owned runtime automatically; protected and unknown state refuse.
 
+### Fixed
+
+- Doctor checks running database ports and PostgreSQL images through the same
+  validated local Docker endpoint and configuration selected by the user. A
+  private or nondefault connection no longer makes its own runtime appear foreign;
+  remote, TLS, changed and unrelated selections still refuse.
+
 ### Breaking changes
 
 - New configurations and omitted lifecycle settings stop database targets after a run
