@@ -20,6 +20,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
+import {
+  awaitOwnedFixtureCancellation,
+  terminateOwnedFixtureChild,
+} from "../scenarios/owned_child.mjs";
 import { createHash } from "node:crypto";
 import {
   assertDemoObservation,
@@ -1236,16 +1240,29 @@ const main = async () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     if (!migrationObserved) {
-      cancellationChild.kill("SIGTERM");
-      await cancellationExit;
-      throw new Error(
+      const failure = new Error(
         `The cancellable migration did not reach its controlled wait: ${cancellationStdout || cancellationStderr}`,
       );
+      try {
+        await terminateOwnedFixtureChild({
+          child: cancellationChild,
+          exit: cancellationExit,
+        });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [failure, cleanupError],
+          "Migration observation failed and owned child termination could not be confirmed.",
+        );
+      }
+      throw failure;
     }
     const cancellationRequestedAt = performance.now();
     cancellationChild.kill("SIGINT");
     cancellationChild.kill("SIGINT");
-    const cancelled = await cancellationExit;
+    const cancelled = await awaitOwnedFixtureCancellation({
+      child: cancellationChild,
+      exit: cancellationExit,
+    });
     const cancellationLatencyMs = performance.now() - cancellationRequestedAt;
     if (cancelled.status !== 130 || cancellationLatencyMs > 10_000) {
       throw new Error(
