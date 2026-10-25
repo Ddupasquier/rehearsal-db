@@ -83,6 +83,11 @@ four allowlisted timeout SQLSTATEs. Raw provider output, SQL and object names st
 withheld; a setup failure is not reported as an impact-measurement result.
 Its auxiliary DDL lock/statement limits match the holder's existing 8-second bound,
 instead of expiring at 4 seconds while a 5-second queue observation is still valid.
+For the queued-index race, a private fixture-only Docker wrapper pauses the public
+command at its exact owned SQL-exec boundary before starting the auxiliary holder.
+It forwards only fixed pinned metadata and that owned invocation, without reading
+or recording SQL. The public 30-second total and 35-second child clocks keep running;
+the existing 8-second server and 5-second lock-observation limits are unchanged.
 An expired holder still fails; it never becomes successful race evidence. The
 10/15-second owned-client bounds are unchanged. This fixture-only setup budget is
 separate from the product's unchanged 1-second lock, 5-second statement and

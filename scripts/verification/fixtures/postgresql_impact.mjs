@@ -13,7 +13,14 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import pg from "pg";
-import { assertLocalDockerContext } from "../../../dist/src/runtime/local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "../../../dist/src/runtime/local_docker_context.mjs";
+import {
+  createImpactSqlGate,
+  waitForImpactGateReady,
+} from "./postgresql_impact_gate.mjs";
 import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import { spawnScenarioCommand } from "../scenarios/process.mjs";
 
@@ -624,6 +631,7 @@ export const provePostgresqlMigrationImpact = async ({
     fileCreated = false,
     observer,
     operationFailure,
+    raceGate,
     holderCounter = 0;
   const nonce = randomUUID();
   const clients = [],
@@ -787,28 +795,96 @@ export const provePostgresqlMigrationImpact = async ({
     // sees the old table, but its count snapshot must see the committed index.
     // The old ACCESS SHARE/snapshot-first protocol would miss that metadata and
     // invoke the expression canary while planning, aborting the whole batch.
-    const raceHolder = await hold();
-    const indexApplication = `rehearsal-impact-index-${process.pid}`;
-    const indexClient = childClient(
-      "docker",
-      ["--host", local.endpoint, "exec", "--interactive", id, ...PSQL],
-      { cwd, timeout: IMPACT_RACE_FIXTURE_LIMITS.indexClientMilliseconds },
-    );
-    clients.push(indexClient);
-    indexClient.child.stdin.end(buildImpactRaceIndexProbe(indexApplication));
-    const indexPid = await waiting(indexClient, indexApplication);
+    const dockerPath = bounded("/usr/bin/which", ["docker"]).stdout.trim();
+    raceGate = await createImpactSqlGate({
+      cwd,
+      docker: dockerPath,
+      binding: {
+        context: local.context,
+        endpoint: local.endpoint,
+        containerId: id,
+        containerName: `${projectId}-postgresql`,
+      },
+    });
+    // The CLI's real 30s product clock and existing 35s child bound keep running.
+    // Only the auxiliary 8s holder starts after public metadata preflight is ready.
     const raceMeasurement = childClient(
       cliPath,
       ["measure", "impact", "--target=primary", confirmation, "--json"],
-      { cwd, timeout: 35000 },
+      {
+        cwd,
+        timeout: 35000,
+        environment: {
+          ...scopedDockerEnvironment(),
+          ...raceGate.environment,
+          DOCKER_CONTEXT: local.context,
+          DOCKER_HOST: local.endpoint,
+          ...(local.dockerConfig ? { DOCKER_CONFIG: local.dockerConfig } : {}),
+        },
+      },
     );
     clients.push(raceMeasurement);
     raceMeasurement.child.stdin.end();
-    const racePid = await waiting(
-      raceMeasurement,
-      "psql",
-      `lock table only "${SCHEMA}"."parent" in share row exclusive mode;`,
-    );
+    let raceHolder,
+      indexClient,
+      indexPid,
+      racePid,
+      stage = "sql-gate-ready",
+      stageStarted = performance.now(),
+      holderStarted = null;
+    try {
+      await waitForImpactGateReady({
+        client: raceMeasurement,
+        readReady: raceGate.readReady,
+        expiresAt: raceGate.expiresAt,
+      });
+      stage = "holder-ready";
+      stageStarted = performance.now();
+      raceHolder = await hold();
+      holderStarted = performance.now();
+      const indexApplication = `rehearsal-impact-index-${process.pid}`;
+      indexClient = childClient(
+        "docker",
+        ["--host", local.endpoint, "exec", "--interactive", id, ...PSQL],
+        { cwd, timeout: IMPACT_RACE_FIXTURE_LIMITS.indexClientMilliseconds },
+      );
+      clients.push(indexClient);
+      indexClient.child.stdin.end(buildImpactRaceIndexProbe(indexApplication));
+      stage = "index-queued";
+      stageStarted = performance.now();
+      indexPid = await waiting(indexClient, indexApplication);
+      await raceGate.release();
+      stage = "measurement-lock";
+      stageStarted = performance.now();
+      racePid = await waiting(
+        raceMeasurement,
+        "psql",
+        `lock table only "${SCHEMA}"."parent" in share row exclusive mode;`,
+      );
+    } catch {
+      const status = Number.isInteger(raceMeasurement.child.exitCode)
+        ? raceMeasurement.child.exitCode
+        : "pending";
+      const signal = ["SIGTERM", "SIGKILL"].includes(
+        raceMeasurement.child.signalCode,
+      )
+        ? raceMeasurement.child.signalCode
+        : "none";
+      const elapsed = Math.min(
+        120000,
+        Math.max(0, Math.round(performance.now() - stageStarted)),
+      );
+      const holderAge =
+        holderStarted === null
+          ? "not-observed"
+          : Math.min(
+              120000,
+              Math.max(0, Math.round(performance.now() - holderStarted)),
+            );
+      throw new Error(
+        `The bounded impact race setup failed: stage=${stage}, elapsedMs=${elapsed}, childStatus=${status}, childSignal=${signal}, holderAgeMs=${holderAge}; private output withheld.`,
+      );
+    }
     await release(raceHolder);
     const indexResult = await indexClient.completion;
     assertImpactRaceIndexResult(indexResult);
@@ -1003,6 +1079,13 @@ export const provePostgresqlMigrationImpact = async ({
       client.stop();
       await client.completion;
     }
+  if (raceGate) {
+    try {
+      await raceGate.cleanup();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+  }
   for (const holder of holders)
     if (holder.pid) {
       try {
