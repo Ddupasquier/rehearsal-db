@@ -65,6 +65,10 @@ The fixture still requires successful exit, shutdown receipts and closed HTTP;
 a hung application or cleanup fails and the owned PTY is killed with a bounded
 exit wait. Application readiness remains 30 seconds.
 
+The disposable WSL runner confirms its exact child daemon's bounded teardown before
+writing passing platform evidence. Its monotonic grace and forced-stop deadlines are
+30 and 2 seconds; cleanup failures remain visible and preserve the original test failure.
+
 The PostgreSQL impact fixture supplements public-CLI count, lock and cancellation
 checks with fixed read-only deadline probes through the **installed package's private
 transport**. One statement exceeds 5 seconds; separate short statements exceed the

@@ -42,11 +42,26 @@ printf '#!/bin/sh\nexit 101\n' > "$tools/policy-rc.d"
 install -m 0755 "$tools/policy-rc.d" /usr/sbin/policy-rc.d
 apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io
 mkdir -p /run/rehearsal-ci
+source scripts/verification/owned_daemon.sh
+daemon_executable=$(readlink -f "$(command -v dockerd)")
 dockerd --host=unix:///var/run/rehearsal-ci-docker.sock \
   --data-root=/var/lib/rehearsal-ci/docker --exec-root=/run/rehearsal-ci/docker \
   --pidfile=/run/rehearsal-ci/docker.pid > "$tools/dockerd.log" 2>&1 &
 daemon_pid=$!
-cleanup() { kill "$daemon_pid" 2>/dev/null || true; wait "$daemon_pid" 2>/dev/null || true; }
+daemon_started=$(owned_daemon_capture "$daemon_pid" "$$" "$daemon_executable" 0) || {
+  printf '%s\n' 'Owned CI daemon identity could not be established; no unverified process was signalled.' >&2
+  exit 1
+}
+daemon_cleaned=false
+cleanup() {
+  local original=$?
+  trap - EXIT
+  if owned_daemon_cleanup_status "$original" "$daemon_cleaned" "$daemon_pid" "$$" "$daemon_executable" 0 "$daemon_started"; then
+    exit 0
+  else
+    exit $?
+  fi
+}
 trap cleanup EXIT
 export DOCKER_HOST=unix:///var/run/rehearsal-ci-docker.sock
 ready=false
@@ -63,6 +78,13 @@ npm run build
 node scripts/verification/platform_smoke.mjs
 npm run test:fixture:postgresql
 npm run test:fixture:dependent
+# Passing evidence includes successful bounded cleanup, not just fixture success.
+if ! owned_daemon_shutdown "$daemon_pid" "$$" "$daemon_executable" 0 "$daemon_started"; then
+  trap - EXIT # Do not renew the same failed cleanup bounds in the EXIT trap.
+  printf '%s\n' 'Owned CI daemon cleanup could not be confirmed within its fixed bounds.' >&2
+  exit 1
+fi
+daemon_cleaned=true
 node --input-type=module <<'NODE'
 import { mkdir, writeFile } from 'node:fs/promises';
 import { release } from 'node:os';
