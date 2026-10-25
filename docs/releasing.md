@@ -133,6 +133,10 @@ release-source migration.
 
 1. Start from protected `main` on a dedicated ticketed release branch.
 2. Verify the exact version, changelog, compatibility notes, and packed file list.
+   Reconcile the core, VS Code extension and Test Lab READMEs and affected guides with
+   their actual published versions and contracts. Keep candidate availability explicit,
+   link to the owning installation/update guide instead of duplicating version lists,
+   and retain dated historical evidence without presenting it as current acceptance.
 3. Run `npm run release:verify`. It performs the package checks and every
    installed-consumer scenario against one tarball, then records the exact package
    version, SHA-256, environment, commands, timings, and results in
