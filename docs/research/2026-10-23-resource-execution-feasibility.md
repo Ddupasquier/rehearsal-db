@@ -90,6 +90,42 @@ needs a provider-specific estimate after isolation, budget, legal/support and op
 review; it is not a promise of delivery within that range. #79/#96 own edition boundaries,
 #87 the runner deployment options, #85 billing and #141 legal/support terms.
 
+## Synthetic local protocol prototype
+
+The development CLI now exposes a deliberately synthetic public protocol exercise:
+
+```sh
+rehearsal managed example --json > synthetic-request.json
+rehearsal managed plan --proposal=synthetic-request.json --json
+rehearsal managed prototype --proposal=synthetic-request.json --confirm-managed=<reviewed-digest> --json
+```
+
+`managed example` supplies a short-lived request for a fixed100-row generated fixture.
+The plan binds exact synthetic artifact/baseline/candidate digests, synthetic tenant/project,
+expiry, zero normal retention, input size, runtime and V8 old-space budget. Any changed
+request invalidates consent. The local worker receives only fixed synthetic data through
+stdin and a minimal temporary environment; it accepts no SQL, arbitrary executable,
+network destination, customer payload or control-plane credential. The trusted local
+prototype tenant is fixed; production server authorization is not simulated by accepting
+an arbitrary client tenant.
+
+Success requires independently checked worker output and owned workspace removal.
+Worker loss, cancellation and deadline/expiry produce failure/cancellation; an actual or
+injected cleanup failure produces a quarantined retained-directory result for explicit
+recovery, never success. The fixture's deliberate failure scenarios exercise that contract.
+Retained synthetic directories carry a private authenticated recovery receipt and a15-minute
+review deadline. This deadline is not a claim of automatic physical deletion. Review the
+returned recovery plan, then use `managed recover --proposal=<recovery-receipt>
+--confirm-managed=<exact-digest>` to remove only that exact stopped synthetic worker workspace.
+Wrong identities, live workers, changed receipts and unexpected files refuse recovery; no
+background cleanup service or recursive deletion of unrecognized files is created.
+
+This is a protocol/process prototype, not database execution, hosted tenant isolation,
+network sandboxing, hard process-RSS enforcement, a signed evidence replacement or an
+available paid service. Provider cost remains unknown. The existing consent, tenant,
+retention, legal, spending and production boundaries above remain prerequisites for any
+hosted pilot. Cold/physical and real database acceptance are reported separately.
+
 ## Supabase native runtime assessment
 
 **Defer switching supported Rehearsal runtimes.** A bounded isolated evaluation is useful,

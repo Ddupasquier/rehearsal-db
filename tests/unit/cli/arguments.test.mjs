@@ -10,6 +10,18 @@ import {
 } from "../../../dist/src/shared/diagnostics.mjs";
 
 describe("CLI arguments", () => {
+  it("keeps confirmed VM shutdown independent of project configuration locks", () => {
+    const flags = parseArguments([
+      "engine",
+      "stop",
+      `--confirm-engine-stop=${"a".repeat(64)}`,
+    ]).flags;
+    expect(flags.engineStopConfirmation).toBe("a".repeat(64));
+    for (const command of ["engine status", "engine stop"])
+      expect(commandMutatesProject({ command, flags })).toBe(false);
+    resetGuidedFlags(flags);
+    expect(flags.engineStopConfirmation).toBeUndefined();
+  });
   it("classifies workload recovery as local-user metadata, not a project mutation", () => {
     const flags = parseArguments([
       "workloads",

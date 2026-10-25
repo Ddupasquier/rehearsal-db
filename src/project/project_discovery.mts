@@ -7,6 +7,8 @@
  */
 
 import { resolve } from "node:path";
+import { inspectContainerEngineOptions } from "../runtime/engine_discovery.mjs";
+import type { ContainerEngineDiscovery } from "../runtime/engine_discovery.mjs";
 import { discoverApplication } from "./project_discovery_application.mjs";
 import type {
   ContainerEngineProbe,
@@ -50,10 +52,12 @@ export { probeContainerEngineWithoutStarting } from "./project_discovery_metadat
 
 export const discoverProjectProfile = async ({
   projectRoot = process.cwd(),
-  containerEngineProbe = probeContainerEngineWithoutStarting,
+  containerEngineProbe,
+  containerEngineOptionsProbe,
 }: {
   projectRoot?: string;
   containerEngineProbe?: ContainerEngineProbe;
+  containerEngineOptionsProbe?: () => Promise<ContainerEngineDiscovery>;
 } = {}): Promise<ProjectDiscoveryResult> => {
   const root = resolve(projectRoot);
   const manifestSource = await readBoundedProjectFile(root, "package.json");
@@ -418,17 +422,65 @@ export const discoverProjectProfile = async ({
     );
   }
 
-  const engineState = await containerEngineProbe();
+  const containerEngines = containerEngineOptionsProbe
+    ? await containerEngineOptionsProbe()
+    : containerEngineProbe
+      ? null
+      : await inspectContainerEngineOptions({ projectRoot: root });
+  const engineState = containerEngineProbe
+    ? await containerEngineProbe()
+    : containerEngines?.state === "ready"
+      ? "running"
+      : containerEngines?.state === "unavailable"
+        ? "unavailable"
+        : "stopped";
   facts.push(
     detected("container.engine", "Docker-compatible engine", engineState, [
       {
         kind: "runtime_probe",
-        source: "docker info",
+        source: "selected local Docker context",
         detail:
           "Read-only reachability probe; Rehearsal did not issue a start command.",
       },
     ]),
   );
+  if (containerEngines)
+    facts.push(
+      detected(
+        "host.platform",
+        "Detected host platform",
+        containerEngines.host.kind,
+        [
+          {
+            kind: "runtime_probe",
+            source: "host platform",
+            detail:
+              "Runtime support remains separate from engine/tool discovery.",
+          },
+        ],
+      ),
+      detected(
+        "container.options",
+        "Local engine options",
+        containerEngines.options
+          .filter(
+            (option) =>
+              option.contexts.length || option.installed === "detected",
+          )
+          .map(
+            (option) =>
+              `${option.label}: ${option.contexts.join(", ") || "tool detected; engine not probed"}`,
+          ),
+        [
+          {
+            kind: "runtime_probe",
+            source: "local context metadata and executable presence",
+            detail:
+              "Alternate engines were not contacted or started; vendor conformance is not inferred.",
+          },
+        ],
+      ),
+    );
 
   decisions.push(
     decision(
@@ -524,6 +576,7 @@ export const discoverProjectProfile = async ({
 
   return {
     schemaVersion: PROJECT_DISCOVERY_SCHEMA_VERSION,
+    ...(containerEngines ? { containerEngines } : {}),
     project: {
       name: projectName,
       packageManifest: manifestSource === null ? "missing" : "present",

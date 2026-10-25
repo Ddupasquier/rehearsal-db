@@ -119,7 +119,14 @@ const args = process.argv.slice(2);
 const calls = {
   npm: { "--version": "11.21.0" },
   supabase: { "--version": "2.117.0" },
-  docker: { "--version": "Docker version 28.5.1", "info --format {{.ServerVersion}}": "28.5.1" },
+  docker: {
+    "--version": "Docker version 28.5.1",
+    'context ls --format {"Name":{{json .Name}},"Endpoint":{{json .DockerEndpoint}}}': JSON.stringify({ Name: "support-local", Endpoint: "unix:///synthetic/support.sock" }),
+    "context show": "support-local",
+    "context inspect --format {{json .Endpoints.docker.Host}} support-local": JSON.stringify("unix:///synthetic/support.sock"),
+    "context inspect --format {{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}} support-local": "false",
+    '--host unix:///synthetic/support.sock info --format {"ID":{{json .ID}},"ServerVersion":{{json .ServerVersion}}}': JSON.stringify({ ID: "support-synthetic-daemon", ServerVersion: "28.5.1" }),
+  },
 };
 const value = calls[command]?.[args.join(" ")];
 appendFileSync(${JSON.stringify(audit)}, JSON.stringify({ command, args, accepted: typeof value === "string" }) + "\\n", { mode: 0o600 });
@@ -135,14 +142,53 @@ console.log(value);
       expect(
         (await readFile(audit, "utf8")).trim().split("\n").map(JSON.parse),
       ).toEqual([
+        {
+          command: "docker",
+          args: [
+            "context",
+            "ls",
+            "--format",
+            '{"Name":{{json .Name}},"Endpoint":{{json .DockerEndpoint}}}',
+          ],
+          accepted: true,
+        },
+        { command: "docker", args: ["context", "show"], accepted: true },
+        {
+          command: "docker",
+          args: [
+            "context",
+            "inspect",
+            "--format",
+            "{{json .Endpoints.docker.Host}}",
+            "support-local",
+          ],
+          accepted: true,
+        },
+        {
+          command: "docker",
+          args: [
+            "context",
+            "inspect",
+            "--format",
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+            "support-local",
+          ],
+          accepted: true,
+        },
+        {
+          command: "docker",
+          args: [
+            "--host",
+            "unix:///synthetic/support.sock",
+            "info",
+            "--format",
+            '{"ID":{{json .ID}},"ServerVersion":{{json .ServerVersion}}}',
+          ],
+          accepted: true,
+        },
         { command: "npm", args: ["--version"], accepted: true },
         { command: "supabase", args: ["--version"], accepted: true },
         { command: "docker", args: ["--version"], accepted: true },
-        {
-          command: "docker",
-          args: ["info", "--format", "{{.ServerVersion}}"],
-          accepted: true,
-        },
       ]);
     },
   };

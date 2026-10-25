@@ -3,7 +3,10 @@ import {
   createStopStalePlan,
   stopReviewedStaleTarget,
 } from "../../../dist/src/runtime/stale_environment_plan.mjs";
-import { assertLocalDockerContext } from "../../../dist/src/runtime/local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  DOCKER_CONTEXT_TLS_FORMAT,
+} from "../../../dist/src/runtime/local_docker_context.mjs";
 
 const root = "/tmp/synthetic-stale-stop";
 const id = "a".repeat(64);
@@ -18,12 +21,18 @@ const original = {
 };
 const metadata = (_program, args) => ({
   status: 0,
-  stdout:
-    args[1] === "show"
+  stdout: args.includes(
+    "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+  )
+    ? "false"
+    : args[1] === "show"
       ? "local-test"
       : JSON.stringify("unix:///tmp/stale-stop-test.sock"),
 });
-const engine = assertLocalDockerContext({ runner: metadata });
+const engine = assertLocalDockerContext({
+  runner: metadata,
+  inheritedEnvironment: {},
+});
 const preview = () =>
   createStopStalePlan({
     projectRoot: root,
@@ -52,8 +61,12 @@ describe("exact stale container stopping", () => {
     const plan = preview();
     let stopped = false;
     const calls = [];
-    const run = (program, args) =>
-      args[0] === "context"
+    const run = (program, args, _cwd, environment) => {
+      if (args[0] !== "context")
+        expect(environment.DOCKER_HOST).toBe(
+          "unix:///tmp/stale-stop-test.sock",
+        );
+      return args[0] === "context"
         ? metadata(program, args)
         : {
             status: 0,
@@ -61,6 +74,7 @@ describe("exact stale container stopping", () => {
               { ...original, State: { ...original.State, Running: !stopped } },
             ]),
           };
+    };
     await stopReviewedStaleTarget({
       projectRoot: root,
       plan,
@@ -125,9 +139,11 @@ describe("exact stale container stopping", () => {
         projectRoot: root,
         plan,
         target: plan.targets[0],
-        run: () => ({
+        run: (_command, args) => ({
           status: 0,
-          stdout: JSON.stringify("unix:///tmp/different.sock"),
+          stdout: args.includes(DOCKER_CONTEXT_TLS_FORMAT)
+            ? "false"
+            : JSON.stringify("unix:///tmp/different.sock"),
         }),
         execute: async () => {
           mutations++;

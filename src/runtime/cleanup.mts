@@ -13,9 +13,11 @@ import {
   pruneBaselineGenerations,
 } from "../baseline/artifact.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
-import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
-import { parsePosixDiskUsage } from "./resource_inventory.mjs";
-import { assertLocalDockerContext } from "./local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+  type DockerContextRunner,
+} from "./local_docker_context.mjs";
 import {
   writeResourceReviewReceipt,
   RESOURCE_REVIEW_RECEIPT_FILENAME,
@@ -45,6 +47,7 @@ interface DockerUsage {
   readonly resources: unknown[];
   readonly disk: ContainerDiskUsage | null;
   readonly engineIdentity?: string | null;
+  readonly daemonId?: string | null;
 }
 
 interface DockerImage {
@@ -62,9 +65,19 @@ interface ImageCandidate {
 }
 
 interface CleanupInspection {
-  readonly inspectDockerUsage: (projectRoot: string) => DockerUsage;
-  readonly runtimeDetected: (loaded: LoadedConfiguration) => Promise<boolean>;
-  readonly inspectUnusedImages?: (projectRoot: string) => ImageCandidate[];
+  readonly run?: DockerContextRunner;
+  readonly inspectDockerUsage?: (
+    projectRoot: string,
+    session?: DockerSession | null,
+  ) => DockerUsage;
+  readonly runtimeDetected?: (
+    loaded: LoadedConfiguration,
+    session?: DockerSession | null,
+  ) => Promise<boolean>;
+  readonly inspectUnusedImages?: (
+    projectRoot: string,
+    session?: DockerSession | null,
+  ) => ImageCandidate[];
 }
 
 export interface RehearsalCleanupPlan {
@@ -99,38 +112,109 @@ const hasErrorCode = (error: unknown, code: string): boolean =>
   "code" in error &&
   error.code === code;
 
-const commandResult = (
-  command: string,
-  args: readonly string[],
-  { projectRoot }: { projectRoot: string },
-): SpawnSyncReturns<string> =>
+interface DockerSession {
+  readonly engine: ReturnType<typeof assertLocalDockerContext>;
+  readonly daemonId: string | null;
+  readonly query: (
+    args: readonly string[],
+    allowFailure?: boolean,
+  ) => SpawnSyncReturns<string>;
+  readonly revalidate: () => void;
+}
+const commandResult: DockerContextRunner = (
+  command,
+  args,
+  projectRoot,
+  environment,
+) =>
   spawnSync(command, args, {
     cwd: projectRoot,
     encoding: "utf8",
-    env: createCleanProcessEnvironment(),
+    env: environment ?? scopedDockerEnvironment(),
     maxBuffer: 32 * 1024 * 1024,
-    timeout: 30_000,
+    timeout: 30000,
     stdio: ["ignore", "pipe", "pipe"],
   });
-
+const selectedDocker = (
+  projectRoot: string,
+  runner: DockerContextRunner = commandResult,
+): DockerSession => {
+  const inheritedEnvironment = { ...process.env };
+  const engine = assertLocalDockerContext({
+    cwd: projectRoot,
+    runner,
+    inheritedEnvironment,
+  });
+  const environment = scopedDockerEnvironment({
+    inheritedEnvironment,
+    endpoint: engine.endpoint,
+  });
+  const query = (args: readonly string[], allowFailure = false) => {
+    const result = runner(
+      "docker",
+      ["--host", engine.endpoint, ...args],
+      projectRoot,
+      environment,
+    );
+    if (!allowFailure && (result.error || result.status !== 0))
+      throw new Error(
+        "The selected local Docker cleanup probe failed; no fallback engine was used.",
+      );
+    return result;
+  };
+  const readDaemon = () => {
+    const result = query(["info", "--format", "{{json .ID}}"], true);
+    if (result.status !== 0 || result.error) return null;
+    try {
+      const id: unknown = JSON.parse(result.stdout);
+      return typeof id === "string" &&
+        /^[a-zA-Z0-9][a-zA-Z0-9:_.-]{0,255}$/u.test(id)
+        ? id
+        : null;
+    } catch {
+      return null;
+    }
+  };
+  const daemonId = readDaemon();
+  return {
+    engine,
+    daemonId,
+    query,
+    revalidate: () => {
+      const current = assertLocalDockerContext({
+        cwd: projectRoot,
+        context: engine.context,
+        runner,
+        inheritedEnvironment,
+      });
+      if (
+        current.identity !== engine.identity ||
+        current.dockerConfig !== engine.dockerConfig ||
+        !daemonId ||
+        readDaemon() !== daemonId
+      )
+        throw new Error(
+          "The Docker endpoint or daemon changed after preview. Nothing further was removed; preview again.",
+        );
+    },
+  };
+};
 const runDocker = (
   args: readonly string[],
   {
-    projectRoot,
+    session,
     allowFailure = false,
-  }: { projectRoot: string; allowFailure?: boolean },
-): SpawnSyncReturns<string> => {
-  const result = commandResult("docker", args, { projectRoot });
-  if (!allowFailure && (result.error || result.status !== 0)) {
-    const detail = [result.stdout, result.stderr]
-      .filter(Boolean)
-      .join("\n")
-      .trim();
+  }: {
+    projectRoot: string;
+    session?: DockerSession | null;
+    allowFailure?: boolean;
+  },
+) => {
+  if (!session)
     throw new Error(
-      `docker ${args.join(" ")} failed${detail ? `:\n${detail}` : "."}`,
+      "A reviewed local Docker cleanup session is required; preview again.",
     );
-  }
-  return result;
+  return session.query(args, allowFailure);
 };
 
 const nonEmptyLines = (value: unknown): string[] =>
@@ -139,60 +223,55 @@ const nonEmptyLines = (value: unknown): string[] =>
     .map((line) => line.trim())
     .filter(Boolean);
 
-const dockerAvailable = (projectRoot: string): boolean =>
-  runDocker(["info"], { projectRoot, allowFailure: true }).status === 0;
-
-const inspectContainerDisk = (
-  projectRoot: string,
-): ContainerDiskUsage | null => {
-  const context = commandResult("docker", ["context", "show"], {
-    projectRoot,
-  });
-  if (context.status !== 0 || context.stdout.trim() !== "colima") return null;
-  const result = commandResult(
-    "colima",
-    ["ssh", "--", "df", "-Pk", "/var/lib/docker"],
-    { projectRoot },
-  );
-  const usage = result.status === 0 ? parsePosixDiskUsage(result.stdout) : null;
-  return usage ? { backend: "colima", ...usage } : null;
-};
-
-const inspectDockerUsage = (projectRoot: string): DockerUsage => {
-  if (!dockerAvailable(projectRoot)) {
+const dockerAvailable = (
+  _projectRoot: string,
+  session: DockerSession | null = null,
+): boolean => !!session?.daemonId;
+const inspectDockerUsage = (
+  _projectRoot: string,
+  session: DockerSession | null = null,
+): DockerUsage => {
+  if (!session?.daemonId)
     return { available: false, resources: [], disk: null };
-  }
-  const result = runDocker(["system", "df", "--format", "{{json .}}"], {
-    projectRoot,
-  });
+  const result = session.query(["system", "df", "--format", "{{json .}}"]);
   return {
     available: true,
     resources: nonEmptyLines(result.stdout).map((line) => JSON.parse(line)),
-    disk: inspectContainerDisk(projectRoot),
+    disk: null,
+    engineIdentity: session.engine.identity,
+    daemonId: session.daemonId,
   };
 };
 
-const inspectUsedImageIds = (projectRoot: string): Set<string> => {
+const inspectUsedImageIds = (
+  projectRoot: string,
+  session: DockerSession | null = null,
+): Set<string> => {
   const containers = nonEmptyLines(
-    runDocker(["container", "ls", "--all", "--quiet"], { projectRoot }).stdout,
+    runDocker(["container", "ls", "--all", "--quiet"], { projectRoot, session })
+      .stdout,
   );
   if (containers.length === 0) return new Set();
   return new Set(
     nonEmptyLines(
       runDocker(
         ["container", "inspect", "--format", "{{.Image}}", ...containers],
-        { projectRoot },
+        { projectRoot, session },
       ).stdout,
     ),
   );
 };
 
-const inspectUnusedImages = (projectRoot: string): ImageCandidate[] => {
+const inspectUnusedImages = (
+  projectRoot: string,
+  session: DockerSession | null = null,
+): ImageCandidate[] => {
   const imageIds = [
     ...new Set(
       nonEmptyLines(
         runDocker(["image", "ls", "--quiet", "--no-trunc"], {
           projectRoot,
+          session,
         }).stdout,
       ),
     ),
@@ -201,26 +280,26 @@ const inspectUnusedImages = (projectRoot: string): ImageCandidate[] => {
   const images = nonEmptyLines(
     runDocker(["image", "inspect", "--format", "{{json .}}", ...imageIds], {
       projectRoot,
+      session,
     }).stdout,
   ).map((line) => JSON.parse(line) as DockerImage);
   return selectOlderUnusedSupabaseImages({
     images,
-    usedImageIds: inspectUsedImageIds(projectRoot),
+    usedImageIds: inspectUsedImageIds(projectRoot, session),
   });
 };
 
-const runtimeDetected = async ({
-  config,
-  paths,
-  projectRoot,
-}: LoadedConfiguration): Promise<boolean> => {
+const runtimeDetected = async (
+  { config, paths, projectRoot }: LoadedConfiguration,
+  session: DockerSession | null = null,
+): Promise<boolean> => {
   try {
     await stat(paths.runtimeWorkdir);
     return true;
   } catch (error) {
     if (!hasErrorCode(error, "ENOENT")) throw error;
   }
-  if (!dockerAvailable(projectRoot)) return false;
+  if (!dockerAvailable(projectRoot, session)) return false;
   if (config.runtime.target === "postgresql") {
     const containers = runDocker(
       [
@@ -231,7 +310,7 @@ const runtimeDetected = async ({
         `label=com.rehearsal-db.project=${config.runtime.projectId}`,
         "--quiet",
       ],
-      { projectRoot },
+      { projectRoot, session },
     );
     const volumes = runDocker(
       [
@@ -241,7 +320,7 @@ const runtimeDetected = async ({
         `label=com.rehearsal-db.project=${config.runtime.projectId}`,
         "--quiet",
       ],
-      { projectRoot },
+      { projectRoot, session },
     );
     return (
       nonEmptyLines(containers.stdout).length > 0 ||
@@ -257,11 +336,13 @@ const runtimeDetected = async ({
       `label=com.supabase.cli.project=${config.runtime.projectId}`,
       "--quiet",
     ],
-    { projectRoot },
+    { projectRoot, session },
   );
   const volumes = nonEmptyLines(
-    runDocker(["volume", "ls", "--format", "{{.Name}}"], { projectRoot })
-      .stdout,
+    runDocker(["volume", "ls", "--format", "{{.Name}}"], {
+      projectRoot,
+      session,
+    }).stdout,
   );
   return (
     nonEmptyLines(containers.stdout).length > 0 ||
@@ -295,7 +376,11 @@ const inspectBaselineCleanup = async ({
 
 const cleanupIdentity = (plan: Omit<RehearsalCleanupPlan, "digest">) => ({
   projectId: plan.projectId,
-  engineIdentity: plan.docker.engineIdentity ?? null,
+  cleanupProtocol: 2,
+  engineIdentity: plan.images.requested
+    ? (plan.docker.engineIdentity ?? null)
+    : null,
+  daemonId: plan.images.requested ? (plan.docker.daemonId ?? null) : null,
   imagesOnly: plan.imagesOnly,
   protectedRuntime: plan.runtime.protected,
   retainBaselineGenerations: plan.retainBaselineGenerations,
@@ -316,7 +401,7 @@ export const planRehearsalCleanup = async ({
   includeImages = false,
   selectedImageIds,
   imagesOnly = false,
-  inspection = { inspectDockerUsage, runtimeDetected },
+  inspection = {},
 }: {
   projectRoot?: string;
   configPath?: string;
@@ -340,14 +425,36 @@ export const planRehearsalCleanup = async ({
     throw new Error(
       "This environment is protected. Unprotect it in the reviewed configuration before runtime cleanup.",
     );
-  const engine =
-    includeImages && inspection.inspectDockerUsage === inspectDockerUsage
-      ? assertLocalDockerContext({ cwd: loaded.projectRoot })
-      : null;
-  const docker = {
-    ...inspection.inspectDockerUsage(loaded.projectRoot),
-    engineIdentity: engine?.identity ?? null,
-  };
+  let session: DockerSession | null = null;
+  if (!inspection.inspectDockerUsage) {
+    try {
+      session = selectedDocker(loaded.projectRoot, inspection.run);
+    } catch (error) {
+      if (
+        includeImages ||
+        process.env.DOCKER_CONTEXT ||
+        process.env.DOCKER_HOST ||
+        process.env.DOCKER_CONFIG ||
+        process.env.DOCKER_TLS_VERIFY ||
+        process.env.DOCKER_TLS ||
+        process.env.DOCKER_CERT_PATH
+      )
+        throw error;
+    }
+  }
+  const docker = (inspection.inspectDockerUsage ?? inspectDockerUsage)(
+    loaded.projectRoot,
+    session,
+  );
+  if (
+    includeImages &&
+    docker.available &&
+    (!docker.engineIdentity || !docker.daemonId) &&
+    !inspection.inspectDockerUsage
+  )
+    throw new Error(
+      "Image cleanup requires a verified endpoint and daemon; preview again.",
+    );
   if (selectedImageIds !== undefined && !docker.available)
     throw new Error(
       "Docker is stopped or unavailable. Image selections cannot be verified.",
@@ -366,6 +473,7 @@ export const planRehearsalCleanup = async ({
         ? selectImageCleanupSubset(
             (inspection.inspectUnusedImages ?? inspectUnusedImages)(
               loaded.projectRoot,
+              session,
             ),
             selectedImageIds,
           )
@@ -385,7 +493,10 @@ export const planRehearsalCleanup = async ({
       included: includeRuntime,
       detected: imagesOnly
         ? false
-        : await inspection.runtimeDetected({ ...loaded }),
+        : await (inspection.runtimeDetected ?? runtimeDetected)(
+            { ...loaded },
+            session,
+          ),
       protected: loaded.config.runtime.protected,
     },
     images,
@@ -398,47 +509,56 @@ const removePlannedImages = ({
   candidates,
   projectRoot,
   engineIdentity,
+  daemonId,
+  runner,
 }: {
   candidates: readonly ImageCandidate[];
   projectRoot: string;
   engineIdentity: string | null;
+  daemonId: string | null;
+  runner?: DockerContextRunner;
 }): string[] => {
-  if (candidates.length === 0) return [];
+  if (!candidates.length) return [];
+  if (!engineIdentity || !daemonId)
+    throw new Error(
+      "Image cleanup requires a fresh endpoint and daemon-bound preview. Nothing was removed.",
+    );
+  const session = selectedDocker(projectRoot, runner);
+  if (
+    session.engine.identity !== engineIdentity ||
+    session.daemonId !== daemonId
+  )
+    throw new Error(
+      "The Docker endpoint or daemon changed after preview. Nothing was removed; preview again.",
+    );
   const removed: string[] = [];
   for (const candidate of candidates) {
-    const engine = assertLocalDockerContext({ cwd: projectRoot });
-    if (engine.identity !== engineIdentity)
+    session.revalidate();
+    if (inspectUsedImageIds(projectRoot, session).has(candidate.id))
       throw new Error(
-        "The Docker engine changed after preview. Nothing further was removed; preview again.",
+        "A selected image is now used by a container. Cleanup stopped; preview again.",
       );
-    const usedImageIds = inspectUsedImageIds(projectRoot);
-    if (usedImageIds.has(candidate.id)) {
-      throw new Error(
-        `Cleanup stopped because a container began using ${candidate.id}. Preview the cleanup again.`,
-      );
-    }
     for (const tag of candidate.tags) {
-      const inspection = runDocker(
+      const image = session.query(
         ["image", "inspect", "--format", "{{.Id}}", tag],
-        { projectRoot, allowFailure: true },
+        true,
       );
-      if (inspection.status !== 0)
+      if (
+        image.status !== 0 ||
+        image.error ||
+        image.stdout.trim() !== candidate.id
+      )
         throw new Error(
-          "A selected image tag disappeared after preview. Cleanup stopped; refresh and preview again.",
+          "A selected image tag changed after preview. Cleanup stopped; preview again.",
         );
-      if (inspection.stdout.trim() !== candidate.id) {
+      session.revalidate();
+      // Recheck use immediately before every mutation; no force or global prune.
+      if (inspectUsedImageIds(projectRoot, session).has(candidate.id))
         throw new Error(
-          `Cleanup stopped because ${tag} changed after the preview. Preview the cleanup again.`,
+          "A container began using the selected image. Cleanup stopped; preview again.",
         );
-      }
-      const currentEngine = assertLocalDockerContext({ cwd: projectRoot });
-      if (currentEngine.identity !== engineIdentity)
-        throw new Error(
-          "The Docker engine changed after preview. Cleanup stopped.",
-        );
-      runDocker(["--context", currentEngine.context, "image", "rm", tag], {
-        projectRoot,
-      });
+      session.revalidate();
+      session.query(["image", "rm", tag]);
       removed.push(tag);
     }
   }
@@ -504,6 +624,8 @@ export const applyRehearsalCleanup = async ({
     candidates: refreshed.images.candidates,
     projectRoot: loaded.projectRoot,
     engineIdentity: refreshed.docker.engineIdentity ?? null,
+    daemonId: refreshed.docker.daemonId ?? null,
+    ...(inspection?.run ? { runner: inspection.run } : {}),
   });
   await writeResourceReviewReceipt({
     path: join(

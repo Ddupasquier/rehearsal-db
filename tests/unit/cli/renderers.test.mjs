@@ -1,7 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { renderPlan } from "../../../dist/src/cli/renderers.mjs";
+import { renderPlan, renderDoctor } from "../../../dist/src/cli/renderers.mjs";
 
 describe("CLI renderers", () => {
+  it("shows the detected machine and preserves optional engines as unverified choices", () => {
+    const output = renderDoctor(
+      {
+        state: "NOT READY",
+        checks: [],
+        containerEngines: {
+          schemaVersion: 1,
+          host: { kind: "macos", supported: true },
+          state: "ready",
+          selected: { context: "desktop-linux", provider: "docker-desktop" },
+          options: [
+            {
+              label: "OrbStack",
+              selected: false,
+              contexts: ["orbstack"],
+              installed: "detected",
+            },
+          ],
+        },
+      },
+      "normal",
+    );
+    expect(output).toContain("Machine: macos");
+    expect(output).toContain("Engine: desktop-linux");
+    expect(output).toContain("Option: OrbStack");
+    expect(output).toContain("not probed; compatibility requires verification");
+    expect(output).toContain("NOT READY");
+  });
   it("prints each declarative authentication callback in a multi-target plan", () => {
     const output = renderPlan(
       {

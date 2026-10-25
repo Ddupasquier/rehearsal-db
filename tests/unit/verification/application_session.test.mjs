@@ -117,13 +117,56 @@ describe("exact installed CLI PTY application lifecycle", () => {
     expect(terminal.kill).toHaveBeenCalledOnce();
   });
 
-  it("keeps the 10-second Ctrl+C exit deadline", async () => {
-    mockTerminal({ write: () => {} });
+  it("keeps the 10-second Ctrl+C application deadline and kills the owned terminal", async () => {
+    const terminal = mockTerminal({ write: () => {} });
     const assertion = expect(
       openApplicationTerminalSession({ cwd, url }),
-    ).rejects.toThrow("Terminal Ctrl+C timed out");
+    ).rejects.toThrow("Terminal Ctrl+C application shutdown timed out");
     await vi.advanceTimersByTimeAsync(10_000);
     await assertion;
+    expect(terminal.kill).toHaveBeenCalledOnce();
+  });
+
+  it("allows bounded graceful database cleanup only after application closure", async () => {
+    const terminal = mockTerminal({
+      write: (_, { emit, emitExit }) => {
+        emit("Stopping the disposable local runtime");
+        setTimeout(() => {
+          emit(shutdown);
+          emitExit();
+        }, 20_000);
+      },
+    });
+    const pending = openApplicationTerminalSession({ cwd, url });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await expect(pending).resolves.toContain(shutdown);
+    expect(terminal.kill).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("bounds owned cleanup separately and kills a hung terminal", async () => {
+    const terminal = mockTerminal({
+      write: (_, { emit }) => emit("Stopping the disposable local runtime"),
+    });
+    const assertion = expect(
+      openApplicationTerminalSession({ cwd, url }),
+    ).rejects.toThrow("Terminal owned runtime cleanup timed out");
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(terminal.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await assertion;
+    expect(terminal.kill).toHaveBeenCalledOnce();
+  });
+
+  it("does not treat a cleanup marker as proof that the application closed", async () => {
+    const terminal = mockTerminal({
+      write: (_, { emit }) => emit("Stopping the disposable local runtime"),
+    });
+    fetch.mockResolvedValue({ status: 200 });
+    await expect(openApplicationTerminalSession({ cwd, url })).rejects.toThrow(
+      "Persistent application child remained reachable",
+    );
+    expect(terminal.kill).toHaveBeenCalledOnce();
   });
 
   it.each([

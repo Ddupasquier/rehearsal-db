@@ -1,8 +1,8 @@
 {
   "name": "@rehearsal-db/core",
-  "version": "1.3.0",
+  "version": "1.4.0-dev.1",
   "private": false,
-  "description": "Catch PostgreSQL and Supabase migrations that pass on empty databases but fail on real data—before deploy.",
+  "description": "Catch PostgreSQL and Supabase migrations that pass on empty databases but fail on real data\u2014before deploy.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Ddupasquier/rehearsal-db.git"
@@ -31,7 +31,14 @@
     "migrationInsights": 1,
     "migrationImpact": 1,
     "configurationReview": 1,
-    "baselineShape": 1
+    "baselineShape": 1,
+    "capacityAdmission": 1,
+    "restoreCopyCache": 1,
+    "baselineSizing": 1,
+    "managedPrototype": 1,
+    "containerRetirement": 1,
+    "containerEngineDiscovery": 1,
+    "containerEngineLifecycle": 1
   },
   "exports": {
     ".": {
@@ -47,7 +54,9 @@
     "./schema": "./dist/src/baseline/schema_snapshot.mjs",
     "./service-environment": "./dist/src/runtime/service_environment.mjs",
     "./source-access": "./dist/src/source/access.mjs",
-    "./shape": "./dist/src/source/shape.mjs"
+    "./shape": "./dist/src/source/shape.mjs",
+    "./managed-prototype": "./dist/src/runtime/managed_prototype.mjs",
+    "./resource-lifecycle": "./dist/src/runtime/container_retirement.mjs"
   },
   "files": [
     "dist",

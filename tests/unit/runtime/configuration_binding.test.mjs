@@ -1,4 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("../../../dist/src/runtime/local_docker_context.mjs", () => ({
+  bindRuntimeDockerEnvironment: vi.fn(),
+  runtimeDockerEnvironment: () => ({}),
+}));
+import { bindRuntimeDockerEnvironment } from "../../../dist/src/runtime/local_docker_context.mjs";
 import {
   assertRuntimeConfigurationBinding,
   runtimeConfigurationSha256,
@@ -11,6 +16,7 @@ const config = {
 };
 const originalBinding = process.env.REHEARSAL_CONFIGURATION_SHA256;
 afterEach(() => {
+  vi.clearAllMocks();
   if (originalBinding === undefined)
     delete process.env.REHEARSAL_CONFIGURATION_SHA256;
   else process.env.REHEARSAL_CONFIGURATION_SHA256 = originalBinding;
@@ -61,10 +67,38 @@ describe("parent/child runtime configuration binding", () => {
     await expect(guardRuntimeManagerAction(input, "stop")).rejects.toThrow(
       "target was preserved",
     );
+    expect(bindRuntimeDockerEnvironment).not.toHaveBeenCalled();
     process.env.REHEARSAL_CONFIGURATION_SHA256 =
       runtimeConfigurationSha256(config);
     await expect(
       guardRuntimeManagerAction(input, "status"),
     ).resolves.toBeUndefined();
+    expect(bindRuntimeDockerEnvironment).toHaveBeenCalledTimes(1);
+  });
+  it("refuses direct heavy capacity-enabled entry before any engine probe, while status remains available", async () => {
+    delete process.env.REHEARSAL_CONFIGURATION_SHA256;
+    const previous = process.env.REHEARSAL_DOCKER_DAEMON_ID;
+    delete process.env.REHEARSAL_DOCKER_DAEMON_ID;
+    try {
+      const input = {
+        projectRoot: "/synthetic/no-engine",
+        configPath: "/synthetic/no-engine/config.mjs",
+        config: {
+          ...config,
+          resources: { capacityAdmission: { enabled: true } },
+        },
+        paths: { rehearsalConfig: null },
+      };
+      for (const action of ["run", "start", "reset", "migrate"])
+        await expect(guardRuntimeManagerAction(input, action)).rejects.toThrow(
+          "require parent admission",
+        );
+      await expect(
+        guardRuntimeManagerAction(input, "status"),
+      ).resolves.toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.REHEARSAL_DOCKER_DAEMON_ID;
+      else process.env.REHEARSAL_DOCKER_DAEMON_ID = previous;
+    }
   });
 });

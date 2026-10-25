@@ -1,11 +1,11 @@
+import { createPostgresqlContainerLifecycle } from "./postgresql_container_resume.mjs";
+import { restoreCopyChunks } from "../runtime/restore_cache.mjs";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { createReadStream } from "node:fs";
 import type { Writable } from "node:stream";
 import { once } from "node:events";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { verifyActiveBaseline } from "../baseline/artifact.mjs";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
@@ -17,7 +17,6 @@ import { createCleanProcessEnvironment } from "../shared/process_environment.mjs
 import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
-  encodeBaselineRecordForCopy,
   summarizeRestoreError,
 } from "../runtime/restore.mjs";
 import {
@@ -447,19 +446,21 @@ const restoreBaselineRows = async ({
   child.stdin.on("error", () => undefined);
   try {
     await writeChunk(child.stdin, buildRestoreSqlPrefix(), completion);
-    const lines = createInterface({
-      input: createReadStream(paths.dataPath, { encoding: "utf8" }),
-      crlfDelay: Infinity,
+    const copy = await restoreCopyChunks({
+      artifactRoot,
+      dataPath: paths.dataPath,
+      generationId: baseline.generationId,
+      sourceSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
+      sanitizationPolicySha256: baseline.sanitizationPolicySha256,
+      target: "postgresql",
+      ...(config.resources.restoreCache
+        ? { policy: config.resources.restoreCache }
+        : {}),
+      ...(cancellationSignal ? { signal: cancellationSignal } : {}),
     });
-    for await (const line of lines) {
-      if (line) {
-        await writeChunk(
-          child.stdin,
-          `${encodeBaselineRecordForCopy(line)}\n`,
-          completion,
-        );
-      }
-    }
+    for await (const chunk of copy.chunks)
+      await writeChunk(child.stdin, chunk, completion);
+    console.log(`COPY encoding cache: ${copy.state}.`);
     await writeChunk(
       child.stdin,
       buildRestoreSqlSuffix({
@@ -652,6 +653,17 @@ const createContainer = async (password: string): Promise<void> => {
   await waitForDatabase();
 };
 
+const retainedContainerLifecycle = createPostgresqlContainerLifecycle({
+  cwd: repositoryRoot,
+  runtimeWorkdir,
+  markerPath: runtimeMarkerPath,
+  projectId,
+  image,
+  port: databasePort,
+  user: databaseUser,
+  database,
+});
+
 const resetRuntime = async () => {
   const active = await readActive();
   await removeRuntime();
@@ -727,9 +739,7 @@ const startRuntime = async () => {
     marker.databasePassword.length < 32
   )
     throw new Error(mismatchMessage);
-  if (!assertOwnedResource("container", containerName)) {
-    return resetRuntime();
-  }
+  await retainedContainerLifecycle.resumeIfMissing(marker);
   if (
     !commandSucceeds("docker", [
       "inspect",
@@ -880,14 +890,7 @@ await runRuntimeLifecycle({
     },
     migrate: migrateRuntime,
     verify: verifyRuntime,
-    stop: async () => {
-      if (
-        commandSucceeds("docker", ["info"]) &&
-        assertOwnedResource("container", containerName)
-      ) {
-        runCommand("docker", ["stop", containerName], { capture: true });
-      }
-    },
+    stop: retainedContainerLifecycle.retireStopped,
     discard: removeRuntime,
   },
 });

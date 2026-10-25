@@ -26,6 +26,7 @@ import {
 } from "./environment_classification.mjs";
 import {
   assertLocalDockerContext,
+  scopedDockerEnvironment,
   runtimeDockerEnvironment,
   runtimeDockerContext,
 } from "./local_docker_context.mjs";
@@ -127,18 +128,23 @@ type CommandRunner = (
   command: string,
   args: readonly string[],
   cwd: string,
+  environment?: NodeJS.ProcessEnv,
 ) => SpawnSyncReturns<string>;
 
-const defaultCommandRunner: CommandRunner = (command, args, cwd) =>
+const defaultCommandRunner: CommandRunner = (command, args, cwd, environment) =>
   spawnSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: createCleanProcessEnvironment({
-      overrides:
-        command === "docker" && args[0] !== "context"
-          ? runtimeDockerEnvironment()
-          : {},
-    }),
+    env:
+      environment ??
+      (command === "docker"
+        ? scopedDockerEnvironment({
+            inheritedEnvironment: {
+              ...process.env,
+              ...runtimeDockerEnvironment(),
+            },
+          })
+        : createCleanProcessEnvironment()),
     maxBuffer: 32 * 1024 * 1024,
     timeout: 30_000,
     stdio: ["ignore", "pipe", "pipe"],
@@ -151,8 +157,13 @@ export const inspectContainerDiskUsage = ({
   readonly cwd?: string;
   readonly run?: CommandRunner;
 } = {}): ContainerDiskUsage | null => {
-  const context = readContext(run, cwd);
-  return inspectDisk(run, cwd, context);
+  const local = assertLocalDockerContext({
+    cwd,
+    runner: run,
+    inheritedEnvironment: { ...process.env, ...runtimeDockerEnvironment() },
+    ...(runtimeDockerContext() ? { context: runtimeDockerContext()! } : {}),
+  });
+  return inspectDisk(run, cwd, local.context);
 };
 
 export const assertContainerCapacityForRuntime = ({
@@ -201,13 +212,6 @@ export const parsePosixDiskUsage = (
     availableBytes: values[2]! * 1024,
     usedPercent,
   };
-};
-
-const readContext = (run: CommandRunner, cwd: string): string | null => {
-  if (run === defaultCommandRunner && runtimeDockerContext() !== null)
-    return runtimeDockerContext();
-  const result = run("docker", ["context", "show"], cwd);
-  return result.status === 0 ? result.stdout.trim() || null : null;
 };
 
 const inspectDisk = (
@@ -499,7 +503,28 @@ export const inspectRehearsalResources = async (
   } = {},
 ): Promise<RehearsalResourceInventory> => {
   const topology = await loadRuntimeTopology(options);
-  const run = dependencies.run ?? defaultCommandRunner;
+  const rawRun = dependencies.run ?? defaultCommandRunner;
+  const inheritedEnvironment = {
+    ...process.env,
+    ...runtimeDockerEnvironment(),
+  };
+  const local = assertLocalDockerContext({
+    cwd: topology.projectRoot,
+    runner: rawRun,
+    inheritedEnvironment,
+    ...(runtimeDockerContext() ? { context: runtimeDockerContext()! } : {}),
+  });
+  const environment = scopedDockerEnvironment({
+    inheritedEnvironment,
+    endpoint: local.endpoint,
+  });
+  const run: CommandRunner = (command, args, cwd, env) =>
+    rawRun(
+      command,
+      args,
+      cwd,
+      env ?? (command === "docker" ? environment : undefined),
+    );
   const now = dependencies.now ?? (() => new Date());
   const inspectedAt = now();
   const cwd = topology.projectRoot;
@@ -536,8 +561,6 @@ export const inspectRehearsalResources = async (
       }),
     });
   };
-  if (dependencies.includeDetails)
-    assertLocalDockerContext({ cwd, runner: run });
   const info = run("docker", ["info"], cwd);
   if (info.status !== 0) {
     return withPolicy(
@@ -546,7 +569,7 @@ export const inspectRehearsalResources = async (
         inspectedAt: inspectedAt.toISOString(),
         engine: Object.freeze({
           state: "stopped",
-          context: readContext(run, cwd),
+          context: local.context,
           disk: null,
           resources: Object.freeze([]),
         }),
@@ -595,7 +618,7 @@ export const inspectRehearsalResources = async (
     );
   }
 
-  const context = readContext(run, cwd);
+  const context = local.context;
   const containers = inspectContainers(run, cwd);
   const volumes = inspectVolumes(run, cwd);
   const volumeSizes = inspectVolumeSizes(run, cwd);

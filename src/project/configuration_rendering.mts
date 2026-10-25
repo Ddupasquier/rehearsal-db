@@ -92,9 +92,9 @@ export default defineRehearsalConfig({
 	// Choose when Rehearsal stops its database targets. Stopping preserves all
 	// database and Storage changes; only reset or discard removes runtime state.
 	lifecycle: {
-		run: "keep-until-stop", // Or "stop-after-run" for bounded automated checks.
-		open: "keep-until-stop", // Or "stop-on-application-exit" after Ctrl+C/Ctrl+Z.
-		openIdleTimeoutSeconds: null, // Optional 30–86400; requires an app-owned activity route and stop-on-application-exit.
+		run: "stop-after-run", // Use "keep-until-stop" only during an actively owned test; opt-in "discard-after-run" deletes disposable runtime data.
+		open: "stop-on-application-exit", // Use "keep-until-stop" only during an actively owned test; opt-in "discard-on-application-exit" deletes runtime data.
+		openIdleTimeoutSeconds: null, // Optional 30–86400; requires an app-owned activity route and stop/discard-on-application-exit.
 	},
 
 	// Keep this many baseline generations, always including the active one.
@@ -231,9 +231,9 @@ export default defineRehearsalConfig({
 	// Choose when Rehearsal stops its database targets. Stopping preserves all
 	// database changes; only reset or discard removes runtime state.
 	lifecycle: {
-		run: "keep-until-stop", // Or "stop-after-run" for bounded automated checks.
-		open: "keep-until-stop", // Or "stop-on-application-exit" after Ctrl+C/Ctrl+Z.
-		openIdleTimeoutSeconds: null, // Optional 30–86400; requires an app-owned activity route and stop-on-application-exit.
+		run: "stop-after-run", // Use "keep-until-stop" only during an actively owned test; opt-in "discard-after-run" deletes disposable runtime data.
+		open: "stop-on-application-exit", // Use "keep-until-stop" only during an actively owned test; opt-in "discard-on-application-exit" deletes runtime data.
+		openIdleTimeoutSeconds: null, // Optional 30–86400; requires an app-owned activity route and stop/discard-on-application-exit.
 	},
 
 	// Keep this many baseline generations, always including the active one.

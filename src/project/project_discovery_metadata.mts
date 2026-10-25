@@ -3,16 +3,13 @@
  * project discovery. Project modules and environment files are never loaded.
  */
 
-import { execFile } from "node:child_process";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
-import { promisify } from "node:util";
 import { CONFIG_FILENAMES } from "./configuration_discovery.mjs";
-import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
+import { inspectContainerEngineOptions } from "../runtime/engine_discovery.mjs";
 import type { ContainerEngineProbe } from "./project_discovery_contract.mjs";
 
 const MAX_METADATA_BYTES = 1024 * 1024;
-const execFileAsync = promisify(execFile);
 
 const inside = (root: string, path: string): boolean => {
   const local = relative(root, path);
@@ -136,33 +133,10 @@ export const localConfigHints = (
 
 export const probeContainerEngineWithoutStarting: ContainerEngineProbe =
   async () => {
-    try {
-      await execFileAsync(
-        "docker",
-        ["info", "--format", "{{.ServerVersion}}"],
-        {
-          timeout: 2_000,
-          maxBuffer: 64 * 1024,
-          env: createCleanProcessEnvironment({
-            passthroughKeys: [
-              "COLIMA_HOME",
-              "DOCKER_CONFIG",
-              "DOCKER_CONTEXT",
-              "DOCKER_HOST",
-            ],
-          }),
-        },
-      );
-      return "running";
-    } catch (error) {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
-        return "unavailable";
-      }
-      return "stopped";
-    }
+    const result = await inspectContainerEngineOptions();
+    return result.state === "ready"
+      ? "running"
+      : result.state === "unavailable"
+        ? "unavailable"
+        : "stopped";
   };

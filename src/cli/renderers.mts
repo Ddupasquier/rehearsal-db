@@ -8,6 +8,12 @@ import type { SourceAccessPlan } from "../source/access.mjs";
 import type { IdentityClaimPlan } from "../identity/claim.mjs";
 import { terminalStyle } from "./terminal.mjs";
 import { renderBaselineShape } from "./baseline_shape_rendering.mjs";
+import { renderEngineOptions } from "./runtime_readiness_rendering.mjs";
+import type {
+  ReadinessCheck,
+  ReadinessReport,
+} from "./runtime_readiness_rendering.mjs";
+export { renderDoctor } from "./runtime_readiness_rendering.mjs";
 import type { BaselineShapeEvidence } from "../source/shape_contract.mjs";
 
 type Verbosity = "normal" | "verbose";
@@ -69,22 +75,6 @@ interface RenderStackPlan {
   >;
   readonly execution: readonly string[];
   readonly guarantee: string;
-}
-
-interface ReadinessCheck {
-  readonly id: string;
-  readonly label: string;
-  readonly status: "pass" | "fail";
-  readonly detail: string;
-  readonly remediation?: string;
-}
-
-interface ReadinessReport {
-  readonly state: string;
-  readonly checks: readonly ReadinessCheck[];
-  readonly ambientHostedVariables?: {
-    readonly presentButQuarantined: readonly string[];
-  };
 }
 
 interface RenderTable {
@@ -305,39 +295,6 @@ export const renderPlan = (
   ].join("\n");
 };
 
-export const renderDoctor = (
-  doctor: ReadinessReport,
-  verbosity: Verbosity,
-): string => {
-  const lines = doctor.checks.map((check) => {
-    const marker = check.status === "pass" ? "✓" : "✗";
-    const detail =
-      verbosity === "normal" && check.status === "pass"
-        ? ""
-        : ` — ${check.detail}`;
-    return `${marker} ${check.label}${detail}`;
-  });
-  for (const check of doctor.checks.filter(
-    (entry) => entry.status === "fail",
-  )) {
-    if (check.remediation) lines.push(`  Try: ${check.remediation}`);
-  }
-  if (doctor.ambientHostedVariables?.presentButQuarantined.length) {
-    lines.push(
-      `! ${doctor.ambientHostedVariables.presentButQuarantined.length} ambient hosted credential variables detected and quarantined.`,
-    );
-  }
-  return [
-    ...lines,
-    "",
-    doctor.state,
-    "",
-    doctor.state === "READY"
-      ? "Next: run rehearsal explain to review the migration plan."
-      : "Next: fix the items above, then run rehearsal doctor again.",
-  ].join("\n");
-};
-
 export const renderBaseline = (baseline: {
   rehearsalVersion: string;
   generationId: string;
@@ -506,6 +463,7 @@ const summarizeSetupReadinessChecks = (
 };
 
 export const renderSetup = (result: {
+  containerEngines?: import("../runtime/engine_discovery.mjs").ContainerEngineDiscovery;
   mode: RenderMode;
   project: string;
   configurationPath: string;
@@ -546,6 +504,7 @@ export const renderSetup = (result: {
     `Database: ${result.target === "postgresql" ? "PostgreSQL" : "Supabase"}`,
     `Runtime ID: ${result.projectId}`,
     `Application: ${result.applicationUrl}`,
+    ...renderEngineOptions(result.containerEngines),
     result.target === "postgresql"
       ? `Port: database ${result.ports.database}`
       : `Ports: API ${result.ports.api}, database ${result.ports.database}, Studio ${result.ports.studio}`,

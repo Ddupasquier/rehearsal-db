@@ -16,7 +16,7 @@ export interface WorkloadTicket {
   schemaVersion: 1;
   token: string;
   pid: number;
-  command: "start" | "run" | "reset" | "migrate";
+  command: "start" | "run" | "reset" | "migrate" | "engine-stop";
   phase: "choosing" | "queued" | "held";
   number: number;
   createdAt: string;
@@ -40,7 +40,7 @@ const validTicket = (value: WorkloadTicket, token: string): boolean =>
   value.token === token &&
   Number.isSafeInteger(value.pid) &&
   value.pid > 0 &&
-  ["start", "run", "reset", "migrate"].includes(value.command) &&
+  ["start", "run", "reset", "migrate", "engine-stop"].includes(value.command) &&
   ["choosing", "queued", "held"].includes(value.phase) &&
   Number.isSafeInteger(value.number) &&
   value.number >= 0 &&

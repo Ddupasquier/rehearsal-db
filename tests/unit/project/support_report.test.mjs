@@ -17,6 +17,36 @@ afterEach(async () => {
 });
 
 describe("support report", () => {
+  it("reuses the selected engine version without a second daemon probe or private bindings", async () => {
+    const calls = [];
+    const result = await collectRehearsalSupportReport(
+      {},
+      {
+        runDoctor: async () => ({
+          state: "NOT READY",
+          checks: [],
+          containerEngines: {
+            selected: {
+              serverVersion: "28.5.1",
+              context: "private-context-must-not-leak",
+              endpointIdentity: "private-binding-must-not-leak",
+            },
+          },
+        }),
+        runCommand: (command, args) => {
+          calls.push([command, ...args]);
+          return { status: 0, stdout: "synthetic-version", stderr: "" };
+        },
+      },
+    );
+    expect(result.tools.dockerServer).toEqual({
+      status: "available",
+      version: "28.5.1",
+    });
+    expect(calls).toHaveLength(3);
+    expect(calls.some((args) => args.includes("info"))).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("must-not-leak");
+  });
   it("contains useful versions and check status without diagnostic details", async () => {
     const sensitivePath = "/private/customer/project";
     const secret = "sb_secret_value-that-must-not-appear";

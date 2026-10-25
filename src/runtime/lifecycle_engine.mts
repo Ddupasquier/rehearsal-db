@@ -1,3 +1,4 @@
+import { normalizeRuntimeMarkerProtocol } from "./runtime_marker_protocol.mjs";
 /** Shared, target-neutral orchestration for disposable runtime lifecycles. */
 
 import { readFile, writeFile } from "node:fs/promises";
@@ -170,7 +171,9 @@ export const readMatchingRuntimeMarker = async ({
 }): Promise<Readonly<Record<string, unknown>>> => {
   let marker: unknown;
   try {
-    marker = JSON.parse(await readFile(path, "utf8"));
+    marker = normalizeRuntimeMarkerProtocol(
+      JSON.parse(await readFile(path, "utf8")),
+    );
   } catch (error) {
     throw new Error(mismatchMessage, { cause: error });
   }

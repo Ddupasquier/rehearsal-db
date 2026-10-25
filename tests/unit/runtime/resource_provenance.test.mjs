@@ -211,3 +211,27 @@ describe("recorded environment provenance", () => {
       ).toEqual([{ service: "database", host: "127.0.0.1", port: 58322 }]);
   });
 });
+
+it("classifies guarded retired PostgreSQL markers through the versioned logical provider", async () => {
+  const fixture = await setup();
+  await receipts(fixture, {
+    ...marker,
+    target: "postgresql-retired",
+    containerRetirementProtocol: 1,
+  });
+  const result = await inspectEnvironmentProvenanceEvidence(fixture);
+  expect(result.providerRecorded).toBe(true);
+  expect(result.provenance.runtimeReason).toBeNull();
+  expect(result.provenance.runtime.baselineGenerationId).toBe(
+    marker.generationId,
+  );
+  await receipts(fixture, {
+    ...marker,
+    target: "postgresql-retired",
+    containerRetirementProtocol: 2,
+  });
+  expect(
+    (await inspectEnvironmentProvenanceEvidence(fixture)).provenance
+      .runtimeReason,
+  ).toBe("receipt-invalid");
+});

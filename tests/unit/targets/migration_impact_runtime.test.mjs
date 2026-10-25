@@ -1,3 +1,8 @@
+import { createHash } from "node:crypto";
+import {
+  assertLocalDockerContext,
+  DOCKER_CONTEXT_TLS_FORMAT,
+} from "../../../dist/src/runtime/local_docker_context.mjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   appendFile,
@@ -91,8 +96,22 @@ async function fixture(provider = "postgresql") {
     onInspect: undefined,
     onInfo: undefined,
   };
+  const metadataCalls = [];
+  const resolveEngineSelection = (options) =>
+    assertLocalDockerContext({
+      ...options,
+      runner: (_command, args, _cwd, env) => {
+        metadataCalls.push({ args, env });
+        if (args.includes(DOCKER_CONTEXT_TLS_FORMAT))
+          return { status: 0, stdout: "false" };
+        if (args[1] === "show") return { status: 0, stdout: "synthetic-local" };
+        if (args[1] === "ls") return { status: 0, stdout: "synthetic-local" };
+        return { status: 0, stdout: JSON.stringify(settings.endpoint) };
+      },
+    });
   const runner = vi.fn(async (request) => {
-    const { args } = request;
+    expect(request.args.slice(0, 2)).toEqual(["--host", settings.endpoint]);
+    const args = request.args.slice(2);
     if (args[0] === "context")
       return result(
         args[1] === "show"
@@ -128,8 +147,18 @@ async function fixture(provider = "postgresql") {
     target,
     baseline,
     runProcessImplementation: runner,
+    resolveEngineSelection,
   };
-  return { root, runtime, marker, markerPath, settings, runner, options };
+  return {
+    root,
+    runtime,
+    marker,
+    markerPath,
+    settings,
+    runner,
+    options,
+    metadataCalls,
+  };
 }
 const refusal = (reason) => (error) => {
   expect(error).toBeInstanceOf(MigrationImpactRuntimeError);
@@ -151,7 +180,7 @@ describe("non-starting migration impact runtime transport", () => {
       const calls = f.runner.mock.calls
         .slice(before)
         .map(([request]) => request);
-      expect(calls.map((request) => request.args[0])).toEqual([
+      expect(calls.map((request) => request.args[2])).toEqual([
         "info",
         "container",
       ]);
@@ -160,7 +189,7 @@ describe("non-starting migration impact runtime transport", () => {
     await transport.runSql(compile);
     expect(compile).toHaveBeenCalledOnce();
     const calls = f.runner.mock.calls.slice(before).map(([request]) => request);
-    expect(calls[2].args[0]).toBe("exec");
+    expect(calls[2].args[2]).toBe("exec");
     expect(calls[2].input).toBe("SELECT 1;");
   });
 
@@ -175,8 +204,10 @@ describe("non-starting migration impact runtime transport", () => {
       expect(await transport.runSql(sql)).toBe('"6"\n');
       await transport.assertCurrent();
       const calls = f.runner.mock.calls.map(([call]) => call),
-        query = calls.find((call) => call.args[0] === "exec");
+        query = calls.find((call) => call.args[2] === "exec");
       expect(query.args).toEqual([
+        "--host",
+        f.settings.endpoint,
         "exec",
         "--interactive",
         ID,
@@ -211,15 +242,15 @@ describe("non-starting migration impact runtime transport", () => {
         expect(call.signal).toBeInstanceOf(AbortSignal);
         expect(call.cwd).toBe(f.root);
         expect(["context", "info", "container", "exec"]).toContain(
-          call.args[0],
+          call.args[2],
         );
         expect(call.args).not.toContain("start");
         expect(call.args).not.toContain("run");
         expect(call.maxOutputBytes).toBe(
-          call.args[0] === "exec" ? 131072 : 65536,
+          call.args[2] === "exec" ? 131072 : 65536,
         );
         expect(call.env.DOCKER_HOST).toBe(
-          call.args[0] === "context" ? undefined : f.settings.endpoint,
+          call.args[2] === "context" ? undefined : f.settings.endpoint,
         );
       }
       expect(await readFile(f.markerPath)).toEqual(before);
@@ -241,7 +272,8 @@ describe("non-starting migration impact runtime transport", () => {
         PGPASSFILE: `/private/${PRIVATE}`,
         PGSSLMODE: "require",
       };
-      f.settings.onSql = ({ args }) => {
+      f.settings.onSql = ({ args: wireArgs }) => {
+        const args = wireArgs.slice(2);
         // Contract-only simulation: env -i discards container defaults before
         // the fixed assignments. Actual image/socket compatibility is separate.
         expect(args.slice(0, 5)).toEqual([
@@ -275,7 +307,7 @@ describe("non-starting migration impact runtime transport", () => {
       await transport.runSql("SELECT 1;");
       expect(f.settings.onSql).toBeDefined();
       expect(
-        f.runner.mock.calls.filter(([call]) => call.args[0] === "exec"),
+        f.runner.mock.calls.filter(([call]) => call.args[2] === "exec"),
       ).toHaveLength(1);
     },
   );
@@ -293,10 +325,10 @@ describe("non-starting migration impact runtime transport", () => {
         refusal("query_failed"),
       );
       const executions = f.runner.mock.calls.filter(
-        ([call]) => call.args[0] === "exec",
+        ([call]) => call.args[2] === "exec",
       );
       expect(executions).toHaveLength(1);
-      expect(executions[0][0].args.slice(0, 5)).toEqual([
+      expect(executions[0][0].args.slice(2, 7)).toEqual([
         "exec",
         "--interactive",
         ID,
@@ -307,14 +339,10 @@ describe("non-starting migration impact runtime transport", () => {
       expect(executions[0][0].args).toContain("--no-password");
     },
   );
-  it("strips ambient credentials and remote Docker selectors", async () => {
+  it("strips ambient credentials from selected Docker children", async () => {
     for (const name of [
       "DATABASE_URL",
       "PGPASSWORD",
-      "DOCKER_HOST",
-      "DOCKER_CONTEXT",
-      "DOCKER_TLS_VERIFY",
-      "DOCKER_CERT_PATH",
       "SUPABASE_SERVICE_ROLE_KEY",
     ])
       vi.stubEnv(name, PRIVATE);
@@ -347,9 +375,7 @@ describe("non-starting migration impact runtime transport", () => {
       await expect(openMigrationImpactRuntime(f.options)).rejects.toSatisfy(
         refusal("ownership_mismatch"),
       );
-      expect(
-        f.runner.mock.calls.every(([call]) => call.args[0] === "context"),
-      ).toBe(true);
+      expect(f.runner.mock.calls.length === 0).toBe(true);
     },
   );
   it.each([
@@ -434,7 +460,7 @@ describe("non-starting migration impact runtime transport", () => {
         refusal("ownership_mismatch"),
       );
       expect(
-        f.runner.mock.calls.some(([call]) => call.args[0] === "exec"),
+        f.runner.mock.calls.some(([call]) => call.args[2] === "exec"),
       ).toBe(false);
     },
   );
@@ -451,7 +477,7 @@ describe("non-starting migration impact runtime transport", () => {
         refusal(),
       );
       expect(
-        f.runner.mock.calls.some(([call]) => call.args[0] === "exec"),
+        f.runner.mock.calls.some(([call]) => call.args[2] === "exec"),
       ).toBe(false);
     },
   );
@@ -468,7 +494,7 @@ describe("non-starting migration impact runtime transport", () => {
         refusal("stale_runtime"),
       );
       expect(
-        f.runner.mock.calls.some(([call]) => call.args[0] === "exec"),
+        f.runner.mock.calls.some(([call]) => call.args[2] === "exec"),
       ).toBe(false);
     },
   );
@@ -499,9 +525,9 @@ describe("non-starting migration impact runtime transport", () => {
         refusal(reason),
       );
       expect(
-        f.runner.mock.calls.filter(([call]) => call.args[0] === "info").length,
+        f.runner.mock.calls.filter(([call]) => call.args[2] === "info").length,
       ).toBeGreaterThan(2);
-      const calls = f.runner.mock.calls.map(([call]) => call.args[0]);
+      const calls = f.runner.mock.calls.map(([call]) => call.args[2]);
       expect(calls.slice(calls.indexOf("exec") + 1)).toEqual([
         "info",
         "container",
@@ -569,4 +595,183 @@ describe("non-starting migration impact runtime transport", () => {
       refusal("cancelled"),
     );
   });
+});
+
+it("recognizes protected PostgreSQL marker protocol without rewriting its raw receipt", async () => {
+  const f = await fixture();
+  await writeFile(
+    f.markerPath,
+    JSON.stringify({
+      ...f.marker,
+      target: "postgresql-retired",
+      containerRetirementProtocol: 1,
+    }),
+    { mode: 0o600 },
+  );
+  const original = await readFile(f.markerPath);
+  const transport = await openMigrationImpactRuntime(f.options);
+  expect(transport).toBeDefined();
+  expect(await readFile(f.markerPath)).toEqual(original);
+  const bad = await fixture();
+  await writeFile(
+    bad.markerPath,
+    JSON.stringify({
+      ...bad.marker,
+      target: "postgresql-retired",
+      containerRetirementProtocol: 2,
+    }),
+    { mode: 0o600 },
+  );
+  await expect(openMigrationImpactRuntime(bad.options)).rejects.toBeInstanceOf(
+    MigrationImpactRuntimeError,
+  );
+});
+
+const protectAndBindRetired = async (f) => {
+  const bytes = Buffer.from(
+    JSON.stringify({
+      ...f.marker,
+      target: "postgresql-retired",
+      containerRetirementProtocol: 1,
+    }),
+  );
+  await writeFile(f.markerPath, bytes, { mode: 0o600 });
+  f.settings.image = IMAGE;
+  const stored = {
+    schemaVersion: 1,
+    state: "completed",
+    projectId: f.options.target.config.runtime.projectId,
+    markerProtectionProtocol: 1,
+    markerSha256: createHash("sha256").update(bytes).digest("hex"),
+    binding: {
+      context: "synthetic-local",
+      endpoint: f.settings.endpoint,
+      daemonId: f.settings.engine,
+    },
+    receipt: {
+      schemaVersion: 1,
+      projectId: f.options.target.config.runtime.projectId,
+      containerName: f.settings.name.slice(1),
+      image: f.marker.image,
+      imageId: IMAGE,
+      generationId: f.marker.generationId,
+      dataSha256: f.marker.dataSha256,
+      engineIdentity: createHash("sha256")
+        .update(
+          JSON.stringify({
+            context: "synthetic-local",
+            endpoint: f.settings.endpoint,
+          }),
+        )
+        .digest("hex"),
+    },
+  };
+  const path = join(f.runtime, "container-retirement.json");
+  await writeFile(path, JSON.stringify(stored), { mode: 0o600 });
+  return { path, stored };
+};
+describe("impact on resumed retained PostgreSQL", () => {
+  it("accepts the exact private bound immutable image without rewriting either receipt", async () => {
+    const f = await fixture();
+    const r = await protectAndBindRetired(f);
+    const before = [await readFile(f.markerPath), await readFile(r.path)];
+    const transport = await openMigrationImpactRuntime(f.options);
+    expect(await transport.runSql("SELECT 1;")).toBe('"6"\n');
+    expect(await readFile(f.markerPath)).toEqual(before[0]);
+    expect(await readFile(r.path)).toEqual(before[1]);
+  });
+  it.each([
+    "imageId",
+    "markerSha256",
+    "daemonId",
+    "projectId",
+    "configuredImage",
+    "permissions",
+    "missing",
+  ])("refuses unqualified retired image: %s", async (problem) => {
+    const f = await fixture();
+    const { path, stored } = await protectAndBindRetired(f);
+    if (problem === "imageId")
+      stored.receipt.imageId = "sha256:" + "d".repeat(64);
+    if (problem === "markerSha256") stored.markerSha256 = "d".repeat(64);
+    if (problem === "daemonId") stored.binding.daemonId = "other-daemon";
+    if (problem === "projectId") stored.receipt.projectId = "foreign-project";
+    if (problem === "configuredImage")
+      stored.receipt.image = "postgres:16-alpine";
+    await writeFile(path, JSON.stringify(stored));
+    if (problem === "permissions") await chmod(path, 0o644);
+    if (problem === "missing") await rm(path);
+    await expect(openMigrationImpactRuntime(f.options)).rejects.toBeInstanceOf(
+      MigrationImpactRuntimeError,
+    );
+    expect(f.runner.mock.calls.some(([call]) => call.args[2] === "exec")).toBe(
+      false,
+    );
+  });
+  it("refuses a changed private retirement receipt before SQL", async () => {
+    const f = await fixture();
+    const { path } = await protectAndBindRetired(f);
+    const transport = await openMigrationImpactRuntime(f.options);
+    await appendFile(path, "\n");
+    await expect(transport.runSql("SELECT 1;")).rejects.toSatisfy(
+      refusal("stale_runtime"),
+    );
+    expect(f.runner.mock.calls.some(([call]) => call.args[2] === "exec")).toBe(
+      false,
+    );
+  });
+  it("withholds SQL output when the private retirement receipt drifts during measurement", async () => {
+    const f = await fixture();
+    const { path } = await protectAndBindRetired(f);
+    const transport = await openMigrationImpactRuntime(f.options);
+    f.settings.onSql = () => appendFile(path, "\n");
+    await expect(transport.runSql("SELECT 1;")).rejects.toSatisfy(
+      refusal("stale_runtime"),
+    );
+  });
+  it("does not accept an arbitrary immutable image ID with an ordinary marker", async () => {
+    const f = await fixture();
+    f.settings.image = IMAGE;
+    await expect(openMigrationImpactRuntime(f.options)).rejects.toSatisfy(
+      refusal("ownership_mismatch"),
+    );
+    expect(f.runner.mock.calls.some(([call]) => call.args[2] === "exec")).toBe(
+      false,
+    );
+  });
+  it("honors explicit context over host and preserves scoped client config", async () => {
+    const f = await fixture();
+    vi.stubEnv("DOCKER_CONTEXT", "synthetic-local");
+    vi.stubEnv("DOCKER_HOST", "ssh://ignored-by-context");
+    vi.stubEnv("DOCKER_CONFIG", f.root);
+    const transport = await openMigrationImpactRuntime(f.options);
+    await transport.assertCurrent();
+    expect(
+      f.metadataCalls.every(
+        ({ args, env }) =>
+          !args.includes("show") &&
+          env.DOCKER_CONFIG === f.root &&
+          !env.DOCKER_CONTEXT &&
+          !env.DOCKER_HOST,
+      ),
+    ).toBe(true);
+    expect(
+      f.runner.mock.calls.every(
+        ([call]) =>
+          call.env.DOCKER_CONFIG === f.root &&
+          call.env.DOCKER_HOST === f.settings.endpoint,
+      ),
+    ).toBe(true);
+  });
+  it.each([{ DOCKER_HOST: "ssh://remote" }, { DOCKER_TLS_VERIFY: "1" }])(
+    "refuses explicit unsupported selectors without daemon fallback: %s",
+    async (env) => {
+      const f = await fixture();
+      for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+      await expect(openMigrationImpactRuntime(f.options)).rejects.toSatisfy(
+        refusal("ownership_mismatch"),
+      );
+      expect(f.runner).not.toHaveBeenCalled();
+    },
+  );
 });

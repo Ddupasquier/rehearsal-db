@@ -2,6 +2,12 @@
 
 Thank you for helping make database migration rehearsal safer.
 
+For owner-managed local suite work, retrieve `dt b open --json` and follow its
+shared drive-layout document and pre-runtime command launcher before starting npm,
+Node or tsx. The launcher owns machine-specific temporary/cache placement; ordinary
+package commands and repository-relative source, build and evidence paths are unchanged.
+Do not independently migrate shared locks, leases, fixtures or recovery archives.
+
 ## Adaptive Codex workflow
 
 Start future tasks with `dev-task "task"`, or run VS Code's global
@@ -50,6 +56,19 @@ test-only directory helper), never create children directly in the checkout's
 `test-results`. That shared-parent churn invalidates another worker's strict
 ancestry checks even when the individual fixture directories differ.
 
+The installed-consumer PTY check gives the application 10 seconds after Ctrl+C
+to close HTTP and reach the subsequent owned-runtime stop phase. Database cleanup
+then has a separate fixed 60-second fixture bound: PostgreSQL's existing graceful
+`docker stop --time 10` uses a 45-second transport bound, followed by ownership,
+volume and recovery-receipt verification. This does not change product timers.
+The fixture still requires successful exit, shutdown receipts and closed HTTP;
+a hung application or cleanup fails and the owned PTY is killed with a bounded
+exit wait. Application readiness remains 30 seconds.
+
+The disposable WSL runner confirms its exact child daemon's bounded teardown before
+writing passing platform evidence. Its monotonic grace and forced-stop deadlines are
+30 and 2 seconds; cleanup failures remain visible and preserve the original test failure.
+
 The PostgreSQL impact fixture supplements public-CLI count, lock and cancellation
 checks with fixed read-only deadline probes through the **installed package's private
 transport**. One statement exceeds 5 seconds; separate short statements exceed the
@@ -68,6 +87,13 @@ four allowlisted timeout SQLSTATEs. Raw provider output, SQL and object names st
 withheld; a setup failure is not reported as an impact-measurement result.
 Its auxiliary DDL lock/statement limits match the holder's existing 8-second bound,
 instead of expiring at 4 seconds while a 5-second queue observation is still valid.
+For the queued-index race, lock-timeout and cancellation checks, a private fixture-only
+Docker wrapper pauses the public command at its exact owned SQL-exec boundary before
+starting the auxiliary holder. It forwards only fixed pinned metadata and that owned
+invocation, without inspecting or recording SQL. Lock-timeout and cancellation checks
+release the holder after the exact backend disappears, before awaiting CLI postvalidation.
+The public 30-second total and 35-second child clocks keep running;
+the existing 8-second server and 5-second lock-observation limits are unchanged.
 An expired holder still fails; it never becomes successful race evidence. The
 10/15-second owned-client bounds are unchanged. This fixture-only setup budget is
 separate from the product's unchanged 1-second lock, 5-second statement and

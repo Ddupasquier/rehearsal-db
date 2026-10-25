@@ -35,7 +35,7 @@ export const executeRuntimeTargetStack = async <Target, Receipt>({
     if (cleanupErrors.length)
       throw new AggregateError(
         [operationError, ...cleanupErrors],
-        "The runtime stack failed and one or more successfully started targets could not be stopped. Their data and the shared engine were not deleted; inspect status before retrying.",
+        "The runtime stack failed and one or more receipt-proven targets could not complete configured cleanup. Cleanup may be partial; inspect each target before retrying.",
       );
     throw operationError;
   }

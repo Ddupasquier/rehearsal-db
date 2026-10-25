@@ -10,7 +10,10 @@ import {
 } from "../shared/cancellation.mjs";
 import { runOwnedProcess } from "../shared/owned_process.mjs";
 import { assertDockerResourceLabels } from "../targets/docker_resource_ownership.mjs";
-import { assertLocalDockerContext } from "./local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "./local_docker_context.mjs";
 import type {
   StopStalePlan,
   StopStaleTarget,
@@ -20,12 +23,17 @@ type Runner = (
   command: string,
   args: readonly string[],
   cwd: string,
+  environment?: NodeJS.ProcessEnv,
 ) => SpawnSyncReturns<string>;
-const runInspection: Runner = (command, args, cwd) =>
+const runInspection: Runner = (command, args, cwd, environment) =>
   spawnSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: createCleanProcessEnvironment(),
+    env:
+      environment ??
+      (command === "docker"
+        ? scopedDockerEnvironment()
+        : createCleanProcessEnvironment()),
     timeout: 10_000,
     maxBuffer: 4 * 1024 * 1024,
   });
@@ -43,6 +51,7 @@ const inspectBindings = (
   endpoint: string,
   target: StopStaleTarget,
   run: Runner,
+  environment: NodeJS.ProcessEnv,
 ): ContainerBinding[] => {
   const result = run(
     "docker",
@@ -54,6 +63,7 @@ const inspectBindings = (
       ...target.containers.map((container) => container.id),
     ],
     projectRoot,
+    environment,
   );
   try {
     const parsed: unknown = JSON.parse(result.stdout);
@@ -124,7 +134,14 @@ export const stopReviewedStaleTarget = async ({
     throw new Error(
       "The reviewed local Docker endpoint changed before stopping.",
     );
-  const containers = inspectBindings(projectRoot, engine.endpoint, target, run);
+  const environment = scopedDockerEnvironment({ endpoint: engine.endpoint });
+  const containers = inspectBindings(
+    projectRoot,
+    engine.endpoint,
+    target,
+    run,
+    environment,
+  );
   for (const binding of target.containers) {
     const container = containers.find((entry) => entry.Id === binding.id)!;
     if (
@@ -146,7 +163,7 @@ export const stopReviewedStaleTarget = async ({
     command: "docker",
     args: ["--host", engine.endpoint, "container", "stop", ...ids],
     cwd: projectRoot,
-    env: createCleanProcessEnvironment(),
+    env: environment,
     stdin: "ignore",
     signal: cancellation ? AbortSignal.any([cancellation, timeout]) : timeout,
     cancellationGraceMs: 5000,
@@ -156,7 +173,13 @@ export const stopReviewedStaleTarget = async ({
     throw new Error(
       "The reviewed container stop did not complete. Data and the shared engine were not deleted; inspect current state before retrying.",
     );
-  const stopped = inspectBindings(projectRoot, engine.endpoint, target, run);
+  const stopped = inspectBindings(
+    projectRoot,
+    engine.endpoint,
+    target,
+    run,
+    environment,
+  );
   if (stopped.some((container) => container.State?.Running !== false))
     throw new Error(
       "A reviewed container resumed or its stopped state could not be proved. No new container was stopped; inspect current state.",

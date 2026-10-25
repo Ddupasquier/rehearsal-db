@@ -134,20 +134,59 @@ export const openApplicationTerminalSession = async ({ cwd, url }) => {
     });
   } catch (error) {
     terminal.kill();
-    await exit;
+    let killTimeout;
+    await Promise.race([
+      exit,
+      new Promise((resolve) => {
+        killTimeout = setTimeout(resolve, 1_000);
+      }),
+    ]).finally(() => clearTimeout(killTimeout));
     throw error;
   }
-  terminal.write("\u0003");
-  let exitTimeout;
-  const ended = await Promise.race([
-    exit,
-    new Promise((_, reject) => {
-      exitTimeout = setTimeout(
-        () => reject(new Error(`Terminal Ctrl+C timed out: ${output}`)),
-        10_000,
-      );
-    }),
-  ]).finally(() => clearTimeout(exitTimeout));
+  let ended;
+  try {
+    terminal.write("\u0003");
+    // The application must close promptly. Database retirement starts only
+    // after holdApplicationSession returns; its graceful stop and receipt
+    // verification are a separate, fixed fixture phase, not app shutdown.
+    const applicationDeadline = Date.now() + 10_000;
+    while (!exited) {
+      if (output.includes("Stopping the disposable local runtime")) {
+        await assertClosed(url);
+        break;
+      }
+      if (Date.now() >= applicationDeadline)
+        throw new Error(
+          `Terminal Ctrl+C application shutdown timed out: ${output}`,
+        );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    let cleanupTimeout;
+    ended = await Promise.race([
+      exit,
+      new Promise((_, reject) => {
+        cleanupTimeout = setTimeout(
+          () =>
+            reject(
+              new Error(`Terminal owned runtime cleanup timed out: ${output}`),
+            ),
+          60_000,
+        );
+      }),
+    ]).finally(() => clearTimeout(cleanupTimeout));
+  } catch (error) {
+    if (!exited) {
+      terminal.kill();
+      let killTimeout;
+      await Promise.race([
+        exit,
+        new Promise((resolve) => {
+          killTimeout = setTimeout(resolve, 1_000);
+        }),
+      ]).finally(() => clearTimeout(killTimeout));
+    }
+    throw error;
+  }
   if (ended.exitCode !== 0) {
     throw new Error(
       `Terminal Ctrl+C exited ${ended.exitCode}: ${output || "no output"}`,

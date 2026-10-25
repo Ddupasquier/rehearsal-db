@@ -43,6 +43,11 @@ import {
 import { readVerifiedBaselineShapeEvidence } from "../source/shape_files.mjs";
 import { inspectHostPlatform } from "../shared/host_platform.mjs";
 import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
+import { inspectContainerEngineOptions } from "./engine_discovery.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "./local_docker_context.mjs";
 
 type LoadedRehearsalConfig = Awaited<ReturnType<typeof loadRehearsalConfig>>;
 type RuntimeReceipt = Readonly<{
@@ -70,10 +75,13 @@ const hasErrorCode = (error: unknown, code: string): boolean =>
 const commandAvailable = (
   command: string,
   args: readonly string[] = ["--version"],
+  environment: NodeJS.ProcessEnv = createCleanProcessEnvironment(),
 ): Readonly<{ available: boolean; version: string | null }> => {
   const result = spawnSync(command, args, {
     encoding: "utf8",
-    env: createCleanProcessEnvironment(),
+    env: environment,
+    timeout: 2000,
+    maxBuffer: 65536,
     stdio: ["ignore", "pipe", "pipe"],
   });
   return {
@@ -417,9 +425,11 @@ const buildPlanFromInputs = async (
         : ["confirm that no candidate migrations are pending"]),
       "verify the resulting migration ledger and database state",
       `run application proof: ${config.application.proofCommand}`,
-      config.lifecycle.run === "stop-after-run"
-        ? "stop the database runtime after proofs while preserving its data"
-        : "keep the database runtime available until an explicit stop",
+      config.lifecycle.run === "discard-after-run"
+        ? "discard the owned disposable runtime and its data after proofs; preserve the immutable baseline"
+        : config.lifecycle.run === "stop-after-run"
+          ? "stop the database runtime after proofs while preserving its data"
+          : "keep the database runtime available until an explicit stop",
     ],
     guarantee: config.safety.authenticationProviders.length
       ? "No hosted application or database resources will be contacted; the declared identity-provider exchange creates state only in local Auth."
@@ -505,9 +515,14 @@ export const runRehearsalDoctor = async (
   const host = await inspectHostPlatform({
     projectRoot: options.projectRoot ?? process.cwd(),
   });
+  const containerEngines = await inspectContainerEngineOptions({
+    projectRoot: options.projectRoot ?? process.cwd(),
+    hostInspection: host,
+  });
   if (!host.supported) {
     return {
       state: "NOT READY",
+      containerEngines,
       checks: [
         {
           id: "operating-system",
@@ -525,6 +540,7 @@ export const runRehearsalDoctor = async (
   } catch (error) {
     return {
       state: "NOT READY",
+      containerEngines,
       checks: [
         {
           id: "configuration",
@@ -602,11 +618,23 @@ export const runRehearsalDoctor = async (
           return result.version;
         }
         const postgresql = requirePostgresqlConfig();
-        const result = commandAvailable("docker", [
-          "image",
-          "inspect",
-          postgresql.image,
-        ]);
+        if (!containerEngines.selected)
+          throw new Error(
+            "Select a verified local engine before inspecting its images.",
+          );
+        const selected = assertLocalDockerContext({
+          cwd: projectRoot,
+          context: containerEngines.selected.context,
+        });
+        if (selected.identity !== containerEngines.selected.endpointIdentity)
+          throw new Error(
+            "The selected Docker endpoint changed; rerun doctor.",
+          );
+        const result = commandAvailable(
+          "docker",
+          ["--host", selected.endpoint, "image", "inspect", postgresql.image],
+          scopedDockerEnvironment(),
+        );
         if (!result.available) {
           throw new Error(
             `PostgreSQL image ${postgresql.image} is unavailable locally.`,
@@ -623,16 +651,12 @@ export const runRehearsalDoctor = async (
       id: "docker",
       label: "Docker-compatible runtime",
       run: async () => {
-        const result = commandAvailable("docker", [
-          "info",
-          "--format",
-          "{{.ServerVersion}}",
-        ]);
-        if (!result.available)
+        if (!containerEngines.selected)
           throw new Error("Docker-compatible runtime is unavailable.");
-        return `Docker ${result.version}`;
+        return `Docker ${containerEngines.selected.serverVersion}; local context ${containerEngines.selected.context}`;
       },
-      remediation: "Start Docker or Colima, then retry.",
+      remediation:
+        "Review the detected local engine options, select your intended Docker context, and start that engine explicitly. No automatic engine switch or data migration occurs.",
     },
     {
       id: "paths",
@@ -891,6 +915,7 @@ export const runRehearsalDoctor = async (
       ? "READY"
       : "NOT READY",
     checks,
+    containerEngines,
     ambientHostedVariables: {
       presentButQuarantined: config.safety.blockedEnvironmentVariables.filter(
         (key) => Boolean(process.env[key]?.trim()),

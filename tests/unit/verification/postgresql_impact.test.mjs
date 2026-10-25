@@ -1,3 +1,15 @@
+import { mkdtemp, writeFile, readFile, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawn } from "node:child_process";
+import { setTimeout as pause } from "node:timers/promises";
+import {
+  completeImpactBlockedMeasurement,
+  classifyImpactGateCommand,
+  createImpactSqlGate,
+  waitForImpactGateReady,
+  runImpactGateWrapper,
+} from "../../../scripts/verification/fixtures/postgresql_impact_gate.mjs";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -480,5 +492,356 @@ describe("installed PostgreSQL impact fixture's independent oracles", () => {
     expect(() =>
       assertImpactPublicOutput({ stdout: JSON.stringify(nested), stderr: "" }),
     ).toThrow();
+  });
+});
+
+const gateBinding = {
+  context: "reviewed",
+  endpoint: "unix:///synthetic/docker.sock",
+  containerId: "b".repeat(64),
+  containerName: "fixture-owned-postgresql",
+};
+const gateSqlArgs = [
+  "--host",
+  gateBinding.endpoint,
+  "exec",
+  "--interactive",
+  gateBinding.containerId,
+  "/usr/bin/env",
+  "-i",
+  "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+  "PGSSLMODE=disable",
+  "PGPASSFILE=/dev/null",
+  "psql",
+  "--no-psqlrc",
+  "--no-password",
+  "--host=/var/run/postgresql",
+  "--port=5432",
+  "--quiet",
+  "--no-align",
+  "--tuples-only",
+  "--set",
+  "ON_ERROR_STOP=1",
+  "--set",
+  "VERBOSITY=sqlstate",
+  "--username",
+  "postgres",
+  "--dbname",
+  "postgres",
+];
+const gateInfoArgs = [
+  "--host",
+  gateBinding.endpoint,
+  "info",
+  "--format",
+  "{{json .ID}}",
+];
+async function gateTestFixture(stubborn = false) {
+  const root = await realpath(
+    await mkdtemp(join(tmpdir(), "impact-gate-test-")),
+  );
+  const marker = join(root, "forwarded"),
+    docker = join(root, "fake-docker");
+  await writeFile(
+    docker,
+    [
+      `#!${process.execPath}`,
+      `import {writeFileSync} from "node:fs";`,
+      `writeFileSync(${JSON.stringify(marker)},String(process.pid));`,
+      stubborn
+        ? `process.on("SIGTERM",()=>{});setInterval(()=>{},1000);`
+        : `process.stdin.resume();process.stdin.on("end",()=>{});`,
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  const gate = await createImpactSqlGate({
+    cwd: root,
+    docker,
+    binding: gateBinding,
+  });
+  const launch = (args) => {
+    const child = spawn(
+      join(gate.environment.PATH.split(":")[0], "docker"),
+      args,
+      {
+        env: { ...process.env, ...gate.environment },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    const completion = new Promise((resolve) =>
+      child.once("close", (status, signal) => resolve({ status, signal })),
+    );
+    return { child, completion };
+  };
+  return { root, marker, docker, gate, launch };
+}
+async function waitGateMarker(path) {
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    try {
+      return await readFile(path, "utf8");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    await pause(10);
+  }
+  throw new Error("Synthetic forwarded child did not become ready.");
+}
+describe("fixture-only public impact SQL gate", () => {
+  it("permits only exact pinned metadata and the one sanitized owned SQL command", () => {
+    expect(classifyImpactGateCommand(gateInfoArgs, gateBinding)).toBe(
+      "metadata",
+    );
+    expect(classifyImpactGateCommand(gateSqlArgs, gateBinding)).toBe("sql");
+    for (const args of [
+      ["run", "foreign"],
+      ["context", "show"],
+      [...gateInfoArgs, "--debug"],
+      ["--host", "ssh://foreign", ...gateInfoArgs.slice(2)],
+      [...gateSqlArgs.slice(0, 4), "c".repeat(64), ...gateSqlArgs.slice(5)],
+      gateSqlArgs.map((a) => (a === "--no-password" ? "--password" : a)),
+    ])
+      expect(() => classifyImpactGateCommand(args, gateBinding)).toThrow();
+  });
+  it("keeps slow public preflight outside the short holder clock without renewing overall expiry", async () => {
+    let clock = 0,
+      holderStarted = null,
+      reads = 0;
+    await waitForImpactGateReady({
+      client: { child: { exitCode: null, signalCode: null } },
+      expiresAt: 35000,
+      now: () => clock,
+      readReady: async () => ++reads === 2,
+      wait: async () => {
+        expect(holderStarted).toBe(null);
+        clock += 6000;
+      },
+    });
+    holderStarted = clock;
+    expect(holderStarted).toBe(6000);
+    expect(clock).toBeLessThan(35000);
+    await expect(
+      waitForImpactGateReady({
+        client: { child: { exitCode: null, signalCode: null } },
+        expiresAt: clock,
+        now: () => clock,
+        readReady: async () => true,
+      }),
+    ).rejects.toThrow();
+  });
+  it("holds only the SQL child until release and forwards no command early", async () => {
+    const f = await gateTestFixture();
+    let client;
+    try {
+      client = f.launch(gateSqlArgs);
+      client.child.stdin.end();
+      await waitForImpactGateReady({
+        client,
+        readReady: f.gate.readReady,
+        expiresAt: f.gate.expiresAt,
+      });
+      await expect(readFile(f.marker)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      await f.gate.release();
+      expect((await client.completion).status).toBe(0);
+      expect(Number(await readFile(f.marker, "utf8"))).toBeGreaterThan(0);
+    } finally {
+      client?.child.kill("SIGTERM");
+      await f.gate.cleanup();
+      await rm(f.root, { recursive: true });
+    }
+  });
+  it("cancels a waiting SQL gate without forwarding and reaps only an owned stubborn metadata child", async () => {
+    const f = await gateTestFixture(true);
+    let waiting, forwarded;
+    try {
+      waiting = f.launch(gateSqlArgs);
+      waiting.child.stdin.end();
+      await waitForImpactGateReady({
+        client: waiting,
+        readReady: f.gate.readReady,
+        expiresAt: f.gate.expiresAt,
+      });
+      waiting.child.kill("SIGTERM");
+      expect((await waiting.completion).status).toBe(1);
+      await expect(readFile(f.marker)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+      forwarded = f.launch(gateInfoArgs);
+      forwarded.child.stdin.end();
+      const pid = Number(await waitGateMarker(f.marker));
+      forwarded.child.kill("SIGTERM");
+      expect((await forwarded.completion).status).toBe(1);
+      expect(() => process.kill(pid, 0)).toThrow();
+      expect(() => process.kill(process.pid, 0)).not.toThrow();
+    } finally {
+      waiting?.child.kill("SIGTERM");
+      forwarded?.child.kill("SIGTERM");
+      await f.gate.cleanup();
+      await rm(f.root, { recursive: true });
+    }
+  });
+  it("refuses expired gates before invoking even an allowlisted child", async () => {
+    const f = await gateTestFixture();
+    try {
+      await expect(
+        runImpactGateWrapper(
+          {
+            root: f.root,
+            docker: f.docker,
+            binding: gateBinding,
+            expiresAt: Date.now() - 1,
+          },
+          gateInfoArgs,
+        ),
+      ).rejects.toThrow();
+      await expect(readFile(f.marker)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await f.gate.cleanup();
+      await rm(f.root, { recursive: true });
+    }
+  });
+});
+
+describe("remaining impact lock/cancellation holder phases", () => {
+  it("releases the observed backend holder before delayed CLI postvalidation while still checking the full result", async () => {
+    let clock = 0,
+      heldAt = null,
+      releasedAt = null;
+    const stages = [];
+    const expected = {
+      status: 1,
+      fault: false,
+      stdout: JSON.stringify(
+        sample(Array(7).fill(null), Array(7).fill("lock_timeout")),
+      ),
+    };
+    const client = {
+      child: { kill: vi.fn() },
+      stop: vi.fn(),
+      get completion() {
+        expect(releasedAt).not.toBe(null);
+        stages.push("public-result");
+        clock += 9000;
+        return Promise.resolve(expected);
+      },
+    };
+    const outcome = await completeImpactBlockedMeasurement({
+      client,
+      startedAt: 0,
+      now: () => clock,
+      awaitReady: async () => {
+        clock += 6000;
+        expect(heldAt).toBe(null);
+        stages.push("ready");
+      },
+      hold: async () => {
+        heldAt = clock;
+        stages.push("hold");
+        return { owned: true };
+      },
+      releaseGate: async () => stages.push("sql-release"),
+      waitForLock: async () => {
+        clock += 100;
+        return 42;
+      },
+      waitForBackendGone: async (pid) => {
+        expect(pid).toBe(42);
+        clock += 1000;
+        stages.push("backend-gone");
+      },
+      releaseHolder: async (holder) => {
+        expect(holder).toEqual({ owned: true });
+        releasedAt = clock;
+        stages.push("holder-release");
+      },
+    });
+    expect(releasedAt - heldAt).toBe(1100);
+    expect(outcome.elapsedMilliseconds).toBe(16100);
+    expect(stages).toEqual([
+      "ready",
+      "hold",
+      "sql-release",
+      "backend-gone",
+      "holder-release",
+      "public-result",
+    ]);
+    expect(outcome.result).toBe(expected);
+    expect(
+      assertImpactFixtureCounts(
+        JSON.parse(outcome.result.stdout),
+        options(Array(7).fill(null), Array(7).fill("lock_timeout")),
+      ),
+    ).toBeDefined();
+  });
+  it("does not ignore long full-CLI postvalidation or an expired holder release", async () => {
+    const make = (badRelease = false) => {
+      let clock = 0;
+      return {
+        client: {
+          child: { kill: vi.fn() },
+          stop: vi.fn(),
+          get completion() {
+            clock += 30001;
+            return Promise.resolve({ status: 1 });
+          },
+        },
+        startedAt: 0,
+        now: () => clock,
+        awaitReady: async () => {},
+        hold: async () => ({}),
+        releaseGate: async () => {},
+        waitForLock: async () => 42,
+        waitForBackendGone: async () => {},
+        releaseHolder: async () => {
+          if (badRelease) throw new Error("expired holder");
+        },
+      };
+    };
+    await expect(completeImpactBlockedMeasurement(make())).rejects.toThrow();
+    await expect(completeImpactBlockedMeasurement(make(true))).rejects.toThrow(
+      "expired holder",
+    );
+  });
+  it("ticks the unchanged 10s cancellation bound while backend/holder cleanup is still pending", async () => {
+    vi.useFakeTimers();
+    let backendDone,
+      cliDone,
+      released = false;
+    const backend = new Promise((resolve) => (backendDone = resolve)),
+      completion = new Promise((resolve) => (cliDone = resolve));
+    const client = { child: { kill: vi.fn() }, stop: vi.fn(), completion };
+    const promise = completeImpactBlockedMeasurement({
+      client,
+      cancel: true,
+      startedAt: Date.now(),
+      now: () => Date.now(),
+      awaitReady: async () => {},
+      hold: async () => ({}),
+      releaseGate: async () => {},
+      waitForLock: async () => 42,
+      waitForBackendGone: () => backend,
+      releaseHolder: async () => {
+        released = true;
+      },
+    });
+    const check = expect(promise).rejects.toThrow();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.child.kill).toHaveBeenCalledWith("SIGINT");
+      await vi.advanceTimersByTimeAsync(10000);
+      await check;
+      expect(client.stop).toHaveBeenCalledOnce();
+      expect(released).toBe(false);
+      backendDone();
+      cliDone({ status: 130 });
+      await Promise.resolve();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

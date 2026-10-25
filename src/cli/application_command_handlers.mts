@@ -58,12 +58,16 @@ export const createApplicationCommandHandlers = ({
           [
             "SANDBOX APP CLOSED",
             `Application stopped after ${result.application.stoppedBy}.`,
-            result.lifecycle.runtimeState === "stopped"
-              ? `Lifecycle ${result.lifecycle.mode} stopped the database runtime; its local database and Storage changes were preserved.`
-              : `Lifecycle ${result.lifecycle.mode} left the database runtime running; its local database and Storage changes were preserved.`,
-            result.lifecycle.runtimeState === "stopped"
-              ? "Run rehearsal start or rehearsal open to resume."
-              : "Run rehearsal open to return, rehearsal verify to check it, or rehearsal stop to stop the databases.",
+            result.lifecycle.runtimeState === "removed"
+              ? `Lifecycle ${result.lifecycle.mode} removed the disposable database runtime and its data; the immutable baseline remains.`
+              : result.lifecycle.runtimeState === "stopped"
+                ? `Lifecycle ${result.lifecycle.mode} stopped the database runtime; its local database and Storage changes were preserved.`
+                : `Lifecycle ${result.lifecycle.mode} left the database runtime running; its local database and Storage changes were preserved.`,
+            result.lifecycle.runtimeState === "removed"
+              ? "Run rehearsal run to create a fresh disposable runtime."
+              : result.lifecycle.runtimeState === "stopped"
+                ? "Run rehearsal start or rehearsal open to resume."
+                : "Run rehearsal open to return, rehearsal verify to check it, or rehearsal stop to stop the databases.",
           ].join("\n"),
       });
     },

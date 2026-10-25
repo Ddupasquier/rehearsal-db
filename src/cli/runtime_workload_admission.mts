@@ -8,20 +8,28 @@ export const withRuntimeWorkloadAdmission = async <Result,>({
   command,
   json,
   execute,
+  capacityCheck,
 }: {
   policy: RehearsalResourcePolicy["workloadQueue"];
   command: string;
   json: boolean;
   execute: () => Promise<Result>;
+  capacityCheck?: () => Promise<void>;
 }): Promise<Result> => {
   if (
-    !policy?.enabled ||
-    (command !== "start" &&
-      command !== "run" &&
-      command !== "reset" &&
-      command !== "migrate")
+    command !== "start" &&
+    command !== "run" &&
+    command !== "reset" &&
+    command !== "migrate"
   )
     return execute();
+  if (!policy?.enabled) {
+    if (capacityCheck)
+      throw new Error(
+        "Measured capacity admission requires the shared lifecycle queue.",
+      );
+    return execute();
+  }
   const signal = getOperationCancellationSignal();
   return withWorkloadAdmission({
     enabled: true,
@@ -34,6 +42,11 @@ export const withRuntimeWorkloadAdmission = async <Result,>({
           "Waiting for another participating local Rehearsal runtime phase. Ctrl+C cancels this request.\n",
         );
     },
-    execute,
+    execute: async () => {
+      signal?.throwIfAborted();
+      await capacityCheck?.();
+      signal?.throwIfAborted();
+      return execute();
+    },
   });
 };

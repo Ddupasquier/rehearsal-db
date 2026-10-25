@@ -66,7 +66,143 @@ export const normalizeResourcePolicy = (resources: PlainObject) => {
       waitTimeoutSeconds,
     });
   }
+  let capacityAdmission:
+    | Readonly<{ enabled: false }>
+    | Readonly<{
+        enabled: true;
+        hostReserveBytes: number;
+        engineReserveBytes: number;
+        maximumRunningContainers: number;
+        targetMemoryBytes: Readonly<{
+          postgresql: number;
+          supabaseApplication: number;
+          supabaseFull: number;
+        }>;
+      }>
+    | undefined;
+  if (resources.capacityAdmission !== undefined) {
+    const path = "config.resources.capacityAdmission";
+    const value = assertPlainObject(resources.capacityAdmission, path);
+    assertKnownKeys(
+      value,
+      [
+        "enabled",
+        "hostReserveBytes",
+        "engineReserveBytes",
+        "maximumRunningContainers",
+        "targetMemoryBytes",
+      ],
+      path,
+    );
+    if (typeof value.enabled !== "boolean")
+      throw new Error(`${path}.enabled must be a boolean.`);
+    const budget = (input: unknown, label: string) => {
+      const result = assertPositiveInteger(input, label);
+      if (!Number.isSafeInteger(result))
+        throw new Error(`${label} must be a safe integer.`);
+      return result;
+    };
+    if (!value.enabled) {
+      if (Object.keys(value).some((key) => key !== "enabled"))
+        throw new Error(`${path}: remove budgets when disabling admission.`);
+      capacityAdmission = Object.freeze({ enabled: false });
+    } else {
+      if (!workloadQueue?.enabled)
+        throw new Error(
+          `${path} requires the shared workloadQueue to be enabled.`,
+        );
+      const memory = assertPlainObject(
+        value.targetMemoryBytes,
+        `${path}.targetMemoryBytes`,
+      );
+      assertKnownKeys(
+        memory,
+        ["postgresql", "supabaseApplication", "supabaseFull"],
+        `${path}.targetMemoryBytes`,
+      );
+      const maximumRunningContainers = budget(
+        value.maximumRunningContainers,
+        `${path}.maximumRunningContainers`,
+      );
+      if (maximumRunningContainers > 1024)
+        throw new Error(
+          `${path}.maximumRunningContainers must be at most 1024.`,
+        );
+      capacityAdmission = Object.freeze({
+        enabled: true,
+        hostReserveBytes: budget(
+          value.hostReserveBytes,
+          `${path}.hostReserveBytes`,
+        ),
+        engineReserveBytes: budget(
+          value.engineReserveBytes,
+          `${path}.engineReserveBytes`,
+        ),
+        maximumRunningContainers,
+        targetMemoryBytes: Object.freeze({
+          postgresql: budget(
+            memory.postgresql,
+            `${path}.targetMemoryBytes.postgresql`,
+          ),
+          supabaseApplication: budget(
+            memory.supabaseApplication,
+            `${path}.targetMemoryBytes.supabaseApplication`,
+          ),
+          supabaseFull: budget(
+            memory.supabaseFull,
+            `${path}.targetMemoryBytes.supabaseFull`,
+          ),
+        }),
+      });
+    }
+  }
   const schedule = resources.cleanupSchedule ?? "manual";
+  let restoreCache:
+    | Readonly<{ enabled: false }>
+    | Readonly<{
+        enabled: true;
+        maximumBytes: number;
+        minimumFreeBytes: number;
+      }>
+    | undefined;
+  if (resources.restoreCache !== undefined) {
+    const path = "config.resources.restoreCache";
+    const value = assertPlainObject(resources.restoreCache, path);
+    assertKnownKeys(
+      value,
+      ["enabled", "maximumBytes", "minimumFreeBytes"],
+      path,
+    );
+    if (typeof value.enabled !== "boolean")
+      throw new Error(`${path}.enabled must be a boolean.`);
+    if (!value.enabled) {
+      if (Object.keys(value).some((key) => key !== "enabled"))
+        throw new Error(`${path}: remove budgets when disabling the cache.`);
+      restoreCache = Object.freeze({ enabled: false });
+    } else {
+      const maximumBytes = assertPositiveInteger(
+        value.maximumBytes,
+        `${path}.maximumBytes`,
+      );
+      const minimumFreeBytes = assertPositiveInteger(
+        value.minimumFreeBytes,
+        `${path}.minimumFreeBytes`,
+      );
+      if (
+        !Number.isSafeInteger(maximumBytes) ||
+        maximumBytes > 536870912 ||
+        !Number.isSafeInteger(minimumFreeBytes)
+      )
+        throw new Error(
+          `${path} requires safe-integer budgets and maximumBytes of at most 536870912.`,
+        );
+      restoreCache = Object.freeze({
+        enabled: true,
+        maximumBytes,
+        minimumFreeBytes,
+      });
+    }
+  }
   if (
     typeof schedule !== "string" ||
     !["manual", "daily-preview", "weekly-preview"].includes(schedule)
@@ -86,6 +222,8 @@ export const normalizeResourcePolicy = (resources: PlainObject) => {
   }
   return Object.freeze({
     ...(workloadQueue === undefined ? {} : { workloadQueue }),
+    ...(capacityAdmission === undefined ? {} : { capacityAdmission }),
+    ...(restoreCache === undefined ? {} : { restoreCache }),
     staleAfterSeconds: nullablePositiveInteger(
       resources.staleAfterSeconds,
       "config.resources.staleAfterSeconds",

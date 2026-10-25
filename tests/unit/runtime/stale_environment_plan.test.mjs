@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeRehearsalConfig } from "../../../dist/src/project/configuration_normalization.mjs";
 import {
   applyStopStalePlan,
@@ -13,6 +13,7 @@ const now = new Date("2026-10-13T12:00:00Z");
 const engineIdentity = "e".repeat(64);
 const roots = [];
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -27,6 +28,8 @@ const config = (
     postgresql: { migrationDirectory: "database/migrations" },
     baseline: { sanitizationPolicy: "rehearsal/policy.json" },
     resources,
+    // This historical review fixture deliberately owns a long-running environment.
+    lifecycle: { run: "keep-until-stop", open: "keep-until-stop" },
     application: { startCommand: "npm run dev", proofCommand: "npm test" },
     runtime: { target: "postgresql", projectId: id, databasePort: 58322 },
   });
@@ -229,14 +232,21 @@ describe("stop stale environment plan", () => {
       if (args[0] === "context" && args[1] === "show")
         return result(0, "local");
       if (args[0] === "context" && args[1] === "inspect")
-        return result(0, JSON.stringify("unix:///tmp/test-docker.sock"));
+        return result(
+          0,
+          args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+            ? "false"
+            : JSON.stringify("unix:///tmp/test-docker.sock"),
+        );
       if (args.at(-1) === "info") return result(1);
       throw new Error("Unexpected engine mutation");
     };
     await expect(
       inspectStopStalePlan({ projectRoot: root }, { run }),
     ).rejects.toThrow("never starts it");
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     await expect(
       inspectStopStalePlan(
         { projectRoot: root },
@@ -249,4 +259,54 @@ describe("stop stale environment plan", () => {
       ),
     ).rejects.toThrow("local Docker endpoint");
   });
+});
+
+it("pins stale review to explicit context/config even if that context changes after metadata", async () => {
+  const root = await mkdtemp(join(tmpdir(), "rehearsal-stale-selection-"));
+  roots.push(root);
+  await writeFile(
+    join(root, "rehearsal.config.mjs"),
+    `export default ${JSON.stringify({ schemaVersion: 1, project: { name: "stale-test" }, postgresql: { migrationDirectory: "database/migrations" }, baseline: { sanitizationPolicy: "rehearsal/policy.json" }, resources: { staleAfterSeconds: 3600 }, application: { startCommand: "npm run dev", proofCommand: "npm test" }, runtime: { target: "postgresql", databasePort: 58322 } })};`,
+  );
+  vi.stubEnv("DOCKER_CONTEXT", "reviewed");
+  vi.stubEnv("DOCKER_HOST", "ssh://ignored-by-context");
+  vi.stubEnv("DOCKER_CONFIG", root);
+  let endpoint = "unix:///synthetic/reviewed.sock";
+  const initial = endpoint,
+    calls = [];
+  const run = (_command, args, _cwd, env) => {
+    calls.push({ args: [...args], env });
+    if (args[0] === "context") {
+      expect(args[1]).not.toBe("show");
+      return {
+        status: 0,
+        stdout: args.includes(
+          "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+        )
+          ? "false"
+          : JSON.stringify(endpoint),
+      };
+    }
+    expect(args.slice(0, 2)).toEqual(["--host", initial]);
+    expect(env.DOCKER_HOST).toBe(initial);
+    endpoint = "unix:///synthetic/replacement.sock";
+    if (args[2] === "info") return { status: 0, stdout: "" };
+    if (args[2] === "container" && args[3] === "ls")
+      return { status: 0, stdout: "" };
+    throw new Error("Unexpected stale engine action");
+  };
+  const preview = await inspectStopStalePlan({ projectRoot: root }, { run });
+  expect(preview.context).toBe("reviewed");
+  expect(preview.targets).toEqual([]);
+  expect(
+    calls.every(({ env }) => env.DOCKER_CONFIG && !env.DOCKER_CONTEXT),
+  ).toBe(true);
+  expect(
+    calls.some(
+      ({ args }) =>
+        args.includes("--context") ||
+        args.includes("stop") ||
+        args.includes("rm"),
+    ),
+  ).toBe(false);
 });

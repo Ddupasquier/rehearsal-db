@@ -30,6 +30,10 @@ Commands:
   activity                   Report idle, busy, stale, or invalid operation state
   environments               List owned runtimes and Docker capacity without starting it
   resources                  Browse individual images, volumes, and other local resources
+  managed example            Print a synthetic-only managed protocol request
+  managed plan --proposal=    Review synthetic request, quota and consent digest
+  managed prototype --proposal= --confirm-managed= Exercise bounded local worker and cleanup
+  managed recover --proposal= --confirm-managed= Recover one exactly owned quarantined synthetic workspace
   workloads                  Inspect participating local lifecycle queue metadata
   workloads recover --confirm-workloads= Recover reviewed dead-holder metadata only
   explain                    Show the immutable execution plan
@@ -38,6 +42,7 @@ Commands:
   open                       Start the runtime and keep the application open
   candidates                 Show the exact pending migration digest
   inspect baseline           Show verified baseline provenance
+  inspect sizing             Review baseline size, shape fidelity and COPY cache policy
   inspect migrations         Classify represented, applied, and candidate migrations
   inspect plan               Review ordered migrations, required dependencies, and warnings
   inspect insights           Review bounded static SQL warnings; never a safety verdict
@@ -48,17 +53,21 @@ Commands:
   reset                      Restore and verify the immutable local baseline
   status                     Report the disposable local runtime state
   stop                       Stop only this project's local runtime
+  engine status              Inspect the selected engine and VM state without a project config
+  engine stop [--confirm-engine-stop=] Review or gracefully shut down the selected qualified VM
   stop-stale [--confirm-stop=] Preview or stop exact long-running owned environments
   discard                    Remove only this project's disposable runtime
   cleanup [--include-runtime] [--include-images] [--write] [--confirm-cleanup=]
                              Preview or apply conservative disk cleanup
+  cleanup containers --proposal= [--write] [--confirm-cleanup=]
+                             Retire exact completed containers while preserving volumes
   verify                     Verify the current local Rehearsal runtime
 
 Options: --help, -h --version, -V --json --verbose --debug --plain
          --config=<path> --target=<provider for setup; configured name for runtime>
          --confirm-candidates=<whole-plan digest for run, migrate, or measure impact>
          --confirm-source-access=<digest> --confirm-source-retirement=<digest>
-         --confirm-refresh=<digest>`;
+         --confirm-refresh=<digest> --confirm-engine-stop=<reviewed digest>`;
 
 export const createBasicCommandHandlers = (): readonly CommandDefinition[] => [
   {

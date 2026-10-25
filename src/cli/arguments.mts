@@ -24,7 +24,9 @@ export interface RehearsalCliFlags {
   imagesOnly: boolean;
   cleanupConfirmation: string | undefined;
   stopConfirmation: string | undefined;
+  engineStopConfirmation: string | undefined;
   workloadConfirmation: string | undefined;
+  managedConfirmation: string | undefined;
   proposalPath: string | undefined;
   sourceAccessConfirmation: string | undefined;
   sourceRetirementConfirmation: string | undefined;
@@ -63,7 +65,9 @@ export const parseArguments = (
     imagesOnly: false,
     cleanupConfirmation: undefined,
     stopConfirmation: undefined,
+    engineStopConfirmation: undefined,
     workloadConfirmation: undefined,
+    managedConfirmation: undefined,
     proposalPath: undefined,
     sourceAccessConfirmation: undefined,
     sourceRetirementConfirmation: undefined,
@@ -92,10 +96,16 @@ export const parseArguments = (
       flags.cleanupConfirmation = argument.slice("--confirm-cleanup=".length);
     else if (argument.startsWith("--confirm-stop="))
       flags.stopConfirmation = argument.slice("--confirm-stop=".length);
+    else if (argument.startsWith("--confirm-engine-stop="))
+      flags.engineStopConfirmation = argument.slice(
+        "--confirm-engine-stop=".length,
+      );
     else if (argument.startsWith("--confirm-workloads="))
       flags.workloadConfirmation = argument.slice(
         "--confirm-workloads=".length,
       );
+    else if (argument.startsWith("--confirm-managed="))
+      flags.managedConfirmation = argument.slice("--confirm-managed=".length);
     else if (argument.startsWith("--proposal="))
       flags.proposalPath = argument.slice("--proposal=".length);
     else if (argument.startsWith("--confirm-source-access="))
@@ -155,7 +165,9 @@ export const resetGuidedFlags = (flags: RehearsalCliFlags): void => {
     imagesOnly: false,
     cleanupConfirmation: undefined,
     stopConfirmation: undefined,
+    engineStopConfirmation: undefined,
     workloadConfirmation: undefined,
+    managedConfirmation: undefined,
     proposalPath: undefined,
     sourceAccessConfirmation: undefined,
     sourceRetirementConfirmation: undefined,
@@ -176,9 +188,11 @@ export const commandMutatesProject = ({
   guided: boolean;
 }): boolean => {
   if (guided) return true;
+  // Engine shutdown owns the shared lifecycle lease, not a project/config lock.
+  if (command === "engine status" || command === "engine stop") return false;
   if (["setup", "init", "baseline prepare", "privacy key"].includes(command))
     return flags.write;
-  if (command === "cleanup") return flags.write;
+  if (["cleanup", "cleanup containers"].includes(command)) return flags.write;
   if (command === "stop-stale") return Boolean(flags.stopConfirmation);
   if (command === "source apply")
     return Boolean(flags.sourceAccessConfirmation);

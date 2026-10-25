@@ -43,10 +43,13 @@ export const normalizeApplicationActivity = ({
         });
   if (
     timeout !== null &&
-    (openPersistence !== "stop-on-application-exit" || !activity)
+    (!["stop-on-application-exit", "discard-on-application-exit"].includes(
+      openPersistence as string,
+    ) ||
+      !activity)
   )
     throw new Error(
-      "Foreground idle shutdown requires application.activity, readiness, and lifecycle.open = stop-on-application-exit. No inactivity is inferred automatically.",
+      "Foreground idle shutdown requires application.activity, readiness, and lifecycle.open = stop-on-application-exit or discard-on-application-exit. No inactivity is inferred automatically.",
     );
   return Object.freeze({
     activity,

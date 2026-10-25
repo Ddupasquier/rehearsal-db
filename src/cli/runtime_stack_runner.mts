@@ -5,7 +5,10 @@ import {
   loadRuntimeTopology,
   selectRuntimeTargets,
 } from "../runtime/topology.mjs";
-import { shouldStopRuntime } from "../runtime/persistence.mjs";
+import {
+  runtimeCompletionAction,
+  assertRuntimeCompletionAllowed,
+} from "../runtime/persistence.mjs";
 import { releaseOwnedColimaWhenIdle } from "../runtime/container_engine_ownership.mjs";
 import { inspectRehearsalResources } from "../runtime/resource_inventory.mjs";
 import { assertLocalDockerContext } from "../runtime/local_docker_context.mjs";
@@ -17,6 +20,7 @@ import {
 import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
 import { executeRuntimeTargetStack } from "./runtime_stack_execution.mjs";
 import { withRuntimeWorkloadAdmission } from "./runtime_workload_admission.mjs";
+import { assertRuntimeWorkloadCapacity } from "../runtime/workload_capacity.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
 import type { CliSessionState } from "./command_contract.mjs";
 type RuntimeTopology = Awaited<ReturnType<typeof loadRuntimeTopology>>;
@@ -59,6 +63,7 @@ interface ManagerInvocation {
   operationId?: string;
   dockerContext?: string;
   dockerIdentity?: string;
+  dockerDaemonId?: string;
   configSha256?: string;
 }
 export const createRuntimeStackRunner =
@@ -77,6 +82,8 @@ export const createRuntimeStackRunner =
     const topology =
       (session.runtimeTopology as RuntimeTopology | undefined) ??
       (await loadRuntimeTopology(planOptions));
+    let admittedEngine:
+      { context: string; identity: string; daemonId: string } | undefined;
     const executeStack = async (): Promise<RuntimeStackResult> => {
       const reverse = ["stop", "discard"].includes(command);
       if (
@@ -95,24 +102,53 @@ export const createRuntimeStackRunner =
         flags.target,
         command,
       );
+      if (["run", "start"].includes(command)) {
+        const mode =
+          command === "run"
+            ? topology.primary.config.lifecycle.run
+            : topology.primary.config.lifecycle.open;
+        for (const target of selectedTargets)
+          assertRuntimeCompletionAllowed(mode, target.config.runtime.protected);
+      }
+      const completionAction = runtimeCompletionAction(
+        command === "run"
+          ? topology.primary.config.lifecycle.run
+          : topology.primary.config.lifecycle.open,
+      );
       const targets = reverse
         ? [...selectedTargets].reverse()
         : selectedTargets;
       const engine =
         command === "status"
           ? null
-          : assertLocalDockerContext({ cwd: topology.projectRoot });
+          : assertLocalDockerContext({
+              cwd: topology.projectRoot,
+              ...(admittedEngine ? { context: admittedEngine.context } : {}),
+            });
+      if (admittedEngine && engine?.identity !== admittedEngine.identity)
+        throw new Error(
+          "The measured capacity engine changed before execution; no runtime action was started.",
+        );
       const engineBinding = engine
-        ? { dockerContext: engine.context, dockerIdentity: engine.identity }
+        ? {
+            dockerContext: engine.context,
+            dockerIdentity: engine.identity,
+            ...(admittedEngine
+              ? { dockerDaemonId: admittedEngine.daemonId }
+              : {}),
+          }
         : {};
       const operationId = randomUUID();
       const results = await executeRuntimeTargetStack({
         targets,
         cleanupOnFailure:
           command === "run"
-            ? shouldStopRuntime(topology.primary.config.lifecycle.run)
+            ? runtimeCompletionAction(topology.primary.config.lifecycle.run) !==
+              null
             : command === "start" &&
-              shouldStopRuntime(topology.primary.config.lifecycle.open),
+              runtimeCompletionAction(
+                topology.primary.config.lifecycle.open,
+              ) !== null,
         execute: async (target) => {
           const confirmation = (
             session.targetConfirmations as Map<string, string> | undefined
@@ -130,7 +166,7 @@ export const createRuntimeStackRunner =
         },
         stop: (target) =>
           runManager({
-            action: "stop",
+            action: completionAction ?? "stop",
             flags,
             configPath: target.configPath,
             targetName: target.name,
@@ -182,5 +218,20 @@ export const createRuntimeStackRunner =
       command,
       json: flags.json,
       execute: executeStack,
+      ...(topology.primary.config.resources.capacityAdmission?.enabled
+        ? {
+            capacityCheck: async () => {
+              admittedEngine = await assertRuntimeWorkloadCapacity({
+                policy: topology.primary.config.resources.capacityAdmission!,
+                projectRoot: topology.projectRoot,
+                targets: selectRuntimeTargets(
+                  topology.targets,
+                  flags.target,
+                  command,
+                ),
+              });
+            },
+          }
+        : {}),
     });
   };

@@ -4,9 +4,11 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
 import { resolve } from "node:path";
-import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
 import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
-import { assertLocalDockerContext } from "./local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "./local_docker_context.mjs";
 import {
   evaluateObservableEnvironmentReview,
   observableContainerTime,
@@ -21,12 +23,13 @@ type Runner = (
   command: string,
   args: readonly string[],
   cwd: string,
+  environment?: NodeJS.ProcessEnv,
 ) => SpawnSyncReturns<string>;
-const runCommand: Runner = (command, args, cwd) =>
+const runCommand: Runner = (command, args, cwd, environment) =>
   spawnSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: createCleanProcessEnvironment(),
+    env: environment ?? scopedDockerEnvironment(),
     timeout: 30_000,
     maxBuffer: 32 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
@@ -223,12 +226,23 @@ export const inspectStopStalePlan = async (
   }: { readonly run?: Runner; readonly now?: () => Date } = {},
 ): Promise<StopStalePlan> => {
   const topology = await loadRuntimeTopology(options);
+  const inheritedEnvironment = { ...process.env };
   const engine = assertLocalDockerContext({
     cwd: topology.projectRoot,
+    inheritedEnvironment,
     runner: run,
   });
-  const prefix = ["--context", engine.context];
-  const info = run("docker", [...prefix, "info"], topology.projectRoot);
+  const prefix = ["--host", engine.endpoint];
+  const environment = scopedDockerEnvironment({
+    inheritedEnvironment,
+    endpoint: engine.endpoint,
+  });
+  const info = run(
+    "docker",
+    [...prefix, "info"],
+    topology.projectRoot,
+    environment,
+  );
   if (info.status !== 0)
     throw new Error(
       "The local engine is unavailable. Stop-stale inspection never starts it; start your engine explicitly and retry.",
@@ -237,6 +251,7 @@ export const inspectStopStalePlan = async (
     "docker",
     [...prefix, "container", "ls", "--all", "--quiet"],
     topology.projectRoot,
+    environment,
   );
   const ids = listing.stdout.trim().split(/\s+/u).filter(Boolean);
   if (
@@ -251,6 +266,7 @@ export const inspectStopStalePlan = async (
       "docker",
       [...prefix, "container", "inspect", ...ids],
       topology.projectRoot,
+      environment,
     );
     try {
       const value: unknown = JSON.parse(inspected.stdout);

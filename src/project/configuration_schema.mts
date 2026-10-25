@@ -170,6 +170,8 @@ export const validateConfigurationSchema = (
       "maximumBytes",
       "cleanupSchedule",
       "workloadQueue",
+      "capacityAdmission",
+      "restoreCache",
     ],
     "config.resources",
   );

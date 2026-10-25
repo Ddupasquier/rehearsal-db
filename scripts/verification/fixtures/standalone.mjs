@@ -30,6 +30,82 @@ import {
   finishFixtureCleanup,
 } from "../scenarios/fixture_container.mjs";
 
+// Completed defaults close their exact owned targets; resume only for the next
+// active fixture proof, preserving the same volume identities and contents.
+const assertDefaultStopped = ({ cwd, result, projectIds }) => {
+  if (
+    result.lifecycle?.mode !== "stop-after-run" ||
+    result.lifecycle.runtimeState !== "stopped" ||
+    result.lifecycle.dataState !== "preserved" ||
+    result.lifecycle.stop?.action !== "stop"
+  )
+    throw new Error(
+      "Default run did not report stopped runtime with preserved data.",
+    );
+  const preserved = [];
+  for (const id of projectIds) {
+    const running = run(
+      "docker",
+      [
+        "ps",
+        "--filter",
+        `label=com.rehearsal-db.project=${id}`,
+        "--format",
+        "{{.ID}}",
+      ],
+      { cwd },
+    ).trim();
+    if (running) throw new Error("Default run left its owned target running.");
+    const names = run(
+      "docker",
+      [
+        "volume",
+        "ls",
+        "--filter",
+        `label=com.rehearsal-db.project=${id}`,
+        "--format",
+        "{{.Name}}",
+      ],
+      { cwd },
+    )
+      .trim()
+      .split("\n")
+      .filter(Boolean);
+    if (!names.length)
+      throw new Error("Default run did not preserve its owned target volume.");
+    for (const name of names) {
+      const fact = JSON.parse(
+        run("docker", ["volume", "inspect", name], { cwd }),
+      )[0];
+      if (
+        fact.Labels?.["com.rehearsal-db.project"] !== id ||
+        fact.Name !== name ||
+        !fact.CreatedAt ||
+        !fact.Driver
+      )
+        throw new Error("Preserved target volume ownership is unknown.");
+      preserved.push({
+        Name: fact.Name,
+        CreatedAt: fact.CreatedAt,
+        Driver: fact.Driver,
+      });
+    }
+  }
+  return () => {
+    for (const before of preserved) {
+      const after = JSON.parse(
+        run("docker", ["volume", "inspect", before.Name], { cwd }),
+      )[0];
+      if (
+        after.Name !== before.Name ||
+        after.CreatedAt !== before.CreatedAt ||
+        after.Driver !== before.Driver
+      )
+        throw new Error("Public start replaced a preserved target volume.");
+    }
+  };
+};
+
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");
 
@@ -1348,6 +1424,17 @@ process.stdout.write(externalViewDefinitionFingerprint(process.env.REHEARSAL_VIE
     if (applicationStillRunning) {
       throw new Error("Rehearsal left the fixture application running.");
     }
+    const assertPreservedVolumes = assertDefaultStopped({
+      cwd,
+      result: runResult,
+      projectIds: [projectId],
+    });
+    executeCliOrThrow({
+      cwd,
+      label: "resume runtime after bounded run",
+      args: ["start", "--json"],
+    });
+    assertPreservedVolumes();
     const runtimeContainer = run(
       "docker",
       [

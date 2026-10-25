@@ -3,6 +3,10 @@
 Rehearsal separates shipped product code, repository automation, tests, fixtures, and
 documentation so each file has one obvious home.
 
+Machine-specific suite drive placement has one local owner document, discoverable
+through `dt b open --json`. It does not change these repository boundaries or authorize
+independent migration of shared temporary coordination, fixtures or recovery evidence.
+
 ```text
 rehearsal-db/
 ├── src/                    TypeScript product source
@@ -77,6 +81,10 @@ typed registry and produce the same result contract:
   `update_advisory.mts` bounds public release metadata, private preferences and
   installation-origin checks. Neither participates in passive JSON inspection.
 - `runtime_commands.mts` coordinates local runtimes and project proofs.
+- `runtime_readiness_rendering.mts` presents shared engine choices and doctor readiness.
+  `engine_discovery.mts` owns bounded host/engine observations; `local_docker_context.mts`
+  owns explicit selection and local endpoint binding. Support reports reuse those
+  observations without exposing private context or endpoint identities.
 - `runtime_stack_runner.mts` selects configured targets, binds their reviewed engine
   and configuration identities, executes the serial stack and retains receipt-bound
   cleanup. `runtime_workload_admission.mts` applies optional lifecycle admission before
@@ -86,6 +94,14 @@ typed registry and produce the same result contract:
   owns cooperative lifecycle admission; its store owns bounded private atomic tickets,
   and its location helper binds the local user, boot and PID namespace independently
   of per-command temporary directories. No background scheduler is installed.
+- `engine_command_handlers.mts` exposes configuration-independent engine status and
+  reviewed VM shutdown. `runtime/engine_lifecycle.mts` owns the closed result,
+  shared-workload review and coordination; `engine_colima_backend.mts` owns the
+  qualified profile, disk, boot and process proofs. Explicit shutdown uses the
+  shared `engine-stop` workload ticket instead of creating a project lock. Its
+  signal scope preserves typed uncertainty after dispatch, and installed-package
+  fingerprint checks still surround the mutation. Automatic owned-idle shutdown
+  remains a separate receipt-bound policy.
 - `runtime_planning.mts` owns read-only stack plans and exact candidate summaries.
 - `editor_command_handlers.mts` exposes bounded migration and configuration review
   contracts plus digest-bound, non-destructive stale-environment stop review. It also

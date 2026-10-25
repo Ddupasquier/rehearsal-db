@@ -30,6 +30,92 @@ const supabase = () => {
 };
 
 describe("resource configuration", () => {
+  it("requires explicitly reviewed capacity budgets and the shared queue", () => {
+    const capacityAdmission = {
+      enabled: true,
+      hostReserveBytes: 1024,
+      engineReserveBytes: 1024,
+      maximumRunningContainers: 20,
+      targetMemoryBytes: {
+        postgresql: 1024,
+        supabaseApplication: 2048,
+        supabaseFull: 4096,
+      },
+    };
+    const resources = { workloadQueue: { enabled: true }, capacityAdmission };
+    expect(
+      normalizeRehearsalConfig({ ...input(), resources }).resources
+        .capacityAdmission,
+    ).toEqual(capacityAdmission);
+    expect(
+      normalizeRehearsalConfig({
+        ...input(),
+        resources: { capacityAdmission: { enabled: false } },
+      }).resources.capacityAdmission,
+    ).toEqual({ enabled: false });
+    for (const invalid of [
+      { ...resources, workloadQueue: { enabled: false } },
+      { ...resources, capacityAdmission: { enabled: true } },
+      {
+        ...resources,
+        capacityAdmission: {
+          ...capacityAdmission,
+          maximumRunningContainers: 1025,
+        },
+      },
+      ...[0, -1, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "1024"].map(
+        (hostReserveBytes) => ({
+          ...resources,
+          capacityAdmission: { ...capacityAdmission, hostReserveBytes },
+        }),
+      ),
+      {
+        ...resources,
+        capacityAdmission: {
+          ...capacityAdmission,
+          targetMemoryBytes: { postgresql: 1024 },
+        },
+      },
+      {
+        ...resources,
+        capacityAdmission: { ...capacityAdmission, force: true },
+      },
+    ])
+      expect(() =>
+        normalizeRehearsalConfig({ ...input(), resources: invalid }),
+      ).toThrow();
+  });
+  it("keeps restore caches opt-in and bounds explicitly declared disk budgets", () => {
+    const restoreCache = {
+      enabled: true,
+      maximumBytes: 536870912,
+      minimumFreeBytes: 1024,
+    };
+    expect(
+      normalizeRehearsalConfig({ ...input(), resources: { restoreCache } })
+        .resources.restoreCache,
+    ).toEqual(restoreCache);
+    expect(
+      normalizeRehearsalConfig({
+        ...input(),
+        resources: { restoreCache: { enabled: false } },
+      }).resources.restoreCache,
+    ).toEqual({ enabled: false });
+    for (const value of [
+      { enabled: true },
+      { ...restoreCache, maximumBytes: 536870913 },
+      { ...restoreCache, minimumFreeBytes: 0 },
+      { ...restoreCache, minimumFreeBytes: Number.MAX_SAFE_INTEGER + 1 },
+      { ...restoreCache, fallback: true },
+      { enabled: false, maximumBytes: 1024 },
+    ])
+      expect(() =>
+        normalizeRehearsalConfig({
+          ...input(),
+          resources: { restoreCache: value },
+        }),
+      ).toThrow();
+  });
   it("normalizes only explicitly configured lifecycle queues and validates every bound", () => {
     expect(normalizeRehearsalConfig(input()).resources).not.toHaveProperty(
       "workloadQueue",

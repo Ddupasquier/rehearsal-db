@@ -57,7 +57,14 @@ const fakeDocker = () => {
     const action = args.slice(0, 2).join(" ");
     if (state.fail === action) return failed();
     if (action === "context show") return ok(`${state.context}\n`);
-    if (action === "context inspect") return ok(JSON.stringify(state.endpoint));
+    if (action === "context inspect")
+      return ok(
+        args.includes(
+          "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+        )
+          ? "false"
+          : JSON.stringify(state.endpoint),
+      );
     if (action === "info --format") return ok(state.engine);
     expect(originalArgs.slice(0, 2)).toEqual([
       "--host",

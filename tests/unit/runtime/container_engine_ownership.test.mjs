@@ -25,11 +25,27 @@ const engineIdentityRun =
   (calls = []) =>
   (command, args) => {
     calls.push([command, ...args]);
+    if (
+      command === "docker" &&
+      args[0] === "context" &&
+      args.includes(
+        "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+      )
+    )
+      return result(0, "false");
     if (command === "docker" && args[0] === "context" && args[1] === "inspect")
       return result(
         0,
         JSON.stringify("unix:///tmp/rehearsal-colima-test.sock"),
       );
+    if (
+      command === "docker" &&
+      args[0] === "context" &&
+      args.includes(
+        "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+      )
+    )
+      return result(0, "false");
     if (command === "docker" && args[0] === "context")
       return result(0, "colima\n");
     if (command === "colima" && args[0] === "ssh")
@@ -113,12 +129,28 @@ describe("container engine ownership", () => {
         if (
           command === "docker" &&
           args[0] === "context" &&
+          args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+        )
+          return result(0, "false");
+        if (
+          command === "docker" &&
+          args[0] === "context" &&
           args[1] === "inspect"
         )
           return result(
             0,
             JSON.stringify("unix:///tmp/rehearsal-colima-test.sock"),
           );
+        if (
+          command === "docker" &&
+          args[0] === "context" &&
+          args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+        )
+          return result(0, "false");
         if (command === "docker" && args[0] === "context")
           return result(0, "colima\n");
         if (command === "docker" && args[0] === "container")
@@ -152,12 +184,28 @@ describe("container engine ownership", () => {
         if (
           command === "docker" &&
           args[0] === "context" &&
+          args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+        )
+          return result(0, "false");
+        if (
+          command === "docker" &&
+          args[0] === "context" &&
           args[1] === "inspect"
         )
           return result(
             0,
             JSON.stringify("unix:///tmp/rehearsal-colima-test.sock"),
           );
+        if (
+          command === "docker" &&
+          args[0] === "context" &&
+          args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+        )
+          return result(0, "false");
         if (command === "docker" && args[0] === "context")
           return result(0, "colima\n");
         if (command === "docker" && args[0] === "container")
@@ -182,12 +230,28 @@ describe("container engine ownership", () => {
         if (
           command === "docker" &&
           args[0] === "context" &&
+          args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+        )
+          return result(0, "false");
+        if (
+          command === "docker" &&
+          args[0] === "context" &&
           args[1] === "inspect"
         )
           return result(
             0,
             JSON.stringify("unix:///tmp/rehearsal-colima-test.sock"),
           );
+        if (
+          command === "docker" &&
+          args[0] === "context" &&
+          args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+        )
+          return result(0, "false");
         if (command === "docker" && args[0] === "context")
           return result(0, "colima\n");
         if (command === "colima" && args[0] === "ssh")
@@ -216,9 +280,25 @@ describe("container engine ownership", () => {
       if (
         command === "docker" &&
         args[0] === "context" &&
+        args.includes(
+          "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+        )
+      )
+        return result(0, "false");
+      if (
+        command === "docker" &&
+        args[0] === "context" &&
         args[1] === "inspect"
       )
         return result(0, JSON.stringify("ssh://production.example"));
+      if (
+        command === "docker" &&
+        args[0] === "context" &&
+        args.includes(
+          "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+        )
+      )
+        return result(0, "false");
       if (command === "docker" && args[0] === "context")
         return result(0, "colima\n");
       if (command === "docker" && args[0] === "info") return result(0);
@@ -244,6 +324,14 @@ describe("container engine ownership", () => {
       if (
         command === "docker" &&
         args[0] === "context" &&
+        args.includes(
+          "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+        )
+      )
+        return result(0, "false");
+      if (
+        command === "docker" &&
+        args[0] === "context" &&
         args[1] === "inspect"
       )
         return result(
@@ -254,6 +342,14 @@ describe("container engine ownership", () => {
               : "unix:///tmp/different-colima.sock",
           ),
         );
+      if (
+        command === "docker" &&
+        args[0] === "context" &&
+        args.includes(
+          "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+        )
+      )
+        return result(0, "false");
       if (command === "docker" && args[0] === "context")
         return result(0, "colima\n");
       if (command === "colima" && args[0] === "ssh")

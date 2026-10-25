@@ -1,3 +1,5 @@
+import * as baselineArtifact from "../../../dist/src/baseline/artifact.mjs";
+import { inspectBaselineSizing } from "../../../dist/src/runtime/baseline_sizing.mjs";
 import { createHash } from "node:crypto";
 import {
   chmod,
@@ -10,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAndActivateBaseline } from "../../../dist/src/baseline/artifact.mjs";
 import {
   buildRehearsalPlan,
@@ -159,8 +161,8 @@ describe("Rehearsal plan", () => {
     expect(first.migrations.candidateCount).toBe(0);
     expect(first.lifecycle).toEqual({
       openIdleTimeoutSeconds: null,
-      run: "keep-until-stop",
-      open: "keep-until-stop",
+      run: "stop-after-run",
+      open: "stop-on-application-exit",
       dataOnStop: "preserved",
     });
     expect(first.application).toEqual({
@@ -280,4 +282,72 @@ describe("Rehearsal plan", () => {
       "does not match the reviewed baseline policy checksum",
     );
   });
+});
+
+describe("verified baseline sizing", () => {
+  it("reports exact immutable rows/bytes without assuming sampled fidelity or mutating inputs", async () => {
+    const root = await createFixture();
+    const first = await inspectBaselineSizing({ projectRoot: root });
+    expect(first).toMatchObject({
+      schemaVersion: 1,
+      baselineRows: 1,
+      tables: [{ table: "widget", rows: 1 }],
+      selection: "complete-sanitized-input",
+      sourceRows: null,
+      relationshipsChecked: null,
+      requiredGoals: null,
+      copyCache: "disabled",
+    });
+    expect(first.baselineBytes).toBeGreaterThan(0);
+    expect(first.limits.join(" ")).toContain("No rows are removed");
+    expect(await inspectBaselineSizing({ projectRoot: root })).toEqual(first);
+  });
+  it("refuses corrupted baseline bytes rather than recommending a smaller or cached substitute", async () => {
+    const root = await createFixture();
+    const { resolveActiveBaselinePaths } =
+      await import("../../../dist/src/baseline/artifact.mjs");
+    const active = await resolveActiveBaselinePaths({
+      artifactRoot: join(root, ".rehearsal"),
+    });
+    await chmod(active.dataPath, 0o600);
+    await writeFile(active.dataPath, '{"table":"widget","row":{"id":999}}\n');
+    await expect(inspectBaselineSizing({ projectRoot: root })).rejects.toThrow(
+      /checksum/,
+    );
+  });
+});
+
+it("refuses an active-generation switch between verification and sizing projection", async () => {
+  const root = await createFixture();
+  const originalVerify = baselineArtifact.verifyActiveBaseline;
+  const spy = vi
+    .spyOn(baselineArtifact, "verifyActiveBaseline")
+    .mockImplementationOnce(async (options) => {
+      const first = await originalVerify(options);
+      await createAndActivateBaseline({
+        artifactRoot: join(root, ".rehearsal"),
+        generationId: "20260912T120001Z-bbbbbbbbbbbb",
+        records: [{ table: "widget", row: { id: 2 } }],
+        metadata: {
+          migrationCutoff: first.migrationCutoff,
+          migrationHistorySha256: first.migrationHistorySha256,
+          sanitizationPolicySha256: first.sanitizationPolicySha256,
+        },
+        expectedTables: ["widget"],
+        migrationFiles: [
+          {
+            filename: "20260912000000_create_widget.sql",
+            content: "create table public.widget(id bigint primary key);\n",
+          },
+        ],
+      });
+      return first;
+    });
+  try {
+    await expect(inspectBaselineSizing({ projectRoot: root })).rejects.toThrow(
+      /active baseline changed during sizing/,
+    );
+  } finally {
+    spy.mockRestore();
+  }
 });

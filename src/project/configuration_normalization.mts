@@ -441,12 +441,16 @@ export const normalizeRehearsalConfig = (input: unknown) => {
       openIdleTimeoutSeconds: activityPolicy.openIdleTimeoutSeconds,
       run: assertChoice(
         lifecycle.run ?? REHEARSAL_DEFAULTS.lifecycle.run,
-        ["keep-until-stop", "stop-after-run"],
+        ["keep-until-stop", "stop-after-run", "discard-after-run"],
         "config.lifecycle.run",
       ),
       open: assertChoice(
         lifecycle.open ?? REHEARSAL_DEFAULTS.lifecycle.open,
-        ["keep-until-stop", "stop-on-application-exit"],
+        [
+          "keep-until-stop",
+          "stop-on-application-exit",
+          "discard-on-application-exit",
+        ],
         "config.lifecycle.open",
       ),
     }),

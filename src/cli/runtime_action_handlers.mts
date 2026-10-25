@@ -6,7 +6,10 @@ import {
   runHttpProofs,
   startApplicationSession,
 } from "../application/session.mjs";
-import { applyRuntimePersistence } from "../runtime/persistence.mjs";
+import {
+  applyRuntimePersistence,
+  runtimeCompletionAction,
+} from "../runtime/persistence.mjs";
 import { trackOperationStage } from "../shared/operation_progress.mjs";
 import {
   exactCommands,
@@ -198,7 +201,10 @@ export const createRuntimeActionHandlers = ({
               stop: async () =>
                 (
                   await runRuntimeStack({
-                    command: "stop",
+                    command:
+                      runtimeCompletionAction(
+                        topology.primary.config.lifecycle.run,
+                      ) ?? "stop",
                     flags,
                     planOptions,
                     session: state,
@@ -253,11 +259,13 @@ export const createRuntimeActionHandlers = ({
             topology.primary.config.application.readiness !== null;
           const nextAction = {
             run:
-              renderedLifecycle?.runtimeState === "stopped"
-                ? `The runtime was stopped with its database and Storage changes preserved. Run rehearsal start${hasApplicationLaunch ? " or rehearsal open" : ""} to resume.`
-                : hasApplicationLaunch
-                  ? "Next: run rehearsal open for hands-on testing, then rehearsal verify."
-                  : "The rehearsal command is complete; the database remains running. Next: run rehearsal verify or inspect the local database. This database-only project has no application to open.",
+              renderedLifecycle?.runtimeState === "removed"
+                ? "The disposable runtime and its data were removed; the immutable baseline remains. Run rehearsal run to create a fresh runtime."
+                : renderedLifecycle?.runtimeState === "stopped"
+                  ? `The runtime was stopped with its database and Storage changes preserved. Run rehearsal start${hasApplicationLaunch ? " or rehearsal open" : ""} to resume.`
+                  : hasApplicationLaunch
+                    ? "Next: run rehearsal open for hands-on testing, then rehearsal verify."
+                    : "The rehearsal command is complete; the database remains running. Next: run rehearsal verify or inspect the local database. This database-only project has no application to open.",
             start: hasApplicationLaunch
               ? "Next: run rehearsal open for hands-on testing or rehearsal status."
               : "The database is running. Next: run rehearsal status or rehearsal verify; no application launch is configured.",
@@ -297,7 +305,7 @@ export const createRuntimeActionHandlers = ({
                 (proof) => `✓ ${proof.kind} HTTP proof passed: ${proof.name}`,
               ),
               renderedLifecycle
-                ? `✓ Lifecycle ${renderedLifecycle.mode}: runtime ${renderedLifecycle.runtimeState}; data preserved`
+                ? `✓ Lifecycle ${renderedLifecycle.mode}: runtime ${renderedLifecycle.runtimeState}; data ${renderedLifecycle.dataState}`
                 : null,
               "",
               "Technical output is available from Show details in the guide.",
@@ -325,7 +333,7 @@ export const createRuntimeActionHandlers = ({
               (proof) => `${proof.kind} HTTP proof passed: ${proof.name}`,
             ),
             renderedLifecycle
-              ? `Lifecycle ${renderedLifecycle.mode}: runtime ${renderedLifecycle.runtimeState}; data preserved.`
+              ? `Lifecycle ${renderedLifecycle.mode}: runtime ${renderedLifecycle.runtimeState}; data ${renderedLifecycle.dataState}.`
               : null,
             nextAction ? "" : null,
             nextAction,

@@ -72,9 +72,11 @@ export const buildRuntimeStackPlan = async (
           `run ${target.name} proof: ${target.config.application.proofCommand}`,
       ),
       `run primary proof: ${topology.primary.config.application.proofCommand}`,
-      topology.primary.config.lifecycle.run === "stop-after-run"
-        ? "stop every database target after proofs while preserving its data"
-        : "keep every database target available until an explicit stop",
+      topology.primary.config.lifecycle.run === "discard-after-run"
+        ? "discard the owned disposable runtime and its data after proofs; preserve the immutable baseline"
+        : topology.primary.config.lifecycle.run === "stop-after-run"
+          ? "stop every database target after proofs while preserving its data"
+          : "keep every database target available until an explicit stop",
     ],
     guarantee:
       "Every database target is isolated by its own project ID, ports, artifact directory, and local-only safety policy. No production resources will be contacted.",

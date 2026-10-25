@@ -1,6 +1,7 @@
 # CLI commands
 
-Run commands from the project directory containing `rehearsal.config.mjs`. The examples
+Run project commands from the directory containing `rehearsal.config.mjs`. Engine and
+workload inspection/review commands need no project configuration. The examples
 use `npx`, so a global install is not required.
 
 ## Participating local workloads
@@ -22,6 +23,143 @@ missing confirmation and live owners refuse recovery. This operation clears loca
 queue metadata only. It does not stop processes/containers or alter databases.
 Waiting requests can be cancelled; expiry never steals a live holder. Read-only
 inspection does not clean stale records or create state directories.
+Explicit VM shutdown participates as `engine-stop` in this same queue. Older
+clients that do not recognize this ticket refuse admission; they must not remove it.
+
+## Engine status and reviewed VM shutdown
+
+Builds advertising `rehearsalContracts.containerEngineLifecycle: 1` provide:
+
+```bash
+npx --no-install rehearsal engine status --json
+npx --no-install rehearsal engine stop --json
+npx --no-install rehearsal engine stop --confirm-engine-stop=<consentDigest> --json
+```
+
+The first command observes the selected local Docker engine and the default
+Colima profile separately. The second previews whole-VM impact without stopping
+anything; `--write` alone does not apply it, and `--dry-run` always remains a
+preview even with confirmation. `--target` is refused because it cannot limit a
+whole-VM shutdown to one project target. Only the exact confirmation applies
+a fresh, unchanged review. These commands do not load project configuration or
+create a project operation lock. See the [VM shutdown policy](runtime-lifecycle.md#shut-down-the-vm-explicitly)
+for qualified backends, shared-workload checks and preservation boundaries.
+
+Version-1 status `data` contains `selected` (nullable context, endpoint identity,
+daemon ID and `running`, `unavailable`, `unknown` or `unsupported-host` state),
+`colimaDefault` (profile `default`, independent state, `shutdownSupported` and
+fixed `reason`), and `safety`. A failed daemon probe does not prove a VM stopped.
+Colima can remove its Docker context when it stops; a subsequent default Docker
+selection is not inferred to be Colima.
+
+Preview `data` contains `schemaVersion: 1`, `action: "engine-stop"`, `state`
+(`review-required`, `already-stopped`, `unsupported` or `blocked`), fixed `reason`,
+nullable `consentDigest`, nullable `engine` identity, nullable `impact` and
+`safety`. Available impact lists exact container IDs, names, states, restart
+counts and start/finish times, plus the running count. Unknown impact is `null`,
+not zero. Read-only observations and previews return envelope `success` and
+exit `0`; that means inspection completed, not that a VM was stopped.
+
+Apply returns structured `data` even for an unsuccessful outcome: schema version
+`1`, `status` (`stopped`, `already-stopped`, `refused`, `failed`, `cancelled` or
+`unknown`), fixed `reason`, nullable reviewed `engine`, `confirmed` flags
+`profileStopped` and `vmProcessAbsent`, nullable `selectionAfter`, and `safety`.
+Only a stopped outcome with both confirmation flags true returns envelope
+`success` and exit `0`. An already-stopped profile without a previous captured
+process binding returns `not_ready` and exit `1`; it does not fabricate a process
+exit or memory-release result. Other unconfirmed outcomes return `error` and
+exit `1`; cancellation before dispatch returns exit `130`.
+
+The closed reason codes are `ready`, `profile-stopped`, `unsupported-host`,
+`selection-unverified`, `daemon-unavailable`, `backend-unqualified`,
+`profile-unavailable`, `ownership-unverified`, `coordination-active`,
+`coordination-unavailable`, `review-changed`, `confirmation-required`,
+`cancelled-before-dispatch`, `cancelled-after-dispatch`, `shutdown-unconfirmed`,
+`shutdown-command-failed`, and `shutdown-confirmed`.
+
+The safety fields are `globalContextSwitchRequested: false`,
+`dataDeletionRequested: false`, `forceRequested: false`, and
+`enginesStarted: false`. They describe requested actions, not a promise that the
+backend leaves Docker's selected context unchanged. No raw endpoints, home paths,
+SQL, credentials or process arguments are returned. Cancellation after dispatch
+can leave shutdown in progress: an `unknown` outcome needs fresh inspection,
+not an automatic retry. Exit `0` alone is never a memory-release measurement.
+
+## Completed container retirement
+
+Builds advertising `rehearsalContracts.containerRetirement: 1` provide container-only
+retirement through `cleanup containers` and the public
+`@rehearsal-db/core/resource-lifecycle` export. PostgreSQL `stop` uses it automatically,
+with a private receipt that lets `start` reconstruct the container around its retained
+volume. Use ordinary `stop` for a resumable configured PostgreSQL runtime.
+
+For separately owned completed container helpers, supply a versioned claims file:
+
+```json
+{
+  "schemaVersion": 1,
+  "claims": [
+    {
+      "fullId": "<exact full 64-character container ID>",
+      "expectedLabels": { "com.docker.compose.project": "my-completed-test" },
+      "completedDisposable": true
+    }
+  ]
+}
+```
+
+```bash
+npx --no-install rehearsal cleanup containers --proposal=completed-containers.json --json
+npx --no-install rehearsal cleanup containers --proposal=completed-containers.json \
+  --write --confirm-cleanup=<consentDigest-from-preview> --json
+```
+
+Declare completion only after checking the owning session and preserving any required
+container writable-layer files and diagnostics. A stopped container is not proof of
+completion. The generic API preserves Docker volumes and bind-mounted files; its caller
+owns the application's reconstruction procedure. It does not create a PostgreSQL resume
+receipt for an arbitrary manually adopted container. Existing private runtime markers,
+credentials and recovery receipts must remain available.
+
+The preview pins exact IDs, labels, mounted volume identities and local daemon. Apply
+rechecks them and uses non-forced container removal without deleting volumes. Inspect
+each outcome on failure; unknown preservation is never reported as success. This does
+not remove shared images, retained databases or foreign workloads. See the
+[owning lifecycle policy](runtime-lifecycle.md#completed-container-retirement).
+
+## Verified baseline sizing
+
+Builds advertising `rehearsalContracts.baselineSizing: 1` provide
+`npx --no-install rehearsal inspect sizing --json`. This verifies the active
+immutable baseline and reports its complete sanitized row count, byte sizes and
+available representative-shape evidence. It starts no engine and writes no files.
+Missing source counts or shape evidence remain unknown; a small baseline is not
+proof of production fidelity or runtime performance. See
+[baseline sizing and COPY reuse](configuration.md#verified-copy-encoding-reuse-and-baseline-sizing).
+
+## Synthetic managed-protocol prototype
+
+Development builds advertising `rehearsalContracts.managedPrototype: 1` expose a
+local protocol prototype. It accepts only its fixed generated 100-row synthetic
+input. It is not a hosted service, a customer-data upload path, a network sandbox
+or proof of tenant isolation, hard memory limits or service cost.
+
+```bash
+npx --no-install rehearsal managed example --json > synthetic-request.json
+npx --no-install rehearsal managed plan --proposal=synthetic-request.json --json
+npx --no-install rehearsal managed prototype --proposal=synthetic-request.json \
+  --confirm-managed=<consentSha256-from-plan> --json
+```
+
+The exact confirmation binds the input, tenant, expiry and quotas. Changed or
+expired requests require a fresh plan. The worker has bounded runtime and output;
+cancellation stops the owned worker and attempts cleanup. A cleanup failure is
+reported as quarantined, never successful cleanup. Its returned recovery request
+and confirmation may be reviewed and supplied to `managed recover --proposal=... \
+--confirm-managed=... --json`. Recovery refuses changed ownership, a live worker,
+foreign files or a mismatched receipt; it never recursively removes unknown data.
+An overdue recovery deadline is reported for review, not automatically deleted.
+Keep retained paths and recovery receipts until cleanup is confirmed.
 
 ## Guided mode
 
@@ -349,6 +487,15 @@ never starts Docker, Colima, a database, or an application. It does not read `.e
 files, follow project-file symlinks, inspect private rows, contact a database, or execute
 project code. No configuration is written by this command.
 
+`discover`, setup previews and `doctor` also report versioned `containerEngines`
+options for the detected host. The current verified local Docker selection is
+preserved automatically. Other installed tools and local contexts are choices,
+not proof of vendor compatibility or lower memory use. Alternate daemons are not
+contacted. Use a scoped `DOCKER_CONTEXT=your-local-context npx rehearsal doctor`
+override in macOS/Linux/WSL shells to review another engine without changing the
+global context. Changing engines never migrates retained database volumes. See
+[engine selection](runtime-lifecycle.md#machine-aware-engine-selection).
+
 ### Machine-readable contract
 
 `--json` returns one JSON object and no decorative terminal output. Successful and
@@ -529,7 +676,7 @@ reports cancellation. If `run` is interrupted after its runtime phase has alread
 the verified local runtime may remain; use `status` and `verify` before retrying. Candidate
 digests and confirmation requirements do not change.
 
-The CLI does not stop Docker itself, signal unrelated processes, prune shared resources,
+These project cancellation paths do not stop Docker itself, signal unrelated processes, prune shared resources,
 or delete unrelated volumes. `SIGTSTP` is treated as cancellation and becomes `SIGTERM`
 for the owned child group instead of suspending it mid-cleanup. Windows uses direct child
 signalling; the detached process-group guarantee is supported on macOS and Linux.
@@ -547,8 +694,9 @@ one of those events, clients must not guess: run `activity --json`. A `stale` or
 state is not permission to delete a lock or runtime. Run `status`, `doctor`, and `verify`,
 then let the next reviewed mutation use Rehearsal's existing stale-lock recovery.
 
-Other mutating commands remain terminal-only until they receive an equally specific
-transaction and cancellation contract. The first editor prototype remains read-only.
+Other mutations retain their existing terminal workflow. Explicit `engine stop`
+has its own structured cancellation/outcome contract above, so a compatible editor
+can execute that specifically approved JSON action without parsing terminal output.
 
 ## Run and manage the local sandbox
 
@@ -578,10 +726,14 @@ configured database target, runs dependent preparation commands, and launches
 `application.startCommand` with the declared local environment mappings. It waits for
 `application.readiness`, then stays attached until `Ctrl+C` or `Ctrl+Z`. On exit it stops
 only the application process group it launched, then applies `lifecycle.open`. The
-default `keep-until-stop` leaves databases running; `stop-on-application-exit` stops them
+default `stop-on-application-exit` stops them
 with database and Storage changes preserved. Likewise, `lifecycle.run` can remain
-`keep-until-stop` or use `stop-after-run` for bounded automation. JSON results include
-the selected mode, final runtime state, and preserved-data guarantee.
+explicit `keep-until-stop`, but defaults to `stop-after-run` for bounded work. Explicit
+`discard-after-run` and `discard-on-application-exit` instead remove the owned disposable
+runtime and its data volumes automatically, including after a subsequent proof failure or
+interruption. Protected targets refuse these destructive modes. JSON reports the selected
+mode, final state and whether runtime data was preserved or removed. See
+[the lifecycle contract](runtime-lifecycle.md#what-remains-after-a-command).
 While the ready application or copied-account sign-in session is attached, terminal
 `Ctrl+C` and `Ctrl+Z` are handled as control bytes rather than suspending npm wrappers.
 Rehearsal restores the prior terminal mode after retiring its owned application; it
@@ -597,6 +749,10 @@ Repeat `--image-id` for multiple images. This selects no baseline generations, r
 containers, or data volumes. Review the digest, then rerun the identical selection with
 `--write --confirm-cleanup=FULL_DIGEST`. In-use, current, outside-policy, and stale
 selections are refused. Image sizes are upper-bound estimates because layers may be shared.
+
+Image previews and writes use the selected local engine and scoped Docker configuration.
+Confirmation binds the context and endpoint identity plus the daemon ID. If that binding
+changes, create a fresh preview before applying cleanup.
 
 `start`, `stop`, and `discard` can select one configured environment with
 `--target=primary` or a declared dependent-target name. With no selector, the existing
@@ -643,6 +799,7 @@ belonging to other projects are never included. This follows
 | `--confirm-source-access=<digest>`     | Confirm one exact temporary source-access plan.                                                 |
 | `--confirm-source-retirement=<digest>` | Confirm exact source-access retirement.                                                         |
 | `--confirm-refresh=<digest>`           | Confirm an exact refresh, runtime reset, and old-copy removal.                                  |
+| `--confirm-engine-stop=<digest>`       | Confirm the unchanged whole-VM shutdown review.                                                 |
 | `--identity=<name>`                    | Choose one declared local identity association.                                                 |
 | `--confirm-identity=<digest>`          | Confirm that exact local identity plan.                                                         |
 | `--write`                              | Apply a setup, policy, or cleanup preview.                                                      |

@@ -63,6 +63,14 @@ const engine = () => {
     state.calls.push([command, ...args]);
     if (command === "docker" && args[0] === "info")
       return result(state.running ? 0 : 1);
+    if (
+      command === "docker" &&
+      args[0] === "context" &&
+      args.includes(
+        "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+      )
+    )
+      return result(0, "false");
     if (command === "docker" && args[0] === "context")
       return args[1] === "show"
         ? result(0, "colima\n")
@@ -263,7 +271,7 @@ const args = process.argv.slice(2);
 const state = JSON.parse(readFileSync(${JSON.stringify(statePath)}, "utf8"));
 appendFileSync(${JSON.stringify(logPath)}, JSON.stringify([command, ...args]) + "\\n");
 let output = "", status = 0;
-if (command === "docker" && args[0] === "context") output = args[1] === "show" ? "colima" : JSON.stringify("unix:///tmp/rehearsal-interrupted-test.sock");
+if (command === "docker" && args[0] === "context") output = args.includes('{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}') ? "false" : args[1] === "show" ? "colima" : JSON.stringify("unix:///tmp/rehearsal-interrupted-test.sock");
 else if (command === "docker" && args[0] === "info") status = state.running && ${JSON.stringify(failure)} !== "daemon-unavailable" ? 0 : 1;
 else if (command === "colima" && args[0] === "version") {}
 else if (command === "colima" && args[0] === "list") output = JSON.stringify({ name: "default", status: state.running ? "Running" : "Stopped" });

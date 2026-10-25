@@ -1,13 +1,12 @@
+import { restoreCopyChunks } from "../runtime/restore_cache.mjs";
 /** Restore and manage the disposable local Supabase runtime from its verified baseline.
  * Reset deletes only this dedicated runtime and its Docker volumes. */
 
 import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { createReadStream } from "node:fs";
 import type { Writable } from "node:stream";
 import { once } from "node:events";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { verifyActiveBaseline } from "../baseline/artifact.mjs";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
@@ -24,7 +23,6 @@ import {
 import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
-  encodeBaselineRecordForCopy,
   summarizeRestoreError,
 } from "../runtime/restore.mjs";
 import {
@@ -311,19 +309,21 @@ const restoreBaselineRows = async ({
   child.stdin.on("error", () => undefined);
   try {
     await writeChunk(child.stdin, buildRestoreSqlPrefix(), completion);
-    const lines = createInterface({
-      input: createReadStream(paths.dataPath, { encoding: "utf8" }),
-      crlfDelay: Infinity,
+    const copy = await restoreCopyChunks({
+      artifactRoot,
+      dataPath: paths.dataPath,
+      generationId: baseline.generationId,
+      sourceSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
+      sanitizationPolicySha256: baseline.sanitizationPolicySha256,
+      target: "supabase",
+      ...(config.resources.restoreCache
+        ? { policy: config.resources.restoreCache }
+        : {}),
+      ...(cancellationSignal ? { signal: cancellationSignal } : {}),
     });
-    for await (const line of lines) {
-      if (line) {
-        await writeChunk(
-          child.stdin,
-          `${encodeBaselineRecordForCopy(line)}\n`,
-          completion,
-        );
-      }
-    }
+    for await (const chunk of copy.chunks)
+      await writeChunk(child.stdin, chunk, completion);
+    console.log(`COPY encoding cache: ${copy.state}.`);
     await writeChunk(
       child.stdin,
       buildRestoreSqlSuffix({

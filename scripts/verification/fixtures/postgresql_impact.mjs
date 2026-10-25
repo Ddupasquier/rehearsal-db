@@ -13,7 +13,15 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import pg from "pg";
-import { assertLocalDockerContext } from "../../../dist/src/runtime/local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "../../../dist/src/runtime/local_docker_context.mjs";
+import {
+  completeImpactBlockedMeasurement,
+  createImpactSqlGate,
+  waitForImpactGateReady,
+} from "./postgresql_impact_gate.mjs";
 import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import { spawnScenarioCommand } from "../scenarios/process.mjs";
 
@@ -626,7 +634,8 @@ export const provePostgresqlMigrationImpact = async ({
     operationFailure,
     holderCounter = 0;
   const nonce = randomUUID();
-  const clients = [],
+  const gates = [],
+    clients = [],
     holders = [],
     deadlineApplications = [];
   const noBackend = (pid) =>
@@ -787,28 +796,104 @@ export const provePostgresqlMigrationImpact = async ({
     // sees the old table, but its count snapshot must see the committed index.
     // The old ACCESS SHARE/snapshot-first protocol would miss that metadata and
     // invoke the expression canary while planning, aborting the whole batch.
-    const raceHolder = await hold();
-    const indexApplication = `rehearsal-impact-index-${process.pid}`;
-    const indexClient = childClient(
-      "docker",
-      ["--host", local.endpoint, "exec", "--interactive", id, ...PSQL],
-      { cwd, timeout: IMPACT_RACE_FIXTURE_LIMITS.indexClientMilliseconds },
-    );
-    clients.push(indexClient);
-    indexClient.child.stdin.end(buildImpactRaceIndexProbe(indexApplication));
-    const indexPid = await waiting(indexClient, indexApplication);
-    const raceMeasurement = childClient(
-      cliPath,
-      ["measure", "impact", "--target=primary", confirmation, "--json"],
-      { cwd, timeout: 35000 },
-    );
-    clients.push(raceMeasurement);
-    raceMeasurement.child.stdin.end();
-    const racePid = await waiting(
-      raceMeasurement,
-      "psql",
-      `lock table only "${SCHEMA}"."parent" in share row exclusive mode;`,
-    );
+    const dockerPath = bounded("/usr/bin/which", ["docker"]).stdout.trim();
+    const launchGatedMeasurement = async () => {
+      const gate = await createImpactSqlGate({
+        cwd,
+        docker: dockerPath,
+        binding: {
+          context: local.context,
+          endpoint: local.endpoint,
+          containerId: id,
+          containerName: `${projectId}-postgresql`,
+        },
+      });
+      gates.push(gate);
+      const startedAt = performance.now();
+      const client = childClient(
+        cliPath,
+        ["measure", "impact", "--target=primary", confirmation, "--json"],
+        {
+          cwd,
+          timeout: 35000,
+          environment: {
+            ...scopedDockerEnvironment(),
+            ...gate.environment,
+            DOCKER_CONTEXT: local.context,
+            DOCKER_HOST: local.endpoint,
+            ...(local.dockerConfig
+              ? { DOCKER_CONFIG: local.dockerConfig }
+              : {}),
+          },
+        },
+      );
+      clients.push(client);
+      client.child.stdin.end();
+      return { gate, client, startedAt };
+    };
+    // SQL gates consume the existing 30s public budget; no timer is renewed.
+    const { gate: raceGate, client: raceMeasurement } =
+      await launchGatedMeasurement();
+    let raceHolder,
+      indexClient,
+      indexPid,
+      racePid,
+      stage = "sql-gate-ready",
+      stageStarted = performance.now(),
+      holderStarted = null;
+    try {
+      await waitForImpactGateReady({
+        client: raceMeasurement,
+        readReady: raceGate.readReady,
+        expiresAt: raceGate.expiresAt,
+      });
+      stage = "holder-ready";
+      stageStarted = performance.now();
+      raceHolder = await hold();
+      holderStarted = performance.now();
+      const indexApplication = `rehearsal-impact-index-${process.pid}`;
+      indexClient = childClient(
+        "docker",
+        ["--host", local.endpoint, "exec", "--interactive", id, ...PSQL],
+        { cwd, timeout: IMPACT_RACE_FIXTURE_LIMITS.indexClientMilliseconds },
+      );
+      clients.push(indexClient);
+      indexClient.child.stdin.end(buildImpactRaceIndexProbe(indexApplication));
+      stage = "index-queued";
+      stageStarted = performance.now();
+      indexPid = await waiting(indexClient, indexApplication);
+      await raceGate.release();
+      stage = "measurement-lock";
+      stageStarted = performance.now();
+      racePid = await waiting(
+        raceMeasurement,
+        "psql",
+        `lock table only "${SCHEMA}"."parent" in share row exclusive mode;`,
+      );
+    } catch {
+      const status = Number.isInteger(raceMeasurement.child.exitCode)
+        ? raceMeasurement.child.exitCode
+        : "pending";
+      const signal = ["SIGTERM", "SIGKILL"].includes(
+        raceMeasurement.child.signalCode,
+      )
+        ? raceMeasurement.child.signalCode
+        : "none";
+      const elapsed = Math.min(
+        120000,
+        Math.max(0, Math.round(performance.now() - stageStarted)),
+      );
+      const holderAge =
+        holderStarted === null
+          ? "not-observed"
+          : Math.min(
+              120000,
+              Math.max(0, Math.round(performance.now() - holderStarted)),
+            );
+      throw new Error(
+        `The bounded impact race setup failed: stage=${stage}, elapsedMs=${elapsed}, childStatus=${status}, childSignal=${signal}, holderAgeMs=${holderAge}; private output withheld.`,
+      );
+    }
     await release(raceHolder);
     const indexResult = await indexClient.completion;
     assertImpactRaceIndexResult(indexResult);
@@ -826,28 +911,56 @@ export const provePostgresqlMigrationImpact = async ({
     sql(
       `drop index ${SCHEMA}.impact_review_race_index; drop function ${SCHEMA}.guard(integer);`,
     );
-    const locked = await hold();
-    const lockStarted = performance.now();
-    measure(Array(7).fill(null), Array(7).fill("lock_timeout"));
-    const lockLatencyMs = Math.round(performance.now() - lockStarted);
+    const waitObservedBackendGone = async (pid) => {
+      const deadline =
+        performance.now() + IMPACT_RACE_FIXTURE_LIMITS.observationMilliseconds;
+      while (performance.now() < deadline) {
+        const result = await observer.query(
+          "select not exists (select 1 from pg_stat_activity where datname = 'postgres' and pid = $1) as gone;",
+          [pid],
+        );
+        if (result.rows[0]?.gone === true) return;
+        await pause();
+      }
+      fail();
+    };
+    const heldMeasurement = async (cancel) => {
+      const { gate, client, startedAt } = await launchGatedMeasurement();
+      return completeImpactBlockedMeasurement({
+        client,
+        startedAt,
+        cancel,
+        awaitReady: () =>
+          waitForImpactGateReady({
+            client,
+            readReady: gate.readReady,
+            expiresAt: gate.expiresAt,
+          }),
+        hold,
+        releaseGate: gate.release,
+        waitForLock: () =>
+          waiting(
+            client,
+            "psql",
+            `lock table only "${SCHEMA}"."parent" in share row exclusive mode;`,
+          ),
+        waitForBackendGone: waitObservedBackendGone,
+        releaseHolder: release,
+      });
+    };
+    const locked = await heldMeasurement(false);
+    assertImpactPublicOutput(locked.result, canaries);
+    if (locked.result.fault || locked.result.status !== 1) fail();
+    assertImpactFixtureCounts(JSON.parse(locked.result.stdout), {
+      candidateSha256: preview.candidateSha256,
+      counts: Array(7).fill(null),
+      reasons: Array(7).fill("lock_timeout"),
+      version: artifact.version,
+    });
+    const lockLatencyMs = locked.elapsedMilliseconds;
     if (lockLatencyMs > 30000) fail();
-    await release(locked);
-    const cancelledHolder = await hold();
-    const measurement = childClient(
-      cliPath,
-      ["measure", "impact", "--target=primary", confirmation, "--json"],
-      { cwd, timeout: 35000 },
-    );
-    clients.push(measurement);
-    measurement.child.stdin.end();
-    const backend = await waiting(
-      measurement,
-      "psql",
-      `lock table only "${SCHEMA}"."parent" in share row exclusive mode;`,
-    );
-    const cancellationStarted = performance.now();
-    measurement.child.kill("SIGINT");
-    const cancelled = await measurement.completion;
+    const cancelledRun = await heldMeasurement(true);
+    const cancelled = cancelledRun.result;
     assertImpactPublicOutput(cancelled, canaries);
     const cancellation = JSON.parse(cancelled.stdout);
     if (
@@ -855,11 +968,9 @@ export const provePostgresqlMigrationImpact = async ({
       cancelled.status !== 130 ||
       cancellation.error?.category !== "operation_cancelled" ||
       cancellation.error?.context?.signal !== "SIGINT" ||
-      performance.now() - cancellationStarted > 10000
+      cancelledRun.cancellationMilliseconds > 10000
     )
       fail();
-    await waitGone(backend);
-    await release(cancelledHolder);
     if (json(["activity"]).envelope.data.state !== "idle") fail();
     // Core-owned acceptance may exercise the installed private transport. The
     // independent Lab remains a public-CLI consumer. A 35s fixture signal lets
@@ -1003,6 +1114,13 @@ export const provePostgresqlMigrationImpact = async ({
       client.stop();
       await client.completion;
     }
+  for (const gate of gates) {
+    try {
+      await gate.cleanup();
+    } catch (error) {
+      cleanupFailures.push(error);
+    }
+  }
   for (const holder of holders)
     if (holder.pid) {
       try {
