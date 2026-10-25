@@ -38,15 +38,37 @@ instead of installing both extension identities together.
 
 Finish active Rehearsal commands first. Read the [release notes](https://github.com/Ddupasquier/rehearsal-db/releases),
 then use your project's existing package manager and dependency location. For an npm
-project that keeps Rehearsal in development dependencies, update to the reviewed 1.3.0
+project that keeps Rehearsal in development dependencies, update to the reviewed 2.0.0
 release only after it appears in the official registry:
 
 ```bash
-npm install --save-dev --save-exact @rehearsal-db/core@1.3.0
+npm install --save-dev --save-exact @rehearsal-db/core@2.0.0
 npx --no-install rehearsal --version
 ```
 
 Review the package and lockfile changes before the next Rehearsal command.
+
+### Moving from core 1.x to 2.0
+
+Version 2.0 changes omitted lifecycle settings: database targets stop after a run
+or application exit, while their data volumes and reconstruction receipts remain.
+Explicit lifecycle choices keep their behavior. This is a breaking upgrade and
+requires deliberate review; compatible automatic updates do not cross this boundary.
+
+If an actively owned hands-on workflow needs the previous behavior, add these
+settings to your existing configuration before the next run:
+
+```js
+lifecycle: {
+  run: "keep-until-stop",
+  open: "keep-until-stop",
+},
+```
+
+Stopping project targets does not shut down a shared VM. The separate reviewed
+VM shutdown control identifies affected workloads and has its own capability and
+confirmation requirements. Keep databases, volumes, keys, baselines and recovery
+files when upgrading; no reset or discard is required.
 
 ## Breaking changes or known limitations?
 

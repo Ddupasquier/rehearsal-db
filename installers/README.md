@@ -11,10 +11,19 @@ start Docker, a database, a container or Rehearsal; install Node/WSL/OS packages
 change security settings; create a project; or overwrite Rehearsal configuration.
 
 Use Node.js **22, 24 or 26** (24 LTS recommended). The setup target is exactly
-`@rehearsal-db/core@1.3.0`; the canonical extension is
+`@rehearsal-db/core@2.0.0`; the canonical extension is
 `rehearsal-db.rehearsal-db` (**Rehearsal DB**). A checked-in helper or generated
 bundle does not mean that npm version or a release asset is already published.
 An unavailable version stops the explicit install rather than selecting another.
+
+Core 2 changes omitted lifecycle settings to stop project services after a run or
+application exit, preserving their data. This is a breaking major version. Existing
+1.x projects require deliberate manual review; these helpers never adopt 1.x into
+2.x, even with `--install-cli` or a `latest` declaration. Review the
+[upgrade guidance](https://ddupasquier.github.io/rehearsal-db/updating/) and choose
+explicit `keep-until-stop` where your workflow needs services to remain running.
+The 2.0.0 target is release preparation, not a claim of registry availability; use
+it only once that exact reviewed version is published.
 
 If Node is installed but unavailable to the launcher, select the project's supported
 version through its existing version manager first. macOS/Linux helpers also accept

@@ -89,6 +89,16 @@ remains useful. Once stable `1.0.0` exists, `latest` stays on the stable line an
 continues to identify the newest prerelease. Stable publication never rewrites the
 `beta` tag.
 
+## Upgrading from core 1.x
+
+Core 2.0 changes the documented defaults for omitted run/application lifecycle
+settings, so it uses a major version rather than silently changing the 1.x promise.
+Choose the upgrade deliberately after reviewing [the 2.0 migration guidance](updating.md#moving-from-core-1x-to-20).
+Explicit `keep-until-stop` settings preserve the previous lifecycle behavior.
+Configuration remains schema version 1; updating does not require resetting data,
+replacing a baseline or deleting recovery state. Compatible automatic updates do
+not cross from 1.x to 2.x.
+
 ## Upgrading from a 0.1 release candidate
 
 The first stable release preserves rc.10's database runtime and schema formats and

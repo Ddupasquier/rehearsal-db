@@ -13,4 +13,6 @@ After saving work, explicitly request installation with
 file executable; invoking it from Terminal keeps results visible. This helper does
 not bypass Gatekeeper, install a container engine or change OS security settings.
 
-See the [shared behavior and boundaries](../README.md) before installation.
+The helper targets exact core 2.0.0 once published. It refuses existing 1.x
+projects rather than adopting a breaking major automatically; review the
+[shared behavior and upgrade boundaries](../README.md) before installation.

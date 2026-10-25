@@ -3,7 +3,7 @@
 All notable Rehearsal package changes are documented here. The format follows Keep
 a Changelog, and published versions follow Semantic Versioning.
 
-## [Unreleased]
+## [2.0.0] - 2026-10-25
 
 ### Added
 
@@ -29,11 +29,16 @@ a Changelog, and published versions follow Semantic Versioning.
   on stop, with verified data-volume reconstruction on start. Explicit disposable run/app
   completion modes remove their owned runtime automatically; protected and unknown state refuse.
 
-### Changed
+### Breaking changes
 
 - New configurations and omitted lifecycle settings stop database targets after a run
   or application exit by default, preserving data volumes and reconstruction receipts.
   Explicit `keep-until-stop` remains available for actively owned hands-on testing.
+- Upgrading from 1.x requires a deliberate major-version selection. To retain the
+  previous lifecycle behavior, explicitly set both `lifecycle.run` and
+  `lifecycle.open` to `keep-until-stop` before the next run. Existing explicit
+  lifecycle choices remain unchanged; upgrading does not reset databases or remove
+  volumes, baselines or recovery files.
 
 ## [1.3.0] - 2026-10-24
 
