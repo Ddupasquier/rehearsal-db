@@ -156,7 +156,15 @@ const main = async () => {
   if (
     !flags.help &&
     !flags.version &&
-    (guided || !["help", "version", "discover", "doctor"].includes(command))
+    (guided ||
+      ![
+        "help",
+        "version",
+        "discover",
+        "doctor",
+        "engine status",
+        "engine stop",
+      ].includes(command))
   ) {
     await assertSupportedHostPlatform({ projectRoot });
   }

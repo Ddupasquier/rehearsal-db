@@ -94,6 +94,14 @@ typed registry and produce the same result contract:
   owns cooperative lifecycle admission; its store owns bounded private atomic tickets,
   and its location helper binds the local user, boot and PID namespace independently
   of per-command temporary directories. No background scheduler is installed.
+- `engine_command_handlers.mts` exposes configuration-independent engine status and
+  reviewed VM shutdown. `runtime/engine_lifecycle.mts` owns the closed result,
+  shared-workload review and coordination; `engine_colima_backend.mts` owns the
+  qualified profile, disk, boot and process proofs. Explicit shutdown uses the
+  shared `engine-stop` workload ticket instead of creating a project lock. Its
+  signal scope preserves typed uncertainty after dispatch, and installed-package
+  fingerprint checks still surround the mutation. Automatic owned-idle shutdown
+  remains a separate receipt-bound policy.
 - `runtime_planning.mts` owns read-only stack plans and exact candidate summaries.
 - `editor_command_handlers.mts` exposes bounded migration and configuration review
   contracts plus digest-bound, non-destructive stale-environment stop review. It also

@@ -106,6 +106,28 @@ afterEach(async () => {
 describe.skipIf(process.platform === "win32")(
   "local-user workload queue",
   () => {
+    it("serializes explicit engine shutdown with participating startup in both directions", async () => {
+      const stateDirectory = await root();
+      const shutdown = await acquire(stateDirectory, {
+        command: "engine-stop",
+      });
+      expect(
+        (await inspectWorkloads({ stateDirectory })).entries[0].command,
+      ).toBe("engine-stop");
+      await expect(
+        acquire(stateDirectory, { command: "start" }),
+      ).rejects.toThrow("wait expired");
+      await shutdown.release();
+      const startup = await acquire(stateDirectory, { command: "start" });
+      await expect(
+        acquire(stateDirectory, { command: "engine-stop" }),
+      ).rejects.toThrow("wait expired");
+      expect((await inspectWorkloads({ stateDirectory })).entries).toHaveLength(
+        1,
+      );
+      await startup.release();
+      expect((await inspectWorkloads({ stateDirectory })).entries).toEqual([]);
+    });
     it("admits only one of four simultaneous participants at a time", async () => {
       const stateDirectory = await root();
       const participants = await Promise.all(

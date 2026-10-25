@@ -3,6 +3,7 @@
 import { createApplicationCommandHandlers } from "./application_command_handlers.mjs";
 import { createManagedCommandHandlers } from "./managed_command_handlers.mjs";
 import { createContainerCommandHandlers } from "./container_command_handlers.mjs";
+import { createEngineCommandHandlers } from "./engine_command_handlers.mjs";
 import { createBasicCommandHandlers } from "./basic_command_handlers.mjs";
 import { createCommandRegistry } from "./command_registry.mjs";
 import { createIdentityCommandHandlers } from "./identity_command_handlers.mjs";
@@ -49,6 +50,7 @@ export const createCliCommandRegistry = ({
     ...createWorkloadCommandHandlers(),
     ...createManagedCommandHandlers(),
     ...createContainerCommandHandlers(),
+    ...createEngineCommandHandlers(),
     ...createEditorCommandHandlers(),
     ...createApplicationCommandHandlers({
       openRuntimeApplication: runtimeCommands.openRuntimeApplication,

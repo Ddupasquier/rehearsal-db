@@ -38,6 +38,14 @@ runtime.
 - a state-changing command fingerprints its installed Rehearsal package and refuses to
   continue if that installation changes while the command is running.
 
+Explicit VM shutdown is a separate, configuration-independent action. It takes the
+shared lifecycle lease and rejects known project operations rather than creating
+its own project lock. Its exact review covers the shared VM and affected workloads;
+it does not claim ownership of another project's data. The
+[VM shutdown policy](runtime-lifecycle.md#shut-down-the-vm-explicitly) owns supported
+backends, positive process-exit proof, cancellation uncertainty and data-preserving
+limits. Automatic owned-idle shutdown retains its narrower receipt requirements.
+
 No single environment variable or config edit can redirect runtime commands to
 production. Optional source preparation is a separate boundary and never provides a
 hosted execution mode.

@@ -98,6 +98,40 @@ free-space headroom. The check runs before services are created. Other Docker-co
 engines remain supported; if they do not expose a portable filesystem measurement,
 Rehearsal reports disk capacity as unavailable instead of guessing.
 
+## Shut down the VM explicitly
+
+In builds advertising `containerEngineLifecycle: 1`, use `rehearsal engine status`
+to inspect engine and VM state, then `rehearsal engine stop` to review whole-VM
+shutdown. A compatible editor exposes the same review in its persistent engine
+control. This differs from `stop`, which stops this project's targets, and from
+automatic owned-idle shutdown, which still needs its original startup receipt.
+
+Explicit review can cover a manually started VM without pretending Rehearsal
+started it. It shows shared containers and binds the local selection, daemon,
+profile, boot, captured VM process, backing disks and workload snapshot. Apply
+requires the exact confirmation, the shared startup/shutdown lease and fresh
+unchanged evidence. Known project operations, unknown coordination or changed
+workloads refuse shutdown. Other tools need not obey this cooperative lease;
+review all affected work before confirming the whole-VM interruption.
+
+The initial shutdown backend is the macOS Apple Silicon default Colima profile
+using Colima 0.10.3 and VZ, with the required process and disk proofs.
+Other Docker-compatible engines remain observable where supported, but a vendor
+name does not qualify its shutdown behavior. Native Linux Docker is not assumed
+to be a VM, and WSL support does not authorize stopping a Windows-hosted engine
+or the WSL distribution. Unsupported shutdown remains visible with an explanation;
+use that backend's own controls until its adapter is separately qualified.
+
+Shutdown is graceful and bounded. It never force-kills the VM, deletes a profile,
+prunes Docker, removes databases/volumes/images or manufactures an ownership receipt.
+Confirmed shutdown requires a positive stopped-profile observation and disappearance
+of the same captured VM process. An unavailable daemon, an exit code, cancellation
+or a stopped profile without that process binding is insufficient proof. A result
+can remain unknown after dispatch; inspect again before deciding what to do next.
+Colima itself may remove its Docker context while stopping. Rehearsal reports the
+later selection separately and never silently selects another engine.
+See the [command contract](commands.md#engine-status-and-reviewed-vm-shutdown).
+
 ## Choose when database targets stop
 
 The root config makes persistence explicit. Container-retirement-capable builds default
@@ -175,8 +209,9 @@ stacks; `rehearsal start` still resumes them normally.
    docker ps
    ```
 
-5. If nothing else needs Docker, stop the engine using its own command, such as
-   `colima stop`.
+5. If nothing else needs Docker, review `rehearsal engine stop` in a capable build
+   and confirm its exact shared impact. For an unsupported backend, use its own
+   shutdown control.
 
 Rehearsal intentionally does not infer that every running container belongs to it. It
 also never runs a global Docker prune. Database and Storage volumes are not deleted by

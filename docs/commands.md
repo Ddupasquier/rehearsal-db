@@ -1,6 +1,7 @@
 # CLI commands
 
-Run commands from the project directory containing `rehearsal.config.mjs`. The examples
+Run project commands from the directory containing `rehearsal.config.mjs`. Engine and
+workload inspection/review commands need no project configuration. The examples
 use `npx`, so a global install is not required.
 
 ## Participating local workloads
@@ -22,6 +23,67 @@ missing confirmation and live owners refuse recovery. This operation clears loca
 queue metadata only. It does not stop processes/containers or alter databases.
 Waiting requests can be cancelled; expiry never steals a live holder. Read-only
 inspection does not clean stale records or create state directories.
+Explicit VM shutdown participates as `engine-stop` in this same queue. Older
+clients that do not recognize this ticket refuse admission; they must not remove it.
+
+## Engine status and reviewed VM shutdown
+
+Builds advertising `rehearsalContracts.containerEngineLifecycle: 1` provide:
+
+```bash
+npx --no-install rehearsal engine status --json
+npx --no-install rehearsal engine stop --json
+npx --no-install rehearsal engine stop --confirm-engine-stop=<consentDigest> --json
+```
+
+The first command observes the selected local Docker engine and the default
+Colima profile separately. The second previews whole-VM impact without stopping
+anything; `--write` alone does not apply it, and `--dry-run` always remains a
+preview even with confirmation. `--target` is refused because it cannot limit a
+whole-VM shutdown to one project target. Only the exact confirmation applies
+a fresh, unchanged review. These commands do not load project configuration or
+create a project operation lock. See the [VM shutdown policy](runtime-lifecycle.md#shut-down-the-vm-explicitly)
+for qualified backends, shared-workload checks and preservation boundaries.
+
+Version-1 status `data` contains `selected` (nullable context, endpoint identity,
+daemon ID and `running`, `unavailable`, `unknown` or `unsupported-host` state),
+`colimaDefault` (profile `default`, independent state, `shutdownSupported` and
+fixed `reason`), and `safety`. A failed daemon probe does not prove a VM stopped.
+Colima can remove its Docker context when it stops; a subsequent default Docker
+selection is not inferred to be Colima.
+
+Preview `data` contains `schemaVersion: 1`, `action: "engine-stop"`, `state`
+(`review-required`, `already-stopped`, `unsupported` or `blocked`), fixed `reason`,
+nullable `consentDigest`, nullable `engine` identity, nullable `impact` and
+`safety`. Available impact lists exact container IDs, names, states, restart
+counts and start/finish times, plus the running count. Unknown impact is `null`,
+not zero. Read-only observations and previews return envelope `success` and
+exit `0`; that means inspection completed, not that a VM was stopped.
+
+Apply returns structured `data` even for an unsuccessful outcome: schema version
+`1`, `status` (`stopped`, `already-stopped`, `refused`, `failed`, `cancelled` or
+`unknown`), fixed `reason`, nullable reviewed `engine`, `confirmed` flags
+`profileStopped` and `vmProcessAbsent`, nullable `selectionAfter`, and `safety`.
+Only a stopped outcome with both confirmation flags true returns envelope
+`success` and exit `0`. An already-stopped profile without a previous captured
+process binding returns `not_ready` and exit `1`; it does not fabricate a process
+exit or memory-release result. Other unconfirmed outcomes return `error` and
+exit `1`; cancellation before dispatch returns exit `130`.
+
+The closed reason codes are `ready`, `profile-stopped`, `unsupported-host`,
+`selection-unverified`, `daemon-unavailable`, `backend-unqualified`,
+`profile-unavailable`, `ownership-unverified`, `coordination-active`,
+`coordination-unavailable`, `review-changed`, `confirmation-required`,
+`cancelled-before-dispatch`, `cancelled-after-dispatch`, `shutdown-unconfirmed`,
+`shutdown-command-failed`, and `shutdown-confirmed`.
+
+The safety fields are `globalContextSwitchRequested: false`,
+`dataDeletionRequested: false`, `forceRequested: false`, and
+`enginesStarted: false`. They describe requested actions, not a promise that the
+backend leaves Docker's selected context unchanged. No raw endpoints, home paths,
+SQL, credentials or process arguments are returned. Cancellation after dispatch
+can leave shutdown in progress: an `unknown` outcome needs fresh inspection,
+not an automatic retry. Exit `0` alone is never a memory-release measurement.
 
 ## Completed container retirement
 
@@ -614,7 +676,7 @@ reports cancellation. If `run` is interrupted after its runtime phase has alread
 the verified local runtime may remain; use `status` and `verify` before retrying. Candidate
 digests and confirmation requirements do not change.
 
-The CLI does not stop Docker itself, signal unrelated processes, prune shared resources,
+These project cancellation paths do not stop Docker itself, signal unrelated processes, prune shared resources,
 or delete unrelated volumes. `SIGTSTP` is treated as cancellation and becomes `SIGTERM`
 for the owned child group instead of suspending it mid-cleanup. Windows uses direct child
 signalling; the detached process-group guarantee is supported on macOS and Linux.
@@ -632,8 +694,9 @@ one of those events, clients must not guess: run `activity --json`. A `stale` or
 state is not permission to delete a lock or runtime. Run `status`, `doctor`, and `verify`,
 then let the next reviewed mutation use Rehearsal's existing stale-lock recovery.
 
-Other mutating commands remain terminal-only until they receive an equally specific
-transaction and cancellation contract. The first editor prototype remains read-only.
+Other mutations retain their existing terminal workflow. Explicit `engine stop`
+has its own structured cancellation/outcome contract above, so a compatible editor
+can execute that specifically approved JSON action without parsing terminal output.
 
 ## Run and manage the local sandbox
 
@@ -736,6 +799,7 @@ belonging to other projects are never included. This follows
 | `--confirm-source-access=<digest>`     | Confirm one exact temporary source-access plan.                                                 |
 | `--confirm-source-retirement=<digest>` | Confirm exact source-access retirement.                                                         |
 | `--confirm-refresh=<digest>`           | Confirm an exact refresh, runtime reset, and old-copy removal.                                  |
+| `--confirm-engine-stop=<digest>`       | Confirm the unchanged whole-VM shutdown review.                                                 |
 | `--identity=<name>`                    | Choose one declared local identity association.                                                 |
 | `--confirm-identity=<digest>`          | Confirm that exact local identity plan.                                                         |
 | `--write`                              | Apply a setup, policy, or cleanup preview.                                                      |

@@ -7,6 +7,11 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ### Added
 
+- Configuration-independent `engine status` and exact-reviewed `engine stop`,
+  separating selected-engine availability from VM state. The initial shutdown
+  adapter requires a proven macOS Apple Silicon Colima 0.10.3 VZ default profile,
+  shared-workload review and positive process-exit evidence; unsupported and
+  uncertain outcomes remain explicit. No force or data deletion is requested.
 - Machine-aware local engine options in discovery, setup and doctor, with explicit
   Docker selection preserved through runtime launch. Remote, TLS and ambiguous
   selectors refuse without switching engines or migrating existing data.

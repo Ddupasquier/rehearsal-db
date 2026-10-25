@@ -78,6 +78,18 @@ available memory, govern standing runtimes or promise a hard machine-capacity bu
 The existing editor field-metadata contract is unchanged. See
 [resource review policies](docs/configuration.md#resource-review-policies).
 
+Builds advertising `rehearsalContracts.containerEngineLifecycle: 1` add independent
+`engine status` and reviewed `engine stop` commands without requiring project
+configuration. Status can observe a supported selected local Docker endpoint;
+shutdown is a separate backend capability. The initial adapter requires macOS
+Apple Silicon, Colima 0.10.3, VZ and a proven default profile. This does not add
+native Windows runtime support, authorize WSL distribution shutdown or qualify
+other vendors' shutdown commands. Unknown backends stay observable where supported
+and explicitly unsupported for shutdown. The shared lifecycle queue adds
+`engine-stop`; older strict clients refuse that ticket instead of bypassing it.
+See the [VM shutdown policy](docs/runtime-lifecycle.md#shut-down-the-vm-explicitly)
+and [JSON contract](docs/commands.md#engine-status-and-reviewed-vm-shutdown).
+
 ## Operating systems and execution location
 
 Core 1.0.1's platform boundary distinguishes the computer running VS Code from the

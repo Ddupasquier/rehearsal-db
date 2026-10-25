@@ -37,7 +37,8 @@
     "baselineSizing": 1,
     "managedPrototype": 1,
     "containerRetirement": 1,
-    "containerEngineDiscovery": 1
+    "containerEngineDiscovery": 1,
+    "containerEngineLifecycle": 1
   },
   "exports": {
     ".": {
