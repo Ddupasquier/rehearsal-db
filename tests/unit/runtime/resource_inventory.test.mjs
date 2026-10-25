@@ -48,6 +48,18 @@ afterEach(async () => {
   );
 });
 
+// Existing synthetic local engine metadata; no real Docker command is used.
+const localContextResult = (args, context) =>
+  result(
+    0,
+    args[1] === "show"
+      ? context
+      : args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+        ? "false"
+        : JSON.stringify("unix:///tmp/local-docker.sock"),
+  );
 describe("resource inventory", () => {
   it("reports only exact configured ownership without starting Docker", async () => {
     const projectRoot = await makeProject();
@@ -56,7 +68,7 @@ describe("resource inventory", () => {
       calls.push([command, ...args]);
       if (command === "docker" && args[0] === "info") return result(0);
       if (command === "docker" && args[0] === "context")
-        return result(0, "colima\n");
+        return localContextResult(args, "colima");
       if (command === "colima") {
         return result(
           0,
@@ -202,7 +214,7 @@ describe("resource inventory", () => {
       {
         run: (command, args) => {
           calls.push([command, ...args]);
-          if (args[0] === "context") return result(0, "colima\n");
+          if (args[0] === "context") return localContextResult(args, "colima");
           return result(1);
         },
       },
@@ -235,8 +247,24 @@ describe("resource inventory", () => {
       },
     });
     expect(calls).toEqual([
-      ["docker", "info"],
       ["docker", "context", "show"],
+      [
+        "docker",
+        "context",
+        "inspect",
+        "--format",
+        "{{json .Endpoints.docker.Host}}",
+        expect.any(String),
+      ],
+      [
+        "docker",
+        "context",
+        "inspect",
+        "--format",
+        "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+        expect.any(String),
+      ],
+      ["docker", "info"],
     ]);
   });
   it("keeps the detailed catalog unknown on a stopped engine and never starts services", async () => {
@@ -249,9 +277,16 @@ describe("resource inventory", () => {
         run: (command, args) => {
           calls.push([command, ...args]);
           if (args[0] === "context" && args[1] === "show")
-            return result(0, "colima\n");
+            return localContextResult(args, "colima");
           if (args[0] === "context" && args[1] === "inspect")
-            return result(0, JSON.stringify("unix:///tmp/local-docker.sock"));
+            return result(
+              0,
+              args.includes(
+                "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+              )
+                ? "false"
+                : JSON.stringify("unix:///tmp/local-docker.sock"),
+            );
           return result(1);
         },
       },
@@ -316,7 +351,9 @@ describe("resource inventory", () => {
       {
         run: (command, args) => {
           calls.push([command, ...args]);
-          return args[0] === "context" ? result(0, "default\n") : result(1);
+          return args[0] === "context"
+            ? localContextResult(args, "default")
+            : result(1);
         },
       },
     );
@@ -346,8 +383,24 @@ describe("resource inventory", () => {
     ).toBe(true);
     expect(JSON.stringify(inventory)).not.toContain("PRIVATE-CANARY");
     expect(calls).toEqual([
-      ["docker", "info"],
       ["docker", "context", "show"],
+      [
+        "docker",
+        "context",
+        "inspect",
+        "--format",
+        "{{json .Endpoints.docker.Host}}",
+        expect.any(String),
+      ],
+      [
+        "docker",
+        "context",
+        "inspect",
+        "--format",
+        "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+        expect.any(String),
+      ],
+      ["docker", "info"],
     ]);
   });
 
@@ -359,7 +412,7 @@ describe("resource inventory", () => {
         run: (command, args) => {
           if (command === "docker" && args[0] === "info") return result(0);
           if (command === "docker" && args[0] === "context")
-            return result(0, "default\n");
+            return localContextResult(args, "default");
           if (
             command === "docker" &&
             args[0] === "container" &&
@@ -433,7 +486,7 @@ describe("resource inventory", () => {
       { projectRoot },
       {
         run: (_command, args) => {
-          if (args[0] === "context") return result(0, "default\n");
+          if (args[0] === "context") return localContextResult(args, "default");
           if (args[0] === "container" && args[1] === "ls")
             return result(0, "one\n");
           if (args[0] === "container" && args[1] === "inspect")
@@ -472,7 +525,7 @@ describe("resource inventory", () => {
         run: (command, args) => {
           calls.push([command, ...args]);
           if (args[0] === "info") return result(0);
-          if (args[0] === "context") return result(0, "default\n");
+          if (args[0] === "context") return localContextResult(args, "default");
           if (args[0] === "container" && args[1] === "ls")
             return result(0, "owned\nforeign-helper\nunlabeled-helper\n");
           if (args[0] === "container" && args[1] === "inspect")
@@ -534,6 +587,7 @@ describe("resource inventory", () => {
           [
             "info",
             "context show",
+            "context inspect",
             "container ls",
             "container inspect",
             "volume ls",
@@ -552,7 +606,7 @@ describe("resource inventory", () => {
         run: (command, args) => {
           if (command === "docker" && args[0] === "info") return result(0);
           if (command === "docker" && args[0] === "context")
-            return result(0, "default\n");
+            return localContextResult(args, "default");
           if (
             command === "docker" &&
             args[0] === "container" &&
@@ -612,7 +666,7 @@ describe("resource inventory", () => {
       "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vdb1 41943040 37748736 2097152 90% /var/lib/docker\n";
     const run = (command, args) =>
       command === "docker" && args[0] === "context"
-        ? result(0, "colima\n")
+        ? localContextResult(args, "colima")
         : result(0, df);
     expect(() =>
       assertContainerCapacityForRuntime({

@@ -5,6 +5,31 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Machine-aware local engine options in discovery, setup and doctor, with explicit
+  Docker selection preserved through runtime launch. Remote, TLS and ambiguous
+  selectors refuse without switching engines or migrating existing data.
+
+- Opt-in measured host/engine headroom admission inside the participating lifecycle
+  queue. Unknown or insufficient capacity refuses a new phase without stopping
+  existing workloads; this is cooperative admission, not a hard machine-wide limit.
+- Optional private authenticated COPY encoding reuse with explicit retained-byte and
+  free-disk budgets, exact immutable input binding and safe full-data fallback.
+- Read-only `inspect sizing` reports baseline rows/bytes and existing reviewed shape
+  evidence without resampling or promising equivalent fidelity.
+- Synthetic-only managed protocol example, review, bounded local worker and explicit
+  quarantined-workspace recovery. No upload, hosted service or paid execution is enabled.
+- Public exact-ownership container retirement and automatic PostgreSQL shell retirement
+  on stop, with verified data-volume reconstruction on start. Explicit disposable run/app
+  completion modes remove their owned runtime automatically; protected and unknown state refuse.
+
+### Changed
+
+- New configurations and omitted lifecycle settings stop database targets after a run
+  or application exit by default, preserving data volumes and reconstruction receipts.
+  Explicit `keep-until-stop` remains available for actively owned hands-on testing.
+
 ## [1.3.0] - 2026-10-24
 
 ### Added

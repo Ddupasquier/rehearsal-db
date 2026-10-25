@@ -250,8 +250,8 @@ containerRuntime: {
   minimumFreeBytes: 8589934592,
 },
 lifecycle: {
-  run: "keep-until-stop",
-  open: "keep-until-stop",
+  run: "stop-after-run",
+  open: "stop-on-application-exit",
   openIdleTimeoutSeconds: null,
 },
 cleanup: {
@@ -319,9 +319,14 @@ Docker's `no` restart policy. Its database and Storage volumes remain intact,
 Rehearsal stacks.
 
 `lifecycle.run` controls what happens to database targets after `run` finishes:
-`keep-until-stop` preserves today's interactive behavior, while `stop-after-run` stops
-the targets after proofs, proof failures, or interruption. `lifecycle.open` uses
-`keep-until-stop` or `stop-on-application-exit` after the app closes. Every mode stops
+The bounded default `stop-after-run` stops
+the targets after proofs, proof failures, or interruption. Opt-in `discard-after-run`
+automatically removes the owned disposable runtime and its data volumes instead.
+`lifecycle.open` accepts `keep-until-stop`, `stop-on-application-exit` or explicit
+`discard-on-application-exit`. Protected targets refuse destructive completion modes.
+`stop-on-application-exit` is the bounded default for `open`; explicit `keep-until-stop`
+is for an actively owned hands-on session that you finish with `stop`.
+Every mode affects
 only Rehearsal's configured targets; lifecycle selection does not enable engine shutdown.
 The separately opted-in `stopOwnedColimaWhenIdle` policy above is the only guarded Colima
 shutdown path. Ordinary stopping keeps database and Storage volumes and all sandbox
@@ -426,6 +431,77 @@ resources: {
   this is not a network-filesystem or distributed scheduler.
   Configure it in the source configuration for now; the existing editor field-metadata
   contract is unchanged so older supported Starter clients keep working.
+
+### Measured capacity admission
+
+`resources.capacityAdmission` adds an optional measured headroom check inside that
+queue lease. It requires `workloadQueue.enabled: true` and explicit reviewed budgets:
+
+```ts
+capacityAdmission: {
+  enabled: true,
+  hostReserveBytes: 2147483648,
+  engineReserveBytes: 536870912,
+  maximumRunningContainers: 24,
+  targetMemoryBytes: {
+    postgresql: 536870912,
+    supabaseApplication: 1073741824,
+    supabaseFull: 3221225472,
+  },
+},
+```
+
+These are example budgets, not measured requirements or safe defaults for your machine.
+Include startup, restore/COPY working memory and the selected workload's peak when setting
+budgets. Rehearsal measures host available memory, normal macOS pressure where applicable,
+engine available memory and every currently running container before admitting selected
+targets. It rechecks the pinned engine before starting. Unknown, stale, incomplete or
+insufficient observations refuse the new phase; stop/discard remain available. The first
+probe supports an exactly identified local Colima profile with a matching guest daemon
+identity. Native Docker on Linux currently refuses this opt-in check: a matching kernel
+release and host free memory do not establish daemon/container cgroup headroom. Unknown
+VM backends also refuse rather than treating VM capacity as free memory.
+
+This is cooperative measured admission, not an operating-system hard memory limit.
+Measurements apply when the lifecycle phase is admitted; later targets pin the same
+daemon but do not continuously reserve or remeasure memory.
+Unrelated programs can allocate memory after inspection and older/nonparticipating clients
+do not obey the queue. No workload is killed, stopped or resized. Omission keeps existing
+behavior; `enabled: false` does not accept dormant budgets.
+
+### Verified COPY encoding reuse and baseline sizing
+
+`rehearsal inspect sizing --json` reports the verified baseline's actual bytes/rows and
+existing shape-policy bindings, required-goal status and relationship checks. Inspection
+never samples rows. Use the existing reviewed shape policy to retain required troublesome
+rows, foreign-key closure, privacy cohorts and representative distributions; fewer rows
+alone do not prove equivalent fidelity.
+
+The optional `resources.restoreCache` reuses the encoding of sanitized rows for PostgreSQL
+COPY, not a live database or a previously migrated target:
+
+```ts
+restoreCache: {
+  enabled: true,
+  maximumBytes: 67108864,
+  minimumFreeBytes: 1073741824,
+},
+```
+
+The private cache lives inside the configured artifact directory. `maximumBytes` bounds
+retained cache storage (at most 512 MiB), and `minimumFreeBytes` reserves disk headroom.
+The default is off. Each use still verifies the immutable baseline and binds exact source,
+privacy-policy, generation, encoder/core version and target. Payload/receipt corruption,
+changed inputs, unsafe paths, unavailable space and interrupted/concurrent builders never
+justify stale rows or deletion of unrelated files. The cache uses private authenticated
+receipts for accidental/tampered cache bytes; it trusts the local account controlling the
+baseline and package and is not a boundary against a malicious administrator. Failed reuse
+regenerates through the safe full-data path or refuses invalid baseline input. Required
+rows, assets, schema and migration history are unchanged.
+Runtime output reports `COPY encoding cache: disabled`, `created`, `verified-hit`
+or `safe-fallback` after consuming the prepared stream. This identifies the encoding
+path, not successful database restoration; require the complete command to succeed
+and verify the restored rows separately.
 
 Run `rehearsal workloads` (or `--json`) without Docker to inspect this queue. Waiting
 requests whose processes have died can be removed automatically because guarded work

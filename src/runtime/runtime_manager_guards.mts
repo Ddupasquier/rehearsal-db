@@ -35,7 +35,34 @@ export const guardRuntimeManagerAction = async (
     config,
     expected: process.env.REHEARSAL_CONFIGURATION_SHA256,
   });
-  if (["status", "candidates"].includes(action)) return;
+  if (action === "candidates") return;
+  const bindEngine = () =>
+    bindRuntimeDockerEnvironment({
+      cwd: projectRoot,
+      ...(["run", "reset", "start", "migrate"].includes(action) &&
+      process.env.REHEARSAL_DOCKER_DAEMON_ID
+        ? { expectedDaemonId: process.env.REHEARSAL_DOCKER_DAEMON_ID! }
+        : {}),
+      ...(process.env.REHEARSAL_DOCKER_CONTEXT
+        ? { context: process.env.REHEARSAL_DOCKER_CONTEXT }
+        : {}),
+      ...(process.env.REHEARSAL_DOCKER_IDENTITY
+        ? { expectedIdentity: process.env.REHEARSAL_DOCKER_IDENTITY }
+        : {}),
+    });
+  if (action === "status") {
+    bindEngine();
+    return;
+  }
+  // Trusted internal parent/cooperative guard: direct heavy entries must carry
+  // the capacity-admitted daemon. This is not isolation from a local owner.
+  const capacityHeavy =
+    config.resources.capacityAdmission?.enabled &&
+    ["run", "reset", "start", "migrate"].includes(action);
+  if (capacityHeavy && !process.env.REHEARSAL_DOCKER_DAEMON_ID)
+    throw new Error(
+      "Capacity-enabled runtime actions require parent admission; use the Rehearsal runtime command to obtain a fresh capacity check.",
+    );
   if (
     ["run", "reset", "start", "migrate", "verify"].includes(action) &&
     config.supabase &&
@@ -47,15 +74,7 @@ export const guardRuntimeManagerAction = async (
       requiredServices: config.application.requiredServices,
     });
   }
-  bindRuntimeDockerEnvironment({
-    cwd: projectRoot,
-    ...(process.env.REHEARSAL_DOCKER_CONTEXT
-      ? { context: process.env.REHEARSAL_DOCKER_CONTEXT }
-      : {}),
-    ...(process.env.REHEARSAL_DOCKER_IDENTITY
-      ? { expectedIdentity: process.env.REHEARSAL_DOCKER_IDENTITY }
-      : {}),
-  });
+  bindEngine();
   if (
     config.resources.maximumBytes !== null &&
     ["run", "reset", "start", "migrate"].includes(action)

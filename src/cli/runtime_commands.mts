@@ -47,7 +47,11 @@ import {
   parseRuntimeStatusSnapshot,
   renderRuntimeStatusSnapshot,
 } from "../runtime/status.mjs";
-import { applyRuntimePersistence } from "../runtime/persistence.mjs";
+import {
+  applyRuntimePersistence,
+  runtimeCompletionAction,
+  assertRuntimeCompletionAllowed,
+} from "../runtime/persistence.mjs";
 import {
   createRuntimeStackRunner,
   type ManagerReceipt,
@@ -59,6 +63,10 @@ import {
 } from "./runtime_failure_summary.mjs";
 import { readManagerMigrationFailure } from "../runtime/migration_failure.mjs";
 import { runtimeConfigurationSha256 } from "../runtime/configuration_binding.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "../runtime/local_docker_context.mjs";
 import {
   formatDuration,
   isHumanTerminal,
@@ -173,35 +181,52 @@ export const parseColimaMemory = (output: string) => {
 const diagnosticCommand = (
   command: string,
   args: readonly string[],
+  environment: NodeJS.ProcessEnv = projectCommandEnvironment(),
 ): SpawnSyncReturns<string> =>
   spawnSync(command, args, {
     encoding: "utf8",
-    env: projectCommandEnvironment(),
+    env: environment,
     stdio: ["ignore", "pipe", "ignore"],
     timeout: 5_000,
+    maxBuffer: 65536,
   });
 
-const inspectContainerCapacity = () => {
-  const docker = diagnosticCommand("docker", [
-    "info",
-    "--format",
-    "{{.NCPU}} {{.MemTotal}} {{.ContainersRunning}} {{.Containers}}",
-  ]);
+const inspectContainerCapacity = (
+  reviewed?: ReturnType<typeof assertLocalDockerContext>,
+) => {
+  let selected: ReturnType<typeof assertLocalDockerContext>;
+  let environment: NodeJS.ProcessEnv;
+  try {
+    selected = reviewed ?? assertLocalDockerContext();
+    environment = scopedDockerEnvironment({
+      inheritedEnvironment: {
+        ...process.env,
+        DOCKER_CONFIG: selected.dockerConfig,
+      },
+    });
+  } catch {
+    return undefined;
+  }
+  const docker = diagnosticCommand(
+    "docker",
+    [
+      "--host",
+      selected.endpoint,
+      "info",
+      "--format",
+      "{{.NCPU}} {{.MemTotal}} {{.ContainersRunning}} {{.Containers}}",
+    ],
+    environment,
+  );
   const capacity =
     docker.status === 0 ? parseDockerCapacity(docker.stdout) : null;
   if (!capacity) return undefined;
 
-  const context = diagnosticCommand("docker", ["context", "show"]);
-  if (context.status !== 0 || context.stdout.trim() !== "colima") {
-    return { engine: "docker-compatible", ...capacity };
-  }
-  const memory = diagnosticCommand("colima", ["ssh", "--", "free", "-b"]);
+  // Engine capacity is not VM resident/free memory. A context name cannot bind a guest.
   return {
-    engine: "colima",
+    engine: "docker-compatible",
+    context: selected.context,
     ...capacity,
-    ...(memory.status === 0
-      ? { runtimeMemory: parseColimaMemory(memory.stdout) ?? undefined }
-      : {}),
   };
 };
 
@@ -280,11 +305,15 @@ export const createRuntimeCommands = ({
   projectRoot,
   managerPath,
   getActivePackageFingerprint,
+  resolveEngineSelection = assertLocalDockerContext,
+  inspectEngineCapacity = inspectContainerCapacity,
 }: {
   packageRoot: string;
   projectRoot: string;
   managerPath: string;
   getActivePackageFingerprint: () => InstalledPackageFingerprint | undefined;
+  resolveEngineSelection?: typeof assertLocalDockerContext;
+  inspectEngineCapacity?: typeof inspectContainerCapacity;
 }) => {
   const executeManager = async ({
     action,
@@ -295,6 +324,7 @@ export const createRuntimeCommands = ({
     operationId,
     dockerContext,
     dockerIdentity,
+    dockerDaemonId,
     configSha256,
   }: {
     action: RuntimeAction;
@@ -305,8 +335,20 @@ export const createRuntimeCommands = ({
     operationId?: string;
     dockerContext?: string;
     dockerIdentity?: string;
+    dockerDaemonId?: string;
     configSha256?: string;
   }): Promise<ManagerReceipt> => {
+    const engineSelection = resolveEngineSelection({
+      cwd: projectRoot,
+      ...(dockerContext ? { context: dockerContext } : {}),
+    });
+    if (
+      dockerIdentity !== undefined &&
+      engineSelection.identity !== dockerIdentity
+    )
+      throw new Error(
+        "The reviewed Docker endpoint changed before launch; no manager was started.",
+      );
     const configurationSha256 =
       configSha256 ??
       runtimeConfigurationSha256(
@@ -364,8 +406,12 @@ export const createRuntimeCommands = ({
         : {}),
       ...(cancellationSignal ? { REHEARSAL_CANCELLABLE_OPERATION: "1" } : {}),
       ...(operationId ? { REHEARSAL_OPERATION_ID: operationId } : {}),
-      ...(dockerContext ? { REHEARSAL_DOCKER_CONTEXT: dockerContext } : {}),
-      ...(dockerIdentity ? { REHEARSAL_DOCKER_IDENTITY: dockerIdentity } : {}),
+      REHEARSAL_DOCKER_CONTEXT: engineSelection.context,
+      REHEARSAL_DOCKER_IDENTITY: engineSelection.identity,
+      ...(engineSelection.dockerConfig
+        ? { DOCKER_CONFIG: engineSelection.dockerConfig }
+        : {}),
+      ...(dockerDaemonId ? { REHEARSAL_DOCKER_DAEMON_ID: dockerDaemonId } : {}),
       REHEARSAL_CONFIGURATION_SHA256: configurationSha256,
       ...(process.env.ELECTRON_RUN_AS_NODE === "1"
         ? { ELECTRON_RUN_AS_NODE: "1" }
@@ -414,7 +460,7 @@ export const createRuntimeCommands = ({
       const portGuidance = runtimePortFailureGuidance(conciseOutput);
       const engineCapacity =
         startupFailure && portGuidance.length === 0
-          ? inspectContainerCapacity()
+          ? inspectEngineCapacity(engineSelection)
           : undefined;
       throw new RehearsalError({
         category,
@@ -683,6 +729,11 @@ export const createRuntimeCommands = ({
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
     throwIfOperationCancelled();
+    for (const target of topology.targets)
+      assertRuntimeCompletionAllowed(
+        topology.primary.config.lifecycle.open,
+        target.config.runtime.protected,
+      );
     let runtimeStarted = false;
     const { result, lifecycle } = await applyRuntimePersistence({
       mode: topology.primary.config.lifecycle.open,
@@ -730,7 +781,9 @@ export const createRuntimeCommands = ({
       stop: async () =>
         (
           await runRuntimeStack({
-            command: "stop",
+            command:
+              runtimeCompletionAction(topology.primary.config.lifecycle.open) ??
+              "stop",
             flags,
             planOptions,
             session: commandSession,

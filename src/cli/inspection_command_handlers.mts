@@ -1,3 +1,4 @@
+import { inspectBaselineSizing } from "../runtime/baseline_sizing.mjs";
 /** Read-only readiness, support, planning, and inspection command handlers. */
 
 import { collectRehearsalSupportReport } from "../project/support_report.mjs";
@@ -29,6 +30,18 @@ const formatBytes = (bytes: number): string =>
 
 export const createInspectionCommandHandlers =
   (): readonly CommandDefinition[] => [
+    exactCommands(
+      "baseline-sizing",
+      ["inspect sizing"],
+      async ({ planOptions }) => {
+        const data = await inspectBaselineSizing(planOptions);
+        return renderedCommand({
+          data,
+          render: (value) =>
+            `BASELINE SIZING — READ ONLY\n${value.baselineRows} sanitized rows; ${value.baselineBytes} bytes.\nSelection: ${value.selection}. No rows or runtime data changed.\nUse --json for exact shape/input bindings and fidelity limits.`,
+        });
+      },
+    ),
     exactCommands("discover", ["discover"], async ({ planOptions }) => {
       const data = await discoverProjectProfile({
         projectRoot: planOptions.projectRoot ?? process.cwd(),

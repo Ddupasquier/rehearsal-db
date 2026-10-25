@@ -3,6 +3,10 @@
 Rehearsal separates shipped product code, repository automation, tests, fixtures, and
 documentation so each file has one obvious home.
 
+Machine-specific suite drive placement has one local owner document, discoverable
+through `dt b open --json`. It does not change these repository boundaries or authorize
+independent migration of shared temporary coordination, fixtures or recovery evidence.
+
 ```text
 rehearsal-db/
 ├── src/                    TypeScript product source
@@ -77,6 +81,10 @@ typed registry and produce the same result contract:
   `update_advisory.mts` bounds public release metadata, private preferences and
   installation-origin checks. Neither participates in passive JSON inspection.
 - `runtime_commands.mts` coordinates local runtimes and project proofs.
+- `runtime_readiness_rendering.mts` presents shared engine choices and doctor readiness.
+  `engine_discovery.mts` owns bounded host/engine observations; `local_docker_context.mts`
+  owns explicit selection and local endpoint binding. Support reports reuse those
+  observations without exposing private context or endpoint identities.
 - `runtime_stack_runner.mts` selects configured targets, binds their reviewed engine
   and configuration identities, executes the serial stack and retains receipt-bound
   cleanup. `runtime_workload_admission.mts` applies optional lifecycle admission before

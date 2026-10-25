@@ -1,4 +1,4 @@
-/** Explicit, non-destructive persistence policy for project-owned runtimes. */
+/** Explicit persistence policy; destructive completion is separately opted in. */
 
 import type {
   OpenPersistenceMode,
@@ -13,13 +13,32 @@ export type RuntimePersistenceMode = RunPersistenceMode | OpenPersistenceMode;
 
 export interface RuntimePersistenceOutcome<StopResult> {
   readonly mode: RuntimePersistenceMode;
-  readonly runtimeState: "running" | "stopped";
-  readonly dataState: "preserved";
+  readonly runtimeState: "running" | "stopped" | "removed";
+  readonly dataState: "preserved" | "removed";
   readonly stop: StopResult | null;
 }
 
 export const shouldStopRuntime = (mode: RuntimePersistenceMode): boolean =>
   mode === "stop-after-run" || mode === "stop-on-application-exit";
+
+export const runtimeCompletionAction = (
+  mode: RuntimePersistenceMode,
+): "stop" | "discard" | null =>
+  mode === "discard-after-run" || mode === "discard-on-application-exit"
+    ? "discard"
+    : shouldStopRuntime(mode)
+      ? "stop"
+      : null;
+
+export const assertRuntimeCompletionAllowed = (
+  mode: RuntimePersistenceMode,
+  protectedRuntime: boolean,
+): void => {
+  if (runtimeCompletionAction(mode) === "discard" && protectedRuntime)
+    throw new Error(
+      "Automatic discard is refused for a protected runtime. Choose a data-preserving lifecycle or explicitly unprotect the disposable runtime before execution.",
+    );
+};
 
 export const applyRuntimePersistence = async <Result, StopResult>({
   mode,
@@ -47,7 +66,7 @@ export const applyRuntimePersistence = async <Result, StopResult>({
 
   let stopResult: StopResult | null = null;
   let stopped = false;
-  if (shouldStopRuntime(mode) && canStop()) {
+  if (runtimeCompletionAction(mode) !== null && canStop()) {
     try {
       stopResult = await withOperationCancellationShield(stop);
       stopped = true;
@@ -58,7 +77,7 @@ export const applyRuntimePersistence = async <Result, StopResult>({
       if (operationFailed || cancellation?.aborted) {
         throw new AggregateError(
           [operationFailed ? operationError : cancellation!.reason, stopError],
-          "The Rehearsal operation failed and its owned runtime could not be stopped automatically.",
+          "The Rehearsal operation failed and its owned runtime could not complete its configured automatic cleanup.",
         );
       }
       throw stopError;
@@ -70,8 +89,15 @@ export const applyRuntimePersistence = async <Result, StopResult>({
     result: result as Result,
     lifecycle: Object.freeze({
       mode,
-      runtimeState: stopped ? "stopped" : "running",
-      dataState: "preserved",
+      runtimeState: stopped
+        ? runtimeCompletionAction(mode) === "discard"
+          ? "removed"
+          : "stopped"
+        : "running",
+      dataState:
+        stopped && runtimeCompletionAction(mode) === "discard"
+          ? "removed"
+          : "preserved",
       stop: stopResult,
     }),
   };

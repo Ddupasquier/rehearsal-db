@@ -239,6 +239,9 @@ export const ensureLocalContainerRuntime = ({
 } = {}): { readonly startedColima: boolean } => {
   bindRuntimeDockerEnvironment({
     cwd,
+    ...(process.env.REHEARSAL_DOCKER_DAEMON_ID
+      ? { expectedDaemonId: process.env.REHEARSAL_DOCKER_DAEMON_ID }
+      : {}),
     ...(process.env.REHEARSAL_DOCKER_CONTEXT
       ? { context: process.env.REHEARSAL_DOCKER_CONTEXT }
       : {}),

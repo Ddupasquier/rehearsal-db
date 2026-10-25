@@ -2,6 +2,12 @@
 
 Thank you for helping make database migration rehearsal safer.
 
+For owner-managed local suite work, retrieve `dt b open --json` and follow its
+shared drive-layout document and pre-runtime command launcher before starting npm,
+Node or tsx. The launcher owns machine-specific temporary/cache placement; ordinary
+package commands and repository-relative source, build and evidence paths are unchanged.
+Do not independently migrate shared locks, leases, fixtures or recovery archives.
+
 ## Adaptive Codex workflow
 
 Start future tasks with `dev-task "task"`, or run VS Code's global

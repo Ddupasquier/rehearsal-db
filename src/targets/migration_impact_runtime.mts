@@ -1,3 +1,4 @@
+import { normalizeRuntimeMarkerProtocol } from "../runtime/runtime_marker_protocol.mjs";
 /** Private non-starting transport for one explicitly selected owned local runtime. */
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
@@ -175,8 +176,10 @@ export async function openMigrationImpactRuntime(
         await ancestry.assertUnchanged();
         const contents = bytes.subarray(0, length);
         const marker = object(
-          JSON.parse(
-            new TextDecoder("utf-8", { fatal: true }).decode(contents),
+          normalizeRuntimeMarkerProtocol(
+            JSON.parse(
+              new TextDecoder("utf-8", { fatal: true }).decode(contents),
+            ),
           ),
         );
         if (

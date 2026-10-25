@@ -44,6 +44,7 @@ const fakeCommandEnvironment = async ({
     docker: `#!/bin/sh
 printf 'docker %s\\n' "$*" >> ${JSON.stringify(log)}
 if [ "$1" = context ] && [ "$2" = show ]; then printf 'colima\\n'; exit 0; fi
+if [ "$1" = context ] && [ "$2" = inspect ] && [ "$4" = '{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}' ]; then printf 'false\\n'; exit 0; fi
 if [ "$1" = context ] && [ "$2" = inspect ]; then printf '%s\\n' '${JSON.stringify(remote ? "ssh://production.example" : "unix:///tmp/rehearsal-test-docker.sock")}'; exit 0; fi
 if [ "$1" = info ]; then [ -f ${JSON.stringify(ready)} ]; exit; fi
 if [ "$1" = ps ]; then printf '${exactIds ? `${"a".repeat(64)}\\n${"b".repeat(64)}\\n` : "owned-one\\nowned-two\\n"}'; exit 0; fi

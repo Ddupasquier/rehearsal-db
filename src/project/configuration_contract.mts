@@ -2,9 +2,12 @@
 
 export type RehearsalConfigVersion = 1;
 
-export type RunPersistenceMode = "keep-until-stop" | "stop-after-run";
+export type RunPersistenceMode =
+  "keep-until-stop" | "stop-after-run" | "discard-after-run";
 export type OpenPersistenceMode =
-  "keep-until-stop" | "stop-on-application-exit";
+  | "keep-until-stop"
+  | "stop-on-application-exit"
+  | "discard-on-application-exit";
 
 export type ApplicationRequiredService =
   | "database"
@@ -20,6 +23,24 @@ export type ApplicationRequiredService =
   | "image-transforms";
 
 export interface RehearsalResourcePolicy {
+  /** Optional verified local restore stream cache; never reuses an unverified target. */
+  restoreCache?: {
+    enabled: boolean;
+    maximumBytes?: number;
+    minimumFreeBytes?: number;
+  };
+  /** Opt-in measured memory/container headroom, rechecked under the shared lifecycle lease. */
+  capacityAdmission?: {
+    enabled: boolean;
+    hostReserveBytes?: number;
+    engineReserveBytes?: number;
+    maximumRunningContainers?: number;
+    targetMemoryBytes?: {
+      postgresql: number;
+      supabaseApplication: number;
+      supabaseFull: number;
+    };
+  };
   /** Cooperatively serialize participating local runtime lifecycle phases. */
   workloadQueue?: { enabled: boolean; waitTimeoutSeconds?: number };
   /** Review cutoff based on container start/stop, not application or database use. */
@@ -75,7 +96,7 @@ export interface RehearsalConfig {
   lifecycle?: {
     run?: RunPersistenceMode;
     open?: OpenPersistenceMode;
-    /** Foreground open only; requires explicit application activity and stop-on-application-exit. */
+    /** Foreground open only; requires explicit application activity and a stop/discard-on-application-exit mode. */
     openIdleTimeoutSeconds?: number | null;
   };
   cleanup?: { retainBaselineGenerations?: number };
@@ -167,8 +188,8 @@ export const REHEARSAL_DEFAULTS = Object.freeze({
     supabaseMinimumFreeBytes: 8 * 1024 * 1024 * 1024,
   }),
   lifecycle: Object.freeze({
-    run: "keep-until-stop" as RunPersistenceMode,
-    open: "keep-until-stop" as OpenPersistenceMode,
+    run: "stop-after-run" as RunPersistenceMode,
+    open: "stop-on-application-exit" as OpenPersistenceMode,
     openIdleTimeoutSeconds: null,
   }),
   cleanup: Object.freeze({ retainBaselineGenerations: 2 }),

@@ -1,3 +1,4 @@
+import { normalizeRuntimeMarkerProtocol } from "./runtime_marker_protocol.mjs";
 /** Bounded, non-secret projections of target-local runtime receipts. No runtime is contacted. */
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
@@ -124,9 +125,8 @@ export const inspectEnvironmentProvenanceEvidence = async ({
   };
   let marker: unknown;
   try {
-    marker = await readReceipt(
-      projectRoot,
-      join(runtimeWorkdir, "baseline.json"),
+    marker = normalizeRuntimeMarkerProtocol(
+      await readReceipt(projectRoot, join(runtimeWorkdir, "baseline.json")),
     );
   } catch {
     return {

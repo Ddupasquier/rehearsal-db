@@ -130,4 +130,30 @@ describe("runtime action lifecycle policy", () => {
     expect(injected.runRuntimeStack).toHaveBeenCalledOnce();
     expect(result.data.lifecycle.runtimeState).toBe("running");
   });
+  it("discards after an explicitly opted-in run and reports removed rather than preserved data", async () => {
+    const injected = services({ mode: "discard-after-run" });
+    const [handler] = createRuntimeActionHandlers(injected);
+    const result = await handler.handle(context());
+    expect(
+      injected.runRuntimeStack.mock.calls.map(([call]) => call.command),
+    ).toEqual(["run", "discard"]);
+    expect(result.data.lifecycle).toMatchObject({
+      runtimeState: "removed",
+      dataState: "removed",
+    });
+    expect(result.render("normal")).toContain("data removed");
+    expect(result.render("normal")).not.toContain("data preserved");
+  });
+  it("discards admitted runtime after a failed proof without changing the original failure", async () => {
+    const failure = new Error("proof failed");
+    const injected = services({
+      mode: "discard-after-run",
+      proofError: failure,
+    });
+    const [handler] = createRuntimeActionHandlers(injected);
+    await expect(handler.handle(context())).rejects.toBe(failure);
+    expect(
+      injected.runRuntimeStack.mock.calls.map(([call]) => call.command),
+    ).toEqual(["run", "discard"]);
+  });
 });

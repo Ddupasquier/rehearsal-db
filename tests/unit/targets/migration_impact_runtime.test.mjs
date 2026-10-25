@@ -570,3 +570,33 @@ describe("non-starting migration impact runtime transport", () => {
     );
   });
 });
+
+it("recognizes protected PostgreSQL marker protocol without rewriting its raw receipt", async () => {
+  const f = await fixture();
+  await writeFile(
+    f.markerPath,
+    JSON.stringify({
+      ...f.marker,
+      target: "postgresql-retired",
+      containerRetirementProtocol: 1,
+    }),
+    { mode: 0o600 },
+  );
+  const original = await readFile(f.markerPath);
+  const transport = await openMigrationImpactRuntime(f.options);
+  expect(transport).toBeDefined();
+  expect(await readFile(f.markerPath)).toEqual(original);
+  const bad = await fixture();
+  await writeFile(
+    bad.markerPath,
+    JSON.stringify({
+      ...bad.marker,
+      target: "postgresql-retired",
+      containerRetirementProtocol: 2,
+    }),
+    { mode: 0o600 },
+  );
+  await expect(openMigrationImpactRuntime(bad.options)).rejects.toBeInstanceOf(
+    MigrationImpactRuntimeError,
+  );
+});

@@ -20,6 +20,7 @@ export type OperationCancellationSignal =
 type SignalTarget = Pick<EventEmitter, "prependListener" | "removeListener">;
 
 const CANCELLABLE_COMMANDS = new Set([
+  "managed prototype",
   "migrate",
   "measure impact",
   "open",

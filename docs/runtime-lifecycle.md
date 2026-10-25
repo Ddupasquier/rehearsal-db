@@ -4,6 +4,35 @@ Rehearsal uses a local Docker-compatible engine for disposable PostgreSQL and Su
 targets. It owns the targets it creates; it does not own the shared engine or another
 project's containers.
 
+## Machine-aware engine selection
+
+Rehearsal detects the host platform and local Docker context options before
+container-backed work. Docker-compatible behavior is the portable foundation;
+Colima and OrbStack are optional platform-specific choices. Native Windows runtime
+limitations remain in force; detecting an engine does not establish native support.
+
+`rehearsal discover --json`, setup previews and `doctor` share the versioned
+`containerEngines` result. It distinguishes tool presence, configured local context
+names, selected-daemon reachability and unsupported hosts. Tool/context names are
+hints, not vendor conformance. Each vendor still needs exact version/platform
+acceptance; an answered probe alone does not certify it. Only the selected local
+daemon is probed, with bounded commands. Detection never installs or starts an
+engine, switches the global Docker context, imports databases, or infers RAM savings.
+
+An explicit `DOCKER_CONTEXT` takes precedence over `DOCKER_HOST` and the default
+context. A scoped `DOCKER_CONFIG` directory is preserved. A direct local host must
+map uniquely to a real named context; ambiguous, unmapped, remote and TLS selections
+refuse without fallback. Local runtime children receive the reviewed context and
+endpoint identity rather than following later ambient context changes. Existing
+daemon/receipt checks remain in force at resource mutation boundaries.
+
+When the chosen engine is unavailable, select or start it explicitly and rerun
+`doctor`. Rehearsal does not choose another engine merely because it responds:
+retained volumes and ownership receipts belong to their original engine. Switching
+requires a separately reviewed data migration. Capacity admission is a separate
+check and refuses unavailable metrics; discovery is not a memory reservation.
+Existing opt-in Colima startup and owned-boot shutdown retain their narrower contract.
+
 ## What starts Docker?
 
 Read-only commands such as `doctor`, `status`, `candidates`, `explain`, and `inspect` do
@@ -71,35 +100,56 @@ Rehearsal reports disk capacity as unavailable instead of guessing.
 
 ## Choose when database targets stop
 
-The root config makes persistence explicit while preserving the existing behavior by
-default:
+The root config makes persistence explicit. Container-retirement-capable builds default
+to bounded, data-preserving completion:
 
 ```js
 lifecycle: {
-  run: "keep-until-stop",
-  open: "keep-until-stop",
+  run: "stop-after-run",
+  open: "stop-on-application-exit",
 },
 ```
 
-`run` accepts `keep-until-stop` or `stop-after-run`. `open` accepts
-`keep-until-stop` or `stop-on-application-exit`. The bounded choices stop every
+`run` accepts `keep-until-stop`, `stop-after-run` or `discard-after-run`. `open` accepts
+`keep-until-stop`, `stop-on-application-exit` or `discard-on-application-exit`. Stop modes stop every
 configured Rehearsal target in reverse dependency order after the command finishes,
 fails after startup, times out, or is interrupted. Lifecycle choices govern targets,
 not engine ownership; they do not enable Colima shutdown. The separate
 `stopOwnedColimaWhenIdle` policy still requires its own opt-in and ownership checks.
 
-Stopping is non-destructive: database and Storage volumes, applied migrations, and
-sandbox edits remain available to `start` or `open`. Only the existing explicit `reset`
-and `discard` commands replace or remove runtime state. `explain --json`, `run --json`,
-and `open --json` report the selected mode and whether the target was left running or
-stopped.
+Stopping preserves database and Storage volumes, applied migrations and sandbox edits.
+In builds advertising `rehearsalContracts.containerRetirement: 1`, PostgreSQL stop also
+retires its exact stopped container shell automatically, without force or volume removal.
+It writes a private recovery receipt before removal. Start reconstructs the container from
+the verified receipt, original image and unchanged data volume; missing or changed recovery
+evidence refuses instead of resetting the database. Supabase uses its provider-owned stop
+and resume path. Container IDs may change; retained volume identity and data must not.
+
+Retirement also guards the PostgreSQL marker against older tools that would otherwise
+reset a missing container. Its exact previous bytes stay in the private
+`baseline.pre-retirement.json` backup. Compatible tools understand the retained-marker
+protocol; older tools refuse it. Upgrade the tool to resume retained data—do not use a
+reset to resolve a version mismatch. The guard remains after reconstruction.
+
+Discard modes explicitly authorize automatic deletion of the owned runtime and its data
+volumes after successful startup, including subsequent proof failure, timeout or interruption.
+Use them only for disposable runs. They preserve the immutable baseline, keys and other
+projects. Protected targets refuse discard modes before runtime execution. Failed or
+unreceipted startup with uncertain ownership remains retained for recovery; it is never
+guessed disposable. Cleanup failures remain failures.
+Published core 1.3 and earlier retain their previous defaults. Existing explicit
+`keep-until-stop` remains an intentional choice for active hands-on testing; finish it
+with `stop`. New configurations and omitted lifecycle fields use the bounded defaults
+above, so a completed run or closed application does not leave an idle stack.
+`explain --json`, `run --json` and `open --json` report the selected mode, runtime state
+and whether runtime data was preserved or removed.
 
 ## What remains after a command?
 
 - `run` always stops its transient application proof process. Its configured lifecycle
-  either keeps the database target available or stops it with data preserved.
+  keeps the database target available, stops it with data preserved, or explicitly discards it.
 - `open` keeps the application and databases available until the application session is
-  interrupted. Its configured lifecycle then keeps or stops the database targets.
+  interrupted. Its configured lifecycle then keeps, stops or explicitly discards the database targets.
 - `stop` stops every configured Rehearsal target in reverse dependency order and retains
   its local data.
 - `start` resumes a stopped target, reusing compatible state.
@@ -143,12 +193,33 @@ before target services change—not by booting Docker just to inspect it. Origin
 running containers and their same-name rollback replacements remain protected.
 Unknown ownership, endpoint/configuration drift, or unavailable state leaves
 resources intact and returns retained-resource diagnostics; it is not permission
-for broad cleanup. No containers, volumes or data are deleted by this teardown.
+for broad cleanup. This conservative unreceipted-startup teardown does not delete data.
 
-Completed-predecessor teardown preserves data, runs in reverse order
-under cancellation protection and reports both the original and any stop failure.
+Completed-predecessor teardown uses the selected stop or explicit discard policy, runs in
+reverse order under cancellation protection and reports both the original and any cleanup failure.
 The shared engine and untouched targets are not stopped. `keep-until-stop` retains
 its explicitly persistent behavior on failure.
+
+## Completed container retirement
+
+The public `@rehearsal-db/core/resource-lifecycle` API owns container-only retirement.
+Test Lab uses this same product boundary; it does not need its own competing garbage
+collector. A trusted completion hook supplies explicit completed-disposable claims and
+exact ownership labels. Manual callers preview `cleanup containers` and confirm its exact
+digest. See the [command reference](commands.md#completed-container-retirement).
+
+Retirement requires immutable container IDs, a pinned local endpoint and daemon identity,
+unchanged ownership and stopped state. It removes only the container writable layer, using
+neither force nor volume-removal flags. Volume names, creation identities and drivers are
+verified before and after. Running races, changed engines, conflicting ownership and unknown
+state refuse. A partial operation reports each known or unknown outcome and stops the batch.
+Caller-owned bind-mounted files and evidence remain outside deletion scope.
+
+Stopped or old does not mean completed. Persistent manual sessions and failure recovery need
+an explicit completion decision. This feature does not globally prune Docker, automatically
+erase databases or remove shared images. Retained volumes and images still consume disk;
+use the existing resource inventory, budget and reviewed discard/image-cleanup policies for
+those costs. No reclaimed-byte estimate is inferred from a container count.
 
 ## Choosing PostgreSQL or Supabase
 
@@ -200,6 +271,20 @@ does not silently remove declared Auth, Storage or API dependencies to save memo
 Optional managed execution is planned separately and is not available in this release.
 Choosing a local profile does not upload data or authorize a hosted operation. See the
 [product direction](roadmap.md#efficient-local-execution-and-optional-managed-runs).
+
+### Optional measured headroom and verified reuse
+
+The [resource configuration](configuration.md#measured-capacity-admission) can require
+fresh host/engine headroom before a queued runtime phase starts. It includes standing
+container use and fails closed on unknown capacity, while leaving stop/discard available.
+This adds no hard memory control over other applications or shared engines.
+
+For repeated restores, the optional
+[COPY cache](configuration.md#verified-copy-encoding-reuse-and-baseline-sizing) preserves
+all verified sanitized rows and exact input bindings while avoiding repeated encoding.
+`rehearsal inspect sizing --json` explains actual baseline size and reviewed shape evidence;
+it does not silently downsample data or turn short idle measurements into a performance
+promise. Existing profile/service-fidelity and owned-engine shutdown boundaries still apply.
 
 ## Scheduled review and stale-stop safety
 

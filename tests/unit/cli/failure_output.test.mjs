@@ -11,7 +11,7 @@ import {
 import { createOperationCancelledError } from "../../../dist/src/shared/cancellation.mjs";
 
 const cleanupWarning =
-  "The runtime stack failed and one or more successfully started targets could not be stopped. Their data and the shared engine were not deleted; inspect status before retrying.";
+  "The runtime stack failed and one or more receipt-proven targets could not complete configured cleanup. Cleanup may be partial; inspect each target before retrying.";
 const diagnostic = migrationFailureDiagnostic({
   provider: "postgresql",
   sqlState: "23514",

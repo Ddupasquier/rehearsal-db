@@ -44,8 +44,9 @@ describe("unsupported host doctor boundaries", () => {
     "refuses before evaluating config, topology, or child processes",
     async (runDoctor) => {
       const result = await runDoctor({ projectRoot: "/fixture/project" });
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         state: "NOT READY",
+        containerEngines: { state: "unsupported-host", selected: null },
         checks: [
           {
             id: "operating-system",

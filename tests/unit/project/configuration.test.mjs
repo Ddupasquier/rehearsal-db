@@ -138,8 +138,8 @@ describe("Rehearsal configuration", () => {
     });
     expect(loaded.config.lifecycle).toEqual({
       openIdleTimeoutSeconds: null,
-      run: "keep-until-stop",
-      open: "keep-until-stop",
+      run: "stop-after-run",
+      open: "stop-on-application-exit",
     });
     expect(loaded.config.cleanup).toEqual({ retainBaselineGenerations: 2 });
     expect(loaded.config.preparation).toBeNull();
@@ -163,15 +163,31 @@ describe("Rehearsal configuration", () => {
     });
   });
 
+  it("loads explicitly destructive completion modes without changing defaults", async () => {
+    const root = await makeProject();
+    await writeFile(
+      join(root, "rehearsal.config.mjs"),
+      configSource(
+        'lifecycle: { run: "discard-after-run", open: "discard-on-application-exit" },',
+      ),
+    );
+    expect(
+      (await loadRehearsalConfig({ projectRoot: root })).config.lifecycle,
+    ).toMatchObject({
+      run: "discard-after-run",
+      open: "discard-on-application-exit",
+    });
+  });
+
   it("rejects unsupported runtime lifecycle modes", async () => {
     const root = await makeProject();
     await writeFile(
       join(root, "rehearsal.config.mjs"),
-      configSource('lifecycle: { run: "discard-after-run" },'),
+      configSource('lifecycle: { run: "discard-unknown" },'),
     );
 
     await expect(loadRehearsalConfig({ projectRoot: root })).rejects.toThrow(
-      "config.lifecycle.run must be one of: keep-until-stop, stop-after-run",
+      "config.lifecycle.run must be one of: keep-until-stop, stop-after-run, discard-after-run",
     );
   });
 
@@ -519,8 +535,8 @@ describe("Rehearsal configuration", () => {
     expect(source).toContain('outboundNetwork: "deny"');
     expect(source).toContain("containerRuntime:");
     expect(source).toContain("autoStartColima: false");
-    expect(source).toContain('run: "keep-until-stop"');
-    expect(source).toContain('open: "keep-until-stop"');
+    expect(source).toContain('run: "stop-after-run"');
+    expect(source).toContain('open: "stop-on-application-exit"');
     expect(source).toContain('"stop-after-run"');
     expect(source).toContain('"stop-on-application-exit"');
     expect(source).toContain("cleanup:");

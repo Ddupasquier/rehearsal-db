@@ -15,7 +15,7 @@ describe("runtime command diagnostics", () => {
     const managerPath = join(directory, "manager.mjs");
     await writeFile(
       managerPath,
-      `console.log(JSON.stringify({
+      `if(process.env.REHEARSAL_DOCKER_CONTEXT !== 'fixture-local' || process.env.REHEARSAL_DOCKER_IDENTITY !== '${"a".repeat(64)}' || process.env.DOCKER_CONFIG !== ${JSON.stringify(directory)})process.exit(43);\nconsole.log(JSON.stringify({
         schemaVersion: 1,
         state: "running",
         reason: null,
@@ -42,6 +42,13 @@ describe("runtime command diagnostics", () => {
         projectRoot: directory,
         managerPath,
         getActivePackageFingerprint: () => null,
+        resolveEngineSelection: () => ({
+          context: "fixture-local",
+          endpoint: "unix:///fixture.sock",
+          identity: "a".repeat(64),
+          selectionSource: "default-context",
+          dockerConfig: directory,
+        }),
       });
       const receipt = await commands.runManager({
         action: "status",
@@ -85,6 +92,12 @@ describe("runtime command diagnostics", () => {
         projectRoot: directory,
         managerPath,
         getActivePackageFingerprint: () => null,
+        resolveEngineSelection: () => ({
+          context: "fixture-local",
+          endpoint: "unix:///fixture.sock",
+          identity: "a".repeat(64),
+          selectionSource: "default-context",
+        }),
       });
       const receipt = await commands.runManager({
         action: "status",
@@ -191,6 +204,20 @@ Swap: 0 0 0
           projectRoot: directory,
           managerPath,
           getActivePackageFingerprint: () => null,
+          resolveEngineSelection: () => ({
+            context: "fixture-local",
+            endpoint: "unix:///fixture.sock",
+            identity: "a".repeat(64),
+            selectionSource: "default-context",
+          }),
+          inspectEngineCapacity: (reviewed) => {
+            expect(reviewed).toMatchObject({
+              context: "fixture-local",
+              endpoint: "unix:///fixture.sock",
+              identity: "a".repeat(64),
+            });
+            return undefined;
+          },
         });
         let failure;
         try {

@@ -26,6 +26,7 @@ import {
 } from "../runtime/cleanup.mjs";
 import type { RehearsalCleanupPlan } from "../runtime/cleanup.mjs";
 import { runRehearsalDoctor } from "../runtime/plan.mjs";
+import { inspectContainerEngineOptions } from "../runtime/engine_discovery.mjs";
 import {
   loadRuntimeTopology,
   selectRuntimeTargets,
@@ -91,13 +92,18 @@ export const createProjectCommands = ({
     const result = summarizeRehearsalSetup(plan, {
       mode: flags.write ? "written" : "preview",
     });
-    if (!flags.write) return result;
+    if (!flags.write)
+      return {
+        ...result,
+        containerEngines: await inspectContainerEngineOptions({ projectRoot }),
+      };
     const readiness = await runRehearsalDoctor(planOptions);
     const needsBaselinePolicy = readiness.checks.some(
       (check) => check.id === "sanitization-policy" && check.status === "fail",
     );
     return {
       ...result,
+      containerEngines: readiness.containerEngines,
       readiness,
       nextAction: [
         `Review ${result.configurationPath}.`,

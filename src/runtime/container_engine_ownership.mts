@@ -14,7 +14,10 @@ import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
 import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
 import type { RuntimeTopologyTarget } from "./topology.mjs";
-import { assertLocalDockerContext } from "./local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "./local_docker_context.mjs";
 
 export const CONTAINER_ENGINE_RECEIPT_FILENAME =
   "container-engine-start-receipt.json";
@@ -46,13 +49,18 @@ type CommandRunner = (
   command: string,
   args: readonly string[],
   cwd: string,
+  environment?: NodeJS.ProcessEnv,
 ) => SpawnSyncReturns<string>;
 
-const defaultRunner: CommandRunner = (command, args, cwd) =>
+const defaultRunner: CommandRunner = (command, args, cwd, environment) =>
   spawnSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: createCleanProcessEnvironment(),
+    env:
+      environment ??
+      (command === "docker"
+        ? scopedDockerEnvironment()
+        : createCleanProcessEnvironment()),
     maxBuffer: 1024 * 1024,
     timeout: 10_000,
     stdio: ["ignore", "pipe", "pipe"],
@@ -106,8 +114,6 @@ const readCurrentColimaIdentity = (
   readonly bootId: string;
   readonly engineIdentity: string;
 } | null => {
-  const context = run("docker", ["context", "show"], projectRoot);
-  if (context.status !== 0 || context.stdout.trim() !== "colima") return null;
   let engineIdentity: string;
   try {
     const local = assertLocalDockerContext({ cwd: projectRoot, runner: run });
@@ -237,7 +243,7 @@ export type ColimaReleaseResult = Readonly<{
 export const releaseOwnedColimaWhenIdle = ({
   projectRoot,
   targets,
-  run = defaultRunner,
+  run: suppliedRun = defaultRunner,
 }: {
   readonly projectRoot: string;
   readonly targets: readonly RuntimeTopologyTarget[];
@@ -255,6 +261,38 @@ export const releaseOwnedColimaWhenIdle = ({
         "Shared container engine preserved: automatic idle shutdown is not enabled for every selected target.",
     };
   }
+  // Resolve selectors before any daemon probe; never mistake a remote/default engine for the owned Colima boot.
+  const inheritedEnvironment = { ...process.env };
+  let local: ReturnType<typeof assertLocalDockerContext>;
+  try {
+    local = assertLocalDockerContext({
+      cwd: projectRoot,
+      runner: suppliedRun,
+      inheritedEnvironment,
+    });
+  } catch {
+    return {
+      state: "preserved",
+      message:
+        "Shared container engine preserved: local engine selection could not be verified.",
+    };
+  }
+  const environment = scopedDockerEnvironment({
+    inheritedEnvironment,
+    endpoint: local.endpoint,
+  });
+  const run: CommandRunner = (command, args, cwd, env) =>
+    suppliedRun(
+      command,
+      args,
+      cwd,
+      env ??
+        (command === "docker"
+          ? args[0] === "context"
+            ? scopedDockerEnvironment({ inheritedEnvironment })
+            : environment
+          : undefined),
+    );
   const docker = run("docker", ["info"], projectRoot);
   if (docker.status !== 0) {
     return {

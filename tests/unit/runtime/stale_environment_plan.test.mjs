@@ -27,6 +27,8 @@ const config = (
     postgresql: { migrationDirectory: "database/migrations" },
     baseline: { sanitizationPolicy: "rehearsal/policy.json" },
     resources,
+    // This historical review fixture deliberately owns a long-running environment.
+    lifecycle: { run: "keep-until-stop", open: "keep-until-stop" },
     application: { startCommand: "npm run dev", proofCommand: "npm test" },
     runtime: { target: "postgresql", projectId: id, databasePort: 58322 },
   });
@@ -229,14 +231,21 @@ describe("stop stale environment plan", () => {
       if (args[0] === "context" && args[1] === "show")
         return result(0, "local");
       if (args[0] === "context" && args[1] === "inspect")
-        return result(0, JSON.stringify("unix:///tmp/test-docker.sock"));
+        return result(
+          0,
+          args.includes(
+            "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}",
+          )
+            ? "false"
+            : JSON.stringify("unix:///tmp/test-docker.sock"),
+        );
       if (args.at(-1) === "info") return result(1);
       throw new Error("Unexpected engine mutation");
     };
     await expect(
       inspectStopStalePlan({ projectRoot: root }, { run }),
     ).rejects.toThrow("never starts it");
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     await expect(
       inspectStopStalePlan(
         { projectRoot: root },

@@ -25,6 +25,7 @@ export interface RehearsalCliFlags {
   cleanupConfirmation: string | undefined;
   stopConfirmation: string | undefined;
   workloadConfirmation: string | undefined;
+  managedConfirmation: string | undefined;
   proposalPath: string | undefined;
   sourceAccessConfirmation: string | undefined;
   sourceRetirementConfirmation: string | undefined;
@@ -64,6 +65,7 @@ export const parseArguments = (
     cleanupConfirmation: undefined,
     stopConfirmation: undefined,
     workloadConfirmation: undefined,
+    managedConfirmation: undefined,
     proposalPath: undefined,
     sourceAccessConfirmation: undefined,
     sourceRetirementConfirmation: undefined,
@@ -96,6 +98,8 @@ export const parseArguments = (
       flags.workloadConfirmation = argument.slice(
         "--confirm-workloads=".length,
       );
+    else if (argument.startsWith("--confirm-managed="))
+      flags.managedConfirmation = argument.slice("--confirm-managed=".length);
     else if (argument.startsWith("--proposal="))
       flags.proposalPath = argument.slice("--proposal=".length);
     else if (argument.startsWith("--confirm-source-access="))
@@ -156,6 +160,7 @@ export const resetGuidedFlags = (flags: RehearsalCliFlags): void => {
     cleanupConfirmation: undefined,
     stopConfirmation: undefined,
     workloadConfirmation: undefined,
+    managedConfirmation: undefined,
     proposalPath: undefined,
     sourceAccessConfirmation: undefined,
     sourceRetirementConfirmation: undefined,
@@ -178,7 +183,7 @@ export const commandMutatesProject = ({
   if (guided) return true;
   if (["setup", "init", "baseline prepare", "privacy key"].includes(command))
     return flags.write;
-  if (command === "cleanup") return flags.write;
+  if (["cleanup", "cleanup containers"].includes(command)) return flags.write;
   if (command === "stop-stale") return Boolean(flags.stopConfirmation);
   if (command === "source apply")
     return Boolean(flags.sourceAccessConfirmation);

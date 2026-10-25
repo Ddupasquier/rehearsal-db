@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyRuntimePersistence,
   shouldStopRuntime,
+  runtimeCompletionAction,
+  assertRuntimeCompletionAllowed,
 } from "../../../dist/src/runtime/persistence.mjs";
 import {
   getOperationCancellationSignal,
@@ -175,5 +177,80 @@ describe("runtime persistence", () => {
     ).rejects.toMatchObject({
       errors: [proofFailure, stopFailure],
     });
+  });
+  it.each(["discard-after-run", "discard-on-application-exit"])(
+    "truthfully removes runtime/data for explicit %s",
+    async (mode) => {
+      const cleanup = vi.fn(async () => ({ action: "discard" }));
+      const outcome = await applyRuntimePersistence({
+        mode,
+        operation: async () => "complete",
+        stop: cleanup,
+      });
+      expect(runtimeCompletionAction(mode)).toBe("discard");
+      expect(outcome.lifecycle).toMatchObject({
+        runtimeState: "removed",
+        dataState: "removed",
+        stop: { action: "discard" },
+      });
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(() => assertRuntimeCompletionAllowed(mode, true)).toThrow(
+        /protected runtime/,
+      );
+      expect(() => assertRuntimeCompletionAllowed(mode, false)).not.toThrow();
+    },
+  );
+  it("cleans after failed or cancelled work, aggregates discard faults, and skips unowned preflight failure", async () => {
+    const operationError = new Error("cancelled operation"),
+      cleanupError = new Error("discard failed");
+    const cleanup = vi.fn(async () => {
+      throw cleanupError;
+    });
+    await expect(
+      applyRuntimePersistence({
+        mode: "discard-after-run",
+        operation: async () => {
+          throw operationError;
+        },
+        stop: cleanup,
+      }),
+    ).rejects.toMatchObject({ errors: [operationError, cleanupError] });
+    cleanup.mockClear();
+    await expect(
+      applyRuntimePersistence({
+        mode: "discard-after-run",
+        operation: async () => {
+          throw operationError;
+        },
+        stop: cleanup,
+        canStop: () => false,
+      }),
+    ).rejects.toBe(operationError);
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  it("runs opt-in discard cleanup under the cancellation shield", async () => {
+    const signals = new EventEmitter();
+    const cleanup = vi.fn(async () => {
+      expect(getOperationCancellationSignal()).toBeUndefined();
+      return { action: "discard" };
+    });
+    await expect(
+      runWithOperationCancellation({
+        signalTarget: signals,
+        input: null,
+        task: () =>
+          applyRuntimePersistence({
+            mode: "discard-on-application-exit",
+            operation: async () => {
+              signals.emit("SIGINT");
+              throw getOperationCancellationSignal().reason;
+            },
+            stop: cleanup,
+          }),
+      }),
+    ).rejects.toMatchObject({ code: "OPERATION_CANCELLED", exitCode: 130 });
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(signals.eventNames()).toEqual([]);
   });
 });

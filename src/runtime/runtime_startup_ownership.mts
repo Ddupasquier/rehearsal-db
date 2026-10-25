@@ -12,12 +12,15 @@ import {
 } from "../shared/cancellation.mjs";
 import { runOwnedProcess } from "../shared/owned_process.mjs";
 import { assertDockerResourceLabels } from "../targets/docker_resource_ownership.mjs";
-import { assertLocalDockerContext } from "./local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "./local_docker_context.mjs";
 import {
   assertRuntimeConfigurationBinding,
   runtimeConfigurationSha256,
 } from "./configuration_binding.mjs";
-import { shouldStopRuntime } from "./persistence.mjs";
+import { runtimeCompletionAction } from "./persistence.mjs";
 
 export interface StartupContainer {
   readonly id: string;
@@ -29,12 +32,17 @@ type Runner = (
   command: string,
   args: readonly string[],
   cwd: string,
+  environment?: NodeJS.ProcessEnv,
 ) => SpawnSyncReturns<string>;
-const inspectCommand: Runner = (command, args, cwd) =>
+const inspectCommand: Runner = (command, args, cwd, environment) =>
   spawnSync(command, args, {
     cwd,
     encoding: "utf8",
-    env: createCleanProcessEnvironment(),
+    env:
+      environment ??
+      (command === "docker"
+        ? scopedDockerEnvironment()
+        : createCleanProcessEnvironment()),
     timeout: 5000,
     maxBuffer: 2 * 1024 * 1024,
   });
@@ -221,7 +229,10 @@ export const withRuntimeStartupCleanup = async <Value,>({
   if (
     ownerOperationId === undefined ||
     (action !== "start" &&
-      !(action === "run" && shouldStopRuntime(config.lifecycle.run)))
+      !(
+        action === "run" &&
+        runtimeCompletionAction(config.lifecycle.run) !== null
+      ))
   )
     return task();
   if (!/^[a-f0-9]{64}$/u.test(ownerOperationId))
@@ -260,12 +271,15 @@ export const withRuntimeStartupCleanup = async <Value,>({
       );
   };
   await assertBinding();
+  const environment = scopedDockerEnvironment({ endpoint: engine.endpoint });
+  const scopedRun: Runner = (command, args, cwd, env) =>
+    run(command, args, cwd, env ?? environment);
   const target = {
     projectRoot,
     endpoint: engine.endpoint,
     projectId: config.runtime.projectId,
     provider: config.runtime.target,
-    run,
+    run: scopedRun,
   };
   let before: readonly StartupContainer[] | null = null;
   const capture = (): void => {
@@ -323,7 +337,7 @@ export const withRuntimeStartupCleanup = async <Value,>({
               ...ids,
             ],
             cwd: projectRoot,
-            env: createCleanProcessEnvironment(),
+            env: environment,
             stdin: "ignore",
             signal: AbortSignal.timeout(20_000),
             cancellationGraceMs: 5000,

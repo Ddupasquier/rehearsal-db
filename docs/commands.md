@@ -23,6 +23,82 @@ queue metadata only. It does not stop processes/containers or alter databases.
 Waiting requests can be cancelled; expiry never steals a live holder. Read-only
 inspection does not clean stale records or create state directories.
 
+## Completed container retirement
+
+Builds advertising `rehearsalContracts.containerRetirement: 1` provide container-only
+retirement through `cleanup containers` and the public
+`@rehearsal-db/core/resource-lifecycle` export. PostgreSQL `stop` uses it automatically,
+with a private receipt that lets `start` reconstruct the container around its retained
+volume. Use ordinary `stop` for a resumable configured PostgreSQL runtime.
+
+For separately owned completed container helpers, supply a versioned claims file:
+
+```json
+{
+  "schemaVersion": 1,
+  "claims": [
+    {
+      "fullId": "<exact full 64-character container ID>",
+      "expectedLabels": { "com.docker.compose.project": "my-completed-test" },
+      "completedDisposable": true
+    }
+  ]
+}
+```
+
+```bash
+npx --no-install rehearsal cleanup containers --proposal=completed-containers.json --json
+npx --no-install rehearsal cleanup containers --proposal=completed-containers.json \
+  --write --confirm-cleanup=<consentDigest-from-preview> --json
+```
+
+Declare completion only after checking the owning session and preserving any required
+container writable-layer files and diagnostics. A stopped container is not proof of
+completion. The generic API preserves Docker volumes and bind-mounted files; its caller
+owns the application's reconstruction procedure. It does not create a PostgreSQL resume
+receipt for an arbitrary manually adopted container. Existing private runtime markers,
+credentials and recovery receipts must remain available.
+
+The preview pins exact IDs, labels, mounted volume identities and local daemon. Apply
+rechecks them and uses non-forced container removal without deleting volumes. Inspect
+each outcome on failure; unknown preservation is never reported as success. This does
+not remove shared images, retained databases or foreign workloads. See the
+[owning lifecycle policy](runtime-lifecycle.md#completed-container-retirement).
+
+## Verified baseline sizing
+
+Builds advertising `rehearsalContracts.baselineSizing: 1` provide
+`npx --no-install rehearsal inspect sizing --json`. This verifies the active
+immutable baseline and reports its complete sanitized row count, byte sizes and
+available representative-shape evidence. It starts no engine and writes no files.
+Missing source counts or shape evidence remain unknown; a small baseline is not
+proof of production fidelity or runtime performance. See
+[baseline sizing and COPY reuse](configuration.md#verified-copy-encoding-reuse-and-baseline-sizing).
+
+## Synthetic managed-protocol prototype
+
+Development builds advertising `rehearsalContracts.managedPrototype: 1` expose a
+local protocol prototype. It accepts only its fixed generated 100-row synthetic
+input. It is not a hosted service, a customer-data upload path, a network sandbox
+or proof of tenant isolation, hard memory limits or service cost.
+
+```bash
+npx --no-install rehearsal managed example --json > synthetic-request.json
+npx --no-install rehearsal managed plan --proposal=synthetic-request.json --json
+npx --no-install rehearsal managed prototype --proposal=synthetic-request.json \
+  --confirm-managed=<consentSha256-from-plan> --json
+```
+
+The exact confirmation binds the input, tenant, expiry and quotas. Changed or
+expired requests require a fresh plan. The worker has bounded runtime and output;
+cancellation stops the owned worker and attempts cleanup. A cleanup failure is
+reported as quarantined, never successful cleanup. Its returned recovery request
+and confirmation may be reviewed and supplied to `managed recover --proposal=... \
+--confirm-managed=... --json`. Recovery refuses changed ownership, a live worker,
+foreign files or a mismatched receipt; it never recursively removes unknown data.
+An overdue recovery deadline is reported for review, not automatically deleted.
+Keep retained paths and recovery receipts until cleanup is confirmed.
+
 ## Guided mode
 
 For editor-style review, `npx rehearsal inspect plan --json` returns a bounded,
@@ -349,6 +425,15 @@ never starts Docker, Colima, a database, or an application. It does not read `.e
 files, follow project-file symlinks, inspect private rows, contact a database, or execute
 project code. No configuration is written by this command.
 
+`discover`, setup previews and `doctor` also report versioned `containerEngines`
+options for the detected host. The current verified local Docker selection is
+preserved automatically. Other installed tools and local contexts are choices,
+not proof of vendor compatibility or lower memory use. Alternate daemons are not
+contacted. Use a scoped `DOCKER_CONTEXT=your-local-context npx rehearsal doctor`
+override in macOS/Linux/WSL shells to review another engine without changing the
+global context. Changing engines never migrates retained database volumes. See
+[engine selection](runtime-lifecycle.md#machine-aware-engine-selection).
+
 ### Machine-readable contract
 
 `--json` returns one JSON object and no decorative terminal output. Successful and
@@ -578,10 +663,14 @@ configured database target, runs dependent preparation commands, and launches
 `application.startCommand` with the declared local environment mappings. It waits for
 `application.readiness`, then stays attached until `Ctrl+C` or `Ctrl+Z`. On exit it stops
 only the application process group it launched, then applies `lifecycle.open`. The
-default `keep-until-stop` leaves databases running; `stop-on-application-exit` stops them
+default `stop-on-application-exit` stops them
 with database and Storage changes preserved. Likewise, `lifecycle.run` can remain
-`keep-until-stop` or use `stop-after-run` for bounded automation. JSON results include
-the selected mode, final runtime state, and preserved-data guarantee.
+explicit `keep-until-stop`, but defaults to `stop-after-run` for bounded work. Explicit
+`discard-after-run` and `discard-on-application-exit` instead remove the owned disposable
+runtime and its data volumes automatically, including after a subsequent proof failure or
+interruption. Protected targets refuse these destructive modes. JSON reports the selected
+mode, final state and whether runtime data was preserved or removed. See
+[the lifecycle contract](runtime-lifecycle.md#what-remains-after-a-command).
 While the ready application or copied-account sign-in session is attached, terminal
 `Ctrl+C` and `Ctrl+Z` are handled as control bytes rather than suspending npm wrappers.
 Rehearsal restores the prior terminal mode after retiring its owned application; it

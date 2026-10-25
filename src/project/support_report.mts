@@ -33,6 +33,9 @@ interface DoctorCheck {
 }
 
 interface DoctorReport {
+  readonly containerEngines?: {
+    readonly selected: { readonly serverVersion: string } | null;
+  };
   readonly state: string;
   readonly checks: readonly DoctorCheck[];
   readonly ambientHostedVariables?: Readonly<{
@@ -126,11 +129,18 @@ export const collectRehearsalSupportReport = async (
         args: ["--version"],
         runCommand,
       }),
-      dockerServer: inspectTool({
-        command: "docker",
-        args: ["info", "--format", "{{.ServerVersion}}"],
-        runCommand,
-      }),
+      // Reuse the doctor's selected, local, pinned observation; never probe another default daemon.
+      dockerServer: doctor.containerEngines?.selected
+        ? {
+            status: "available",
+            version: redactDiagnosticValue(
+              doctor.containerEngines.selected.serverVersion
+                .trim()
+                .split(/\r?\n/u)[0]!
+                .slice(0, 200),
+            ),
+          }
+        : { status: "unavailable" },
     },
     readiness: {
       state: doctor.state,
