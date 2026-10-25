@@ -687,6 +687,10 @@ containers, or data volumes. Review the digest, then rerun the identical selecti
 `--write --confirm-cleanup=FULL_DIGEST`. In-use, current, outside-policy, and stale
 selections are refused. Image sizes are upper-bound estimates because layers may be shared.
 
+Image previews and writes use the selected local engine and scoped Docker configuration.
+Confirmation binds the context and endpoint identity plus the daemon ID. If that binding
+changes, create a fresh preview before applying cleanup.
+
 `start`, `stop`, and `discard` can select one configured environment with
 `--target=primary` or a declared dependent-target name. With no selector, the existing
 whole-stack ordering applies. Protected environments refuse data replacement and discard.

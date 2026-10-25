@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import {
   chmod,
   mkdir,
   mkdtemp,
   readdir,
+  realpath,
   rm,
   stat,
   writeFile,
@@ -86,6 +88,7 @@ const makeProject = async () => {
 };
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(
     roots.splice(0).map(async (root) => {
       await makeTreeWritable(root);
@@ -362,4 +365,243 @@ describe("Rehearsal cleanup", () => {
       "sha256:v16.2",
     ]);
   });
+});
+
+const boundCleanupFixture = () => {
+  const oldId = "sha256:" + "a".repeat(64),
+    newestId = "sha256:" + "b".repeat(64);
+  const oldTag = "public.ecr.aws/supabase/postgres:old";
+  const state = {
+    context: "reviewed",
+    endpoint: "unix:///synthetic/cleanup.sock",
+    daemon: "reviewed-daemon",
+    afterTag: () => {},
+  };
+  const calls = [],
+    removed = [];
+  const run = (_command, args, _cwd, env) => {
+    calls.push({ args: [...args], env });
+    const ok = (stdout = "") => ({ status: 0, stdout, stderr: "" });
+    if (args[0] === "context") {
+      if (args[1] === "show") return ok(state.context);
+      if (args[1] === "ls") return ok(state.context);
+      return ok(
+        args[3] ===
+          "{{if or .TLSMaterial .Endpoints.docker.SkipTLSVerify}}true{{else}}false{{end}}"
+          ? "false"
+          : JSON.stringify(state.endpoint),
+      );
+    }
+    expect(args[0]).toBe("--host");
+    expect(env.DOCKER_HOST).toBe(args[1]);
+    const a = args.slice(2);
+    if (a[0] === "info") return ok(JSON.stringify(state.daemon));
+    if (a[0] === "system") return ok();
+    if (a[0] === "container" && a[1] === "ls") return ok();
+    if (a[0] === "image" && a[1] === "ls") return ok(oldId + "\n" + newestId);
+    if (a[0] === "image" && a[1] === "inspect" && a[3] === "{{json .}}")
+      return ok(
+        [
+          {
+            Id: oldId,
+            Created: "2026-01-01T00:00:00Z",
+            Size: 100,
+            RepoTags: [oldTag],
+          },
+          {
+            Id: newestId,
+            Created: "2026-02-01T00:00:00Z",
+            Size: 100,
+            RepoTags: ["public.ecr.aws/supabase/postgres:new"],
+          },
+        ]
+          .map(JSON.stringify)
+          .join("\n"),
+      );
+    if (a[0] === "image" && a[1] === "inspect" && a[3] === "{{.Id}}") {
+      state.afterTag();
+      return ok(oldId);
+    }
+    if (a[0] === "image" && a[1] === "rm") {
+      removed.push(a[2]);
+      return ok();
+    }
+    throw new Error("Unexpected synthetic cleanup command");
+  };
+  return { state, calls, removed, inspection: { run }, oldTag };
+};
+describe("selected cleanup engine binding", () => {
+  it("preserves explicit context/config and removes only reviewed unused tags on the pinned host", async () => {
+    const root = await makeProject(),
+      f = boundCleanupFixture();
+    vi.stubEnv("DOCKER_CONTEXT", f.state.context);
+    vi.stubEnv("DOCKER_HOST", "ssh://ignored-by-context");
+    vi.stubEnv("DOCKER_CONFIG", root);
+    const plan = await planRehearsalCleanup({
+      projectRoot: root,
+      includeImages: true,
+      imagesOnly: true,
+      inspection: f.inspection,
+    });
+    expect(plan.docker).toMatchObject({
+      engineIdentity: expect.stringMatching(/^[a-f0-9]{64}$/),
+      daemonId: f.state.daemon,
+      disk: null,
+    });
+    const done = await applyRehearsalCleanup({
+      projectRoot: root,
+      plan,
+      confirmation: plan.digest,
+      inspection: f.inspection,
+    });
+    expect(done.imagesRemoved).toEqual([f.oldTag]);
+    expect(f.removed).toEqual([f.oldTag]);
+    const canonical = await realpath(root);
+    expect(
+      f.calls.every(
+        ({ env }) => env.DOCKER_CONFIG === canonical && !env.DOCKER_CONTEXT,
+      ),
+    ).toBe(true);
+    expect(
+      f.calls
+        .filter(({ args }) => args[0] !== "context")
+        .every(
+          ({ args }) =>
+            args.slice(0, 2).join(" ") === `--host ${f.state.endpoint}`,
+        ),
+    ).toBe(true);
+    expect(JSON.stringify(plan)).not.toContain(canonical);
+    expect(
+      f.calls.some(
+        ({ args }) => args.includes("prune") || args.includes("--force"),
+      ),
+    ).toBe(false);
+  });
+  it.each(["endpoint", "daemon"])(
+    "refuses %s drift after preview before removing any image",
+    async (field) => {
+      const root = await makeProject(),
+        f = boundCleanupFixture();
+      const plan = await planRehearsalCleanup({
+        projectRoot: root,
+        includeImages: true,
+        imagesOnly: true,
+        inspection: f.inspection,
+      });
+      if (field === "endpoint")
+        f.state.endpoint = "unix:///synthetic/replacement.sock";
+      else f.state.daemon = "replacement-daemon";
+      await expect(
+        applyRehearsalCleanup({
+          projectRoot: root,
+          plan,
+          confirmation: plan.digest,
+          inspection: f.inspection,
+        }),
+      ).rejects.toThrow("changed after the preview");
+      expect(f.removed).toEqual([]);
+    },
+  );
+  it.each(["endpoint", "daemon"])(
+    "rechecks %s immediately before mutation",
+    async (field) => {
+      const root = await makeProject(),
+        f = boundCleanupFixture();
+      const plan = await planRehearsalCleanup({
+        projectRoot: root,
+        includeImages: true,
+        imagesOnly: true,
+        inspection: f.inspection,
+      });
+      f.state.afterTag = () => {
+        if (field === "endpoint")
+          f.state.endpoint = "unix:///synthetic/replacement.sock";
+        else f.state.daemon = "replacement-daemon";
+      };
+      await expect(
+        applyRehearsalCleanup({
+          projectRoot: root,
+          plan,
+          confirmation: plan.digest,
+          inspection: f.inspection,
+        }),
+      ).rejects.toThrow("daemon changed after preview");
+      expect(f.removed).toEqual([]);
+    },
+  );
+  it("refuses a legacy unbound image plan and unknown daemon identity", async () => {
+    const root = await makeProject(),
+      f = boundCleanupFixture();
+    const plan = await planRehearsalCleanup({
+      projectRoot: root,
+      includeImages: true,
+      imagesOnly: true,
+      inspection: f.inspection,
+    });
+    const legacyIdentity = {
+      projectId: plan.projectId,
+      engineIdentity: plan.docker.engineIdentity,
+      imagesOnly: plan.imagesOnly,
+      protectedRuntime: plan.runtime.protected,
+      retainBaselineGenerations: plan.retainBaselineGenerations,
+      baselineGenerations: plan.baselines.removed,
+      runtime: plan.runtime.included && plan.runtime.detected,
+      images: plan.images.candidates.map(({ id, tags }) => ({ id, tags })),
+    };
+    const legacy = {
+      ...plan,
+      docker: { ...plan.docker, daemonId: undefined },
+      digest: createHash("sha256")
+        .update(JSON.stringify(legacyIdentity))
+        .digest("hex"),
+    };
+    await expect(
+      applyRehearsalCleanup({
+        projectRoot: root,
+        plan: legacy,
+        confirmation: legacy.digest,
+        inspection: f.inspection,
+      }),
+    ).rejects.toThrow();
+    expect(f.removed).toEqual([]);
+    f.state.daemon = "";
+    const unknown = await planRehearsalCleanup({
+      projectRoot: root,
+      includeImages: true,
+      imagesOnly: true,
+      inspection: f.inspection,
+    });
+    expect(unknown.docker.available).toBe(false);
+    expect(unknown.images.inspected).toBe(false);
+  });
+  it("keeps baseline-only preview usable when Docker is unknown without contacting fallback", async () => {
+    const root = await makeProject();
+    const run = vi.fn(() => ({ status: 1, stdout: "", stderr: "" }));
+    const plan = await planRehearsalCleanup({
+      projectRoot: root,
+      inspection: { run },
+    });
+    expect(plan.docker).toMatchObject({ available: false, disk: null });
+    expect(plan.baselines.available).toBe(true);
+    expect(run.mock.calls.every(([, args]) => args[0] === "context")).toBe(
+      true,
+    );
+  });
+  it.each([{ DOCKER_HOST: "ssh://remote" }, { DOCKER_TLS_VERIFY: "1" }])(
+    "refuses explicit foreign selection without fallback: %s",
+    async (env) => {
+      const root = await makeProject(),
+        f = boundCleanupFixture();
+      for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
+      await expect(
+        planRehearsalCleanup({
+          projectRoot: root,
+          includeImages: true,
+          inspection: f.inspection,
+        }),
+      ).rejects.toThrow();
+      expect(f.calls).toEqual([]);
+      expect(f.removed).toEqual([]);
+    },
+  );
 });

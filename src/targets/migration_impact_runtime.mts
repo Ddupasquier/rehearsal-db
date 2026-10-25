@@ -6,12 +6,14 @@ import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
 import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
-import { isLocalDockerEndpoint } from "../runtime/local_docker_context.mjs";
+import {
+  assertLocalDockerContext,
+  scopedDockerEnvironment,
+} from "../runtime/local_docker_context.mjs";
 import { diagnoseMigrationFailure } from "../runtime/migration_failure.mjs";
 import { holdPathAncestry } from "../shared/held_path_ancestry.mjs";
 import type { HeldPathAncestry } from "../shared/held_path_ancestry.mjs";
 import { runOwnedProcess } from "../shared/owned_process.mjs";
-import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
 import { assertDockerResourceLabels } from "./docker_resource_ownership.mjs";
 
 export type MigrationImpactRuntimeFailureReason =
@@ -43,6 +45,7 @@ export interface OpenMigrationImpactRuntimeOptions {
   readonly baseline: BaselineManifest;
   readonly signal?: AbortSignal;
   readonly runProcessImplementation?: typeof runOwnedProcess;
+  readonly resolveEngineSelection?: typeof assertLocalDockerContext;
 }
 type Json = Record<string, unknown>;
 const INSPECTION_BYTES = 65536;
@@ -113,13 +116,13 @@ export async function openMigrationImpactRuntime(
     fail("ownership_mismatch");
   }
 
-  const readReceipt = async () => {
+  const readPrivateReceipt = async (filename: string) => {
     cancelled();
     let ancestry: HeldPathAncestry | undefined;
     try {
       ancestry = await holdPathAncestry(receiptDirectory);
       await ancestry.assertUnchanged();
-      const path = join(ancestry.path, "baseline.json"),
+      const path = join(ancestry.path, filename),
         leaf = await lstat(path, { bigint: true });
       if (
         !leaf.isFile() ||
@@ -175,28 +178,8 @@ export async function openMigrationImpactRuntime(
           fail("stale_runtime");
         await ancestry.assertUnchanged();
         const contents = bytes.subarray(0, length);
-        const marker = object(
-          normalizeRuntimeMarkerProtocol(
-            JSON.parse(
-              new TextDecoder("utf-8", { fatal: true }).decode(contents),
-            ),
-          ),
-        );
-        if (
-          marker.target !== provider ||
-          marker.generationId !== baseline.generationId ||
-          marker.dataSha256 !== dataSha256 ||
-          (postgres
-            ? marker.formatVersion !== 1 ||
-              marker.image !== postgres.image ||
-              typeof marker.databasePassword !== "string" ||
-              marker.databasePassword.length < 32
-            : marker.formatVersion !== baseline.formatVersion ||
-              marker.schemaSha256 !==
-                (baseline.files["production-schema.sql"]?.sha256 ?? null))
-        )
-          fail("stale_runtime");
         return {
+          contents,
           sha256: digest(contents),
           inode: `${before.dev}:${before.ino}:${before.ctimeNs}:${before.mtimeNs}`,
         };
@@ -215,8 +198,62 @@ export async function openMigrationImpactRuntime(
       }
     }
   };
+  const readReceipt = async () => {
+    const file = await readPrivateReceipt("baseline.json");
+    let raw: Json, marker: Json;
+    try {
+      raw = object(
+        JSON.parse(
+          new TextDecoder("utf-8", { fatal: true }).decode(file.contents),
+        ),
+      );
+      marker = object(normalizeRuntimeMarkerProtocol(raw));
+    } catch {
+      fail("stale_runtime");
+    }
+    if (
+      marker.target !== provider ||
+      marker.generationId !== baseline.generationId ||
+      marker.dataSha256 !== dataSha256 ||
+      (postgres
+        ? marker.formatVersion !== 1 ||
+          marker.image !== postgres.image ||
+          typeof marker.databasePassword !== "string" ||
+          marker.databasePassword.length < 32
+        : marker.formatVersion !== baseline.formatVersion ||
+          marker.schemaSha256 !==
+            (baseline.files["production-schema.sql"]?.sha256 ?? null))
+    )
+      fail("stale_runtime");
+    return {
+      sha256: file.sha256,
+      inode: file.inode,
+      protectedPostgresql:
+        raw.target === "postgresql-retired" &&
+        raw.containerRetirementProtocol === 1,
+    };
+  };
   const initialReceipt = await readReceipt();
-  let endpoint: string | undefined;
+  const inheritedEnvironment = { ...process.env };
+  const resolveEngine =
+    options.resolveEngineSelection ?? assertLocalDockerContext;
+  const selectEngine = (context?: string) => {
+    try {
+      return resolveEngine({
+        cwd: root,
+        inheritedEnvironment,
+        ...(context ? { context } : {}),
+      });
+    } catch {
+      fail("ownership_mismatch");
+    }
+  };
+  const local = selectEngine(),
+    endpoint = local.endpoint;
+  const environment = scopedDockerEnvironment({
+    inheritedEnvironment,
+    endpoint,
+  });
   const invoke = async (
     args: readonly string[],
     input?: string,
@@ -226,11 +263,9 @@ export async function openMigrationImpactRuntime(
     try {
       const result = await run({
         command: "docker",
-        args,
+        args: ["--host", endpoint, ...args],
         cwd: root,
-        env: createCleanProcessEnvironment({
-          overrides: { DOCKER_HOST: endpoint },
-        }),
+        env: environment,
         signal,
         stdin: "ignore",
         ...(input === undefined ? {} : { input }),
@@ -277,20 +312,7 @@ export async function openMigrationImpactRuntime(
       fail("runtime_unavailable");
     }
   };
-  const context = (await invoke(["context", "show"])).trim();
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/u.test(context))
-    fail("ownership_mismatch");
-  const selected = parse(
-    await invoke([
-      "context",
-      "inspect",
-      "--format",
-      "{{json .Endpoints.docker.Host}}",
-      context,
-    ]),
-  );
-  if (!isLocalDockerEndpoint(selected)) fail("ownership_mismatch");
-  endpoint = selected as string;
+  const context = local.context;
   const engineId = async () => {
     const value = parse(await invoke(["info", "--format", "{{json .ID}}"]));
     if (typeof value !== "string" || !/^[a-zA-Z0-9:-]{1,128}$/u.test(value))
@@ -301,6 +323,51 @@ export async function openMigrationImpactRuntime(
   const expectedName = postgres
     ? `${projectId}-postgresql`
     : `supabase_db_${projectId}`;
+  let initialRetirement: { sha256: string; inode: string } | undefined;
+  const assertRetiredImage = async (value: Json) => {
+    if (!postgres || !initialReceipt.protectedPostgresql)
+      fail("ownership_mismatch");
+    const file = await readPrivateReceipt("container-retirement.json");
+    let stored: Json, receipt: Json, binding: Json;
+    try {
+      stored = object(
+        JSON.parse(
+          new TextDecoder("utf-8", { fatal: true }).decode(file.contents),
+        ),
+      );
+      receipt = object(stored.receipt);
+      binding = object(stored.binding);
+    } catch {
+      fail("ownership_mismatch");
+    }
+    if (
+      stored.schemaVersion !== 1 ||
+      !["prepared", "completed"].includes(String(stored.state)) ||
+      stored.projectId !== projectId ||
+      stored.markerSha256 !== initialReceipt.sha256 ||
+      stored.markerProtectionProtocol !== 1 ||
+      receipt.schemaVersion !== 1 ||
+      receipt.projectId !== projectId ||
+      receipt.containerName !== expectedName ||
+      receipt.image !== postgres.image ||
+      receipt.imageId !== value.imageId ||
+      value.image !== receipt.imageId ||
+      receipt.generationId !== baseline.generationId ||
+      receipt.dataSha256 !== dataSha256 ||
+      receipt.engineIdentity !== local.identity ||
+      binding.context !== context ||
+      binding.endpoint !== endpoint ||
+      binding.daemonId !== engine
+    )
+      fail("ownership_mismatch");
+    if (
+      initialRetirement &&
+      (initialRetirement.sha256 !== file.sha256 ||
+        initialRetirement.inode !== file.inode)
+    )
+      fail("stale_runtime");
+    initialRetirement = { sha256: file.sha256, inode: file.inode };
+  };
   const inspect = async (id: string) => {
     const value = object(
       parse(
@@ -336,11 +403,9 @@ export async function openMigrationImpactRuntime(
     if (postgres) {
       const ports = object(value.ports),
         mappings = ports["5432/tcp"];
-      if (
-        value.image !== postgres.image ||
-        !Array.isArray(mappings) ||
-        mappings.length !== 1
-      )
+      if (value.image !== postgres.image) await assertRetiredImage(value);
+      else if (initialRetirement) fail("stale_runtime");
+      if (!Array.isArray(mappings) || mappings.length !== 1)
         fail("ownership_mismatch");
       const mapping = object(mappings[0]);
       if (
@@ -354,6 +419,12 @@ export async function openMigrationImpactRuntime(
   const container = await inspect(expectedName);
   const assertCurrent = async (): Promise<void> => {
     cancelled();
+    const selected = selectEngine(context);
+    if (
+      selected.identity !== local.identity ||
+      selected.dockerConfig !== local.dockerConfig
+    )
+      fail("stale_runtime");
     const currentReceipt = await readReceipt();
     if (
       currentReceipt.sha256 !== initialReceipt.sha256 ||

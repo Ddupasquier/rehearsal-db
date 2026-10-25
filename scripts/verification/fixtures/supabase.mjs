@@ -165,6 +165,58 @@ const executeCliOrThrow = ({ cwd, args, label, environment }) => {
   return result;
 };
 
+// A completed default run closes its owned stack. Resume explicitly only for
+// this fixture's next active SQL/Storage/identity proof phase; never reset here.
+const resumeAfterDefaultRun = ({ cwd, runData, label }) => {
+  const lifecycle = runData?.lifecycle;
+  if (
+    lifecycle?.mode !== "stop-after-run" ||
+    lifecycle.runtimeState !== "stopped" ||
+    lifecycle.dataState !== "preserved" ||
+    lifecycle.stop?.action !== "stop"
+  ) {
+    throw new Error(
+      `${label} did not report the data-preserving bounded default.`,
+    );
+  }
+  const running = runLocalCommand(
+    "docker",
+    [
+      "ps",
+      "--filter",
+      `label=com.supabase.cli.project=${projectId}`,
+      "--format",
+      "{{.ID}}",
+    ],
+    { capture: true, cwd },
+  ).trim();
+  if (running) {
+    throw new Error(
+      `${label} left an owned Supabase container running after completion.`,
+    );
+  }
+  const volumes = runLocalCommand(
+    "docker",
+    [
+      "volume",
+      "ls",
+      "--filter",
+      `label=com.supabase.cli.project=${projectId}`,
+      "--format",
+      "{{.Name}}",
+    ],
+    { capture: true, cwd },
+  ).trim();
+  if (!volumes) {
+    throw new Error(`${label} did not preserve its owned runtime volumes.`);
+  }
+  executeCliOrThrow({
+    cwd,
+    args: ["start", "--json"],
+    label: `${label} resume for independent proofs`,
+  });
+};
+
 const runtimeExists = (runtimeWorkdir) =>
   stat(runtimeWorkdir)
     .then(() => true)
@@ -462,6 +514,11 @@ const proveMigrationFailureRecovery = async ({
       )
     )
       fail(`${testCase.label} application proof`);
+    resumeAfterDefaultRun({
+      cwd,
+      runData: recovered,
+      label: `${testCase.label} corrected run`,
+    });
     cli(["verify", "--json"], `${testCase.label} correction verify`);
     assertActivity(`${testCase.label} correction`);
     await assertPreserved(`${testCase.label} correction`);
@@ -909,7 +966,16 @@ const main = async () => {
         "--debug",
       ],
     });
-    commandsProven.push("run");
+    resumeAfterDefaultRun({
+      cwd,
+      runData: JSON.parse(validRun.stdout).data,
+      label: "default run",
+    });
+    commandsProven.push(
+      "run",
+      "default run stops owned containers and preserves volumes",
+      "start resumes before independent SQL proof",
+    );
     const validProof = runPsql({
       cwd,
       sql: `select count(*) = 1
