@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { setTimeout as pause } from "node:timers/promises";
 import {
+  completeImpactBlockedMeasurement,
   classifyImpactGateCommand,
   createImpactSqlGate,
   waitForImpactGateReady,
@@ -702,6 +703,145 @@ describe("fixture-only public impact SQL gate", () => {
     } finally {
       await f.gate.cleanup();
       await rm(f.root, { recursive: true });
+    }
+  });
+});
+
+describe("remaining impact lock/cancellation holder phases", () => {
+  it("releases the observed backend holder before delayed CLI postvalidation while still checking the full result", async () => {
+    let clock = 0,
+      heldAt = null,
+      releasedAt = null;
+    const stages = [];
+    const expected = {
+      status: 1,
+      fault: false,
+      stdout: JSON.stringify(
+        sample(Array(7).fill(null), Array(7).fill("lock_timeout")),
+      ),
+    };
+    const client = {
+      child: { kill: vi.fn() },
+      stop: vi.fn(),
+      get completion() {
+        expect(releasedAt).not.toBe(null);
+        stages.push("public-result");
+        clock += 9000;
+        return Promise.resolve(expected);
+      },
+    };
+    const outcome = await completeImpactBlockedMeasurement({
+      client,
+      startedAt: 0,
+      now: () => clock,
+      awaitReady: async () => {
+        clock += 6000;
+        expect(heldAt).toBe(null);
+        stages.push("ready");
+      },
+      hold: async () => {
+        heldAt = clock;
+        stages.push("hold");
+        return { owned: true };
+      },
+      releaseGate: async () => stages.push("sql-release"),
+      waitForLock: async () => {
+        clock += 100;
+        return 42;
+      },
+      waitForBackendGone: async (pid) => {
+        expect(pid).toBe(42);
+        clock += 1000;
+        stages.push("backend-gone");
+      },
+      releaseHolder: async (holder) => {
+        expect(holder).toEqual({ owned: true });
+        releasedAt = clock;
+        stages.push("holder-release");
+      },
+    });
+    expect(releasedAt - heldAt).toBe(1100);
+    expect(outcome.elapsedMilliseconds).toBe(16100);
+    expect(stages).toEqual([
+      "ready",
+      "hold",
+      "sql-release",
+      "backend-gone",
+      "holder-release",
+      "public-result",
+    ]);
+    expect(outcome.result).toBe(expected);
+    expect(
+      assertImpactFixtureCounts(
+        JSON.parse(outcome.result.stdout),
+        options(Array(7).fill(null), Array(7).fill("lock_timeout")),
+      ),
+    ).toBeDefined();
+  });
+  it("does not ignore long full-CLI postvalidation or an expired holder release", async () => {
+    const make = (badRelease = false) => {
+      let clock = 0;
+      return {
+        client: {
+          child: { kill: vi.fn() },
+          stop: vi.fn(),
+          get completion() {
+            clock += 30001;
+            return Promise.resolve({ status: 1 });
+          },
+        },
+        startedAt: 0,
+        now: () => clock,
+        awaitReady: async () => {},
+        hold: async () => ({}),
+        releaseGate: async () => {},
+        waitForLock: async () => 42,
+        waitForBackendGone: async () => {},
+        releaseHolder: async () => {
+          if (badRelease) throw new Error("expired holder");
+        },
+      };
+    };
+    await expect(completeImpactBlockedMeasurement(make())).rejects.toThrow();
+    await expect(completeImpactBlockedMeasurement(make(true))).rejects.toThrow(
+      "expired holder",
+    );
+  });
+  it("ticks the unchanged 10s cancellation bound while backend/holder cleanup is still pending", async () => {
+    vi.useFakeTimers();
+    let backendDone,
+      cliDone,
+      released = false;
+    const backend = new Promise((resolve) => (backendDone = resolve)),
+      completion = new Promise((resolve) => (cliDone = resolve));
+    const client = { child: { kill: vi.fn() }, stop: vi.fn(), completion };
+    const promise = completeImpactBlockedMeasurement({
+      client,
+      cancel: true,
+      startedAt: Date.now(),
+      now: () => Date.now(),
+      awaitReady: async () => {},
+      hold: async () => ({}),
+      releaseGate: async () => {},
+      waitForLock: async () => 42,
+      waitForBackendGone: () => backend,
+      releaseHolder: async () => {
+        released = true;
+      },
+    });
+    const check = expect(promise).rejects.toThrow();
+    try {
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.child.kill).toHaveBeenCalledWith("SIGINT");
+      await vi.advanceTimersByTimeAsync(10000);
+      await check;
+      expect(client.stop).toHaveBeenCalledOnce();
+      expect(released).toBe(false);
+      backendDone();
+      cliDone({ status: 130 });
+      await Promise.resolve();
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

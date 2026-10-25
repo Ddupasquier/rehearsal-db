@@ -277,3 +277,67 @@ export async function createImpactSqlGate({
     },
   };
 }
+
+/** Fixture phases share the original public/cancellation clocks; holder release does not await CLI postvalidation. */
+export async function completeImpactBlockedMeasurement({
+  client,
+  awaitReady,
+  hold,
+  releaseGate,
+  waitForLock,
+  waitForBackendGone,
+  releaseHolder,
+  cancel = false,
+  startedAt,
+  now = () => performance.now(),
+}) {
+  await awaitReady();
+  const holder = await hold();
+  await releaseGate();
+  const pid = await waitForLock();
+  let cancellationStarted = null,
+    timer;
+  if (cancel) {
+    cancellationStarted = now();
+    client.child.kill("SIGINT");
+  }
+  const cleanup = async () => {
+    await waitForBackendGone(pid);
+    await releaseHolder(holder);
+  };
+  let result;
+  try {
+    if (cancel) {
+      // Start this timer at SIGINT, concurrently with backend disappearance and release.
+      const remaining = 10000 - (now() - cancellationStarted);
+      if (remaining <= 0) throw refused();
+      const expired = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          client.stop();
+          reject(refused());
+        }, remaining);
+      });
+      [result] = await Promise.race([
+        Promise.all([client.completion, cleanup()]),
+        expired,
+      ]);
+    } else {
+      await cleanup();
+      result = await client.completion;
+    }
+    const elapsedMilliseconds = Math.round(now() - startedAt);
+    const cancellationMilliseconds = cancel
+      ? Math.round(now() - cancellationStarted)
+      : null;
+    if (
+      elapsedMilliseconds > 30000 ||
+      elapsedMilliseconds < 0 ||
+      (cancel &&
+        (cancellationMilliseconds > 10000 || cancellationMilliseconds < 0))
+    )
+      throw refused();
+    return { result, pid, elapsedMilliseconds, cancellationMilliseconds };
+  } finally {
+    clearTimeout(timer);
+  }
+}
