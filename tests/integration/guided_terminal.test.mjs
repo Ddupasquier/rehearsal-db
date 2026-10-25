@@ -12,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { spawn } from "@lydell/node-pty";
 import { createSyntheticBaselineFromFiles } from "../../dist/src/baseline/builder.mjs";
@@ -31,7 +31,7 @@ const makeTreeWritable = async (path) => {
   }
 };
 
-const runInPty = ({ cwd, interactions, plain, updateState }) =>
+const runInPty = ({ cwd, interactions, plain, updateState, toolPath }) =>
   new Promise((resolve, reject) => {
     const environment = Object.fromEntries(
       Object.entries(process.env).filter(
@@ -53,6 +53,9 @@ const runInPty = ({ cwd, interactions, plain, updateState }) =>
         // update-advisory tests exercise default consent and enabled reminders.
         env: {
           ...environment,
+          ...(toolPath
+            ? { PATH: `${toolPath}${delimiter}${environment.PATH ?? ""}` }
+            : {}),
           ...(updateState
             ? { REHEARSAL_UPDATE_STATE_DIR: updateState }
             : { REHEARSAL_UPDATE_CHECK: "off" }),
@@ -523,16 +526,55 @@ describe("guided terminal journey", () => {
 
   it("offers a privacy-safe support report from the guide", async () => {
     const root = await makeProject();
+    // This real PTY scenario owns navigation and report presentation, not host
+    // tool startup. Each production version probe may take five seconds; using
+    // live Docker/Supabase here makes the ten-second interaction deadline race
+    // unrelated CI tooling. Installed-package fixtures still exercise real tools.
+    const toolPath = join(root, "support-tools");
+    const audit = join(root, "support-tool-calls.jsonl");
+    await mkdir(toolPath, { mode: 0o700 });
+    const toolSource = `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const { basename } = require("node:path");
+const command = basename(process.argv[1]);
+const args = process.argv.slice(2);
+const calls = {
+  npm: { "--version": "11.21.0" },
+  supabase: { "--version": "2.117.0" },
+  docker: { "--version": "Docker version 28.5.1", "info --format {{.ServerVersion}}": "28.5.1" },
+};
+const value = calls[command]?.[args.join(" ")];
+appendFileSync(${JSON.stringify(audit)}, JSON.stringify({ command, args, accepted: typeof value === "string" }) + "\\n", { mode: 0o600 });
+if (typeof value !== "string") process.exit(97);
+console.log(value);
+`;
+    for (const command of ["npm", "supabase", "docker"]) {
+      await writeFile(join(toolPath, command), toolSource, { mode: 0o700 });
+    }
     const output = String(
       await runInPty({
         cwd: root,
         plain: true,
+        toolPath,
         interactions: [
           { after: "What would you like to do? [1]:", write: "2\n" },
           { after: "What would you like to do? [1]:", write: "4\n" },
         ],
       }),
     ).replaceAll("\r", "");
+
+    expect(
+      (await readFile(audit, "utf8")).trim().split("\n").map(JSON.parse),
+    ).toEqual([
+      { command: "npm", args: ["--version"], accepted: true },
+      { command: "supabase", args: ["--version"], accepted: true },
+      { command: "docker", args: ["--version"], accepted: true },
+      {
+        command: "docker",
+        args: ["info", "--format", "{{.ServerVersion}}"],
+        accepted: true,
+      },
+    ]);
 
     expect(output).toContain("REHEARSAL SUPPORT REPORT");
     expect(output).toContain(
