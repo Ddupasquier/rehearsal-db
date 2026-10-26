@@ -214,8 +214,8 @@ describe("documentation site", () => {
       join(repositoryRoot, "docs/vscode.md"),
       "utf8",
     );
-    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.24");
-    expect(source).toContain("rehearsal-vscode/blob/v0.1.24/LICENSE");
+    expect(source).toContain("rehearsal-vscode/releases/tag/v0.1.25");
+    expect(source).toContain("rehearsal-vscode/blob/v0.1.25/LICENSE");
     expect(source).toContain("core also reads bounded");
     expect(source).toContain("No SQL is executed or uploaded");
     expect(source).not.toContain("or project source during passive inspection");
