@@ -121,6 +121,106 @@ catch (error) { console.log(error.message); }`;
     });
   });
 
+  it.each([true, false])(
+    "keeps Supabase health truthful on a bound nondefault Docker config (healthy=%s)",
+    async (healthy) => {
+      const fake = await fakeCommandEnvironment({ dockerReady: true });
+      const dockerConfig = join(fake.root, "private-docker-config");
+      await mkdir(dockerConfig);
+      const endpoint = "unix:///tmp/rehearsal-test-docker.sock";
+      // This command never forwards: success requires the exact scoped engine
+      // AND an explicitly supplied service key, with ambient credentials absent.
+      await writeFile(
+        join(fake.root, "supabase"),
+        `#!/bin/sh
+printf 'supabase %s\\n' "$*" >> ${JSON.stringify(fake.log)}
+[ "$DOCKER_CONFIG" = ${JSON.stringify(dockerConfig)} ] || exit 31
+[ "$DOCKER_HOST" = ${JSON.stringify(endpoint)} ] || exit 32
+[ -z "$DOCKER_CONTEXT" ] || exit 33
+[ "$LOCAL_SERVICE_KEY" = allowlisted ] || exit 34
+[ -z "$HOSTED_SECRET_CANARY" ] || exit 35
+[ "$1" = status ] || exit 36
+${healthy ? `printf '%s\\n' '${localStatus}'; exit 0` : "exit 1"}
+`,
+      );
+      const source = `import { ensureLocalContainerRuntime } from ${JSON.stringify(environmentModule)};
+import { inspectSupabaseRuntimeStatus } from ${JSON.stringify(join(process.cwd(), "dist/src/targets/supabase_status.mjs"))};
+ensureLocalContainerRuntime({ cwd: ${JSON.stringify(fake.root)} });
+const status = await inspectSupabaseRuntimeStatus({
+ cwd: ${JSON.stringify(fake.root)}, runtimeWorkdir: ${JSON.stringify(fake.root)}, projectId: "safe-rehearsal",
+ runtimeMarkerPath: ${JSON.stringify(join(fake.root, "missing-marker.json"))},
+ baselineDataSha256: "${"a".repeat(64)}", baselineSchemaSha256: null,
+ baselineGenerationId: "20260912T120000Z-aaaaaaaaaaaa", candidateSha256: "${"b".repeat(64)}", candidates: [],
+ loadServiceEnvironment: async () => ({ LOCAL_SERVICE_KEY: "allowlisted", DOCKER_HOST: "unix:///foreign.sock", DOCKER_CONFIG: "/foreign" }),
+});
+console.log(JSON.stringify({state:status.state, reason:status.reason}));`;
+      const result = await execute(
+        process.execPath,
+        ["--input-type=module", "--eval", source],
+        {
+          env: {
+            ...fake.env,
+            DOCKER_CONFIG: dockerConfig,
+            DOCKER_CONTEXT: "colima",
+            DOCKER_HOST: "",
+            DOCKER_TLS: "",
+            DOCKER_TLS_VERIFY: "",
+            DOCKER_CERT_PATH: "",
+            HOSTED_SECRET_CANARY: "must-not-leak",
+          },
+        },
+      );
+      expect(JSON.parse(result.stdout)).toEqual({
+        state: healthy ? "running" : "unhealthy",
+        reason: healthy ? null : "health_check_failed",
+      });
+      expect(result.stderr).toBe("");
+      const log = await readFile(fake.log, "utf8");
+      expect(log).toContain("supabase status --workdir");
+      expect(log).not.toMatch(/(?:supabase|colima) (?:start|stop)/u);
+    },
+  );
+
+  it("refuses ambient TLS before executing a Supabase health probe", async () => {
+    const fake = await fakeCommandEnvironment({ dockerReady: true });
+    const source = `import { ensureLocalContainerRuntime, localCommandSucceeds } from ${JSON.stringify(environmentModule)};
+ensureLocalContainerRuntime();
+localCommandSucceeds("supabase", ["status"]);`;
+    await expect(
+      execute(process.execPath, ["--input-type=module", "--eval", source], {
+        env: { ...fake.env, DOCKER_TLS_VERIFY: "1" },
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Explicit selectors were not ignored"),
+    });
+    await expect(readFile(fake.log, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("refuses a reviewed endpoint identity drift before a Supabase health probe", async () => {
+    const fake = await fakeCommandEnvironment({ dockerReady: true });
+    const source = `import { bindRuntimeDockerEnvironment } from ${JSON.stringify(join(process.cwd(), "dist/src/runtime/local_docker_context.mjs"))};
+import { localCommandSucceeds } from ${JSON.stringify(environmentModule)};
+bindRuntimeDockerEnvironment({ expectedIdentity: "${"0".repeat(64)}" });
+localCommandSucceeds("supabase", ["status"]);`;
+    await expect(
+      execute(process.execPath, ["--input-type=module", "--eval", source], {
+        env: {
+          ...fake.env,
+          DOCKER_CONTEXT: "colima",
+          DOCKER_HOST: "",
+          DOCKER_TLS: "",
+          DOCKER_TLS_VERIFY: "",
+          DOCKER_CERT_PATH: "",
+        },
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("reviewed Docker endpoint changed"),
+    });
+    expect(await readFile(fake.log, "utf8")).not.toContain("supabase");
+  });
+
   it("keeps application and full service profiles explicit", () => {
     expect(supabaseExcludedServicesForProfile("application")).toEqual([
       "edge-runtime",

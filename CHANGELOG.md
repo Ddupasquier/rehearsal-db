@@ -35,6 +35,8 @@ a Changelog, and published versions follow Semantic Versioning.
   validated local Docker endpoint and configuration selected by the user. A
   private or nondefault connection no longer makes its own runtime appear foreign;
   remote, TLS, changed and unrelated selections still refuse.
+- Supabase runtime health probes preserve that same validated Docker connection,
+  so status and the editor no longer label a healthy private runtime unhealthy.
 
 ### Breaking changes
 
