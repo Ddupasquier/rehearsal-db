@@ -20,6 +20,18 @@ Already using the GitHub preview through 0.1.18? Follow the
 [one-time migration steps](#move-from-a-preview-through-0118) before installing the new
 identity. This is not an automatic rename or uninstall.
 
+## On this page
+
+- [What you can do](#what-you-can-do)
+- [Requirements and installation](#install-and-open-your-project)
+- [Install from a GitHub VSIX](#direct-github-installation)
+- [Move from an older preview](#move-from-a-preview-through-0118)
+- [Everyday workflow](#everyday-editor-workflow)
+- [Update preferences](#optional-automatic-updates)
+- [Privacy](#privacy-boundary)
+- [License and support](#license-support-and-future-pro)
+- [Try the CLI first](#try-the-free-engine-first)
+
 ## What you can do
 
 - See what Rehearsal detected, what it suggests, and what still needs your decision.
@@ -44,13 +56,26 @@ boundaries, baselines, migration digests, runtime isolation, locks, rollback, an
 
 ## Install and open your project
 
-Use desktop VS Code 1.101 or newer on macOS or Linux and a supported Node.js release
-(22, 24, or 26). You do not need the extension source repository or Test Lab.
+### Before you start
+
+| Requirement      | What you need                                                      |
+| ---------------- | ------------------------------------------------------------------ |
+| Editor           | Desktop VS Code 1.101 or newer                                     |
+| Operating system | macOS or Linux; Windows uses the WSL 2 preview below               |
+| Project runtime  | Node.js 22, 24 or 26 in your project terminal                      |
+| Database runtime | A supported local container engine for container-backed rehearsals |
+
+You do not need the extension source repository or Test Lab.
+
+### Windows: use WSL 2
+
 For a Windows desktop, use the [WSL 2 Linux-workspace setup](getting-started.md#windows-use-a-wsl-2-linux-workspace).
 Since editor 0.1.21, native Windows inspection and foreground actions refuse before launching a child
 process and direct you to Remote-WSL. Install the extension into the Linux extension
 host and keep the project on its Linux filesystem. WSL compatibility remains a preview;
 real WSL core fixtures do not certify a native Remote-WSL editor walkthrough.
+
+### Install from Marketplace
 
 1. Open your application's folder in VS Code—the one containing `package.json` and
    your migrations. Install Rehearsal there if it is missing:
@@ -68,6 +93,8 @@ real WSL core fixtures do not certify a native Remote-WSL editor walkthrough.
    **Rehearsal: Open Dashboard**. The Rehearsal sidebar also has a dashboard button.
 4. Follow **Next best step**. Review the detected project and active configuration;
    setup, source access, migration execution and cleanup keep their own confirmations.
+
+### Core compatibility and setup help
 
 Core and the extension have independent version numbers. This guide targets core
 **1.3.0** and Starter **0.1.24**, only once each is published. See [Updates](updating.md)
@@ -97,12 +124,28 @@ distinction between desktop OS, extension host, architecture and actual database
 
 The verified GitHub VSIX is an alternative to Marketplace. Open the
 [Starter 0.1.24 release](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.24).
-Under **Assets**, download `rehearsal-db-0.1.24.vsix` and `SHA256SUMS`. In a terminal,
-run `shasum -a 256 /path/to/rehearsal-db-0.1.24.vsix` on macOS or
-`sha256sum /path/to/rehearsal-db-0.1.24.vsix` on Linux. Compare the result with that
-release's `SHA256SUMS`; stop if they differ. Do not substitute a local rebuild.
-Then open **Extensions → … → Install from VSIX…** and choose the verified file.
-Save your work and reload only if VS Code asks.
+
+1. Under **Assets**, download `rehearsal-db-0.1.24.vsix` and `SHA256SUMS`.
+2. Calculate the downloaded VSIX's SHA-256:
+
+   **macOS**
+
+   ```sh
+   shasum -a 256 /path/to/rehearsal-db-0.1.24.vsix
+   ```
+
+   **Linux**
+
+   ```sh
+   sha256sum /path/to/rehearsal-db-0.1.24.vsix
+   ```
+
+3. Compare the result with that release's `SHA256SUMS`. **Stop if they differ.**
+   Do not substitute a local rebuild.
+4. Choose **Extensions → … → Install from VSIX…** and select the verified file.
+5. Save your work and reload only if VS Code asks.
+
+[Back to navigation](#on-this-page)
 
 ### Move from a preview through 0.1.18
 
