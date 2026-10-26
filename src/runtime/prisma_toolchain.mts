@@ -65,12 +65,38 @@ export const inspectPrismaToolchain = async ({
       // Directory-boundary ancestry observations plus every final immutable
       // witness detect timestamp/identity drift. This is not atomic openat
       // resolution or a filesystem sandbox against a malicious local owner.
-      const enumerate = async (path: string): Promise<void> => {
-        if (++visited > PRISMA_TOOLCHAIN_LIMITS.maximumEntries) throw invalid();
-        const before = await lstat(path);
+      const enumerate = async (
+        path: string,
+        observed?: Stats,
+      ): Promise<void> => {
+        if (!observed && ++visited > PRISMA_TOOLCHAIN_LIMITS.maximumEntries)
+          throw invalid();
+        const before = observed ?? (await lstat(path));
         if (before.isSymbolicLink()) throw invalid();
         if (before.isDirectory()) {
           await held.assertUnchanged();
+          const pending: string[] = [];
+          const flush = async () => {
+            if (!pending.length) return;
+            const batch = pending.splice(0);
+            if (visited + batch.length > PRISMA_TOOLCHAIN_LIMITS.maximumEntries)
+              throw invalid();
+            visited += batch.length;
+            const observations = await Promise.allSettled(
+              batch.map((child) => lstat(child)),
+            );
+            const failure = observations.find(
+              (result) => result.status === "rejected",
+            );
+            if (failure?.status === "rejected") throw failure.reason;
+            // Finish this entire batch before descending. Recursion therefore
+            // cannot multiply the global four-request metadata bound.
+            for (let i = 0; i < batch.length; i++) {
+              const observation = observations[i]!;
+              if (observation.status !== "fulfilled") throw invalid();
+              await enumerate(batch[i]!, observation.value);
+            }
+          };
           for await (const entry of await opendir(path)) {
             if (entry.name === "node_modules") {
               if (
@@ -81,8 +107,11 @@ export const inspectPrismaToolchain = async ({
                 throw invalid();
               continue;
             }
-            await enumerate(join(path, entry.name));
+            pending.push(join(path, entry.name));
+            if (pending.length === PRISMA_TOOLCHAIN_LIMITS.maximumWorkers)
+              await flush();
           }
+          await flush();
           if (!same(before, await lstat(path))) throw invalid();
           witnesses.push({ path, stat: before });
           await held.assertUnchanged();

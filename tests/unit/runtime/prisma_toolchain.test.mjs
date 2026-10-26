@@ -10,11 +10,55 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { inspectPrismaToolchain } from "../../../dist/src/runtime/prisma_toolchain.mjs";
+
+const metadata = vi.hoisted(() => ({
+  paths: new Set(),
+  seen: new Set(),
+  active: 0,
+  maximum: 0,
+  fail: null,
+  release: null,
+  gate: null,
+  entered: null,
+}));
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    lstat: async (...args) => {
+      const path = String(args[0]);
+      if (!metadata.paths.has(path) || metadata.seen.has(path))
+        return actual.lstat(...args);
+      metadata.seen.add(path);
+      if (metadata.seen.size === 4) metadata.entered?.();
+      metadata.active++;
+      metadata.maximum = Math.max(metadata.maximum, metadata.active);
+      try {
+        if (path === metadata.fail)
+          throw new Error("fixed synthetic metadata refusal");
+        if (metadata.gate) await metadata.gate;
+        else await new Promise((done) => setImmediate(done));
+        return await actual.lstat(...args);
+      } finally {
+        metadata.active--;
+      }
+    },
+  };
+});
 
 const roots = [];
 afterEach(async () => {
+  metadata.release?.();
+  metadata.paths.clear();
+  metadata.seen.clear();
+  metadata.active = 0;
+  metadata.maximum = 0;
+  metadata.fail = null;
+  metadata.gate = null;
+  metadata.release = null;
+  metadata.entered = null;
   for (const root of roots.splice(0))
     await rm(root, { recursive: true, force: true });
 });
@@ -310,4 +354,55 @@ it("bounds simultaneous read buffers including sentinels and releases waiting wo
   releaseAll();
   await expect(acquire(limit + 1)).rejects.toThrow();
   await expect(acquire(0)).rejects.toThrow();
+});
+
+it("batches initial metadata four at a time without multiplying concurrency across nested directories", async () => {
+  const f = await fixture();
+  for (const parent of ["build", "nested/child"]) {
+    await mkdir(join(f.prisma, parent), { recursive: true });
+    for (let i = 0; i < 12; i++) {
+      const path = join(f.prisma, parent, `input-${i}.js`);
+      await writeFile(path, "module.exports=1;\n");
+      metadata.paths.add(path);
+    }
+  }
+  const result = await f.inspect();
+  expect(result.sha256).toMatch(/^[a-f0-9]{64}$/u);
+  expect(metadata.seen.size).toBe(24);
+  expect(metadata.maximum).toBe(4);
+  expect(metadata.active).toBe(0);
+});
+it("settles all admitted metadata requests on refusal before returning", async () => {
+  const f = await fixture();
+  const directory = join(f.prisma, "batch");
+  await mkdir(directory);
+  for (let i = 0; i < 4; i++) {
+    const path = join(directory, `input-${i}.js`);
+    await writeFile(path, "module.exports=1;\n");
+    metadata.paths.add(path);
+  }
+  metadata.fail = join(directory, "input-0.js");
+  metadata.gate = new Promise((done) => {
+    metadata.release = done;
+  });
+  const outcome = f.inspect().then(
+    () => ({ success: true }),
+    (error) => ({ error }),
+  );
+  try {
+    const entered = new Promise((done) => {
+      metadata.entered = () => done(true);
+    });
+    if (metadata.seen.size === 4) metadata.entered();
+    expect(await Promise.race([entered, outcome.then(() => false)])).toBe(true);
+    expect(metadata.seen.size).toBe(4);
+    expect(metadata.active).toBe(3);
+    metadata.release();
+    const result = await outcome;
+    expect(result.error).toBeInstanceOf(Error);
+    expect(metadata.active).toBe(0);
+  } finally {
+    metadata.release();
+    await outcome;
+  }
 });
