@@ -222,7 +222,9 @@ export const localCommandSucceeds = (
     env: createCleanProcessEnvironment({
       overrides: {
         ...environment,
-        ...(command === "docker" ? runtimeDockerEnvironment() : {}),
+        ...(["docker", "supabase"].includes(command)
+          ? runtimeDockerEnvironment()
+          : {}),
       },
     }),
     stdio: "ignore",

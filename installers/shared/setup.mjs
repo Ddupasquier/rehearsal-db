@@ -8,7 +8,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-export const CORE_VERSION = "1.3.0";
+export const CORE_VERSION = "2.0.0";
 export const EXTENSION_ID = "rehearsal-db.rehearsal-db";
 // Standalone pre-install projection of src/shared/host_platform.mts's contract.
 // The focused contract test keeps these values aligned without importing core.
@@ -108,6 +108,10 @@ export const parseSetupArguments = (args) => {
 };
 
 export const planCoreInstallation = (manifest, installedVersion) => {
+  const target = versionParts(CORE_VERSION);
+  if (!target)
+    throw new Error("The maintained setup target must be a stable version.");
+  const targetSeries = new RegExp(`^[~^]?${target[0]}\\.\\d+\\.\\d+$`, "u");
   if (
     manifest.packageManager !== undefined &&
     !/^npm@\d+\./u.test(manifest.packageManager)
@@ -127,20 +131,19 @@ export const planCoreInstallation = (manifest, installedVersion) => {
   if (
     declaration !== undefined &&
     declaration !== "latest" &&
-    !/^[~^]?1\.\d+\.\d+$/u.test(declaration)
+    !targetSeries.test(declaration)
   )
     throw new Error(
-      "The existing Rehearsal source or compatibility series needs manual review; setup will not replace it.",
+      "The existing Rehearsal source or compatibility series needs manual review; setup will not replace it or adopt a different major version.",
     );
   const installed = versionParts(installedVersion);
   if (
     installedVersion !== undefined &&
-    (!installed || installed[0] !== 1 || !declared.length)
+    (!installed || installed[0] !== target[0] || !declared.length)
   )
     throw new Error(
       "The installed Rehearsal package cannot be safely adopted or downgraded by this helper.",
     );
-  const target = versionParts(CORE_VERSION);
   if (installed && compareVersions(installed, target) >= 0)
     return {
       arguments: null,

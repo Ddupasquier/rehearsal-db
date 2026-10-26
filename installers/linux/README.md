@@ -19,4 +19,6 @@ are refused. In WSL request only `--install-cli`, then install the editor compon
 from the Remote - WSL window's Extensions view; `--install` and
 `--install-extension` refuse before installing anything.
 
-See the [shared behavior and boundaries](../README.md) before installation.
+The helper targets exact core 2.0.0 once published. It refuses existing 1.x
+projects rather than adopting a breaking major automatically; review the
+[shared behavior and upgrade boundaries](../README.md) before installation.

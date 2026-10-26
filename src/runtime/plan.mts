@@ -512,6 +512,7 @@ export const inspectRehearsalMigrations = async (
 export const runRehearsalDoctor = async (
   options: RehearsalConfigPathOptions = {},
 ) => {
+  const inheritedEnvironment = { ...process.env };
   const host = await inspectHostPlatform({
     projectRoot: options.projectRoot ?? process.cwd(),
   });
@@ -554,6 +555,30 @@ export const runRehearsalDoctor = async (
     };
   }
   const { config, paths, projectRoot } = loaded;
+  // Resolve the original selectors again rather than overriding an explicit host
+  // with the discovery context. Never verify occupied ports on another engine.
+  const selectedDocker = () => {
+    if (!containerEngines.selected)
+      throw new Error(
+        "Select a verified local engine before inspecting its runtime.",
+      );
+    const selected = assertLocalDockerContext({
+      cwd: projectRoot,
+      inheritedEnvironment,
+    });
+    if (
+      selected.context !== containerEngines.selected.context ||
+      selected.identity !== containerEngines.selected.endpointIdentity
+    )
+      throw new Error("The selected Docker endpoint changed; rerun doctor.");
+    return {
+      selected,
+      environment: scopedDockerEnvironment({
+        inheritedEnvironment,
+        endpoint: selected.endpoint,
+      }),
+    };
+  };
   const requirePostgresqlConfig = () => {
     if (!config.postgresql) {
       throw new Error("The PostgreSQL target is missing its configuration.");
@@ -618,22 +643,11 @@ export const runRehearsalDoctor = async (
           return result.version;
         }
         const postgresql = requirePostgresqlConfig();
-        if (!containerEngines.selected)
-          throw new Error(
-            "Select a verified local engine before inspecting its images.",
-          );
-        const selected = assertLocalDockerContext({
-          cwd: projectRoot,
-          context: containerEngines.selected.context,
-        });
-        if (selected.identity !== containerEngines.selected.endpointIdentity)
-          throw new Error(
-            "The selected Docker endpoint changed; rerun doctor.",
-          );
+        const { selected, environment } = selectedDocker();
         const result = commandAvailable(
           "docker",
           ["--host", selected.endpoint, "image", "inspect", postgresql.image],
-          scopedDockerEnvironment(),
+          environment,
         );
         if (!result.available) {
           throw new Error(
@@ -765,10 +779,13 @@ export const runRehearsalDoctor = async (
         );
         const occupied = availability.filter((entry) => !entry.available);
         if (occupied.length) {
+          const { selected, environment } = selectedDocker();
           if (config.runtime.target === "postgresql") {
             const status = spawnSync(
               "docker",
               [
+                "--host",
+                selected.endpoint,
                 "ps",
                 "--filter",
                 `label=com.rehearsal-db.project=${config.runtime.projectId}`,
@@ -778,7 +795,9 @@ export const runRehearsalDoctor = async (
               {
                 cwd: projectRoot,
                 encoding: "utf8",
-                env: createCleanProcessEnvironment(),
+                env: environment,
+                timeout: 10000,
+                maxBuffer: 65536,
                 stdio: ["ignore", "pipe", "pipe"],
               },
             );
@@ -806,9 +825,9 @@ export const runRehearsalDoctor = async (
             {
               cwd: projectRoot,
               encoding: "utf8",
-              env: createCleanProcessEnvironment({
-                overrides: serviceEnvironment,
-              }),
+              env: { ...serviceEnvironment, ...environment },
+              timeout: 10000,
+              maxBuffer: 65536,
               stdio: ["ignore", "pipe", "pipe"],
             },
           );

@@ -3,7 +3,16 @@ import assert from "node:assert/strict";
 import { isLocalDockerEndpoint } from "../../../dist/src/runtime/local_docker_context.mjs";
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
-import { lstat, mkdir, open, realpath, rm, writeFile } from "node:fs/promises";
+import {
+  link,
+  lstat,
+  mkdir,
+  open,
+  realpath,
+  rm,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { delimiter, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -134,6 +143,23 @@ async function gateFile(root, name) {
     await handle.close();
   }
 }
+// Publish only complete, closed bytes. Exclusive linking preserves the old wx
+// refusal on existing files/symlinks without exposing an in-progress write.
+export async function publishImpactGateSignal(root, name) {
+  if (!["ready", "release"].includes(name)) throw refused();
+  const identity = await privateDirectory(root);
+  const temporary = join(root, `.signal-${randomUUID()}`);
+  try {
+    await writeFile(temporary, `${name}\n`, { mode: 0o600, flag: "wx" });
+    if (!equal(identity, await privateDirectory(root))) throw refused();
+    await link(temporary, join(root, name));
+    if (!equal(identity, await privateDirectory(root))) throw refused();
+  } finally {
+    await unlink(temporary).catch((error) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
+}
 export async function waitForImpactGateReady({
   client,
   readReady,
@@ -170,10 +196,7 @@ export async function runImpactGateWrapper(config, args) {
   const timer = setTimeout(cancel, remaining);
   try {
     if (kind === "sql") {
-      await writeFile(join(config.root, "ready"), "ready\n", {
-        mode: 0o600,
-        flag: "wx",
-      });
+      await publishImpactGateSignal(config.root, "ready");
       while (true) {
         controller.signal.throwIfAborted();
         try {
@@ -266,10 +289,7 @@ export async function createImpactSqlGate({
         !equal(identity, await privateDirectory(root))
       )
         throw refused();
-      await writeFile(join(root, "release"), "release\n", {
-        mode: 0o600,
-        flag: "wx",
-      });
+      await publishImpactGateSignal(root, "release");
     },
     cleanup: async () => {
       if (!equal(identity, await privateDirectory(root))) throw refused();

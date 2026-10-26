@@ -231,22 +231,7 @@ describe("OS-specific source setup helpers", () => {
       expect(f.run).not.toHaveBeenCalled();
     },
   );
-  it("updates older compatible installations to the exact helper target", () => {
-    for (const installed of [
-      "1.0.0",
-      "1.0.1",
-      "1.0.2",
-      "1.1.0",
-      "1.1.1",
-      "1.2.0",
-    ]) {
-      expect(
-        planCoreInstallation(
-          { devDependencies: { "@rehearsal-db/core": installed } },
-          installed,
-        ).arguments,
-      ).toContain(`@rehearsal-db/core@${CORE_VERSION}`);
-    }
+  it("keeps target-major installations without downgrading", () => {
     for (const installed of [CORE_VERSION, newerPatch, newerMinor]) {
       expect(
         planCoreInstallation(
@@ -260,7 +245,7 @@ describe("OS-specific source setup helpers", () => {
     "preserves %s and requests only exact script-disabled core installation",
     async (group) => {
       const plan = planCoreInstallation({
-        [group]: { "@rehearsal-db/core": "1.0.0" },
+        [group]: { "@rehearsal-db/core": `${targetMajor}.0.0` },
       });
       expect(plan.arguments).toEqual([
         "install",
@@ -283,12 +268,12 @@ describe("OS-specific source setup helpers", () => {
     expect(planCoreInstallation({}).arguments).toContain("--save-dev");
     expect(
       planCoreInstallation(
-        { dependencies: { "@rehearsal-db/core": "^1.0.0" } },
+        { dependencies: { "@rehearsal-db/core": `^${targetMajor}.0.0` } },
         CORE_VERSION,
       ).arguments,
     ).toBeNull();
     for (const declaration of [
-      "2.0.0",
+      `${targetMajor + 1}.0.0`,
       "file:../core",
       "git+https://example.invalid/core.git",
       newerMinor,
@@ -307,6 +292,25 @@ describe("OS-specific source setup helpers", () => {
         devDependencies: { "@rehearsal-db/core": "1.0.0" },
       }),
     ).toThrow(/Multiple/u);
+  });
+  it("refuses automatic cross-major adoption even with latest or a new-major declaration", () => {
+    for (const version of ["1.0.0", "1.3.0", "0.1.0", "3.0.0"]) {
+      expect(() =>
+        planCoreInstallation({
+          dependencies: { "@rehearsal-db/core": version },
+        }),
+      ).toThrow(/manual review/u);
+      for (const declaration of ["latest", CORE_VERSION])
+        expect(() =>
+          planCoreInstallation(
+            { devDependencies: { "@rehearsal-db/core": declaration } },
+            version,
+          ),
+        ).toThrow(/adopted or downgraded/u);
+    }
+    expect(planCoreInstallation({}).arguments).toContain(
+      "@rehearsal-db/core@2.0.0",
+    );
   });
   it("verifies the installed core without running its bin, scaffolding or any database command", async () => {
     const f = await fixture();

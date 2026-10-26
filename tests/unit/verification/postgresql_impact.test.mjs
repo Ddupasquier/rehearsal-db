@@ -1,3 +1,4 @@
+import * as filesystem from "node:fs/promises";
 import { mkdtemp, writeFile, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import {
   completeImpactBlockedMeasurement,
   classifyImpactGateCommand,
   createImpactSqlGate,
+  publishImpactGateSignal,
   waitForImpactGateReady,
   runImpactGateWrapper,
 } from "../../../scripts/verification/fixtures/postgresql_impact_gate.mjs";
@@ -25,6 +27,11 @@ import {
   buildImpactRaceIndexProbe,
   waitForImpactLock,
 } from "../../../scripts/verification/fixtures/postgresql_impact.mjs";
+
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original();
+  return { ...actual, link: vi.fn(actual.link) };
+});
 
 const candidateSha256 = "a".repeat(64),
   version = "1.2.0";
@@ -588,6 +595,65 @@ async function waitGateMarker(path) {
   }
   throw new Error("Synthetic forwarded child did not become ready.");
 }
+describe("atomic impact gate signal publication", () => {
+  it.each(["ready", "release"])(
+    "publishes %s only after all private bytes are closed",
+    async (name) => {
+      const root = await realpath(
+        await mkdtemp(join(tmpdir(), "impact-signal-")),
+      );
+      await filesystem.chmod(root, 0o700);
+      const originalLink = filesystem.link.getMockImplementation();
+      let inspected = false;
+      filesystem.link.mockImplementation(async (source, destination) => {
+        expect(destination).toBe(join(root, name));
+        expect(await readFile(source, "utf8")).toBe(`${name}\n`);
+        expect((await filesystem.lstat(source)).mode & 0o777).toBe(0o600);
+        await expect(filesystem.lstat(destination)).rejects.toMatchObject({
+          code: "ENOENT",
+        });
+        inspected = true;
+        await originalLink(source, destination);
+      });
+      try {
+        await publishImpactGateSignal(root, name);
+        expect(inspected).toBe(true);
+        expect(await readFile(join(root, name), "utf8")).toBe(`${name}\n`);
+        expect(await filesystem.readdir(root)).toEqual([name]);
+      } finally {
+        filesystem.link.mockImplementation(originalLink);
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+  it.each(["file", "symlink"])(
+    "refuses an existing %s without replacement or staged-file leaks",
+    async (kind) => {
+      const root = await realpath(
+        await mkdtemp(join(tmpdir(), "impact-signal-refuse-")),
+      );
+      await filesystem.chmod(root, 0o700);
+      try {
+        await writeFile(join(root, "original"), "preserve", { mode: 0o600 });
+        if (kind === "symlink")
+          await filesystem.symlink(join(root, "original"), join(root, "ready"));
+        else await writeFile(join(root, "ready"), "preserve", { mode: 0o600 });
+        await expect(
+          publishImpactGateSignal(root, "ready"),
+        ).rejects.toMatchObject({ code: "EEXIST" });
+        expect(await readFile(join(root, "ready"), "utf8")).toBe("preserve");
+        expect(await readFile(join(root, "original"), "utf8")).toBe("preserve");
+        expect((await filesystem.readdir(root)).sort()).toEqual([
+          "original",
+          "ready",
+        ]);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
 describe("fixture-only public impact SQL gate", () => {
   it("permits only exact pinned metadata and the one sanitized owned SQL command", () => {
     expect(classifyImpactGateCommand(gateInfoArgs, gateBinding)).toBe(

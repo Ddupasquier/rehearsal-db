@@ -19,7 +19,9 @@ Then check a selected existing project (the quoted path is a Linux path):
 
 This executes only the Node prerequisite/setup checks inside the selected distro;
 an existing stopped distro may start. No Docker engine, container or database is
-started. Save work, then add `-InstallCli` to explicitly install exact core 1.3.0.
+started. After exact core 2.0.0 is published, save work and add `-InstallCli` for
+a clean installation or an existing compatible 2.x project. Existing 1.x projects
+require deliberate manual upgrade review; this helper refuses that major transition.
 If Linux Node is managed by nvm and is absent from WSL's non-login PATH, pass its
 absolute path with `-NodePath "/home/you/.nvm/versions/node/v24.21.0/bin/node"`.
 The helper does not load shell startup files or install/change Node versions.
