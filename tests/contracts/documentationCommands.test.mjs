@@ -365,9 +365,7 @@ describe("documented CLI contract", () => {
     expect(guide).toContain("rehearsal-db-0.1.25.vsix");
     expect(guide).toContain("independent version numbers");
     expect(guide).toContain("This guide targets core");
-    expect(guide).toContain(
-      "**2.0.0** and Starter **0.1.25**",
-    );
+    expect(guide).toContain("**2.0.0** and Starter **0.1.25**");
     expect(guide.replace(/\s+/gu, " ")).toContain(
       "Confirm the target version appears in its official channel before installing.",
     );
