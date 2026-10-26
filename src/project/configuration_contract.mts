@@ -78,6 +78,12 @@ export interface RehearsalConfig {
   };
   postgresql?: {
     migrationDirectory: string;
+    /** Explicit pinned native tool; omission retains timestamped SQL behavior. */
+    migrationTool?: {
+      kind: "prisma";
+      version: "7.10.1";
+      packageDirectory: string;
+    };
     runtimeWorkdir?: string;
     image?: string;
     database?: string;

@@ -3,6 +3,16 @@
 All notable Rehearsal package changes are documented here. The format follows Keep
 a Changelog, and published versions follow Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Opt-in pinned Prisma Migrate 7.10.1 history for PostgreSQL, preserving native
+  migration paths, raw checksums and successful ledger entries in baseline format 3.
+  Reviewed execution uses a private configuration and the installed local toolchain;
+  native failures retain the data volume for explicit recovery. Qualification is
+  pending independent installed-consumer and editor verification.
+
 ## [2.0.0] - 2026-10-25
 
 ### Added

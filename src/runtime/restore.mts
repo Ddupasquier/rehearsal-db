@@ -7,6 +7,11 @@ import { createHash } from "node:crypto";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
 import type { RuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
 import type { MigrationFileEntry } from "./migration_history.mjs";
+import {
+  parseNativeMigrationBinding,
+  sameNativeMigrationHistory,
+  type NativeMigrationBinding,
+} from "./native_migration_contract.mjs";
 
 const identifierPattern = /^[a-z][a-z0-9_]{0,62}$/u;
 const constraintFailurePattern =
@@ -327,10 +332,28 @@ commit;
 export const createCandidateMigrationReceipt = ({
   baselineManifest,
   currentFiles,
+  nativeMigrations,
 }: {
   baselineManifest: BaselineManifest;
   currentFiles: readonly MigrationFileEntry[];
+  nativeMigrations?: NativeMigrationBinding | null;
 }) => {
+  if (baselineManifest.nativeMigrations !== undefined || nativeMigrations) {
+    const bound = parseNativeMigrationBinding(
+      baselineManifest.nativeMigrations,
+    );
+    if (
+      !nativeMigrations ||
+      baselineManifest.formatVersion !== 3 ||
+      !sameNativeMigrationHistory(
+        bound,
+        parseNativeMigrationBinding(nativeMigrations),
+      )
+    )
+      throw new Error(
+        "Native migration tool, version, provider or lock differs from the baseline; review a new baseline before proceeding.",
+      );
+  }
   const baselineEntries = Object.entries(
     baselineManifest?.migrations ?? {},
   ).sort(([left], [right]) => left.localeCompare(right));
@@ -358,10 +381,18 @@ export const createCandidateMigrationReceipt = ({
   const candidateSha256 = createHash("sha256")
     .update(
       `${JSON.stringify(
-        candidates.map(({ filename, fileSha256 }) => ({
-          filename,
-          fileSha256,
-        })),
+        nativeMigrations
+          ? {
+              nativeMigrations,
+              candidates: candidates.map(({ filename, fileSha256 }) => ({
+                filename,
+                fileSha256,
+              })),
+            }
+          : candidates.map(({ filename, fileSha256 }) => ({
+              filename,
+              fileSha256,
+            })),
         null,
         "\t",
       )}\n`,

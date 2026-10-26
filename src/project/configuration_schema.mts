@@ -128,7 +128,14 @@ export const validateConfigurationSchema = (
   if (postgresql) {
     assertKnownKeys(
       postgresql,
-      ["migrationDirectory", "runtimeWorkdir", "image", "database", "user"],
+      [
+        "migrationDirectory",
+        "migrationTool",
+        "runtimeWorkdir",
+        "image",
+        "database",
+        "user",
+      ],
       "config.postgresql",
     );
   }

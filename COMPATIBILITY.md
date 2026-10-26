@@ -90,6 +90,16 @@ and explicitly unsupported for shutdown. The shared lifecycle queue adds
 See the [VM shutdown policy](docs/runtime-lifecycle.md#shut-down-the-vm-explicitly)
 and [JSON contract](docs/commands.md#engine-status-and-reviewed-vm-shutdown).
 
+## Native Prisma candidate
+
+Unreleased builds advertising `rehearsalContracts.nativeMigrations: 1` add optional
+Prisma Migrate 7.10.1/PostgreSQL configuration and baseline format 3. Existing flat
+SQL configurations and baseline formats 1/2 retain their meaning. Format 3 requires
+an editor that explicitly understands its native history and tool binding; older
+strict consumers may refuse it. Do not infer Prisma support from Core 2.0.0 or
+Starter 0.1.25. Independent installed-package, native editor and platform
+qualification is pending. See the [candidate configuration](docs/configuration.md#native-prisma-migrations--development-candidate).
+
 ## Operating systems and execution location
 
 Core 1.0.1's platform boundary distinguishes the computer running VS Code from the

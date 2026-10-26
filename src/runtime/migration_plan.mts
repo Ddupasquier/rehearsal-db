@@ -42,6 +42,9 @@ export const inspectMigrationReviewPlan = async (
       provider: target.config.runtime.target,
       baselineGenerationId: inspection.baselineGenerationId,
       candidateSha256: inspection.candidateSha256,
+      ...(inspection.migrationTool
+        ? { migrationTool: inspection.migrationTool }
+        : {}),
       entries: migrationReviewEntries(target.name, inspection.migrations),
     });
   }

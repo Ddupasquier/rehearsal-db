@@ -252,6 +252,17 @@ data/Storage preservation checks. It does not infer a rollback from a failed mig
 
 ## Runtime lifecycle
 
+Explicit native Prisma configuration selects `runtime/prisma_history.mts` for
+bounded raw-byte history and native-ledger validation. The toolchain owner binds
+the installed execution dependencies; `native_migration_contract.mts` distinguishes
+portable baseline history from the current execution binding. Baseline format 3
+preserves native paths and lock bytes; existing SQL formats remain unchanged.
+`targets/postgresql_migrations.mts` owns SQL/native dispatch, while
+`prisma_migration_process.mts` owns only private-config, bounded native execution
+against the exact target proven by `prisma_target_binding.mts`. A native migration
+failure preserves its data volume and requires explicit recovery; the extension
+consumes the public review contract and never runs a second migration engine.
+
 `runtime/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
 PostgreSQL and Supabase use it to dispatch commands, verify active baseline inputs,
 calculate and confirm the exact migration set, write target-bound receipts, validate

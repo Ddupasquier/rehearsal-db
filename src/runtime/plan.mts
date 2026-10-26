@@ -26,6 +26,7 @@ import {
 import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
 import { createCandidateMigrationReceipt } from "./restore.mjs";
 import { readMigrationFileInventory } from "./migration_history.mjs";
+import { readConfiguredMigrationSource } from "./native_migration_source.mjs";
 import { REHEARSAL_VERSION } from "../shared/diagnostics.mjs";
 import {
   inspectRehearsalNodeRuntime,
@@ -261,12 +262,12 @@ const loadPlanInputs = async (
     bytes: policyBytes,
     expectedSha256: baseline.sanitizationPolicySha256,
   });
-  const currentFiles = await inventoryReader(
-    new URL("./", pathToFileURL(`${loaded.paths.migrationDirectory}/`)),
-  );
+  const source = await readConfiguredMigrationSource(loaded, inventoryReader);
+  const currentFiles = source.entries;
   const candidateReceipt = createCandidateMigrationReceipt({
     baselineManifest: baseline,
     currentFiles,
+    nativeMigrations: source.binding,
   });
   const runtimeReceipt = await readRuntimeReceipt(loaded.paths.runtimeWorkdir);
   const appliedCandidateDigest =
@@ -297,6 +298,7 @@ const loadPlanInputs = async (
     currentFiles,
     candidateReceipt,
     migrations,
+    migrationTool: source.binding,
   };
 };
 
@@ -350,6 +352,9 @@ const buildPlanFromInputs = async (
     baseline: {
       rehearsalVersion: REHEARSAL_VERSION,
       formatVersion: baseline.formatVersion,
+      ...(baseline.nativeMigrations
+        ? { nativeMigrations: baseline.nativeMigrations }
+        : {}),
       generationId: baseline.generationId,
       createdAt: baselineCreatedAt(baseline.generationId),
       migrationCutoff: baseline.migrationCutoff,
@@ -494,6 +499,7 @@ export const inspectRehearsalMigrations = async (
     baselineCutoff: inputs.baseline.migrationCutoff,
     candidateSha256: inputs.candidateReceipt.candidateSha256,
     migrations: inputs.migrations,
+    ...(inputs.migrationTool ? { migrationTool: inputs.migrationTool } : {}),
     definitions: {
       represented_by_baseline:
         "Exact filename and SHA-256 are part of the verified baseline prefix.",

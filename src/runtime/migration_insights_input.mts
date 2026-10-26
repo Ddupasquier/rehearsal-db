@@ -13,6 +13,7 @@ import {
 } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readMigrationFileInventory } from "./migration_history.mjs";
+import { readPrismaMigrationInventory } from "./prisma_history.mjs";
 import { RehearsalError } from "../shared/diagnostics.mjs";
 import {
   holdPathAncestry,
@@ -180,7 +181,35 @@ export const createMigrationInsightsInput = (projectRoot: string) => {
     }
   };
   return {
-    readInventory,
+    readInventory: Object.assign(readInventory, {
+      readPrisma: async (directory: URL) => {
+        const root = await realpath(projectRoot);
+        const path = resolve(fileURLToPath(directory));
+        if (!inside(root, path) || (await realpath(path)) !== path)
+          throw inputError();
+        return readPrismaMigrationInventory(directory, {
+          onBytes: (filename, bytes) => {
+            if (filename === "migration_lock.toml") return;
+            if (
+              ++totalFiles > MIGRATION_INSIGHTS_LIMITS.maximumFiles ||
+              bytes.length > MIGRATION_INSIGHTS_LIMITS.maximumFileBytes ||
+              totalBytes + bytes.length >
+                MIGRATION_INSIGHTS_LIMITS.maximumTotalBytes
+            )
+              throw inputError();
+            const text = new TextDecoder("utf-8", { fatal: true }).decode(
+              bytes,
+            );
+            const sha256 = createHash("sha256").update(bytes).digest("hex");
+            const key = join(path, filename);
+            const prior = contents.get(key);
+            if (prior && prior.sha256 !== sha256) throw inputError();
+            totalBytes += bytes.length;
+            contents.set(key, { sha256, text });
+          },
+        });
+      },
+    }),
     sourceFor: (path: string, sha256: string): string | undefined => {
       const retained = contents.get(resolve(path));
       return retained?.sha256 === sha256 ? retained.text : undefined;

@@ -19,6 +19,7 @@ import {
 } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   createMigrationReplayReceipt,
   type MigrationLedgerEntry,
@@ -27,6 +28,11 @@ import {
 import { verifyBaselineShapeEvidence } from "../source/shape_evidence.mjs";
 import type { BaselineShapeEvidence } from "../source/shape_contract.mjs";
 import { readBoundedShapeJson } from "../source/shape_json.mjs";
+import { readPrismaMigrationInventory } from "../runtime/prisma_history.mjs";
+import {
+  parseNativeMigrationBinding,
+  type NativeMigrationBinding,
+} from "../runtime/native_migration_contract.mjs";
 
 type ByteChunk = string | Uint8Array;
 type ByteStream = Iterable<ByteChunk> | AsyncIterable<ByteChunk>;
@@ -53,6 +59,7 @@ export interface BaselineStorageAsset {
 }
 
 export interface BaselineMetadata extends Record<string, unknown> {
+  readonly nativeMigrations?: NativeMigrationBinding;
   readonly migrationCutoff: string;
   readonly migrationHistorySha256: string;
   readonly sanitizationPolicySha256: string;
@@ -71,7 +78,7 @@ interface StorageAssetReceipt extends ContentReceipt {
 }
 
 export interface BaselineManifest extends BaselineMetadata {
-  readonly formatVersion: 1 | 2;
+  readonly formatVersion: 1 | 2 | 3;
   readonly generationId: string;
   readonly rowCount: number;
   readonly tableCounts: Readonly<Record<string, number>>;
@@ -97,10 +104,11 @@ export interface BaselinePrunePlan {
 }
 
 export interface BaselineGenerationSummary {
+  readonly nativeMigrations?: NativeMigrationBinding;
   readonly generationId: string;
   readonly createdAt: string | null;
   readonly active: boolean;
-  readonly formatVersion: 1 | 2;
+  readonly formatVersion: 1 | 2 | 3;
   readonly rowCount: number;
   readonly tableCount: number;
   readonly migrationCount: number;
@@ -277,6 +285,7 @@ export const createAndActivateBaseline = async ({
   schemaSql = null,
   activate = true,
   shapeEvidence,
+  migrationLock,
 }: {
   artifactRoot: string;
   generationId?: string;
@@ -293,6 +302,7 @@ export const createAndActivateBaseline = async ({
   schemaSql?: string | null;
   activate?: boolean;
   shapeEvidence?: BaselineShapeEvidence;
+  migrationLock?: Uint8Array;
 }): Promise<BaselineManifest> => {
   const root = assertArtifactRoot(artifactRoot);
   assertGenerationId(generationId);
@@ -392,11 +402,36 @@ export const createAndActivateBaseline = async ({
     }
     const migrationDirectory = join(buildDirectory, "migrations");
     await mkdir(migrationDirectory, { mode: 0o700 });
+    const nativeBinding =
+      metadata.nativeMigrations === undefined
+        ? null
+        : parseNativeMigrationBinding(metadata.nativeMigrations);
+    if (nativeBinding) {
+      if (
+        !migrationLock ||
+        createHash("sha256").update(migrationLock).digest("hex") !==
+          nativeBinding.lockSha256
+      )
+        throw new Error(
+          "Native baseline requires its exact reviewed migration lock.",
+        );
+      await writeImmutableFile(
+        join(migrationDirectory, "migration_lock.toml"),
+        migrationLock,
+      );
+    } else if (migrationLock !== undefined)
+      throw new Error(
+        "Migration lock requires a native-tool baseline binding.",
+      );
     const migrationManifest: Record<string, { sha256: string }> = {};
     for (const migration of resolvedMigrationFiles) {
       if (
         !migration ||
-        !migrationNamePattern.test(migration.filename) ||
+        !(
+          nativeBinding
+            ? /^\d{14}_[A-Za-z0-9][A-Za-z0-9_-]{0,190}\/migration\.sql$/u
+            : migrationNamePattern
+        ).test(migration.filename) ||
         typeof migration.content !== "string" ||
         Object.hasOwn(migrationManifest, migration.filename)
       ) {
@@ -410,11 +445,36 @@ export const createAndActivateBaseline = async ({
           `Rehearsal migration source checksum mismatch for ${migration.filename}.`,
         );
       }
+      if (nativeBinding)
+        await mkdir(dirname(join(migrationDirectory, migration.filename)), {
+          mode: 0o700,
+        });
       await writeImmutableFile(
         join(migrationDirectory, migration.filename),
         migration.content,
       );
       migrationManifest[migration.filename] = { sha256: contentHash };
+      if (nativeBinding)
+        await chmod(
+          dirname(join(migrationDirectory, migration.filename)),
+          0o500,
+        );
+    }
+    if (nativeBinding) {
+      const inventory = await readPrismaMigrationInventory(
+        pathToFileURL(`${migrationDirectory}/`),
+      );
+      if (
+        inventory.binding.lockSha256 !== nativeBinding.lockSha256 ||
+        inventory.entries.length !== Object.keys(migrationManifest).length ||
+        inventory.entries.some(
+          (entry) =>
+            migrationManifest[entry.filename]?.sha256 !== entry.fileSha256,
+        )
+      )
+        throw new Error(
+          "Native baseline files do not match the exact manifest.",
+        );
     }
     await chmod(migrationDirectory, 0o500);
 
@@ -497,7 +557,7 @@ export const createAndActivateBaseline = async ({
     }
     const manifest: BaselineManifest = {
       ...metadata,
-      formatVersion: schemaReceipt ? 2 : 1,
+      formatVersion: nativeBinding ? 3 : schemaReceipt ? 2 : 1,
       generationId,
       rowCount,
       tableCounts: Object.fromEntries([...tableCounts].sort()),
@@ -681,7 +741,9 @@ export const inspectBaselineGenerations = async ({
     );
     if (
       manifest.generationId !== entry.name ||
-      ![1, 2].includes(manifest.formatVersion) ||
+      ![1, 2, 3].includes(manifest.formatVersion) ||
+      (manifest.formatVersion === 3) !==
+        (manifest.nativeMigrations !== undefined) ||
       !Number.isSafeInteger(manifest.rowCount) ||
       manifest.rowCount < 0 ||
       !isObject(manifest.tableCounts) ||
@@ -698,6 +760,13 @@ export const inspectBaselineGenerations = async ({
       createdAt: generationCreatedAt(entry.name),
       active: entry.name === active,
       formatVersion: manifest.formatVersion,
+      ...(manifest.nativeMigrations !== undefined
+        ? {
+            nativeMigrations: parseNativeMigrationBinding(
+              manifest.nativeMigrations,
+            ),
+          }
+        : {}),
       rowCount: manifest.rowCount,
       tableCount: Object.keys(manifest.tableCounts).length,
       migrationCount: Object.keys(manifest.migrations).length,
@@ -719,6 +788,11 @@ export const verifyActiveBaseline = async ({
   const paths = await resolveActiveBaselinePaths({ artifactRoot });
   const { generationDirectory } = paths;
   const manifest = parseManifest(await readFile(paths.manifestPath, "utf8"));
+  if (
+    ![1, 2, 3].includes(manifest.formatVersion) ||
+    (manifest.formatVersion === 3) !== (manifest.nativeMigrations !== undefined)
+  )
+    throw new Error("Unsupported or inconsistent Rehearsal baseline format.");
   assertGenerationId(manifest.generationId);
   if (basename(generationDirectory) !== manifest.generationId) {
     throw new Error(
@@ -774,12 +848,34 @@ export const verifyActiveBaseline = async ({
   }
   const migrationDirectory = paths.migrationsDirectory;
   const expectedMigrationNames = Object.keys(manifest.migrations ?? {}).sort();
-  const actualMigrationNames = (await readdir(migrationDirectory)).sort();
+  const nativeBinding =
+    manifest.nativeMigrations === undefined
+      ? null
+      : parseNativeMigrationBinding(manifest.nativeMigrations);
+  const nativeInventory = nativeBinding
+    ? await readPrismaMigrationInventory(
+        pathToFileURL(`${migrationDirectory}/`),
+      )
+    : null;
+  if (
+    nativeBinding &&
+    nativeInventory?.binding.lockSha256 !== nativeBinding.lockSha256
+  )
+    throw new Error("Native baseline migration lock changed.");
+  const actualMigrationNames = nativeInventory
+    ? nativeInventory.entries.map((entry) => entry.filename).sort()
+    : (await readdir(migrationDirectory)).sort();
   if (expectedMigrationNames.join("\0") !== actualMigrationNames.join("\0")) {
     throw new Error("The active Rehearsal migration bundle is not exact.");
   }
   for (const filename of expectedMigrationNames) {
-    if (!migrationNamePattern.test(filename)) {
+    if (
+      !(
+        nativeBinding
+          ? /^\d{14}_[A-Za-z0-9][A-Za-z0-9_-]{0,190}\/migration\.sql$/u
+          : migrationNamePattern
+      ).test(filename)
+    ) {
       throw new Error("The active Rehearsal migration manifest is invalid.");
     }
     const migrationHash = createHash("sha256")
