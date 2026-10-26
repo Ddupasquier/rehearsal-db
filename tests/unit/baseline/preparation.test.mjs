@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   chmod,
   mkdir,
@@ -21,6 +22,7 @@ import {
 } from "../../../dist/src/baseline/preparation.mjs";
 import { createSyntheticBaselineFromFiles } from "../../../dist/src/baseline/builder.mjs";
 import { validateRuntimeSanitizationPolicy } from "../../../dist/src/baseline/sanitization_policy.mjs";
+import { verifyActiveBaseline } from "../../../dist/src/baseline/artifact.mjs";
 
 const roots = [];
 const execute = promisify(execFile);
@@ -91,6 +93,95 @@ export default defineRehearsalConfig({
   return root;
 };
 
+// A metadata-only toolchain proves the public preflight/build boundary, not Prisma execution.
+const makeNativeProject = async () => {
+  const root = await makeProject();
+  const migration = "20261001000000_create_widgets";
+  const sql =
+    "create table public.widgets(id bigint primary key,name text,description text);\r\n";
+  await Promise.all([
+    mkdir(join(root, "prisma/migrations", migration), { recursive: true }),
+    mkdir(join(root, "node_modules/prisma/build"), { recursive: true }),
+    mkdir(join(root, "node_modules/@prisma/engines"), { recursive: true }),
+    mkdir(join(root, "infrastructure/rehearsal"), { recursive: true }),
+  ]);
+  const files = {
+    "rehearsal.config.mjs":
+      "export default " +
+      JSON.stringify({
+        schemaVersion: 1,
+        project: { name: "native-fixture" },
+        postgresql: {
+          migrationDirectory: "prisma/migrations",
+          migrationTool: {
+            kind: "prisma",
+            version: "7.10.1",
+            packageDirectory: "node_modules/prisma",
+          },
+        },
+        baseline: {
+          artifactDirectory: ".rehearsal",
+          sanitizationPolicy:
+            "infrastructure/rehearsal/sanitization-policy.json",
+        },
+        application: { startCommand: "npm run dev", proofCommand: "npm test" },
+        runtime: {
+          target: "postgresql",
+          applicationUrl: "http://localhost:5175",
+          projectId: "native-fixture",
+          databasePort: 58322,
+        },
+      }) +
+      ";\n",
+    "node_modules/prisma/package.json": JSON.stringify({
+      name: "prisma",
+      version: "7.10.1",
+      bin: { prisma: "build/index.js" },
+    }),
+    "node_modules/prisma/build/index.js":
+      "throw Error('Metadata test must not execute Prisma');\n",
+    "node_modules/@prisma/engines/package.json": JSON.stringify({
+      name: "@prisma/engines",
+      version: "7.10.1",
+    }),
+    "node_modules/@prisma/engines/schema-engine-test":
+      "synthetic engine; never executed\n",
+    "prisma/migrations/migration_lock.toml": 'provider = "postgresql"\r\n',
+    [`prisma/migrations/${migration}/migration.sql`]: sql,
+    "rehearsal/migration-ledger.json": JSON.stringify([
+      {
+        migration_name: migration,
+        checksum: createHash("sha256").update(sql).digest("hex"),
+        finished_at: "2026-10-26T00:00:00.000Z",
+        rolled_back_at: null,
+      },
+    ]),
+    "infrastructure/rehearsal/sanitization-policy.json": JSON.stringify({
+      policyVersion: 1,
+      migrationCutoff: "20261001000000",
+      tables: [
+        {
+          name: "widgets",
+          sourceRows: "STREAM AND SANITIZE",
+          columns: ["id", "name", "description"].map((name) => ({
+            name,
+            action: "KEEP EXACTLY",
+            generated: "NEVER",
+            identity: "NO",
+            foreignKey: null,
+          })),
+        },
+      ],
+    }),
+  };
+  await Promise.all(
+    Object.entries(files).map(([path, content]) =>
+      writeFile(join(root, path), content),
+    ),
+  );
+  return { root, migration };
+};
+
 afterEach(async () => {
   for (const root of roots.splice(0)) {
     await makeTreeWritable(root);
@@ -99,6 +190,74 @@ afterEach(async () => {
 });
 
 describe("baseline preparation", () => {
+  it("preflights native ledger/path evidence without fabricating SQL statement receipts", async () => {
+    const { root, migration } = await makeNativeProject();
+    const ledger = await readFile(
+      join(root, "rehearsal/migration-ledger.json"),
+    );
+    const inspection = await inspectBaselineInputFiles({
+      projectRoot: root,
+      recordsPath: "rehearsal/synthetic-data.ndjson",
+      ledgerPath: "rehearsal/migration-ledger.json",
+    });
+    expect(inspection.migrationCount).toBe(1);
+    expect(inspection.migrationHistory[0].filename).toBe(
+      `${migration}/migration.sql`,
+    );
+    expect(inspection.migrationHistory[0]).not.toHaveProperty("statementCount");
+    expect(
+      await readFile(join(root, "rehearsal/migration-ledger.json")),
+    ).toEqual(ledger);
+  });
+  it("creates a native baseline through the public CLI's complete preflight/build pipeline", async () => {
+    const { root, migration } = await makeNativeProject();
+    const result = await execute(
+      process.execPath,
+      [
+        cliPath,
+        "baseline",
+        "create",
+        "--records=rehearsal/synthetic-data.ndjson",
+        "--ledger=rehearsal/migration-ledger.json",
+        "--json",
+      ],
+      { cwd: root },
+    );
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: "success",
+      data: { rowCount: 2, migrationCount: 1 },
+    });
+    expect(result.stdout).not.toContain("value-that-must-not-be-printed");
+    const manifest = await verifyActiveBaseline({
+      artifactRoot: join(root, ".rehearsal"),
+    });
+    expect(manifest.formatVersion).toBe(3);
+    expect(Object.keys(manifest.migrations)).toEqual([
+      `${migration}/migration.sql`,
+    ]);
+  });
+  it("refuses failed native ledger evidence and unsupported assets before baseline writes", async () => {
+    const { root } = await makeNativeProject();
+    const ledgerPath = join(root, "rehearsal/migration-ledger.json");
+    const rows = JSON.parse(await readFile(ledgerPath, "utf8"));
+    rows[0].finished_at = null;
+    await writeFile(ledgerPath, JSON.stringify(rows));
+    const options = {
+      projectRoot: root,
+      recordsPath: "rehearsal/synthetic-data.ndjson",
+      ledgerPath: "rehearsal/migration-ledger.json",
+    };
+    await expect(inspectBaselineInputFiles(options)).rejects.toThrow();
+    await expect(
+      inspectBaselineInputFiles({
+        ...options,
+        assetsPath: "unreviewed-assets.json",
+      }),
+    ).rejects.toThrow(/Storage/u);
+    await expect(stat(join(root, ".rehearsal"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
   it("preflights records, migrations, and optional storage without exposing values", async () => {
     const root = await makeProject();
     await writeFile(join(root, "rehearsal/exact-byte.txt"), "asset-value");
