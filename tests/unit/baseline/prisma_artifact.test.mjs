@@ -9,7 +9,23 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+
+const rawReadBoundary = vi.hoisted(() => ({ denyNativeSql: false }));
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    readFile: (...args) => {
+      if (
+        rawReadBoundary.denyNativeSql &&
+        String(args[0]).endsWith("/migration.sql")
+      )
+        throw new Error("Unbounded native SQL read refused by test boundary.");
+      return actual.readFile(...args);
+    },
+  };
+});
 import {
   createAndActivateBaseline,
   verifyActiveBaseline,
@@ -29,9 +45,19 @@ async function writable(path) {
   }
 }
 afterEach(async () => {
+  rawReadBoundary.denyNativeSql = false;
   for (const path of roots.splice(0)) {
     await writable(path);
     await rm(path, { recursive: true, force: true });
+  }
+});
+it("verifies native SQL using the bounded inventory without reopening it through readFile", async () => {
+  const f = await fixture();
+  rawReadBoundary.denyNativeSql = true;
+  try {
+    expect(await verifyActiveBaseline(f)).toEqual(f.manifest);
+  } finally {
+    rawReadBoundary.denyNativeSql = false;
   }
 });
 const hash = (x) => createHash("sha256").update(x).digest("hex");

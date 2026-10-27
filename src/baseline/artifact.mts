@@ -865,6 +865,14 @@ export const verifyActiveBaseline = async ({
   const actualMigrationNames = nativeInventory
     ? nativeInventory.entries.map((entry) => entry.filename).sort()
     : (await readdir(migrationDirectory)).sort();
+  const nativeChecksums = nativeInventory
+    ? new Map(
+        nativeInventory.entries.map((entry) => [
+          entry.filename,
+          entry.fileSha256,
+        ]),
+      )
+    : null;
   if (expectedMigrationNames.join("\0") !== actualMigrationNames.join("\0")) {
     throw new Error("The active Rehearsal migration bundle is not exact.");
   }
@@ -878,9 +886,13 @@ export const verifyActiveBaseline = async ({
     ) {
       throw new Error("The active Rehearsal migration manifest is invalid.");
     }
-    const migrationHash = createHash("sha256")
-      .update(await readFile(join(migrationDirectory, filename)))
-      .digest("hex");
+    // Native inventory already hashed bounded, no-follow inputs through held
+    // file descriptors. A second ordinary read would discard that boundary.
+    const migrationHash = nativeChecksums
+      ? nativeChecksums.get(filename)
+      : createHash("sha256")
+          .update(await readFile(join(migrationDirectory, filename)))
+          .digest("hex");
     if (migrationHash !== manifest.migrations[filename]?.sha256) {
       throw new Error(
         `The active Rehearsal migration checksum is invalid for ${filename}.`,
