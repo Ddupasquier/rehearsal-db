@@ -110,7 +110,9 @@ export const inspectMigrationInsights = async (
       if (!complete) unknownCount++;
       const workspacePath = relative(projectRoot, path).split(sep).join("/");
       return {
-        version: candidate.version,
+        ...("nativeIdentity" in candidate
+          ? { nativeIdentity: candidate.nativeIdentity }
+          : { version: candidate.version }),
         filename: candidate.filename,
         sha256: candidate.sha256,
         workspaceRelativePath: isMigrationWorkspacePath(workspacePath)

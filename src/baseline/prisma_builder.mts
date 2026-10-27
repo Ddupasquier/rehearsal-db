@@ -27,12 +27,18 @@ export const createPrismaBaseline = async ({
   records: AsyncIterable<unknown>;
   ledger: unknown;
   policyBytes: Buffer;
-  cutoff: string;
+  cutoff: import("../runtime/migration_identity.mjs").MigrationCutoff;
   expectedTables: string[];
   assets: BaselineStorageAsset[];
 }) => {
   const tool = loaded.config.postgresql?.migrationTool;
-  if (!tool || assets.length || loaded.config.preparation)
+  if (
+    !tool ||
+    tool.kind !== "prisma" ||
+    typeof cutoff !== "string" ||
+    assets.length ||
+    loaded.config.preparation
+  )
     throw new Error(
       "Native Prisma baseline requires explicit PostgreSQL tool configuration and reviewed local records/ledger; hosted preparation and Storage are not qualified.",
     );

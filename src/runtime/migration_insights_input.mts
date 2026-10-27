@@ -1,3 +1,4 @@
+import { readDrizzleMigrationInventory } from "./drizzle_history.mjs";
 /** Exact, bounded project-local SQL input. Contents never enter public findings. */
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
@@ -180,35 +181,52 @@ export const createMigrationInsightsInput = (projectRoot: string) => {
       }
     }
   };
+  const readNative = async <T,>(
+    reader: (
+      directory: URL,
+      options: { onBytes: (filename: string, bytes: Buffer) => void },
+    ) => Promise<T>,
+    directory: URL,
+    ignored: string,
+  ): Promise<T> => {
+    const root = await realpath(projectRoot),
+      path = resolve(fileURLToPath(directory));
+    if (!inside(root, path) || (await realpath(path)) !== path)
+      throw inputError();
+    return reader(directory, {
+      onBytes: (filename, bytes) => {
+        if (filename === ignored) return;
+        if (
+          ++totalFiles > MIGRATION_INSIGHTS_LIMITS.maximumFiles ||
+          bytes.length > MIGRATION_INSIGHTS_LIMITS.maximumFileBytes ||
+          totalBytes + bytes.length >
+            MIGRATION_INSIGHTS_LIMITS.maximumTotalBytes
+        )
+          throw inputError();
+        const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+          sha256 = createHash("sha256").update(bytes).digest("hex"),
+          key = join(path, filename),
+          prior = contents.get(key);
+        if (prior && prior.sha256 !== sha256) throw inputError();
+        totalBytes += bytes.length;
+        contents.set(key, { sha256, text });
+      },
+    });
+  };
   return {
     readInventory: Object.assign(readInventory, {
-      readPrisma: async (directory: URL) => {
-        const root = await realpath(projectRoot);
-        const path = resolve(fileURLToPath(directory));
-        if (!inside(root, path) || (await realpath(path)) !== path)
-          throw inputError();
-        return readPrismaMigrationInventory(directory, {
-          onBytes: (filename, bytes) => {
-            if (filename === "migration_lock.toml") return;
-            if (
-              ++totalFiles > MIGRATION_INSIGHTS_LIMITS.maximumFiles ||
-              bytes.length > MIGRATION_INSIGHTS_LIMITS.maximumFileBytes ||
-              totalBytes + bytes.length >
-                MIGRATION_INSIGHTS_LIMITS.maximumTotalBytes
-            )
-              throw inputError();
-            const text = new TextDecoder("utf-8", { fatal: true }).decode(
-              bytes,
-            );
-            const sha256 = createHash("sha256").update(bytes).digest("hex");
-            const key = join(path, filename);
-            const prior = contents.get(key);
-            if (prior && prior.sha256 !== sha256) throw inputError();
-            totalBytes += bytes.length;
-            contents.set(key, { sha256, text });
-          },
-        });
-      },
+      readPrisma: (directory: URL) =>
+        readNative(
+          readPrismaMigrationInventory,
+          directory,
+          "migration_lock.toml",
+        ),
+      readDrizzle: (directory: URL) =>
+        readNative(
+          readDrizzleMigrationInventory,
+          directory,
+          "meta/_journal.json",
+        ),
     }),
     sourceFor: (path: string, sha256: string): string | undefined => {
       const retained = contents.get(resolve(path));

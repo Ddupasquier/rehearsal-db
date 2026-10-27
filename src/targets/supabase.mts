@@ -1,7 +1,7 @@
+import { requireTimestampMigrationFiles } from "../runtime/migration_identity.mjs";
 import { restoreCopyChunks } from "../runtime/restore_cache.mjs";
 /** Restore and manage the disposable local Supabase runtime from its verified baseline.
  * Reset deletes only this dedicated runtime and its Docker volumes. */
-
 import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import type { Writable } from "node:stream";
@@ -756,7 +756,7 @@ const verifyRuntime = async () => {
   const candidateReceipt = await readCandidateReceipt(baseline);
   const migrationComparison = await verifyRuntimeMigrationHistory({
     baseline,
-    currentFiles: candidateReceipt.currentFiles,
+    currentFiles: requireTimestampMigrationFiles(candidateReceipt.currentFiles),
   });
   let projectVerification;
   if (runtimePolicy) runDatabaseSql(buildRuntimeVerificationSql(runtimePolicy));
@@ -821,7 +821,7 @@ const migrateRuntime = async () => {
       });
       const comparison = await verifyRuntimeMigrationHistory({
         baseline,
-        currentFiles: receipt.currentFiles,
+        currentFiles: requireTimestampMigrationFiles(receipt.currentFiles),
       });
       if (
         comparison.candidates

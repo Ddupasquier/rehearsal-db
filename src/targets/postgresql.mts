@@ -1,3 +1,4 @@
+import { describeMigrationCutoff } from "../runtime/migration_identity.mjs";
 import {
   assertActiveBaselineUnchanged,
   assertNativeBaselineManifestUnchanged,
@@ -804,7 +805,7 @@ const migrateRuntime = async () => {
       console.log(
         receipt.candidates.length
           ? `Applied ${formatCount(receipt.candidates.length, "confirmed candidate migration")} to the disposable PostgreSQL runtime.`
-          : `No candidate migrations follow baseline ${baseline.migrationCutoff}.`,
+          : `No candidate migrations follow baseline ${describeMigrationCutoff(baseline.migrationCutoff)}.`,
       );
       return receipt;
     },

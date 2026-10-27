@@ -7,6 +7,10 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ### Added
 
+- Isolated, unqualified Drizzle Kit 0.31.11 / ORM 0.45.4 / pg 8.23.1 PostgreSQL
+  candidate with explicit native identities and byte-exact journal baseline format 4. Whole-journal baseline preflight, native-prefix consent and shared bounded
+  private execution preserve existing SQL/Prisma contracts. Genuine installed SDK,
+  database and editor qualification is pending; this is not a release/support claim.
 - Opt-in pinned Prisma Migrate 7.10.1 history for PostgreSQL, preserving native
   migration paths, raw checksums and successful ledger entries in baseline format 3.
   Reviewed execution uses a private configuration and the installed local toolchain;

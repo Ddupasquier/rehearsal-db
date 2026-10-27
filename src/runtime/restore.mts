@@ -1,3 +1,7 @@
+import {
+  isDrizzleMigrationFile,
+  type AnyMigrationFileEntry,
+} from "./migration_identity.mjs";
 /**
  * Purpose: Build the bounded PostgreSQL restore program for a verified sanitized
  * Rehearsal baseline. Do not run directly; this module is reusable script infrastructure.
@@ -336,9 +340,40 @@ export const assertBaselineMigrationHistory = ({
   nativeMigrations,
 }: {
   baselineManifest: BaselineManifest;
-  currentFiles: readonly MigrationFileEntry[];
-  nativeMigrations?: PrismaNativeBinding | null;
+  currentFiles: readonly AnyMigrationFileEntry[];
+  nativeMigrations?: PrismaNativeBinding | NativeMigrationBinding | null;
 }): void => {
+  if (baselineManifest.formatVersion === 4) {
+    const bound = parseNativeMigrationBinding(
+      baselineManifest.nativeMigrations,
+    );
+    if (
+      bound.kind !== "drizzle" ||
+      nativeMigrations?.kind !== "drizzle" ||
+      bound.kitVersion !== nativeMigrations.kitVersion ||
+      bound.ormVersion !== nativeMigrations.ormVersion ||
+      bound.driverVersion !== nativeMigrations.driverVersion
+    )
+      throw new Error("Native Drizzle tool/provider differs from baseline.");
+    const expected = baselineManifest.drizzleHistory?.entries;
+    if (!expected?.length || expected.length > currentFiles.length)
+      throw new Error("Drizzle baseline history is absent from source.");
+    for (let i = 0; i < expected.length; i++) {
+      const current = currentFiles[i]!,
+        old = expected[i]!;
+      if (
+        !isDrizzleMigrationFile(current) ||
+        current.nativeIdentity.idx !== old.idx ||
+        current.nativeIdentity.when !== old.when ||
+        current.nativeIdentity.tag !== old.tag ||
+        current.breakpoints !== old.breakpoints ||
+        current.filename !== old.filename ||
+        current.fileSha256 !== old.hash
+      )
+        throw new Error("Drizzle source diverges from baseline native prefix.");
+    }
+    return;
+  }
   if (
     baselineManifest.formatVersion === 3 ||
     baselineManifest.nativeMigrations !== undefined ||
@@ -387,7 +422,7 @@ export const createCandidateMigrationReceipt = ({
   nativeMigrations,
 }: {
   baselineManifest: BaselineManifest;
-  currentFiles: readonly MigrationFileEntry[];
+  currentFiles: readonly AnyMigrationFileEntry[];
   nativeMigrations?: NativeMigrationBinding | null;
 }) => {
   const currentBinding = nativeMigrations

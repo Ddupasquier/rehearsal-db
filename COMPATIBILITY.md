@@ -168,3 +168,15 @@ Executable privacy policy version 2, source-access policy version 1, runtime pol
 version 1, and identity policy version 1 are strict declarative contracts. Unknown
 fields fail closed. They do not imply support for arbitrary transformations, SQL,
 provider administration, consent decisions, or every PostgreSQL extension.
+
+## Native Drizzle worktree candidate
+
+`2.2.0-dev.1` source advertising `drizzleMigrations: 1` introduces a distinct
+format-4 PostgreSQL history, pinned to Kit 0.31.11, ORM 0.45.4 and pg 8.23.1.
+It is unqualified development work, not support inferred from Core 2.0.0/2.1.0 or
+an older editor. A consumer must understand format 4 and explicit native
+`{kind,idx,when,tag}` identities; older strict consumers may refuse it. Formats
+1/2/3 are not converted. Read the [candidate contract](docs/configuration.md#native-drizzle-migrations--unqualified-development-candidate)
+for the fully-applied baseline constraint, dependency/layout limits and excluded
+alternate clients. Genuine installed SDK/database, platform and editor acceptance
+is separate from deterministic source tests.

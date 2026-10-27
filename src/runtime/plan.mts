@@ -1,3 +1,7 @@
+import {
+  isDrizzleMigrationFile,
+  describeMigrationCutoff,
+} from "./migration_identity.mjs";
 /**
  * Purpose: Build the immutable, audit-only Rehearsal execution plan and readiness
  * report from project configuration and verified artifacts. Do not run directly;
@@ -281,7 +285,9 @@ const loadPlanInputs = async (
     candidateReceipt.candidates.map((entry) => entry.filename),
   );
   const migrations = currentFiles.map((entry) => ({
-    version: entry.version,
+    ...(isDrizzleMigrationFile(entry)
+      ? { nativeIdentity: entry.nativeIdentity }
+      : { version: entry.version }),
     name: entry.name,
     filename: entry.filename,
     sha256: entry.fileSha256,
@@ -499,6 +505,12 @@ export const inspectRehearsalMigrations = async (
     baselineCutoff: inputs.baseline.migrationCutoff,
     candidateSha256: inputs.candidateReceipt.candidateSha256,
     migrations: inputs.migrations,
+    ...(inputs.migrationTool?.kind === "drizzle"
+      ? {
+          baselineHistorySha256: inputs.baseline.migrationHistorySha256,
+          baselinePrefixVerification: "exact-native-semantic-prefix" as const,
+        }
+      : {}),
     ...(inputs.migrationTool ? { migrationTool: inputs.migrationTool } : {}),
     definitions: {
       represented_by_baseline:
@@ -739,7 +751,7 @@ export const runRehearsalDoctor = async (
         const policy = validateRuntimeSanitizationPolicy(
           JSON.parse(await readFile(paths.sanitizationPolicy, "utf8")),
         );
-        return `${policy.tables.length} table classifications reviewed through ${policy.migrationCutoff}`;
+        return `${policy.tables.length} table classifications reviewed through ${describeMigrationCutoff(policy.migrationCutoff)}`;
       },
       remediation:
         "Complete every REVIEW REQUIRED decision, remove draft only after review, and retry.",

@@ -34,3 +34,47 @@ describe("editor migration plan", () => {
     ).toThrow("bounded");
   });
 });
+
+it("keeps Drizzle native identities and journal order without inventing timestamp versions", () => {
+  const entries = [
+    {
+      nativeIdentity: {
+        kind: "drizzle",
+        idx: 0,
+        when: 1720000000000,
+        tag: "z_init",
+      },
+      name: "z_init",
+      filename: "z_init.sql",
+      sha256: "a".repeat(64),
+      status: "represented_by_baseline",
+    },
+    {
+      nativeIdentity: {
+        kind: "drizzle",
+        idx: 1,
+        when: 1720000001000,
+        tag: "a_index",
+      },
+      name: "a_index",
+      filename: "a_index.sql",
+      sha256: "b".repeat(64),
+      status: "candidate",
+    },
+  ];
+  const plan = migrationReviewEntries("primary", entries);
+  expect(plan.map((entry) => entry.filename)).toEqual([
+    "z_init.sql",
+    "a_index.sql",
+  ]);
+  expect(plan[1]).toMatchObject({
+    id: "primary:drizzle:1:1720000001000:a_index",
+    dependsOn: ["primary:drizzle:0:1720000000000:z_init"],
+    required: true,
+    nativeIdentity: entries[1].nativeIdentity,
+  });
+  for (const entry of plan) {
+    expect(entry).not.toHaveProperty("version");
+    expect(entry).not.toHaveProperty("timestamp");
+  }
+});
