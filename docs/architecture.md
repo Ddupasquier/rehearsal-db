@@ -48,6 +48,9 @@ rehearsal-db/
   It never retains raw child errors, argv, provider text or output in failure reports.
   An unrecognized failure stays unclassified; a later green test does not establish
   the cause of a historical failure. This test helper is not shipped product code.
+  The closed failure projection is shared with installed-consumer verification
+  through `scripts/verification/scenarios/process.mjs`. Supabase impact failures
+  add only a fixed phase and that projection; raw provider output remains withheld.
 
 ## Documentation audiences
 
