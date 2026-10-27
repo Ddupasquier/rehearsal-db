@@ -1,6 +1,6 @@
 {
   "name": "@rehearsal-db/core",
-  "version": "2.0.0",
+  "version": "2.3.0-dev.1",
   "private": false,
   "description": "Catch PostgreSQL and Supabase migrations that pass on empty databases but fail on real data\u2014before deploy.",
   "repository": {
@@ -38,7 +38,8 @@
     "managedPrototype": 1,
     "containerRetirement": 1,
     "containerEngineDiscovery": 1,
-    "containerEngineLifecycle": 1
+    "containerEngineLifecycle": 1,
+    "commandCapabilities": 1
   },
   "exports": {
     ".": {

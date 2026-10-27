@@ -107,6 +107,56 @@ try {
   );
   assert.equal(discovery.schemaVersion, 1);
   assert.equal(discovery.status, "success");
+  assert.equal(installed.rehearsalContracts?.commandCapabilities, 1);
+  const capabilities = JSON.parse(
+    succeeded([cli, "inspect", "capabilities", "--json", "--plain"], project),
+  );
+  assert.equal(capabilities.schemaVersion, 1);
+  assert.equal(capabilities.status, "success");
+  assert.equal(capabilities.command, "inspect capabilities");
+  assert.equal(capabilities.rehearsalVersion, installed.version);
+  const capabilityData = capabilities.data;
+  assert.equal(capabilityData.schemaVersion, 1);
+  assert.equal(capabilityData.assurance, "inspection");
+  assert.equal(capabilityData.node.supported, true);
+  const metadataCapability = capabilityData.operations.find((operation) =>
+    operation.commands.includes("inspect capabilities"),
+  );
+  assert.ok(metadataCapability);
+  assert.equal(metadataCapability.backend, "offline");
+  assert.equal(metadataCapability.supportState, "supported");
+  assert.equal(metadataCapability.availability, "available");
+  assert.equal(metadataCapability.assuranceWhenCompleted, "inspection");
+  const runtimeCapability = capabilityData.operations.find((operation) =>
+    operation.commands.includes("run"),
+  );
+  assert.ok(runtimeCapability);
+  assert.equal(runtimeCapability.backend, "container");
+  assert.equal(runtimeCapability.assuranceWhenCompleted, "full");
+  assert.equal(
+    runtimeCapability.supportState,
+    capabilityData.host.runtimeHostQualified ? "supported" : "unsupported",
+  );
+  assert.equal(
+    runtimeCapability.availability,
+    capabilityData.host.runtimeHostQualified ? "unknown" : "unavailable",
+  );
+  if (process.platform === "win32") {
+    assert.equal(capabilityData.host.kind, "windows");
+    assert.equal(capabilityData.host.runtimeHostQualified, false);
+  }
+  assert.equal(capabilityData.receipt.state, "not-requested");
+  assert.equal(capabilityData.receipt.timestamp, null);
+  for (const field of ["freshness", "currentInputsMatch", "liveState"]) {
+    assert.equal(capabilityData.receipt[field], "unknown");
+  }
+  assert.deepEqual(capabilityData.safety, {
+    projectConfigurationEvaluated: false,
+    childProcessesStarted: false,
+    enginesProbed: false,
+    databaseObserved: false,
+    filesWritten: false,
+  });
   let nativeRuntime = "not-exercised";
   if (process.platform === "win32") {
     // A missing config makes an accidental regression non-mutating. The expected
@@ -155,6 +205,13 @@ try {
         installedVersion: "passed",
         help: "passed",
         discovery: "passed",
+        commandCapabilities: {
+          status: "passed",
+          schemaVersion: 1,
+          assurance: "inspection",
+          receipt: "not-requested",
+          runtimeAvailability: "not-observed",
+        },
         pathWithSpacesAndUnicode: "passed",
         installScripts: "disabled",
         nativeRuntime,

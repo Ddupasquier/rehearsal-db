@@ -158,3 +158,14 @@ Executable privacy policy version 2, source-access policy version 1, runtime pol
 version 1, and identity policy version 1 are strict declarative contracts. Unknown
 fields fail closed. They do not imply support for arbitrary transformations, SQL,
 provider administration, consent decisions, or every PostgreSQL extension.
+
+## Offline command-capability inspection candidate
+
+The additive `commandCapabilities: 1` endpoint reports requirements and optional
+recorded receipt provenance without Docker/Supabase/engine probes or project-code
+execution. It does not expand native Windows/WSL private-file or runtime support.
+Receipt reads retain qualified POSIX boundaries, and artifact checksums or recorded
+receipts never mean a database or full rehearsal was verified. See
+[the command contract](docs/commands.md#command-capabilities-and-recorded-receipt-provenance).
+This unpublished candidate requires exact installed-package qualification before
+release; simulated platform tests alone are not Windows acceptance.

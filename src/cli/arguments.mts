@@ -13,6 +13,7 @@ export interface RehearsalCliFlags {
   write: boolean;
   plain: boolean;
   configPath: string | undefined;
+  receiptPath: string | undefined;
   confirmation: string | undefined;
   recordsPath: string | undefined;
   ledgerPath: string | undefined;
@@ -54,6 +55,7 @@ export const parseArguments = (
     write: false,
     plain: false,
     configPath: undefined,
+    receiptPath: undefined,
     confirmation: undefined,
     recordsPath: undefined,
     ledgerPath: undefined,
@@ -88,7 +90,11 @@ export const parseArguments = (
     else if (argument === "--dry-run") flags.dryRun = true;
     else if (argument === "--write") flags.write = true;
     else if (argument === "--plain") flags.plain = true;
-    else if (argument.startsWith("--config="))
+    else if (argument.startsWith("--receipt=")) {
+      if (flags.receiptPath !== undefined)
+        throw new Error("Receipt observation option must be provided once.");
+      flags.receiptPath = argument.slice("--receipt=".length);
+    } else if (argument.startsWith("--config="))
       flags.configPath = argument.slice("--config=".length);
     else if (argument.startsWith("--confirm-candidates="))
       flags.confirmation = argument.slice("--confirm-candidates=".length);
@@ -147,12 +153,41 @@ export const parseArguments = (
       });
     else positionals.push(argument);
   }
+  if (
+    flags.receiptPath !== undefined &&
+    positionals.join(" ") !== "inspect capabilities"
+  )
+    throw new Error(
+      "Receipt observation is available only through inspect capabilities.",
+    );
+  if (
+    positionals.join(" ") === "inspect capabilities" &&
+    arguments_.some(
+      (argument) =>
+        argument.startsWith("-") &&
+        ![
+          "--json",
+          "--plain",
+          "--verbose",
+          "--debug",
+          "--help",
+          "-h",
+          "--version",
+          "-V",
+        ].includes(argument) &&
+        !argument.startsWith("--receipt="),
+    )
+  )
+    throw new Error(
+      "Capabilities inspection accepts only output options and an explicit receipt selection.",
+    );
   return { flags, positionals };
 };
 
 export const resetGuidedFlags = (flags: RehearsalCliFlags): void => {
   Object.assign(flags, {
     dryRun: false,
+    receiptPath: undefined,
     write: false,
     confirmation: undefined,
     recordsPath: undefined,
