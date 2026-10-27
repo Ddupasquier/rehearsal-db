@@ -403,6 +403,82 @@ a {
   margin: 0 auto;
 }
 
+.migration-story {
+  max-width: 1080px;
+  margin: 0 auto 40px;
+  padding: clamp(20px, 3vw, 36px);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--canvas-raised);
+}
+
+.migration-story h2 {
+  margin: 12px 0;
+  font-family: "Fraunces Rehearsal", ui-serif, Georgia, serif;
+  font-size: clamp(26px, 3vw, 36px);
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.migration-story p {
+  color: var(--ink-soft);
+}
+
+.migration-story pre {
+  overflow-x: auto;
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--code);
+  color: #f1f8f5;
+  font-size: 14px;
+}
+
+.story-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin: 24px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.story-steps li {
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 2px solid var(--line-strong);
+}
+
+.story-steps li + li {
+  border-color: var(--brand);
+}
+
+.story-label {
+  color: var(--ink-faint);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.story-steps h3 {
+  margin: 10px 0;
+  font-size: 19px;
+  line-height: 1.3;
+}
+
+.story-steps p {
+  margin: 0;
+}
+
+.story-limit {
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .story-steps {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
 .prose {
   min-width: 0;
 }
