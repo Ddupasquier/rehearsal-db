@@ -1,3 +1,7 @@
+import {
+  assertActiveBaselineUnchanged,
+  assertNativeBaselineManifestUnchanged,
+} from "../runtime/baseline_identity.mjs";
 import { createPostgresqlMigrationRuntime } from "./postgresql_migrations.mjs";
 import { requirePrismaTargetBinding } from "./prisma_target_binding.mjs";
 import { createPostgresqlContainerLifecycle } from "./postgresql_container_resume.mjs";
@@ -296,6 +300,8 @@ const databaseEnvironment = (password: string): DatabaseEnvironment => ({
 const migrationRuntime = createPostgresqlMigrationRuntime({
   loaded: loadedConfiguration,
   runSql: runPsql,
+  assertExpectedBaseline: (baseline) =>
+    assertNativeBaselineManifestUnchanged({ artifactRoot, expected: baseline }),
   containerName,
   database,
   databaseUser,
@@ -546,11 +552,13 @@ const writeRuntimeEnvironment = async ({
   );
 };
 
-const readActive = () =>
+const readActive = (expectedBaseline?: BaselineManifest) =>
   readActiveRuntimeInput({
     artifactRoot,
     manifestPath,
     validate: async ({ baseline, manifest }) => {
+      if (expectedBaseline)
+        assertActiveBaselineUnchanged(expectedBaseline, baseline);
       if (
         Boolean(baseline.nativeMigrations) !==
         Boolean(postgresqlConfig.migrationTool)
@@ -558,7 +566,8 @@ const readActive = () =>
         throw new Error(
           "Baseline and configured migration tool differ; no runtime change was made.",
         );
-      if (postgresqlConfig.migrationTool) await migrationRuntime.plan(baseline);
+      if (postgresqlConfig.migrationTool)
+        await migrationRuntime.validateHistory(baseline);
       if (Object.keys(baseline.storageAssets ?? {}).length > 0) {
         throw new Error(
           "The PostgreSQL target cannot restore Supabase Storage assets. Create this baseline without an assets manifest.",
@@ -620,8 +629,15 @@ const retainedContainerLifecycle = createPostgresqlContainerLifecycle({
   database,
 });
 
-const resetRuntime = async () => {
-  const active = await readActive();
+const resetRuntime = async (expectedBaseline?: BaselineManifest) => {
+  const active = await readActive(expectedBaseline);
+  if (postgresqlConfig.migrationTool)
+    await migrationRuntime.prepareMutation(active.baseline);
+  if (postgresqlConfig.migrationTool)
+    await assertNativeBaselineManifestUnchanged({
+      artifactRoot,
+      expected: active.baseline,
+    });
   await removeRuntime();
   await mkdir(runtimeWorkdir, { recursive: true, mode: 0o700 });
   return withOwnedRuntimeRollback({
@@ -670,8 +686,8 @@ const resetRuntime = async () => {
   });
 };
 
-const startRuntime = async () => {
-  const { baseline } = await readActive();
+const startRuntime = async (expectedBaseline?: BaselineManifest) => {
+  const { baseline } = await readActive(expectedBaseline);
   if (
     postgresqlConfig.migrationTool &&
     (await pathExists(join(runtimeWorkdir, "native-migration-failure.json")))
@@ -679,7 +695,7 @@ const startRuntime = async () => {
     throw new Error(
       "The native migration failed or was interrupted. Its volume and failure receipt are preserved. Review the failure, then explicitly reset the disposable target from its immutable baseline; automatic retry is refused.",
     );
-  if (!(await pathExists(runtimeMarkerPath))) return resetRuntime();
+  if (!(await pathExists(runtimeMarkerPath))) return resetRuntime(baseline);
   const mismatchMessage =
     "The local Rehearsal runtime does not match the active baseline; reset it before continuing.";
   const marker = await readMatchingRuntimeMarker({
@@ -727,7 +743,7 @@ const readCandidateReceipt = migrationRuntime.plan;
 
 const verifyRuntime = async () => {
   const { baseline } = await readActive();
-  const environment = await startRuntime();
+  const environment = await startRuntime(baseline);
   const receipt = await readCandidateReceipt(baseline);
   const migrationVerification = verifyMigrationLedger({
     currentFiles: receipt.currentFiles,
@@ -759,12 +775,13 @@ const verifyRuntime = async () => {
 
 const migrateRuntime = async () => {
   const { baseline } = await readActive();
-  const environment = await startRuntime();
-  const receipt = await readCandidateReceipt(baseline);
-  assertCandidateConfirmation({
-    plan: receipt,
-    confirmation: invocation.confirmation,
-  });
+  const receipt = await migrationRuntime.prepareMutation(baseline, (receipt) =>
+    assertCandidateConfirmation({
+      plan: receipt,
+      confirmation: invocation.confirmation,
+    }),
+  );
+  const environment = await startRuntime(baseline);
   verifyMigrationLedger({ currentFiles: receipt.currentFiles, baseline });
   return withOwnedRuntimeRollback({
     operation: async function migrateRuntimeOperation() {

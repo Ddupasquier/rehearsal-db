@@ -12,7 +12,10 @@ import {
   normalizePrismaMigrationLedger,
   readPrismaMigrationInventory,
 } from "../runtime/prisma_history.mjs";
-import { createCandidateMigrationReceipt } from "../runtime/restore.mjs";
+import {
+  createCandidateMigrationReceipt,
+  assertBaselineMigrationHistory,
+} from "../runtime/restore.mjs";
 import { runOwnedPostgresqlMigration } from "./postgresql_process.mjs";
 import { deployPrismaMigrations } from "./prisma_migration_process.mjs";
 import { inspectPrismaToolchain } from "../runtime/prisma_toolchain.mjs";
@@ -24,6 +27,7 @@ export const createPostgresqlMigrationRuntime = ({
   loaded,
   runSql,
   assertOwnedTarget,
+  assertExpectedBaseline,
   containerName,
   database,
   databaseUser,
@@ -31,6 +35,7 @@ export const createPostgresqlMigrationRuntime = ({
   loaded: Loaded;
   runSql: (sql: string) => string;
   assertOwnedTarget: () => string;
+  assertExpectedBaseline: (baseline: BaselineManifest) => Promise<void>;
   containerName: string;
   database: string;
   databaseUser: string;
@@ -119,6 +124,25 @@ values (${quote(migration.version)}, ${quote(migration.name)}, ${quote(migration
   };
   return {
     plan,
+    prepareMutation: async (
+      baseline: BaselineManifest,
+      confirm?: (receipt: Awaited<ReturnType<typeof plan>>) => void,
+    ) => {
+      const receipt = await plan(baseline);
+      confirm?.(receipt);
+      return receipt;
+    },
+    validateHistory: async (baseline: BaselineManifest) => {
+      if (!tool) return;
+      const inventory = await readPrismaMigrationInventory(
+        pathToFileURL(`${loaded.paths.migrationDirectory}/`),
+      );
+      assertBaselineMigrationHistory({
+        baselineManifest: baseline,
+        currentFiles: inventory.entries,
+        nativeMigrations: inventory.binding,
+      });
+    },
     readLedger,
     verifyLedger,
     initialize: () => {
@@ -153,6 +177,7 @@ applied_at timestamptz not null default now());`);
           binding,
           databaseUrl,
           assertOwnedTarget,
+          assertExpectedBaseline: () => assertExpectedBaseline(baseline),
         });
         verifyLedger({ currentFiles: inventory.entries, baseline });
       } else {
@@ -181,6 +206,7 @@ applied_at timestamptz not null default now());`);
           binding: parseNativeMigrationBinding(receipt.nativeMigrations),
           databaseUrl,
           assertOwnedTarget,
+          assertExpectedBaseline: () => assertExpectedBaseline(baseline),
         });
       } else {
         for (const migration of receipt.candidates.slice(

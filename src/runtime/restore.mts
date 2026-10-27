@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
 import type { RuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
+import type { PrismaNativeBinding } from "./prisma_history.mjs";
 import type { MigrationFileEntry } from "./migration_history.mjs";
 import {
   parseNativeMigrationBinding,
@@ -329,26 +330,27 @@ commit;
 `;
 };
 
-export const createCandidateMigrationReceipt = ({
+export const assertBaselineMigrationHistory = ({
   baselineManifest,
   currentFiles,
   nativeMigrations,
 }: {
   baselineManifest: BaselineManifest;
   currentFiles: readonly MigrationFileEntry[];
-  nativeMigrations?: NativeMigrationBinding | null;
-}) => {
-  if (baselineManifest.nativeMigrations !== undefined || nativeMigrations) {
+  nativeMigrations?: PrismaNativeBinding | null;
+}): void => {
+  if (
+    baselineManifest.formatVersion === 3 ||
+    baselineManifest.nativeMigrations !== undefined ||
+    nativeMigrations
+  ) {
     const bound = parseNativeMigrationBinding(
       baselineManifest.nativeMigrations,
     );
     if (
       !nativeMigrations ||
       baselineManifest.formatVersion !== 3 ||
-      !sameNativeMigrationHistory(
-        bound,
-        parseNativeMigrationBinding(nativeMigrations),
-      )
+      !sameNativeMigrationHistory(bound, nativeMigrations)
     )
       throw new Error(
         "Native migration tool, version, provider or lock differs from the baseline; review a new baseline before proceeding.",
@@ -377,7 +379,30 @@ export const createCandidateMigrationReceipt = ({
       );
     }
   }
-  const candidates = currentFiles.slice(baselineEntries.length);
+};
+
+export const createCandidateMigrationReceipt = ({
+  baselineManifest,
+  currentFiles,
+  nativeMigrations,
+}: {
+  baselineManifest: BaselineManifest;
+  currentFiles: readonly MigrationFileEntry[];
+  nativeMigrations?: NativeMigrationBinding | null;
+}) => {
+  const currentBinding = nativeMigrations
+    ? parseNativeMigrationBinding(nativeMigrations)
+    : nativeMigrations;
+  assertBaselineMigrationHistory({
+    baselineManifest,
+    currentFiles,
+    ...(currentBinding === undefined
+      ? {}
+      : { nativeMigrations: currentBinding }),
+  });
+  const candidates = currentFiles.slice(
+    Object.keys(baselineManifest.migrations).length,
+  );
   const candidateSha256 = createHash("sha256")
     .update(
       `${JSON.stringify(

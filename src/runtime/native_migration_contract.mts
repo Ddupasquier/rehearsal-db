@@ -56,8 +56,8 @@ export const sameNativeMigrationBinding = (
 
 /** Baseline history is portable; each execution review separately binds installed platform bytes. */
 export const sameNativeMigrationHistory = (
-  a: NativeMigrationBinding,
-  b: NativeMigrationBinding,
+  a: PrismaNativeBinding,
+  b: PrismaNativeBinding,
 ) =>
   a.kind === b.kind &&
   a.version === b.version &&
