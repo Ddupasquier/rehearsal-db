@@ -33,6 +33,59 @@ requires a separately reviewed data migration. Capacity admission is a separate
 check and refuses unavailable metrics; discovery is not a memory reservation.
 Existing opt-in Colima startup and owned-boot shutdown retain their narrower contract.
 
+## Engine conformance status
+
+Detection and qualification are separate. The following matrix records the current
+qualification boundary, not a recommendation to install or switch engines.
+[RDB-167](https://github.com/Ddupasquier/rehearsal-db/issues/167) remains open for
+vendor/version acceptance. Generic Docker API compatibility is not a tested vendor
+version, rootless mode or complete Supabase result.
+
+| Engine / host                                           | Current evidence boundary                                                                                                  | Remaining qualification                                                                                                                           |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Colima 0.10.3 / macOS Apple Silicon, VZ                 | Tested explicit shutdown backend under its documented ownership/process/disk requirements                                  | Other Colima versions, architectures and backends need their own exact observations; shutdown proof alone does not qualify every database/profile |
+| Docker Engine / Linux                                   | Portable Docker-compatible runtime path; existing Linux fixture evidence applies only to its recorded artifacts and daemon | Publish an exact vendor/OS/CPU/CLI/API/rootless tuple before claiming broader vendor conformance                                                  |
+| Docker Desktop / macOS or Windows-hosted engine         | Experimental vendor qualification; context detection is not an installed-vendor pass                                       | Matched database/service, persistence, refusal, cleanup and resource evidence; native Windows execution retains its current refusal               |
+| Podman Docker compatibility / Linux or local VM         | Experimental; a Docker-compatible endpoint does not establish API/lifecycle parity                                         | Exact compatibility-service/CLI/API/rootless tuple, volume/network/ownership and database evidence                                                |
+| Rancher Desktop / supported local hosts                 | Experimental vendor qualification                                                                                          | Exact Docker-compatible mode and local endpoint, versions, architecture, data-preservation and service evidence                                   |
+| OrbStack / macOS                                        | Optional, experimental vendor qualification; no product default or qualified shutdown adapter                              | Separately approved exact-version fixture and exclusive-engine resource comparison                                                                |
+| Remote/TLS/ambiguous contexts; unsupported native hosts | Unsupported for the current local runtime boundary                                                                         | No automatic fallback, remote probing or adoption of unowned resources                                                                            |
+
+Here **tested** means only the explicitly named operation and evidence tuple;
+**experimental** means qualification is incomplete, not permission to bypass a
+refusal; **unavailable** describes an absent/stopped tool or missing evidence on a
+particular machine; **unsupported** is an enforced product boundary. A missing
+measurement is unavailable, never zero. These labels do not change runtime behavior
+or promise vendor certification.
+
+### Proposed qualification record
+
+For future separately authorized trials, Test Lab should retain one versioned
+record per exact tuple: Core artifact SHA-256; scenario/source revision; host OS,
+kernel, CPU/virtualization and Node; vendor/product and CLI/server/API versions;
+rootless/rootful and compatibility mode; local endpoint kind and private binding
+identity; image digest/architecture; provider/service profile and fixture digest;
+actual limits; scenario results, report hashes and cleanup outcome. Keep raw local
+paths, daemon identifiers, credentials and database rows private. Public summaries
+use reviewed aliases and hashes. Unknown fields remain explicit.
+
+Qualify PostgreSQL and applicable Supabase profiles independently, using the same
+public installed artifact and maintained ownership/lease guards. A trial must prove
+local endpoint binding and changed/remote/ambiguous refusal, exact container/network/
+port/volume ownership, migration success and partial failure, stop/start persistence,
+interruption/timeouts, concurrent/unrelated preservation and reviewed cleanup. Bind
+stopped-container image references as well as running ones. Inspection must never
+start the engine. Engine shutdown needs its own explicit current-boot ownership
+adapter; database-target cleanup does not grant engine ownership.
+
+Record cold download/VM boot, warm restore, steady-state workload and post-cleanup
+host memory separately. Compare matched repeated workloads and actual limits;
+container RSS, VM capacity and host pressure are different observations. Promotion
+of a matrix cell requires reviewed exact evidence, documented gaps and normal owner
+approval for any support expansion. This protocol adds no CI gate, runtime installer,
+background collector or automatic vendor selection. The independent procedure is
+owned by the [Lab runbook](https://github.com/Ddupasquier/rehearsal-test-lab/blob/main/docs/runbook.md#vendor-conformance-record-proposal).
+
 ## What starts Docker?
 
 Read-only commands such as `doctor`, `status`, `candidates`, `explain`, and `inspect` do
