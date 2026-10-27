@@ -283,6 +283,9 @@ boundary rather than copying an existing driver's orchestration.
 
 ## Identity claim pipeline
 
+The [auth-platform contract proposal](auth-platform-contract.md) preserves this pipeline
+and separates future platform trust from application sign-in and account association.
+
 The stable `identity/claim.mts` facade exposes policy validation, deterministic planning,
 and confirmed execution while keeping those responsibilities separate:
 
