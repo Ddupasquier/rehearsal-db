@@ -11,11 +11,16 @@ a Changelog, and published versions follow Semantic Versioning.
   candidate with explicit native identities and byte-exact journal baseline format 4. Whole-journal baseline preflight, native-prefix consent and shared bounded
   private execution preserve existing SQL/Prisma contracts. Genuine installed SDK,
   database and editor qualification is pending; this is not a release/support claim.
+
+## [2.1.0] - 2026-10-26
+
+### Added
+
 - Opt-in pinned Prisma Migrate 7.10.1 history for PostgreSQL, preserving native
   migration paths, raw checksums and successful ledger entries in baseline format 3.
   Reviewed execution uses a private configuration and the installed local toolchain;
-  native failures retain the data volume for explicit recovery. Qualification is
-  pending independent installed-consumer and editor verification.
+  native failures, cancellation and timeouts retain the data volume for explicit
+  recovery. Existing SQL histories and baseline formats 1/2 keep their behavior.
 
 ## [2.0.0] - 2026-10-25
 
@@ -938,7 +943,9 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.2...v1.1.0

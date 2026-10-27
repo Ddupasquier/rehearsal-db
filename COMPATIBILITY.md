@@ -90,15 +90,18 @@ and explicitly unsupported for shutdown. The shared lifecycle queue adds
 See the [VM shutdown policy](docs/runtime-lifecycle.md#shut-down-the-vm-explicitly)
 and [JSON contract](docs/commands.md#engine-status-and-reviewed-vm-shutdown).
 
-## Native Prisma candidate
+## Native Prisma migrations
 
-Unreleased builds advertising `rehearsalContracts.nativeMigrations: 1` add optional
+Core 2.1 builds advertising `rehearsalContracts.nativeMigrations: 1` add optional
 Prisma Migrate 7.10.1/PostgreSQL configuration and baseline format 3. Existing flat
 SQL configurations and baseline formats 1/2 retain their meaning. Format 3 requires
 an editor that explicitly understands its native history and tool binding; older
-strict consumers may refuse it. Do not infer Prisma support from Core 2.0.0 or
-Starter 0.1.25. Independent installed-package, native editor and platform
-qualification is pending. See the [candidate configuration](docs/configuration.md#native-prisma-migrations--development-candidate).
+strict consumers may refuse it. Visual review requires Starter 0.1.26 or later
+with that explicit capability. Core 2.0.0 and Starter 0.1.25 do not support it.
+The initial SDK qualification target is PostgreSQL 17 / Ubuntu 24.04 x64 / Node 24;
+Core's general platform coverage does not qualify other SDK/host combinations.
+Prisma Client, hosted preparation, other providers and physical-schema-drift
+detection are outside this slice. See the [native configuration](docs/configuration.md#native-prisma-migrations).
 
 ## Operating systems and execution location
 
