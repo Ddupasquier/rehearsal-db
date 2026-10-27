@@ -252,6 +252,10 @@ data/Storage preservation checks. It does not infer a rollback from a failed mig
 
 ## Runtime lifecycle
 
+The planning-only [database capability and conformance design](database-capabilities.md)
+owns future cross-family semantics, ownership and independent acceptance. It adds
+no supported runtime or execution backend.
+
 `runtime/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
 PostgreSQL and Supabase use it to dispatch commands, verify active baseline inputs,
 calculate and confirm the exact migration set, write target-bound receipts, validate
