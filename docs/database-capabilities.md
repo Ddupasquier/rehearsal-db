@@ -210,6 +210,8 @@ a malicious same-user writer or a guarantee of OS-specific atomic replacement.
 
 For a future native server, require verified process birth/executable, endpoint,
 data directory and database namespace ownership, or refuse lifecycle control.
+The [owned native PostgreSQL design](native-postgresql-design.md) owns that
+backend's proposed privilege, lifecycle and independent acceptance details.
 Do not stop an arbitrary listening server merely because it is local. Each non-embedded family needs a separately reviewed native or container backend;
 none is selected here. Engine-native plugins, procedures or migration
 code need a whole-flow privilege/external-effects review; a clean environment alone
