@@ -252,7 +252,7 @@ data/Storage preservation checks. It does not infer a rollback from a failed mig
 
 ## Runtime lifecycle
 
-The planning-only [database capability and conformance design](database-capabilities.md)
+The planning-only [database capability and conformance design](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/database-capabilities.md)
 owns future cross-family semantics, ownership and independent acceptance. It adds
 no supported runtime or execution backend.
 
@@ -282,6 +282,9 @@ lifecycle engine at 300 lines or fewer. A new database target must use this life
 boundary rather than copying an existing driver's orchestration.
 
 ## Identity claim pipeline
+
+The [auth-platform contract proposal](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/auth-platform-contract.md) preserves this pipeline
+and separates future platform trust from application sign-in and account association.
 
 The stable `identity/claim.mts` facade exposes policy validation, deterministic planning,
 and confirmed execution while keeping those responsibilities separate:
