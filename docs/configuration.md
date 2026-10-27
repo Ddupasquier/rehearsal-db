@@ -654,7 +654,7 @@ published or can be found.
 
 ## Supabase authentication
 
-Future platform/OIDC boundaries are a [design proposal](auth-platform-contract.md),
+Future platform/OIDC boundaries are a [design proposal](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/auth-platform-contract.md),
 not additional supported configuration.
 
 Rehearsal can configure a Google or GitHub OAuth connection in its disposable local
