@@ -174,7 +174,7 @@ provider administration, consent decisions, or every PostgreSQL extension.
 
 ## Native Drizzle worktree candidate
 
-`2.2.0-dev.1` source advertising `drizzleMigrations: 1` introduces a distinct
+`2.2.0` release-candidate source advertising `drizzleMigrations: 1` introduces a distinct
 format-4 PostgreSQL history, pinned to Kit 0.31.11, ORM 0.45.4 and pg 8.23.1.
 It is unqualified development work, not support inferred from Core 2.0.0/2.1.0 or
 an older editor. A consumer must understand format 4 and explicit native

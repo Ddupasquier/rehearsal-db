@@ -5,6 +5,8 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-26
+
 ### Added
 
 - Isolated, unqualified Drizzle Kit 0.31.11 / ORM 0.45.4 / pg 8.23.1 PostgreSQL

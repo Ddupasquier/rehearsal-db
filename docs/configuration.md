@@ -940,7 +940,7 @@ contracts.
 ### Native Drizzle migrations — unqualified development candidate
 
 Builds advertising `rehearsalContracts.drizzleMigrations: 1` add a separate,
-explicit PostgreSQL candidate. This worktree's `2.2.0-dev.1` source is not a
+explicit PostgreSQL candidate. This worktree's `2.2.0` release-candidate source is not a
 published or independently qualified integration. Prisma's `nativeMigrations: 1`
 and flat SQL histories keep their existing contracts.
 
