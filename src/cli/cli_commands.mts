@@ -4,6 +4,7 @@ import { createApplicationCommandHandlers } from "./application_command_handlers
 import { createManagedCommandHandlers } from "./managed_command_handlers.mjs";
 import { createContainerCommandHandlers } from "./container_command_handlers.mjs";
 import { createEngineCommandHandlers } from "./engine_command_handlers.mjs";
+import { createCapabilityCommandHandlers } from "./capability_command_handlers.mjs";
 import { createBasicCommandHandlers } from "./basic_command_handlers.mjs";
 import { createCommandRegistry } from "./command_registry.mjs";
 import { createIdentityCommandHandlers } from "./identity_command_handlers.mjs";
@@ -34,6 +35,7 @@ export const createCliCommandRegistry = ({
 }) =>
   createCommandRegistry([
     ...createBasicCommandHandlers(),
+    ...createCapabilityCommandHandlers(),
     ...createProjectCommandHandlers({
       projectRoot,
       runSetup: projectCommands.runSetup,

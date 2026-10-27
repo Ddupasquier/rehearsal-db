@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — 2.3.0-dev.1
+
+- Inspect operation-specific offline/native/container requirements through an additive, advertised capability contract without configuration execution, engine probes or project writes.
+- Inspect explicit private POSIX runtime receipts as recorded provenance; current input matches, timestamps and live database state remain unknown. Existing command schemas and Windows live-runtime refusals are preserved.
+
 All notable Rehearsal package changes are documented here. The format follows Keep
 a Changelog, and published versions follow Semantic Versioning.
 

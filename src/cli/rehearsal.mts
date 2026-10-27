@@ -161,6 +161,7 @@ const main = async () => {
         "help",
         "version",
         "discover",
+        "inspect capabilities",
         "doctor",
         "engine status",
         "engine stop",

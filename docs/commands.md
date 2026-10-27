@@ -4,6 +4,66 @@ Run project commands from the directory containing `rehearsal.config.mjs`. Engin
 workload inspection/review commands need no project configuration. The examples
 use `npx`, so a global install is not required.
 
+## Command capabilities and recorded receipt provenance
+
+Builds advertising `rehearsalContracts.commandCapabilities: 1` provide:
+
+```bash
+npx --no-install rehearsal inspect capabilities --json
+npx --no-install rehearsal inspect capabilities --receipt=.rehearsal/runtime/candidate-receipt.json --json
+```
+
+This separate version-1 data contract reports requirements for selected setup,
+inspection and runtime command families without loading
+project JavaScript, acquiring a project lock, writing files, starting children or
+probing engines/databases. It needs no project configuration, Docker, Supabase CLI
+or WSL. Envelope success means the inspection completed, never that a rehearsal
+passed. Existing command/result schemas remain unchanged. Older builds without
+the advertised capability do not provide this endpoint.
+
+`backend` (`offline`, `native`, `container`), `supportState` (`supported`,
+`unsupported`, `unknown`, `not-applicable`) and observed `availability`
+(`available`, `unavailable`, `unknown`) are separate. Top-level `assurance` is
+always `inspection`; each operation's `assuranceWhenCompleted` describes the
+conditional result of that operation, not work performed by this query. Runtime
+availability remains unknown without its existing explicit readiness/ownership
+checks. Supabase CLI requirements apply to Supabase operations only. Unsupported
+Node versions and host boundaries remain explicit; no runtime is installed,
+selected, started or substituted. Native PostgreSQL execution is not implemented
+by this capability contract.
+
+An optional receipt is an explicit project-relative JSON path. The command never
+guesses paths from executable configuration. Qualified POSIX reads require a
+canonical confined ancestry and a private owner-held regular file, without links,
+hard links or changes during its bounded read (2 MiB; 10,000 candidate entries).
+Native Windows and unqualified WSL filesystems report receipt refusal; this does
+not establish their private-file or live-runtime safety. The query accepts only
+output options and the receipt selection, never configuration or mutation flags.
+
+`receipt` reports `state` (`not-requested`, `observed`, `missing`, `refused`), a
+fixed reason, and validated recorded target/generation/digest/count when observed.
+`currentInputsMatch`, `liveState` and `freshness` always remain `unknown` and
+`timestamp` remains null: the legacy receipt contains no timestamp, a receipt can
+be copied or forged, and its fields are not an independent baseline or database
+observation. Malformed, missing, oversized or unsafe input produces a closed
+observation without its path, JSON, filenames, SQL or credentials. It never
+upgrades the existing `applied_to_current_runtime` label to fresh live evidence.
+Use the existing supported live commands for actual database verification.
+
+On supported POSIX hosts, `init` and existing local configuration/artifact/migration
+inspection already operate without Docker. Existing configuration loaders execute
+reviewed project JavaScript and are not inert discovery. `setup` preview includes optional bounded engine observations even though
+its main result is scaffolding; its offline label is not a no-probe guarantee.
+The separate `setup --write` row includes its existing full Doctor review after
+writing scaffolding. `inspect impact` is the offline preview; `measure impact`
+requires the explicitly selected running owned sandbox and exact confirmation.
+Basic help/version availability is separate from supported Node qualification;
+unsupported versions remain unknown, not an assertion they cannot print help.
+Injected-version tests do not establish execution on that actual Node release.
+Safety flags describe only this metadata query, not the operations it lists. Native Windows live and
+preparation refusals remain in force; metadata availability is not Windows runtime
+qualification.
+
 ## Participating local workloads
 
 Core 1.3.0 and later builds advertising `rehearsalContracts.workloadQueue: 1` support

@@ -49,6 +49,17 @@ rehearsal-db/
   An unrecognized failure stays unclassified; a later green test does not establish
   the cause of a historical failure. This test helper is not shipped product code.
 
+## Command capability inspection
+
+`project/command_capabilities.mts` owns the bounded command-requirement projection;
+`project/receipt_provenance.mts` owns explicit recorded-receipt parsing and stable,
+private, confined POSIX reads. The thin capability CLI handler consumes these
+owners through a separate advertised version-1 contract. It does not load project
+configuration, probe tools/engines, select a backend or replace live readiness.
+Receipt observations never establish current input matches, time or live state.
+Held ancestry and before/after file identity checks detect observed drift; they
+are not atomic openat resolution or a sandbox against privileged concurrent work.
+
 ## Documentation audiences
 
 Site navigation separates Getting started, User reference and Maintainers. Installation,
