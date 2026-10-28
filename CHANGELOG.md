@@ -3,10 +3,13 @@
 All notable Rehearsal package changes are documented here. The format follows Keep
 a Changelog, and published versions follow Semantic Versioning.
 
-## [2.0.1] - 2026-10-27
+## [2.0.1] - 2026-10-28
 
 ### Fixed
 
+- Keep the reviewed Docker context during repeated manager operations, including
+  Supabase stop, even when the ambient default selects another context. Endpoint,
+  TLS, explicit-selector and client-configuration checks remain in force.
 - Automatic owned-Colima shutdown now confirms that the qualified profile is
   stopped and its captured VM has exited before retiring the startup receipt.
   An unavailable Docker daemon alone no longer counts as a stopped VM.

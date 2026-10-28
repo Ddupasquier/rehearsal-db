@@ -23,7 +23,7 @@ An explicit `DOCKER_CONTEXT` takes precedence over `DOCKER_HOST` and the default
 context. A scoped `DOCKER_CONFIG` directory is preserved. A direct local host must
 map uniquely to a real named context; ambiguous, unmapped, remote and TLS selections
 refuse without fallback. Local runtime children receive the reviewed context and
-endpoint identity rather than following later ambient context changes. Existing
+endpoint identity rather than following later ambient context changes. Repeated manager helpers reuse and recheck that reviewed context, including during data-preserving Supabase stop. Existing
 daemon/receipt checks remain in force at resource mutation boundaries.
 
 When the chosen engine is unavailable, select or start it explicitly and rerun
