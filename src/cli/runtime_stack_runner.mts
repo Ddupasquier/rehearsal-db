@@ -176,7 +176,7 @@ export const createRuntimeStackRunner =
           }),
       });
       const release = ["stop", "discard"].includes(command)
-        ? releaseOwnedColimaWhenIdle({
+        ? await releaseOwnedColimaWhenIdle({
             projectRoot: topology.projectRoot,
             targets: topology.targets,
           })

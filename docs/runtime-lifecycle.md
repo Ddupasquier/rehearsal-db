@@ -145,6 +145,28 @@ Repeated stop is safe, manually started engines have no receipt, and restarting 
 invalidates the previous boot receipt. This policy never applies to Docker Desktop,
 Podman, Rancher Desktop, or an unknown engine.
 
+Automatic shutdown now uses the same qualified process/disk observation backend as
+explicit review: macOS Apple Silicon, Colima 0.10.3, the default VZ profile. Other
+hosts/backends preserve the engine when that proof is unavailable. Metadata commands
+retain their 10-second limits; only the exact graceful `colima stop` receives a
+60-second command budget, a one-second owned-CLI cancellation grace and a one-second
+bounded pipe/handle retirement, followed by a 10-second post-state observation window.
+A leader exit and closed output pipes are tracked separately. An escaped pipe holder
+does not extend the command indefinitely or authorize signalling a known-exited PID;
+unconfirmed command closure is retained as a warning/diagnostic, not orderly success.
+Closed diagnostics distinguish leader exit, pipe closure and local handle retirement.
+This does not change Colima/VZ's own deadlines or force a VM to exit.
+
+A successful command alone is insufficient. Rehearsal confirms the stopped profile,
+absence of the same captured VM process, unchanged backing disks and no remaining
+disk holders before reporting the VM off or retiring an unchanged ownership receipt.
+If those facts confirm VM-off despite a nonzero, signal or timed-out stop command,
+automatic shutdown reports stopped **with a command warning**, retaining closed
+status/signal/error-code/elapsed diagnostics; orderly provider shutdown is not claimed.
+Unconfirmed observations retain the receipt and report unknown. An unavailable Docker
+daemon alone never proves the VM stopped. The explicit reviewed shutdown command
+keeps its separate strict result contract.
+
 When the active Docker context is Colima, Rehearsal checks its Docker filesystem before
 starting a target. It warns at the configured percentage and refuses below the configured
 free-space headroom. The check runs before services are created. Other Docker-compatible
