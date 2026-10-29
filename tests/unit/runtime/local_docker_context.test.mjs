@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   isLocalDockerEndpoint,
   assertLocalDockerContext,
@@ -291,5 +291,83 @@ describe("explicit Docker selection", () => {
       }),
     ).toThrow();
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("manager binding reuse", () => {
+  it("reuses and rechecks a reviewed named context instead of the ambient default", async () => {
+    vi.resetModules();
+    const binding =
+      await import("../../../dist/src/runtime/local_docker_context.mjs");
+    const calls = [],
+      contexts = {
+        default: "unix:///tmp/unreviewed.sock",
+        reviewed: "unix:///tmp/reviewed.sock",
+      };
+    const runner = metadataRunner(contexts, calls);
+    const initial = binding.bindRuntimeDockerEnvironment({
+      context: "reviewed",
+      inheritedEnvironment: {},
+      runner,
+    });
+    expect(
+      binding.bindRuntimeDockerEnvironment({
+        inheritedEnvironment: {},
+        runner,
+      }),
+    ).toMatchObject({ context: "reviewed", endpoint: initial.endpoint });
+    expect(
+      calls.every(
+        ({ args }) => !args.includes("show") && !args.includes("default"),
+      ),
+    ).toBe(true);
+    expect(binding.runtimeDockerEnvironment()).toEqual({
+      DOCKER_HOST: contexts.reviewed,
+    });
+    expect(() =>
+      binding.bindRuntimeDockerEnvironment({
+        inheritedEnvironment: { DOCKER_CONTEXT: "default" },
+        runner,
+      }),
+    ).toThrow("unsupported or ambiguous");
+    expect(() =>
+      binding.bindRuntimeDockerEnvironment({
+        inheritedEnvironment: { DOCKER_HOST: contexts.default },
+        runner,
+      }),
+    ).toThrow("unsupported or ambiguous");
+    contexts.reviewed = "unix:///tmp/replacement.sock";
+    expect(() =>
+      binding.bindRuntimeDockerEnvironment({
+        inheritedEnvironment: {},
+        runner,
+      }),
+    ).toThrow("already bound");
+    expect(calls.every(({ args }) => args[0] === "context")).toBe(true);
+  });
+  it("still refuses TLS and scoped client-config drift on an implicit rebind", async () => {
+    vi.resetModules();
+    const binding =
+      await import("../../../dist/src/runtime/local_docker_context.mjs");
+    const calls = [],
+      runner = metadataRunner({ reviewed: "unix:///tmp/reviewed.sock" }, calls);
+    binding.bindRuntimeDockerEnvironment({
+      context: "reviewed",
+      inheritedEnvironment: {},
+      runner,
+    });
+    expect(() =>
+      binding.bindRuntimeDockerEnvironment({
+        inheritedEnvironment: { DOCKER_TLS_VERIFY: "1" },
+        runner,
+      }),
+    ).toThrow("unsupported or ambiguous");
+    expect(() =>
+      binding.bindRuntimeDockerEnvironment({
+        inheritedEnvironment: { DOCKER_CONFIG: process.cwd() },
+        runner,
+      }),
+    ).toThrow("already bound");
+    expect(calls.every(({ args }) => args[0] === "context")).toBe(true);
   });
 });
