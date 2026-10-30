@@ -654,6 +654,9 @@ published or can be found.
 
 ## Supabase authentication
 
+Future platform/OIDC boundaries are a [design proposal](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/auth-platform-contract.md),
+not additional supported configuration.
+
 Rehearsal can configure a Google or GitHub OAuth connection in its disposable local
 Supabase runtime. Declare the provider and the names of its credential variables:
 
@@ -821,11 +824,11 @@ Declarative runtime policies are preferred for supported schema prerequisites an
 checks. Existing project-owned adapters remain compatible but do not replace the
 database driver.
 
-### Native Prisma migrations — development candidate
+### Native Prisma migrations
 
-The unreleased native-migration capability is opt-in. Existing SQL configurations
-keep their current behavior. Independent installed-consumer and editor acceptance
-is still pending; this section does not claim a published integration.
+Core 2.1 adds opt-in Prisma Migrate 7.10.1 history for PostgreSQL. Existing SQL
+configurations keep their behavior. Visual review requires Starter 0.1.26 or later
+with explicit native-history capability; older strict clients may refuse format 3.
 
 ```ts
 postgresql: {
@@ -846,7 +849,7 @@ Keep `migration_lock.toml` with PostgreSQL provider and the original
 `<14-digit-version>_<name>/migration.sql` files. Baseline creation takes explicit
 local records and a successful native ledger export containing `migration_name`,
 `checksum`, `finished_at` and `rolled_back_at`. Hosted preparation and Storage are
-outside this candidate's scope. Baseline format 3 retains the exact native history;
+outside this workflow's scope. Baseline format 3 retains the exact native history;
 formats 1 and 2 are not converted automatically.
 
 Migration versions must be unique. Missing, divergent, incomplete, failed or
@@ -861,6 +864,11 @@ failure, cancellation or timeout preserves the data volume and blocks automatic
 resume. Inspect the retained recovery state before choosing explicit `reset`,
 which replaces that disposable sandbox from its baseline. No automatic SQL rollback
 or migration-history repair is promised.
+
+The initial qualification target is PostgreSQL 17 on Ubuntu 24.04 x64 with Node 24.
+Core's general platform checks do not qualify the Prisma SDK on other hosts.
+Complete dependency fingerprinting can be slow on large installations or external
+filesystems; no cached approval replaces fresh review.
 
 ## Application proof and hands-on sessions
 
@@ -932,11 +940,11 @@ reviewed public type surface. The exact current boundary is documented in
 Undocumented files under `scripts/` are package internals and are not compatibility
 contracts.
 
-### Native Drizzle migrations — unqualified development candidate
+### Native Drizzle migrations
 
-Builds advertising `rehearsalContracts.drizzleMigrations: 1` add a separate,
-explicit PostgreSQL candidate. The Drizzle development source is not a
-published or independently qualified integration. Prisma's `nativeMigrations: 1`
+Core 2.2 advertising `rehearsalContracts.drizzleMigrations: 1` adds opt-in
+PostgreSQL migrations in the pinned Drizzle format. Visual review requires Starter
+0.1.27 or later with explicit format 4 support. Prisma's `nativeMigrations: 1`
 and flat SQL histories keep their existing contracts.
 
 ```ts
@@ -1003,8 +1011,9 @@ The existing 120-second native execution/verification bound, cancellation, outpu
 redaction and retained-volume recovery apply. A failed native migration preserves
 the volume and blocks automatic resume until reviewed explicit reset. Hosted
 source preparation, Storage, live impact measurement, statement-failure attribution, Client generation and
-automatic history repair are outside this candidate. Independent genuine Kit/ORM
-and database acceptance remains required before advertising support.
+automatic history repair are outside this integration. Initial SDK qualification
+targets PostgreSQL 17 on Ubuntu 24.04 x64 / Node 24; general Core platform checks do
+not qualify other SDK/host combinations.
 
 ### Native Knex migrations — unqualified isolated candidate
 

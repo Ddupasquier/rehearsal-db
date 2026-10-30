@@ -56,7 +56,9 @@ export const runPostgresqlCommand = (
       overrides: command === "docker" ? runtimeDockerEnvironment() : {},
     }),
     maxBuffer: 16 * 1024 * 1024,
-    ...(timeoutMs===undefined?{}:{timeout:timeoutMs,killSignal:"SIGKILL" as const}),
+    ...(timeoutMs === undefined
+      ? {}
+      : { timeout: timeoutMs, killSignal: "SIGKILL" as const }),
     stdio: piped ? ["pipe", "pipe", "pipe"] : "inherit",
   });
   throwIfOperationCancelled();

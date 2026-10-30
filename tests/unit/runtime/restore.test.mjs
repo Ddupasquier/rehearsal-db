@@ -156,7 +156,7 @@ describe("Rehearsal runtime restore", () => {
                 name: "user_id",
                 action: "PSEUDONYMIZE",
                 generated: "NEVER",
-                identity: "YES",
+                identity: "NO",
                 foreignKey: null,
               },
             ],
@@ -174,9 +174,36 @@ describe("Rehearsal runtime restore", () => {
               },
             ],
           },
+          {
+            name: "serial_widgets",
+            sourceRows: "STREAM AND SANITIZE",
+            columns: [
+              {
+                name: "id",
+                action: "KEEP",
+                generated: "NEVER",
+                identity: "NO",
+                foreignKey: null,
+              },
+              {
+                name: "excluded_id",
+                action: "EXCLUDE",
+                generated: "NEVER",
+                identity: "NO",
+                foreignKey: null,
+              },
+              {
+                name: "computed_id",
+                action: "KEEP",
+                generated: "ALWAYS",
+                identity: "NO",
+                foreignKey: null,
+              },
+            ],
+          },
         ],
       },
-      tableCounts: { profiles: 1, widgets: 1 },
+      tableCounts: { profiles: 1, widgets: 1, serial_widgets: 1 },
       restoreSupabaseAuth: false,
     });
 
@@ -185,6 +212,17 @@ describe("Rehearsal runtime restore", () => {
     );
     expect(suffix).toContain("pg_get_serial_sequence('public.widgets', 'id')");
     expect(suffix).toContain("if sequence_name is not null then");
+    expect(suffix).toContain("from pg_catalog.pg_attribute");
+    expect(suffix).toContain("'pg_catalog.int8'::pg_catalog.regtype");
+    expect(suffix).toContain(
+      "pg_get_serial_sequence('public.serial_widgets', 'id')",
+    );
+    expect(suffix).not.toContain(
+      "pg_get_serial_sequence('public.serial_widgets', 'excluded_id')",
+    );
+    expect(suffix).not.toContain(
+      "pg_get_serial_sequence('public.serial_widgets', 'computed_id')",
+    );
     expect(suffix).toContain(
       `execute 'select max("id")::bigint, exists(select 1 from "public"."widgets") from "public"."widgets"'`,
     );
@@ -262,7 +300,7 @@ it("uses CONTINUE IDENTITY only when explicitly selected and preserves catalog-g
   const ordinary = buildRestoreSqlSuffix(common),
     restricted = buildRestoreSqlSuffix({ ...common, identityMode: "continue" });
   expect(ordinary).toContain("restart identity cascade");
-  expect(ordinary).not.toContain(
+  expect(ordinary).toContain(
     "pg_get_serial_sequence('public.widgets', 'serial_id')",
   );
   expect(restricted).toContain("continue identity cascade");
@@ -272,7 +310,16 @@ it("uses CONTINUE IDENTITY only when explicitly selected and preserves catalog-g
       `pg_get_serial_sequence('public.widgets', '${column}')`,
     );
   expect(restricted).toContain("if sequence_name is not null then");
+  expect(
+    ordinary.replace("restart identity cascade", "continue identity cascade"),
+  ).toBe(restricted);
+  expect(restricted).toContain("from pg_catalog.pg_attribute");
+  expect(restricted).toContain("from pg_catalog.pg_sequence");
+  expect(restricted).toContain("if sequence_increment > 0 then");
   expect(restricted).toContain(
-    "perform setval(sequence_name, coalesce(maximum_value, 1), has_rows)",
+    `execute 'select min("serial_id")::bigint, exists(select 1 from "public"."widgets") from "public"."widgets"'`,
+  );
+  expect(restricted).toContain(
+    "perform pg_catalog.setval(sequence_name::pg_catalog.regclass, coalesce(boundary_value, sequence_start), boundary_value is not null and has_rows)",
   );
 });

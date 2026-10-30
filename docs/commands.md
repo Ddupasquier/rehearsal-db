@@ -821,7 +821,7 @@ use one combined digest, so automation approves the exact cross-target set.
 
 ### Native Drizzle review and exact source references
 
-Unqualified candidate builds advertising `rehearsalContracts.drizzleMigrations: 1`
+Core 2.2 builds advertising `rehearsalContracts.drizzleMigrations: 1`
 use explicit `{kind:"drizzle",idx,when,tag}` identities in `inspect migrations`,
 `inspect plan` and static `inspect insights`. They do not manufacture timestamp-file
 versions. Drizzle inspection/review targets also return `baselineHistorySha256`,
@@ -884,7 +884,7 @@ lexical line/column observations. No nested source-reference field is added.
 This is a static warning capability, not SQL validity, physical schema drift,
 provider conformance or permission to execute a source. The native runtime and
 installed SDK qualification boundary remains in the
-[configuration owner](configuration.md#native-drizzle-migrations--unqualified-development-candidate).
+[configuration owner](configuration.md#native-drizzle-migrations).
 
 ### Reviewed Knex source inputs
 

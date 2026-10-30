@@ -103,6 +103,11 @@ baseline cutoff.
 loads the safe rows, restores approved Storage files when present, and verifies counts and
 relationships. A failed restore cannot produce a successful receipt.
 
+Owned integer SERIAL and identity sequences resume beyond the restored IDs in their
+configured direction; empty tables use the sequence's configured start. This reconstructs
+counters from the sanitized rows, not the source database's historical sequence state.
+Columns without an owned sequence and generated expression columns are not reset as counters.
+
 The baseline itself never changes during normal use. Runtime edits persist until you
 reset or discard that runtime.
 
@@ -130,9 +135,9 @@ Baseline files can still be sensitive after sanitization. Rehearsal stores them 
 ignored `.rehearsal/` directory with checksums and read-only files. Keep them off shared
 drives, use encrypted disks, retain them only as long as needed, and never commit them.
 
-## Native Drizzle candidate format
+## Native Drizzle baseline format
 
-The separate, unqualified [Drizzle candidate](configuration.md#native-drizzle-migrations--unqualified-development-candidate)
+The separate [Drizzle integration](configuration.md#native-drizzle-migrations)
 uses format 4. `nativeMigrations` records the pinned producer/toolchain binding;
 `drizzleHistory` records ordered native entries, the raw journal receipt and source
 ledger provenance. The cutoff is `{kind:"drizzle",idx,when,tag}`. It requires the

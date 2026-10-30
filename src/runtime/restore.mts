@@ -212,31 +212,46 @@ order by source.sequence;
 `;
 };
 
-const buildIdentitySequenceSql = (
-  table: RestorePolicyTable,
-  includeSerial = false,
-): string =>
+const buildOwnedSequenceRestoreSql = (table: RestorePolicyTable): string =>
   table.columns
     .filter(
-      (column) =>
-        column.action !== "EXCLUDE" &&
-        (column.identity === "YES" || includeSerial) &&
-        column.generated !== "ALWAYS",
+      (column) => column.action !== "EXCLUDE" && column.generated !== "ALWAYS",
     )
     .map((column) => {
       const schema = tableSchema(table);
       const relation = qualifiedRelation(table);
       const columnName = quoteIdentifier(column.name);
       const sequenceValueQuery = `select max(${columnName})::bigint, exists(select 1 from ${relation}) from ${relation}`;
+      const descendingValueQuery = `select min(${columnName})::bigint, exists(select 1 from ${relation}) from ${relation}`;
       return `do $rehearsal_sequence$
 declare
-	sequence_name text := pg_get_serial_sequence(${quoteLiteral(`${schema}.${table.name}`)}, ${quoteLiteral(column.name)});
-	maximum_value bigint;
+	sequence_name text := pg_catalog.pg_get_serial_sequence(${quoteLiteral(`${schema}.${table.name}`)}, ${quoteLiteral(column.name)});
+	boundary_value bigint;
 	has_rows boolean;
+	sequence_start bigint;
+	sequence_increment bigint;
 begin
 	if sequence_name is not null then
-		execute ${quoteLiteral(sequenceValueQuery)} into maximum_value, has_rows;
-		perform setval(sequence_name, coalesce(maximum_value, 1), has_rows);
+		if not exists (
+			select 1 from pg_catalog.pg_attribute
+			where attrelid = ${quoteLiteral(`${schema}.${table.name}`)}::pg_catalog.regclass
+				and attname = ${quoteLiteral(column.name)} and not attisdropped
+				and atttypid in ('pg_catalog.int2'::pg_catalog.regtype,
+					'pg_catalog.int4'::pg_catalog.regtype, 'pg_catalog.int8'::pg_catalog.regtype)
+		) then
+			raise exception 'Rehearsal cannot restore an owned sequence on a non-integer column';
+		end if;
+		select seqstart, seqincrement into sequence_start, sequence_increment
+		from pg_catalog.pg_sequence where seqrelid = sequence_name::pg_catalog.regclass;
+		if sequence_start is null or sequence_increment is null or sequence_increment = 0 then
+			raise exception 'Rehearsal cannot verify the owned sequence configuration';
+		end if;
+		if sequence_increment > 0 then
+			execute ${quoteLiteral(sequenceValueQuery)} into boundary_value, has_rows;
+		else
+			execute ${quoteLiteral(descendingValueQuery)} into boundary_value, has_rows;
+		end if;
+		perform pg_catalog.setval(sequence_name::pg_catalog.regclass, coalesce(boundary_value, sequence_start), boundary_value is not null and has_rows);
 	end if;
 end
 $rehearsal_sequence$;`;
@@ -332,10 +347,7 @@ truncate table ${manifest.tables.map(qualifiedRelation).join(", ")}
 ${identityMode} identity cascade;
 ${restoreSupabaseAuth ? buildAuthRestoreSql(manifest) : ""}
 ${tables.map(buildTableRestoreSql).join("\n")}
-${tables
-  .map((table) => buildIdentitySequenceSql(table, identityMode === "continue"))
-  .filter(Boolean)
-  .join("\n")}
+${tables.map(buildOwnedSequenceRestoreSql).filter(Boolean).join("\n")}
 set local session_replication_role = origin;
 do $rehearsal_checks$
 begin
