@@ -1,4 +1,8 @@
 import {
+  readKnexMigrationInventory,
+  verifyKnexMigrationLedger,
+} from "../runtime/knex_history.mjs";
+import {
   readDrizzleMigrationInventory,
   verifyDrizzleMigrationLedger,
 } from "../runtime/drizzle_history.mjs";
@@ -291,7 +295,7 @@ export const inspectBaselineInputFiles = async ({
     (assetsPath || loaded.config.preparation)
   )
     throw new Error(
-      "Native Prisma baseline preparation requires reviewed local records and ledger without hosted preparation or Storage assets.",
+      "Native baseline preparation requires reviewed local records and ledger without hosted preparation or Storage assets.",
     );
   const records = resolveProjectInput(
     loaded.projectRoot,
@@ -326,7 +330,20 @@ export const inspectBaselineInputFiles = async ({
     });
   }
   let migrationHistory: (MigrationLedgerEntry | AnyMigrationFileEntry)[];
-  if (loaded.config.postgresql?.migrationTool?.kind === "drizzle") {
+  if (loaded.config.postgresql?.migrationTool?.kind === "knex") {
+    const inventory = await readKnexMigrationInventory(
+      pathToFileURL(`${loaded.paths.migrationDirectory}/`),
+    );
+    const history = verifyKnexMigrationLedger({
+      rows: ledgerRows,
+      entries: inventory.entries,
+    });
+    if (history.length !== inventory.entries.length)
+      throw new Error(
+        "Knex baseline requires the complete source history applied; pending migration entries are not supported during baseline creation.",
+      );
+    migrationHistory = inventory.entries;
+  } else if (loaded.config.postgresql?.migrationTool?.kind === "drizzle") {
     const inventory = await readDrizzleMigrationInventory(
       pathToFileURL(`${loaded.paths.migrationDirectory}/`),
     );

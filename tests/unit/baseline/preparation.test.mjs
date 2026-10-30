@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyBaselinePreparation,
@@ -26,9 +26,12 @@ import { verifyActiveBaseline } from "../../../dist/src/baseline/artifact.mjs";
 
 const roots = [];
 const execute = promisify(execFile);
-const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
-const configurationUrl = pathToFileURL(
-  join(process.cwd(), "dist/src/project/configuration.mjs"),
+const cliPath = fileURLToPath(
+  new URL("../../../dist/src/cli/rehearsal.mjs", import.meta.url),
+);
+const configurationUrl = new URL(
+  "../../../dist/src/project/configuration.mjs",
+  import.meta.url,
 ).href;
 
 const makeTreeWritable = async (path) => {
@@ -182,6 +185,73 @@ const makeNativeProject = async () => {
   return { root, migration };
 };
 
+const makeKnexProject = async () => {
+  const { root } = await makeNativeProject();
+  const configPath = join(root, "rehearsal.config.mjs");
+  const config = JSON.parse(
+    (await readFile(configPath, "utf8")).slice("export default ".length, -2),
+  );
+  config.postgresql.migrationDirectory = "knex/migrations";
+  config.postgresql.migrationTool = {
+    kind: "knex",
+    version: "3.3.0",
+    driver: "pg",
+    driverVersion: "8.23.1",
+    packageDirectory: "node_modules/knex",
+    driverPackageDirectory: "node_modules/pg",
+  };
+  await writeFile(
+    configPath,
+    "export default " + JSON.stringify(config) + ";\n",
+  );
+  for (const dir of [
+    "knex/migrations",
+    "node_modules/knex/lib/dialects/postgres",
+    "node_modules/pg",
+  ])
+    await mkdir(join(root, dir), { recursive: true });
+  const body = "throw new Error('PRIVATE_KNEX_MUST_NOT_EXECUTE');\n";
+  for (const [file, text] of Object.entries({
+    "knex/migrations/001_widgets.cjs": body,
+    "node_modules/knex/package.json": JSON.stringify({
+      name: "knex",
+      version: "3.3.0",
+      main: "index.js",
+    }),
+    "node_modules/knex/index.js": body,
+    "node_modules/knex/lib/dialects/postgres/index.js": body,
+    "node_modules/pg/package.json": JSON.stringify({
+      name: "pg",
+      version: "8.23.1",
+      main: "index.js",
+    }),
+    "node_modules/pg/index.js": body,
+    "rehearsal/migration-ledger.json": JSON.stringify([
+      {
+        id: 3,
+        name: "001_widgets.cjs",
+        batch: 2,
+        migration_time: "2026-10-26T00:00:00Z",
+      },
+    ]),
+  }))
+    await writeFile(join(root, file), text);
+  const policyPath = join(
+    root,
+    "infrastructure/rehearsal/sanitization-policy.json",
+  );
+  const policy = JSON.parse(await readFile(policyPath, "utf8"));
+  policy.migrationCutoff = { kind: "knex", name: "001_widgets.cjs" };
+  await writeFile(policyPath, JSON.stringify(policy));
+  return {
+    root,
+    options: {
+      projectRoot: root,
+      recordsPath: "rehearsal/synthetic-data.ndjson",
+      ledgerPath: "rehearsal/migration-ledger.json",
+    },
+  };
+};
 afterEach(async () => {
   for (const root of roots.splice(0)) {
     await makeTreeWritable(root);
@@ -190,6 +260,96 @@ afterEach(async () => {
 });
 
 describe("baseline preparation", () => {
+  it("preflights Knex native identities and creates format5 through the actual public CLI without executing modules", async () => {
+    const { root, options } = await makeKnexProject();
+    const inspected = await inspectBaselineInputFiles(options);
+    expect(inspected.migrationCutoff).toEqual({
+      kind: "knex",
+      name: "001_widgets.cjs",
+    });
+    expect(inspected.migrationHistory[0]).not.toHaveProperty("version");
+    expect(inspected.migrationHistory[0]).not.toHaveProperty("statements");
+    const bin = join(root, "denied-tools");
+    await mkdir(bin);
+    const engineAudit = join(root, "engine-audit");
+    for (const name of ["docker", "colima", "supabase"])
+      await writeFile(
+        join(bin, name),
+        '#!/bin/sh\nprintf called > "$REHEARSAL_KNEX_ENGINE_AUDIT"\nexit 91\n',
+        { mode: 0o700 },
+      );
+    const result = await execute(
+      process.execPath,
+      [
+        cliPath,
+        "baseline",
+        "create",
+        "--records=" + options.recordsPath,
+        "--ledger=" + options.ledgerPath,
+        "--json",
+      ],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: bin + ":" + process.env.PATH,
+          REHEARSAL_KNEX_ENGINE_AUDIT: engineAudit,
+        },
+      },
+    );
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: "success",
+      data: { rowCount: 2, migrationCount: 1 },
+    });
+    expect(result.stdout).not.toContain("PRIVATE_KNEX_MUST_NOT_EXECUTE");
+    const manifest = await verifyActiveBaseline({
+      artifactRoot: join(root, ".rehearsal"),
+    });
+    expect(manifest.formatVersion).toBe(5);
+    await expect(stat(engineAudit)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(manifest.migrationCutoff).toEqual(inspected.migrationCutoff);
+  });
+  it("rejects pending Knex history for the Knex-specific reason before artifact writes", async () => {
+    const { root, options } = await makeKnexProject();
+    await writeFile(
+      join(root, "knex/migrations/002_pending.cjs"),
+      "throw Error('MUST_NOT_EXECUTE');",
+    );
+    await expect(inspectBaselineInputFiles(options)).rejects.toThrow(
+      "Knex baseline requires the complete source history applied",
+    );
+    await expect(stat(join(root, ".rehearsal"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+  it("refuses malformed and other-producer ledger shapes for selected Knex before writes", async () => {
+    const { root, options } = await makeKnexProject();
+    for (const ledger of [
+      [
+        {
+          id: 1,
+          name: "001_widgets.cjs",
+          batch: 0,
+          migration_time: "2026-10-26T00:00:00Z",
+        },
+      ],
+      [
+        {
+          migration_name: "20261001000000_create_widgets",
+          checksum: "a".repeat(64),
+          finished_at: "2026-10-26T00:00:00Z",
+          rolled_back_at: null,
+        },
+      ],
+    ]) {
+      await writeFile(join(root, options.ledgerPath), JSON.stringify(ledger));
+      await expect(inspectBaselineInputFiles(options)).rejects.toThrow();
+    }
+    await expect(stat(join(root, ".rehearsal"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("preflights native ledger/path evidence without fabricating SQL statement receipts", async () => {
     const { root, migration } = await makeNativeProject();
     const ledger = await readFile(

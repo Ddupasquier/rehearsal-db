@@ -1,3 +1,4 @@
+import { normalizeKnexMigrationLedger } from "../runtime/knex_history.mjs";
 import { normalizeDrizzleMigrationLedger } from "../runtime/drizzle_history.mjs";
 import { normalizePrismaMigrationLedger } from "../runtime/prisma_history.mjs";
 /**
@@ -108,6 +109,7 @@ const isMigrationLedger = (value: unknown): boolean => {
   if (!Array.isArray(value) || !value.length || value.length > 10000)
     return false;
   for (const normalize of [
+    normalizeKnexMigrationLedger,
     normalizePrismaMigrationLedger,
     normalizeDrizzleMigrationLedger,
   ]) {
