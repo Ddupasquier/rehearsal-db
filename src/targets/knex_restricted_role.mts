@@ -273,7 +273,7 @@ export const withKnexRestrictedRole = async <T,>({
     if (
       sql(
         `select pg_catalog.has_parameter_privilege(${literal(name)}, 'session_replication_role', 'SET')::text;`,
-      ).trim() !== "f"
+      ).trim() !== "false"
     )
       throw refused();
     check(); // Inspect unsafe effective PUBLIC privileges; never rewrite application ACLs.
@@ -289,7 +289,7 @@ export const withKnexRestrictedRole = async <T,>({
       if (
         sql(
           `select pg_catalog.has_parameter_privilege(${literal(name)}, 'session_replication_role', 'SET')::text;`,
-        ).trim() !== "t"
+        ).trim() !== "true"
       )
         throw refused();
     }
@@ -363,7 +363,7 @@ export const withKnexRestrictedRole = async <T,>({
           if (
             sql(
               `select pg_catalog.has_parameter_privilege(${literal(name)}, 'session_replication_role', 'SET')::text;`,
-            ).trim() !== "f"
+            ).trim() !== "false"
           )
             throw refused();
         }

@@ -74,7 +74,7 @@ const fixture = async () => {
           schemaCreate: state.schemaCreate,
         });
       if (query.startsWith("select has_parameter_privilege"))
-        return state.parameter ? "t" : "f";
+        return state.parameterReply ?? (state.parameter ? "true" : "false");
       if (query.startsWith("grant set on parameter")) {
         state.parameter = true;
         return "";
@@ -579,5 +579,41 @@ it("refuses inherited PUBLIC schema CREATE for Core application queries without 
   ).rejects.toThrow();
   expect(work).not.toHaveBeenCalled();
   expect(f.state.schemaCreate).toBe(true);
+  expect(f.state.login).toBe(false);
+});
+
+it.each([
+  "f",
+  "t",
+  "FALSE",
+  "TRUE",
+  "0",
+  "1",
+  "",
+  "false\nfalse",
+  "PRIVATE_BOOLEAN_CANARY",
+])(
+  "refuses noncanonical boolean-text privilege result %j before restricted work",
+  async (value) => {
+    const f = await fixture();
+    f.state.parameterReply = value;
+    const work = vi.fn(async () => "must not run");
+    await expect(
+      withKnexRestrictedRole({ ...f.options, work }),
+    ).rejects.toThrow();
+    expect(work).not.toHaveBeenCalled();
+    expect(f.state.login).toBe(false);
+    expect(f.state.password).toBe(false);
+  },
+);
+it("refuses a genuinely true preexisting restore grant rather than changing it", async () => {
+  const f = await fixture();
+  f.state.parameter = true;
+  const work = vi.fn(async () => "must not run");
+  await expect(withKnexRestrictedRole({ ...f.options, work })).rejects.toThrow(
+    /unsafe/u,
+  );
+  expect(work).not.toHaveBeenCalled();
+  expect(f.state.parameter).toBe(true);
   expect(f.state.login).toBe(false);
 });
