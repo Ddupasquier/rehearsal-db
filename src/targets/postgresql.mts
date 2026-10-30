@@ -1,3 +1,9 @@
+import {
+  assertActiveBaselineUnchanged,
+  assertNativeBaselineManifestUnchanged,
+} from "../runtime/baseline_identity.mjs";
+import { createPostgresqlMigrationRuntime } from "./postgresql_migrations.mjs";
+import { requirePrismaTargetBinding } from "./prisma_target_binding.mjs";
 import { createPostgresqlContainerLifecycle } from "./postgresql_container_resume.mjs";
 import { restoreCopyChunks } from "../runtime/restore_cache.mjs";
 import { spawn } from "node:child_process";
@@ -11,8 +17,6 @@ import { verifyActiveBaseline } from "../baseline/artifact.mjs";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import { formatCount } from "../shared/human_output.mjs";
-import { readMigrationFileInventory } from "../runtime/migration_history.mjs";
-import type { MigrationFileEntry } from "../runtime/migration_history.mjs";
 import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
 import {
   buildRestoreSqlPrefix,
@@ -22,7 +26,6 @@ import {
 import {
   assertCandidateConfirmation,
   readActiveRuntimeInput,
-  readCandidateMigrationPlan,
   readMatchingRuntimeMarker,
   runRuntimeLifecycle,
   withOwnedRuntimeRollback,
@@ -41,10 +44,7 @@ import {
   bindOwnedProcessCancellation,
   signalOwnedProcessGroup,
 } from "../shared/owned_process.mjs";
-import {
-  runOwnedPostgresqlMigration,
-  runPostgresqlCommand,
-} from "./postgresql_process.mjs";
+import { runPostgresqlCommand } from "./postgresql_process.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
 import { guardRuntimeManagerAction } from "../runtime/runtime_manager_guards.mjs";
 import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
@@ -89,10 +89,6 @@ const database = postgresqlConfig.database;
 const databaseUser = postgresqlConfig.user;
 const databasePort = config.runtime.ports.database;
 const action = invocation.action;
-const applicationMigrations = new URL(
-  "./",
-  pathToFileURL(`${configuredPaths.migrationDirectory}/`),
-);
 const runtimeAdapter = configuredPaths.runtimeAdapter
   ? ((await import(
       pathToFileURL(configuredPaths.runtimeAdapter).href
@@ -301,91 +297,49 @@ const databaseEnvironment = (password: string): DatabaseEnvironment => ({
   password,
 });
 
-const quoteLiteral = (value: unknown): string =>
-  `'${String(value).replaceAll("'", "''")}'`;
-
-const initializeMigrationLedger = () =>
-  runPsql(`create schema if not exists rehearsal_internal;
-create table if not exists rehearsal_internal.schema_migrations (
-  version text primary key,
-  name text not null,
-  file_sha256 text not null check (file_sha256 ~ '^[a-f0-9]{64}$'),
-  applied_at timestamptz not null default now()
-);`);
-
-const applyMigration = async ({
-  migration,
-  directory,
-  kind,
-}: {
-  migration: MigrationFileEntry;
-  directory: string;
-  kind: "baseline" | "candidate";
-}): Promise<void> => {
-  await runOwnedPostgresqlMigration({
-    containerName,
-    database,
-    databaseUser,
-    repositoryRoot,
-    migration,
-    directory,
-    migrationKind: kind,
-  });
-  runPsql(`insert into rehearsal_internal.schema_migrations
-  (version, name, file_sha256)
-values (
-  ${quoteLiteral(migration.version)},
-  ${quoteLiteral(migration.name)},
-  ${quoteLiteral(migration.fileSha256)}
-);`);
-};
-
-const readRuntimeMigrationLedger = () => {
-  const output =
-    runPsql(`select version || E'\\t' || name || E'\\t' || file_sha256
-from rehearsal_internal.schema_migrations
-order by version;`);
-  return output
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [version, name, fileSha256] = line.split("\t");
-      return { version, name, fileSha256 };
-    });
-};
-
-const verifyMigrationLedger = ({
-  currentFiles,
-  baseline,
-}: {
-  currentFiles: readonly MigrationFileEntry[];
-  baseline: BaselineManifest;
-}) => {
-  const ledger = readRuntimeMigrationLedger();
-  const baselineCount = Object.keys(baseline.migrations).length;
-  if (ledger.length < baselineCount || ledger.length > currentFiles.length) {
-    throw new Error(
-      "The PostgreSQL runtime migration ledger has an unexpected length.",
-    );
-  }
-  for (let index = 0; index < ledger.length; index += 1) {
-    const applied = ledger[index];
-    const source = currentFiles[index];
-    if (
-      !applied ||
-      !source ||
-      applied.version !== source.version ||
-      applied.name !== source.name ||
-      applied.fileSha256 !== source.fileSha256
-    ) {
+const migrationRuntime = createPostgresqlMigrationRuntime({
+  loaded: loadedConfiguration,
+  runSql: runPsql,
+  assertExpectedBaseline: (baseline) =>
+    assertNativeBaselineManifestUnchanged({ artifactRoot, expected: baseline }),
+  containerName,
+  database,
+  databaseUser,
+  assertOwnedTarget: () => {
+    assertOwnedResource("container", containerName);
+    assertOwnedResource("volume", volumeName);
+    try {
+      const value = JSON.parse(
+        runCommand(
+          "docker",
+          [
+            "inspect",
+            "--format",
+            '{"id":{{json .Id}},"running":{{json .State.Running}},"image":{{json .Config.Image}},"imageId":{{json .Image}},"ports":{{json .NetworkSettings.Ports}},"mounts":{{json .Mounts}}}',
+            containerName,
+          ],
+          { capture: true },
+        ).stdout,
+      );
+      const expectedImage = runCommand(
+        "docker",
+        ["image", "inspect", "--format", "{{.Id}}", image],
+        { capture: true },
+      ).stdout.trim();
+      return requirePrismaTargetBinding(value, {
+        image,
+        imageId: expectedImage,
+        volume: volumeName,
+        port: databasePort,
+      });
+    } catch {
       throw new Error(
-        `The PostgreSQL runtime migration ledger differs at ${applied?.version ?? "unknown"}.`,
+        "Native PostgreSQL execution requires the exact running owned container, image, loopback port and data-volume binding; no fallback was attempted.",
       );
     }
-  }
-  return { ledger, appliedCandidateCount: ledger.length - baselineCount };
-};
+  },
+});
+const verifyMigrationLedger = migrationRuntime.verifyLedger;
 
 const writeChunk = async (
   stream: Writable,
@@ -598,11 +552,22 @@ const writeRuntimeEnvironment = async ({
   );
 };
 
-const readActive = () =>
+const readActive = (expectedBaseline?: BaselineManifest) =>
   readActiveRuntimeInput({
     artifactRoot,
     manifestPath,
-    validate: ({ baseline, manifest }) => {
+    validate: async ({ baseline, manifest }) => {
+      if (expectedBaseline)
+        assertActiveBaselineUnchanged(expectedBaseline, baseline);
+      if (
+        Boolean(baseline.nativeMigrations) !==
+        Boolean(postgresqlConfig.migrationTool)
+      )
+        throw new Error(
+          "Baseline and configured migration tool differ; no runtime change was made.",
+        );
+      if (postgresqlConfig.migrationTool)
+        await migrationRuntime.validateHistory(baseline);
       if (Object.keys(baseline.storageAssets ?? {}).length > 0) {
         throw new Error(
           "The PostgreSQL target cannot restore Supabase Storage assets. Create this baseline without an assets manifest.",
@@ -664,8 +629,15 @@ const retainedContainerLifecycle = createPostgresqlContainerLifecycle({
   database,
 });
 
-const resetRuntime = async () => {
-  const active = await readActive();
+const resetRuntime = async (expectedBaseline?: BaselineManifest) => {
+  const active = await readActive(expectedBaseline);
+  if (postgresqlConfig.migrationTool)
+    await migrationRuntime.prepareMutation(active.baseline);
+  if (postgresqlConfig.migrationTool)
+    await assertNativeBaselineManifestUnchanged({
+      artifactRoot,
+      expected: active.baseline,
+    });
   await removeRuntime();
   await mkdir(runtimeWorkdir, { recursive: true, mode: 0o700 });
   return withOwnedRuntimeRollback({
@@ -674,17 +646,12 @@ const resetRuntime = async () => {
       await createContainer(password);
       const environment = databaseEnvironment(password);
       prepareProjectPrerequisites();
-      initializeMigrationLedger();
-      const baselineMigrations = await readMigrationFileInventory(
-        new URL("./", pathToFileURL(`${active.paths.migrationsDirectory}/`)),
+      migrationRuntime.initialize();
+      await migrationRuntime.restore(
+        active.baseline,
+        active.paths.migrationsDirectory,
+        environment.databaseUrl,
       );
-      for (const migration of baselineMigrations) {
-        await applyMigration({
-          migration,
-          directory: active.paths.migrationsDirectory,
-          kind: "baseline",
-        });
-      }
       prepareProjectSchema({ baseline: active.baseline, environment });
       finalizeProjectSchema();
       await restoreBaselineRows({ ...active });
@@ -719,9 +686,16 @@ const resetRuntime = async () => {
   });
 };
 
-const startRuntime = async () => {
-  const { baseline } = await readActive();
-  if (!(await pathExists(runtimeMarkerPath))) return resetRuntime();
+const startRuntime = async (expectedBaseline?: BaselineManifest) => {
+  const { baseline } = await readActive(expectedBaseline);
+  if (
+    postgresqlConfig.migrationTool &&
+    (await pathExists(join(runtimeWorkdir, "native-migration-failure.json")))
+  )
+    throw new Error(
+      "The native migration failed or was interrupted. Its volume and failure receipt are preserved. Review the failure, then explicitly reset the disposable target from its immutable baseline; automatic retry is refused.",
+    );
+  if (!(await pathExists(runtimeMarkerPath))) return resetRuntime(baseline);
   const mismatchMessage =
     "The local Rehearsal runtime does not match the active baseline; reset it before continuing.";
   const marker = await readMatchingRuntimeMarker({
@@ -765,15 +739,11 @@ const startRuntime = async () => {
   return environment;
 };
 
-const readCandidateReceipt = (baseline: BaselineManifest) =>
-  readCandidateMigrationPlan({
-    baseline,
-    migrationDirectory: applicationMigrations,
-  });
+const readCandidateReceipt = migrationRuntime.plan;
 
 const verifyRuntime = async () => {
   const { baseline } = await readActive();
-  const environment = await startRuntime();
+  const environment = await startRuntime(baseline);
   const receipt = await readCandidateReceipt(baseline);
   const migrationVerification = verifyMigrationLedger({
     currentFiles: receipt.currentFiles,
@@ -805,24 +775,17 @@ const verifyRuntime = async () => {
 
 const migrateRuntime = async () => {
   const { baseline } = await readActive();
-  await startRuntime();
-  const receipt = await readCandidateReceipt(baseline);
-  assertCandidateConfirmation({
-    plan: receipt,
-    confirmation: invocation.confirmation,
-  });
+  const receipt = await migrationRuntime.prepareMutation(baseline, (receipt) =>
+    assertCandidateConfirmation({
+      plan: receipt,
+      confirmation: invocation.confirmation,
+    }),
+  );
+  const environment = await startRuntime(baseline);
+  verifyMigrationLedger({ currentFiles: receipt.currentFiles, baseline });
   return withOwnedRuntimeRollback({
     operation: async function migrateRuntimeOperation() {
-      const ledger = readRuntimeMigrationLedger();
-      for (const migration of receipt.candidates.slice(
-        Math.max(0, ledger.length - Object.keys(baseline.migrations).length),
-      )) {
-        await applyMigration({
-          migration,
-          directory: configuredPaths.migrationDirectory,
-          kind: "candidate",
-        });
-      }
+      await migrationRuntime.apply(baseline, receipt, environment.databaseUrl);
       const verification = verifyMigrationLedger({
         currentFiles: receipt.currentFiles,
         baseline,
@@ -845,7 +808,19 @@ const migrateRuntime = async () => {
       );
       return receipt;
     },
-    rollback: removeRuntime,
+    rollback: postgresqlConfig.migrationTool
+      ? async () => {
+          try {
+            await writeFile(
+              join(runtimeWorkdir, "native-migration-failure.json"),
+              `${JSON.stringify({ schemaVersion: 1, state: "failed_or_interrupted", baselineGenerationId: baseline.generationId, candidateSha256: receipt.candidateSha256, migrationTool: receipt.nativeMigrations, recovery: "retained-volume-review-required" })}\n`,
+              { mode: 0o600, flag: "wx" },
+            );
+          } finally {
+            await retainedContainerLifecycle.retireStopped();
+          }
+        }
+      : removeRuntime,
   });
 };
 

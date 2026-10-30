@@ -3,6 +3,26 @@
 All notable Rehearsal package changes are documented here. The format follows Keep
 a Changelog, and published versions follow Semantic Versioning.
 
+## [Unreleased]
+
+## [2.1.0] - 2026-10-30
+
+### Added
+
+- Opt-in pinned Prisma Migrate 7.10.1 history for PostgreSQL, preserving native
+  migration paths, raw checksums and successful ledger entries in baseline format 3.
+  Reviewed execution uses a private configuration and the installed local toolchain;
+  native failures, cancellation and timeouts retain the data volume for explicit
+  recovery. Existing SQL histories and baseline formats 1/2 keep their behavior.
+
+### Fixed
+
+- Advance owned SERIAL and identity sequences beyond restored integer IDs, preserving
+  their configured direction, bounds and empty-table start. Explicit IDs before the
+  generation range use the configured start; IDs beyond the advancing range refuse
+  restoration. Non-sequence and generated columns
+  are not treated as auto-incrementing values.
+
 ## [2.0.1] - 2026-10-28
 
 ### Fixed
@@ -939,7 +959,10 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.1...v2.1.0
+[2.0.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.0...v2.0.1
+[2.0.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.0.2...v1.1.0

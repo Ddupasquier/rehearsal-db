@@ -7,6 +7,7 @@
  */
 
 import { resolve } from "node:path";
+import { addPrismaMigrationDiscovery } from "./project_discovery_migration_tool.mjs";
 import { inspectContainerEngineOptions } from "../runtime/engine_discovery.mjs";
 import type { ContainerEngineDiscovery } from "../runtime/engine_discovery.mjs";
 import { discoverApplication } from "./project_discovery_application.mjs";
@@ -239,7 +240,11 @@ export const discoverProjectProfile = async ({
     );
   }
 
-  if (migrationDirectories.length === 1) {
+  const nativePrisma = migrationDirectories.some(
+    ({ path }) => path === "prisma/migrations",
+  );
+  if (nativePrisma) addPrismaMigrationDiscovery(facts, decisions);
+  if (migrationDirectories.length === 1 && !nativePrisma) {
     suggestions.push(
       suggested(
         "database.migrationDirectory",
@@ -259,14 +264,18 @@ export const discoverProjectProfile = async ({
           : "postgresql.migrationDirectory",
       ),
     );
-  } else if (migrationDirectories.length > 1) {
+  } else if (migrationDirectories.length > 0) {
     decisions.push(
       decision(
         "database.migrationDirectory",
         "Migration directory",
         migrationDirectories.map(({ path }) => path),
-        "Which migration directory belongs to this target?",
-        "More than one conventional migration directory was found.",
+        nativePrisma
+          ? "Which reviewed native migration-tool workflow belongs to this target?"
+          : "Which migration directory belongs to this target?",
+        nativePrisma
+          ? "Prisma native history needs explicit pinned tool configuration; do not flatten it into SQL files."
+          : "More than one conventional migration directory was found.",
         migrationDirectories.map(({ path }) => ({
           kind: "file",
           source: path,
@@ -589,6 +598,9 @@ export const discoverProjectProfile = async ({
       activePath: configPaths[0] ?? null,
       discoveredPaths: configPaths,
       fields: [
+        ...(nativePrisma
+          ? [field("postgresql.migrationTool", "decision_required")]
+          : []),
         {
           path: "configuration.path",
           status:

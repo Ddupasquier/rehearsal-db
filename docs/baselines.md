@@ -103,6 +103,14 @@ baseline cutoff.
 loads the safe rows, restores approved Storage files when present, and verifies counts and
 relationships. A failed restore cannot produce a successful receipt.
 
+Owned integer SERIAL and identity sequences resume beyond the restored IDs in their
+configured direction; empty tables use the sequence's configured start. This reconstructs
+counters from the sanitized rows, not the source database's historical sequence state.
+Explicit IDs before the sequence's permitted range use its configured start; IDs
+beyond the available range in its advancing direction refuse restoration rather
+than changing the sequence bounds.
+Columns without an owned sequence and generated expression columns are not reset as counters.
+
 The baseline itself never changes during normal use. Runtime edits persist until you
 reset or discard that runtime.
 

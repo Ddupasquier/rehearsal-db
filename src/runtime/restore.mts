@@ -6,7 +6,13 @@
 import { createHash } from "node:crypto";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
 import type { RuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
+import type { PrismaNativeBinding } from "./prisma_history.mjs";
 import type { MigrationFileEntry } from "./migration_history.mjs";
+import {
+  parseNativeMigrationBinding,
+  sameNativeMigrationHistory,
+  type NativeMigrationBinding,
+} from "./native_migration_contract.mjs";
 
 const identifierPattern = /^[a-z][a-z0-9_]{0,62}$/u;
 const constraintFailurePattern =
@@ -201,28 +207,58 @@ order by source.sequence;
 `;
 };
 
-const buildIdentitySequenceSql = (table: RestorePolicyTable): string =>
+const buildOwnedSequenceRestoreSql = (table: RestorePolicyTable): string =>
   table.columns
     .filter(
-      (column) =>
-        column.action !== "EXCLUDE" &&
-        column.identity === "YES" &&
-        column.generated !== "ALWAYS",
+      (column) => column.action !== "EXCLUDE" && column.generated !== "ALWAYS",
     )
     .map((column) => {
       const schema = tableSchema(table);
       const relation = qualifiedRelation(table);
       const columnName = quoteIdentifier(column.name);
       const sequenceValueQuery = `select max(${columnName})::bigint, exists(select 1 from ${relation}) from ${relation}`;
+      const descendingValueQuery = `select min(${columnName})::bigint, exists(select 1 from ${relation}) from ${relation}`;
       return `do $rehearsal_sequence$
 declare
-	sequence_name text := pg_get_serial_sequence(${quoteLiteral(`${schema}.${table.name}`)}, ${quoteLiteral(column.name)});
-	maximum_value bigint;
+	sequence_name text := pg_catalog.pg_get_serial_sequence(${quoteLiteral(`${schema}.${table.name}`)}, ${quoteLiteral(column.name)});
+	boundary_value bigint;
 	has_rows boolean;
+	sequence_start bigint;
+	sequence_increment bigint;
+	sequence_minimum bigint;
+	sequence_maximum bigint;
 begin
 	if sequence_name is not null then
-		execute ${quoteLiteral(sequenceValueQuery)} into maximum_value, has_rows;
-		perform setval(sequence_name, coalesce(maximum_value, 1), has_rows);
+		if not exists (
+			select 1 from pg_catalog.pg_attribute
+			where attrelid = ${quoteLiteral(`${schema}.${table.name}`)}::pg_catalog.regclass
+				and attname = ${quoteLiteral(column.name)} and not attisdropped
+				and atttypid in ('pg_catalog.int2'::pg_catalog.regtype,
+					'pg_catalog.int4'::pg_catalog.regtype, 'pg_catalog.int8'::pg_catalog.regtype)
+		) then
+			raise exception 'Rehearsal cannot restore an owned sequence on a non-integer column';
+		end if;
+		select seqstart, seqincrement, seqmin, seqmax into sequence_start, sequence_increment, sequence_minimum, sequence_maximum
+		from pg_catalog.pg_sequence where seqrelid = sequence_name::pg_catalog.regclass;
+		if sequence_start is null or sequence_increment is null or sequence_increment = 0
+			or sequence_minimum is null or sequence_maximum is null
+			or sequence_minimum > sequence_maximum
+			or sequence_start not between sequence_minimum and sequence_maximum then
+			raise exception 'Rehearsal cannot verify the owned sequence configuration';
+		end if;
+		if sequence_increment > 0 then
+			execute ${quoteLiteral(sequenceValueQuery)} into boundary_value, has_rows;
+		else
+			execute ${quoteLiteral(descendingValueQuery)} into boundary_value, has_rows;
+		end if;
+		if (sequence_increment > 0 and boundary_value > sequence_maximum)
+			or (sequence_increment < 0 and boundary_value < sequence_minimum) then
+			raise exception 'Rehearsal cannot advance the owned sequence beyond restored IDs within its configured bounds';
+		elsif (sequence_increment > 0 and boundary_value < sequence_minimum)
+			or (sequence_increment < 0 and boundary_value > sequence_maximum) then
+			boundary_value := null;
+		end if;
+		perform pg_catalog.setval(sequence_name::pg_catalog.regclass, coalesce(boundary_value, sequence_start), boundary_value is not null and has_rows);
 	end if;
 end
 $rehearsal_sequence$;`;
@@ -312,7 +348,7 @@ truncate table ${manifest.tables.map(qualifiedRelation).join(", ")}
 restart identity cascade;
 ${restoreSupabaseAuth ? buildAuthRestoreSql(manifest) : ""}
 ${tables.map(buildTableRestoreSql).join("\n")}
-${tables.map(buildIdentitySequenceSql).filter(Boolean).join("\n")}
+${tables.map(buildOwnedSequenceRestoreSql).filter(Boolean).join("\n")}
 set local session_replication_role = origin;
 do $rehearsal_checks$
 begin
@@ -324,13 +360,32 @@ commit;
 `;
 };
 
-export const createCandidateMigrationReceipt = ({
+export const assertBaselineMigrationHistory = ({
   baselineManifest,
   currentFiles,
+  nativeMigrations,
 }: {
   baselineManifest: BaselineManifest;
   currentFiles: readonly MigrationFileEntry[];
-}) => {
+  nativeMigrations?: PrismaNativeBinding | null;
+}): void => {
+  if (
+    baselineManifest.formatVersion === 3 ||
+    baselineManifest.nativeMigrations !== undefined ||
+    nativeMigrations
+  ) {
+    const bound = parseNativeMigrationBinding(
+      baselineManifest.nativeMigrations,
+    );
+    if (
+      !nativeMigrations ||
+      baselineManifest.formatVersion !== 3 ||
+      !sameNativeMigrationHistory(bound, nativeMigrations)
+    )
+      throw new Error(
+        "Native migration tool, version, provider or lock differs from the baseline; review a new baseline before proceeding.",
+      );
+  }
   const baselineEntries = Object.entries(
     baselineManifest?.migrations ?? {},
   ).sort(([left], [right]) => left.localeCompare(right));
@@ -354,14 +409,45 @@ export const createCandidateMigrationReceipt = ({
       );
     }
   }
-  const candidates = currentFiles.slice(baselineEntries.length);
+};
+
+export const createCandidateMigrationReceipt = ({
+  baselineManifest,
+  currentFiles,
+  nativeMigrations,
+}: {
+  baselineManifest: BaselineManifest;
+  currentFiles: readonly MigrationFileEntry[];
+  nativeMigrations?: NativeMigrationBinding | null;
+}) => {
+  const currentBinding = nativeMigrations
+    ? parseNativeMigrationBinding(nativeMigrations)
+    : nativeMigrations;
+  assertBaselineMigrationHistory({
+    baselineManifest,
+    currentFiles,
+    ...(currentBinding === undefined
+      ? {}
+      : { nativeMigrations: currentBinding }),
+  });
+  const candidates = currentFiles.slice(
+    Object.keys(baselineManifest.migrations).length,
+  );
   const candidateSha256 = createHash("sha256")
     .update(
       `${JSON.stringify(
-        candidates.map(({ filename, fileSha256 }) => ({
-          filename,
-          fileSha256,
-        })),
+        nativeMigrations
+          ? {
+              nativeMigrations,
+              candidates: candidates.map(({ filename, fileSha256 }) => ({
+                filename,
+                fileSha256,
+              })),
+            }
+          : candidates.map(({ filename, fileSha256 }) => ({
+              filename,
+              fileSha256,
+            })),
         null,
         "\t",
       )}\n`,

@@ -9,6 +9,7 @@ import {
   REHEARSAL_DEFAULTS,
 } from "./configuration_contract.mjs";
 import { validateConfigurationSchema } from "./configuration_schema.mjs";
+import { normalizeMigrationTool } from "./configuration_migration_tool.mjs";
 import {
   normalizeResourcePolicy,
   normalizeRequiredServices,
@@ -380,6 +381,13 @@ export const normalizeRehearsalConfig = (input: unknown) => {
       : null,
     postgresql: postgresql
       ? Object.freeze({
+          ...(postgresql.migrationTool === undefined
+            ? {}
+            : {
+                migrationTool: normalizeMigrationTool(
+                  postgresql.migrationTool,
+                )!,
+              }),
           migrationDirectory: assertRelativePath(
             postgresql.migrationDirectory,
             "config.postgresql.migrationDirectory",

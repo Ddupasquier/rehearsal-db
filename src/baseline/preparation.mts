@@ -7,11 +7,17 @@ import { createReadStream } from "node:fs";
 import { access, lstat, mkdir, open, readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
 import {
   buildMigrationLedgerInventory,
   type MigrationLedgerEntry,
+  type MigrationFileEntry,
 } from "../runtime/migration_history.mjs";
+import {
+  readPrismaMigrationInventory,
+  verifyPrismaMigrationLedger,
+} from "../runtime/prisma_history.mjs";
 
 const identifierPattern = /^[a-z][a-z0-9_]{0,62}$/u;
 const storageBucketPattern = /^[a-z0-9][a-z0-9.-]{0,99}$/u;
@@ -33,7 +39,7 @@ export interface BaselineInputInspection extends SyntheticRecordInspection {
   readonly recordsPath: string;
   readonly ledgerPath: string;
   readonly assetsPath?: string;
-  readonly migrationHistory: MigrationLedgerEntry[];
+  readonly migrationHistory: (MigrationLedgerEntry | MigrationFileEntry)[];
   readonly migrationCutoff: string;
   readonly migrationCount: number;
   readonly assetCount: number;
@@ -271,6 +277,13 @@ export const inspectBaselineInputFiles = async ({
     projectRoot,
     ...(configPath === undefined ? {} : { configPath }),
   });
+  if (
+    loaded.config.postgresql?.migrationTool &&
+    (assetsPath || loaded.config.preparation)
+  )
+    throw new Error(
+      "Native Prisma baseline preparation requires reviewed local records and ledger without hosted preparation or Storage assets.",
+    );
   const records = resolveProjectInput(
     loaded.projectRoot,
     recordsPath,
@@ -309,10 +322,23 @@ export const inspectBaselineInputFiles = async ({
       ? inspectAssetManifest(assets, loaded.projectRoot)
       : Promise.resolve({ assetCount: 0 }),
   ]);
-  const migrationHistory = buildMigrationLedgerInventory(
-    ledgerRows,
-    "Synthetic migration ledger",
-  );
+  let migrationHistory: (MigrationLedgerEntry | MigrationFileEntry)[];
+  if (loaded.config.postgresql?.migrationTool) {
+    const inventory = await readPrismaMigrationInventory(
+      pathToFileURL(`${loaded.paths.migrationDirectory}/`),
+    );
+    const nativeLedger = verifyPrismaMigrationLedger({
+      rows: ledgerRows,
+      entries: inventory.entries,
+    });
+    // Preserve native path/checksum identities; never fabricate SQL statement receipts.
+    migrationHistory = inventory.entries.slice(0, nativeLedger.length);
+  } else {
+    migrationHistory = buildMigrationLedgerInventory(
+      ledgerRows,
+      "Synthetic migration ledger",
+    );
+  }
   const latestMigration = migrationHistory.at(-1);
   if (!latestMigration) {
     throw new Error("Synthetic migration ledger is empty or unavailable.");

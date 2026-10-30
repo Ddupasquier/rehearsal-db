@@ -197,22 +197,23 @@ const candidateSummary = (inspection: MigrationInspection) => {
 export const inspectRuntimeTopologyCandidates = async (
   options: RehearsalConfigPathOptions = {},
   inspectMigrations: typeof inspectRehearsalMigrations = inspectRehearsalMigrations,
+  observeInspection?: (
+    target: RuntimeTopologyTarget,
+    inspection: MigrationInspection,
+  ) => void,
 ) => {
   const topology = await loadRuntimeTopology(options);
   const targets: Array<
     RuntimeTopologyTarget & { summary: ReturnType<typeof candidateSummary> }
   > = [];
   for (const target of topology.targets) {
+    const inspection = await inspectMigrations({
+      projectRoot: topology.projectRoot,
+      configPath: target.configPath,
+    });
+    observeInspection?.(target, inspection);
     targets.push(
-      Object.freeze({
-        ...target,
-        summary: candidateSummary(
-          await inspectMigrations({
-            projectRoot: topology.projectRoot,
-            configPath: target.configPath,
-          }),
-        ),
-      }),
+      Object.freeze({ ...target, summary: candidateSummary(inspection) }),
     );
   }
   if (targets.length === 1) {

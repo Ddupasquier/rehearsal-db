@@ -824,6 +824,52 @@ Declarative runtime policies are preferred for supported schema prerequisites an
 checks. Existing project-owned adapters remain compatible but do not replace the
 database driver.
 
+### Native Prisma migrations
+
+Core 2.1 adds opt-in Prisma Migrate 7.10.1 history for PostgreSQL. Existing SQL
+configurations keep their behavior. Visual review requires Starter 0.1.26 or later
+with explicit native-history capability; older strict clients may refuse format 3.
+
+```ts
+postgresql: {
+  migrationDirectory: "prisma/migrations",
+  migrationTool: {
+    kind: "prisma",
+    version: "7.10.1",
+    packageDirectory: "node_modules/prisma",
+  },
+},
+```
+
+Install that exact Prisma version in the consuming project. Rehearsal does not
+install it, generate Prisma Client, execute the project's Prisma configuration or
+load its environment files. Execution requires Node 22.12+ in the 22 series, 24 or 26.
+
+Keep `migration_lock.toml` with PostgreSQL provider and the original
+`<14-digit-version>_<name>/migration.sql` files. Baseline creation takes explicit
+local records and a successful native ledger export containing `migration_name`,
+`checksum`, `finished_at` and `rolled_back_at`. Hosted preparation and Storage are
+outside this workflow's scope. Baseline format 3 retains the exact native history;
+formats 1 and 2 are not converted automatically.
+
+Migration versions must be unique. Missing, divergent, incomplete, failed or
+rolled-back history is refused rather than reordered or repaired. The installed
+Prisma package, engine and resolved runtime dependencies must remain regular files
+inside the consuming project; escaping or symlinked package layouts are unsupported.
+
+Review binds the ordered files and installed toolchain before `migrate deploy`
+targets the ownership-proven local PostgreSQL database. This checks migration
+history; it does not establish that the physical schema has no drift. A native
+failure, cancellation or timeout preserves the data volume and blocks automatic
+resume. Inspect the retained recovery state before choosing explicit `reset`,
+which replaces that disposable sandbox from its baseline. No automatic SQL rollback
+or migration-history repair is promised.
+
+The initial qualification target is PostgreSQL 17 on Ubuntu 24.04 x64 with Node 24.
+Core's general platform checks do not qualify the Prisma SDK on other hosts.
+Complete dependency fingerprinting can be slow on large installations or external
+filesystems; no cached approval replaces fresh review.
+
 ## Application proof and hands-on sessions
 
 `startCommand` is the ordinary application command. When `readiness` is present,

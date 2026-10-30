@@ -255,6 +255,28 @@ data/Storage preservation checks. It does not infer a rollback from a failed mig
 
 ## Runtime lifecycle
 
+Explicit native Prisma configuration selects `runtime/prisma_history.mts` for
+bounded raw-byte history and native-ledger validation. The toolchain owner binds
+the installed execution dependencies; `native_migration_contract.mts` distinguishes
+portable baseline history from the current execution binding. Read-only active
+baseline/resume checks validate fresh native inventory against the portable baseline
+prefix and lock without hashing executable dependencies or creating a candidate digest.
+Candidate review still binds the full current toolchain. A single plan inspection reuses
+its exact per-target inventory, and deploy hashes the complete toolchain, then rechecks fresh source/private-copy
+and generated-config bytes immediately before dispatch, and hashes again after execution;
+no persistent hash cache or reduced dependency closure is used. Late native dispatch
+and completion assert the active pointer and an unchanged regular manifest (at most
+8 MiB) against the already fully verified baseline; this metadata assertion does not
+rehash or newly verify row payloads and is not applied to SQL formats 1/2. Prepared
+native schema/config bytes are checked again after execution. Same-owner mutation
+races are not an atomic-openat or filesystem-sandbox guarantee. Baseline format 3
+preserves native paths and lock bytes; existing SQL formats remain unchanged.
+`targets/postgresql_migrations.mts` owns SQL/native dispatch, while
+`prisma_migration_process.mts` owns only private-config, bounded native execution
+against the exact target proven by `prisma_target_binding.mts`. A native migration
+failure preserves its data volume and requires explicit recovery; the extension
+consumes the public review contract and never runs a second migration engine.
+
 The planning-only [database capability and conformance design](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/database-capabilities.md)
 owns future cross-family semantics, ownership and independent acceptance. It adds
 no supported runtime or execution backend.

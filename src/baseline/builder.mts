@@ -20,6 +20,7 @@ import {
   readMigrationSourceBundle,
 } from "../runtime/migration_history.mjs";
 import { validateRuntimeSanitizationPolicy } from "./sanitization_policy.mjs";
+import { createPrismaBaseline } from "./prisma_builder.mjs";
 
 interface SyntheticBaselineOptions {
   readonly projectRoot?: string;
@@ -171,6 +172,16 @@ export const createSyntheticBaselineFromFiles = async ({
   if (expectedTables.length === 0) {
     throw new Error("The sanitization policy includes no restorable tables.");
   }
+  if (loaded.config.postgresql?.migrationTool)
+    return createPrismaBaseline({
+      loaded,
+      records: readRecords(records),
+      ledger: JSON.parse(ledgerBytes.toString("utf8")),
+      policyBytes,
+      cutoff: policy.migrationCutoff,
+      expectedTables,
+      assets,
+    });
   const sourceMigrationHistory = buildMigrationLedgerInventory(
     JSON.parse(ledgerBytes.toString("utf8")),
     "Synthetic migration ledger",

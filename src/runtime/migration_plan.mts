@@ -29,19 +29,25 @@ export const migrationReviewEntries = (
 
 export const inspectMigrationReviewPlan = async (
   options: RehearsalConfigPathOptions = {},
+  inspectMigrations: typeof inspectRehearsalMigrations = inspectRehearsalMigrations,
 ) => {
-  const candidates = await inspectRuntimeTopologyCandidates(options);
+  const inspections = new Map<string, Inspection>();
+  const candidates = await inspectRuntimeTopologyCandidates(
+    options,
+    inspectMigrations,
+    (target, inspection) => inspections.set(target.configPath, inspection),
+  );
   const targets = [];
   for (const target of candidates.targets) {
-    const inspection = await inspectRehearsalMigrations({
-      projectRoot: candidates.topology.projectRoot,
-      configPath: target.configPath,
-    });
+    const inspection = inspections.get(target.configPath)!;
     targets.push({
       name: target.name,
       provider: target.config.runtime.target,
       baselineGenerationId: inspection.baselineGenerationId,
       candidateSha256: inspection.candidateSha256,
+      ...(inspection.migrationTool
+        ? { migrationTool: inspection.migrationTool }
+        : {}),
       entries: migrationReviewEntries(target.name, inspection.migrations),
     });
   }

@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { inspectMigrationReviewPlan } from "../../../dist/src/runtime/migration_plan.mjs";
 import { loadRuntimeTopology } from "../../../dist/src/runtime/topology.mjs";
 
 const roots = [];
@@ -175,5 +176,55 @@ describe("dependent runtime topology", () => {
     expect(
       (await loadRuntimeTopology({ projectRoot: root })).targets,
     ).toHaveLength(2);
+  });
+});
+
+it("projects the public migration review from exactly one complete inspection per target", async () => {
+  const root = await makeTopology(),
+    calls = [];
+  const result = await inspectMigrationReviewPlan(
+    { projectRoot: root },
+    async (options) => {
+      calls.push(options.configPath);
+      return {
+        baselineGenerationId: "baseline-1",
+        baselineCutoff: "20260101000000",
+        candidateSha256: "a".repeat(64),
+        migrations: [
+          {
+            version: "20260101000001",
+            name: "change",
+            filename: "20260101000001_change.sql",
+            sha256: "b".repeat(64),
+            status: "candidate",
+          },
+        ],
+        definitions: {},
+      };
+    },
+  );
+  expect(calls).toHaveLength(2);
+  expect(new Set(calls).size).toBe(2);
+  expect(result.candidateCount).toBe(2);
+  expect(result.targets.map((target) => target.entries[0].id)).toEqual([
+    "primary:20260101000001",
+    "publication:20260101000001",
+  ]);
+  expect(Object.keys(result).sort()).toEqual([
+    "candidateCount",
+    "candidateSha256",
+    "safety",
+    "schemaVersion",
+    "selection",
+    "targets",
+  ]);
+  expect(
+    result.targets.every((target) => !Object.hasOwn(target, "inspection")),
+  ).toBe(true);
+  expect(result.targets[0].entries[0]).toMatchObject({
+    required: true,
+    dependsOn: [],
+    order: 0,
+    warnings: ["sql_safety_not_inferred"],
   });
 });
