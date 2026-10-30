@@ -1,3 +1,5 @@
+import { parseMigrationCutoff } from "../runtime/migration_identity.mjs";
+import type { MigrationCutoff } from "../runtime/migration_identity.mjs";
 /**
  * Generic, fail-closed sanitization policy validation and value operations.
  * Projects own the policy, schema inventory, pseudonym keys, and derivation logic.
@@ -43,7 +45,7 @@ export interface LegacySanitizationPolicyTable {
 
 export interface LegacySanitizationPolicy {
   readonly policyVersion: 1;
-  readonly migrationCutoff: string;
+  readonly migrationCutoff: MigrationCutoff;
   readonly tables: readonly LegacySanitizationPolicyTable[];
 }
 
@@ -119,14 +121,7 @@ export const validateRuntimeSanitizationPolicy = (
   if (policy.policyVersion !== 1) {
     throw new Error("The sanitization policy must use policyVersion 1 or 2.");
   }
-  if (
-    typeof policy.migrationCutoff !== "string" ||
-    !/^\d{14}$/u.test(policy.migrationCutoff)
-  ) {
-    throw new Error(
-      "The sanitization policy must declare a timestamp migrationCutoff.",
-    );
-  }
+  const migrationCutoff = parseMigrationCutoff(policy.migrationCutoff);
   if (!Array.isArray(policy.tables) || policy.tables.length === 0) {
     throw new Error("The sanitization policy does not list tables.");
   }

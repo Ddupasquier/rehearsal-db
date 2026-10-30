@@ -1,3 +1,4 @@
+import type { AnyMigrationFileEntry } from "./migration_identity.mjs";
 import { normalizeRuntimeMarkerProtocol } from "./runtime_marker_protocol.mjs";
 /** Shared, target-neutral orchestration for disposable runtime lifecycles. */
 
@@ -40,8 +41,8 @@ export interface ActiveRuntimeInput {
 }
 
 export interface CandidateMigrationPlan {
-  readonly currentFiles: readonly MigrationFileEntry[];
-  readonly candidates: readonly MigrationFileEntry[];
+  readonly currentFiles: readonly AnyMigrationFileEntry[];
+  readonly candidates: readonly AnyMigrationFileEntry[];
   readonly candidateSha256: string;
 }
 

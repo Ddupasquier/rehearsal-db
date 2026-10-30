@@ -82,6 +82,10 @@ const prepare = async (
     throw refusal(
       "Impact review requires one target from this project's configuration.",
     );
+  if (target.config.postgresql?.migrationTool?.kind === "drizzle")
+    throw refusal(
+      "Impact preview and measurement are not qualified for native Drizzle histories; use the reviewed native plan and static Insights.",
+    );
   let remaining = MIGRATION_IMPACT_LIMITS.maximumMeasurements;
   const entries: PreparedEntry[] = target.summary.candidates.map(
     (candidate) => {

@@ -5,6 +5,16 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-30
+
+### Added
+
+- Opt-in Drizzle Kit 0.31.11 / ORM 0.45.4 / pg 8.23.1 PostgreSQL migrations,
+  with explicit native identities and byte-exact journal baseline format 4.
+  Whole-journal baseline checks, native-prefix consent and bounded private execution
+  preserve existing SQL/Prisma contracts. Initial SDK qualification targets
+  PostgreSQL 17 on Ubuntu 24.04 x64 / Node 24; other combinations remain unqualified.
+
 ## [2.1.0] - 2026-10-30
 
 ### Added
@@ -959,7 +969,8 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.3.0...v2.0.0

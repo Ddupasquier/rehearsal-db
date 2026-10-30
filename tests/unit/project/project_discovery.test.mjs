@@ -209,3 +209,47 @@ describe("project discovery", () => {
     expect(JSON.stringify(result)).not.toContain("outside-secret");
   });
 });
+
+it("reports native Drizzle metadata as an explicit decision without evaluating configs or journal contents", async () => {
+  const root = await makeRoot();
+  await mkdir(join(root, "drizzle/meta"), { recursive: true });
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({ name: "drizzle-discovery" }),
+  );
+  await writeFile(
+    join(root, "drizzle/meta/_journal.json"),
+    "not evaluated during metadata discovery",
+  );
+  await writeFile(
+    join(root, "drizzle.config.cjs"),
+    'throw new Error("private config must not execute");',
+  );
+  await writeFile(join(root, ".env"), "PRIVATE_SECRET=must-not-read");
+  const result = await discoverProjectProfile({
+    projectRoot: root,
+    containerEngineProbe: async () => "unavailable",
+  });
+  expect(result.detected).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        id: "database.drizzle",
+        value: "drizzle/meta/_journal.json",
+      }),
+    ]),
+  );
+  expect(result.decisions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: "database.migrationTool" }),
+    ]),
+  );
+  expect(
+    result.suggested.some((item) => item.id === "database.migrationDirectory"),
+  ).toBe(false);
+  expect(JSON.stringify(result)).not.toContain("PRIVATE_SECRET");
+  expect(result.safety).toMatchObject({
+    projectCodeExecuted: false,
+    environmentFilesRead: false,
+    databaseContacted: false,
+  });
+});

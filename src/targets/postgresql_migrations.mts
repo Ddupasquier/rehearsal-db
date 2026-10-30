@@ -1,4 +1,17 @@
-/** PostgreSQL migration ownership: existing SQL ledger or explicitly selected native Prisma. */
+import {
+  drizzleMigrationFiles,
+  drizzleNativeEntries,
+  isDrizzleMigrationFile,
+  type AnyMigrationFileEntry,
+} from "../runtime/migration_identity.mjs";
+import {
+  readDrizzleMigrationInventory,
+  verifyDrizzleMigrationLedger,
+  normalizeDrizzleMigrationLedger,
+} from "../runtime/drizzle_history.mjs";
+import { inspectDrizzleToolchain } from "../runtime/drizzle_toolchain.mjs";
+import { deployDrizzleMigrations } from "./drizzle_migration_process.mjs";
+/** PostgreSQL migration ownership: existing SQL ledger or explicitly selected native producer. */
 import { pathToFileURL } from "node:url";
 import type { loadRehearsalConfig } from "../project/configuration.mjs";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
@@ -41,6 +54,22 @@ export const createPostgresqlMigrationRuntime = ({
   databaseUser: string;
 }) => {
   const tool = loaded.config.postgresql?.migrationTool;
+  const readDrizzleLedger = () => {
+    assertOwnedTarget();
+    let rows: unknown;
+    try {
+      rows = JSON.parse(
+        runSql(
+          `select coalesce(json_agg(history), '[]'::json)::text from (select id, hash, created_at from drizzle.__drizzle_migrations order by created_at, id limit 10001) history;`,
+        ),
+      );
+    } catch {
+      throw new Error(
+        "Native Drizzle runtime ledger output is invalid; provider output is withheld.",
+      );
+    }
+    return normalizeDrizzleMigrationLedger(rows);
+  };
   const readLedger = () => {
     if (tool) {
       assertOwnedTarget();
@@ -70,9 +99,21 @@ from rehearsal_internal.schema_migrations order by version;`)
     currentFiles,
     baseline,
   }: {
-    currentFiles: readonly MigrationFileEntry[];
+    currentFiles: readonly AnyMigrationFileEntry[];
     baseline: BaselineManifest;
   }) => {
+    if (tool?.kind === "drizzle") {
+      const ledger = verifyDrizzleMigrationLedger({
+        rows: readDrizzleLedger(),
+        entries: drizzleNativeEntries(currentFiles),
+      });
+      const baselineCount = Object.keys(baseline.migrations).length;
+      if (ledger.length < baselineCount)
+        throw new Error(
+          "Drizzle runtime ledger is missing the baseline prefix.",
+        );
+      return { ledger, appliedCandidateCount: ledger.length - baselineCount };
+    }
     const ledger = readLedger();
     const baselineCount = Object.keys(baseline.migrations).length;
     if (ledger.length < baselineCount || ledger.length > currentFiles.length)
@@ -83,6 +124,7 @@ from rehearsal_internal.schema_migrations order by version;`)
       const applied = ledger[i]!,
         source = currentFiles[i]!;
       if (
+        isDrizzleMigrationFile(source) ||
         applied.version !== source.version ||
         applied.name !== source.name ||
         applied.fileSha256 !== source.fileSha256
@@ -134,6 +176,22 @@ values (${quote(migration.version)}, ${quote(migration.name)}, ${quote(migration
     },
     validateHistory: async (baseline: BaselineManifest) => {
       if (!tool) return;
+      if (tool.kind === "drizzle") {
+        const inventory = await readDrizzleMigrationInventory(
+          pathToFileURL(`${loaded.paths.migrationDirectory}/`),
+        );
+        assertBaselineMigrationHistory({
+          baselineManifest: baseline,
+          currentFiles: drizzleMigrationFiles(inventory.entries),
+          nativeMigrations: parseNativeMigrationBinding({
+            ...inventory.binding,
+            driver: "pg",
+            driverVersion: "8.23.1",
+            toolchainSha256: "0".repeat(64),
+          }),
+        });
+        return;
+      }
       const inventory = await readPrismaMigrationInventory(
         pathToFileURL(`${loaded.paths.migrationDirectory}/`),
       );
@@ -143,7 +201,7 @@ values (${quote(migration.version)}, ${quote(migration.name)}, ${quote(migration
         nativeMigrations: inventory.binding,
       });
     },
-    readLedger,
+    readLedger: tool?.kind === "drizzle" ? readDrizzleLedger : readLedger,
     verifyLedger,
     initialize: () => {
       if (!tool)
@@ -158,7 +216,33 @@ applied_at timestamptz not null default now());`);
       directory: string,
       databaseUrl: string,
     ) => {
-      if (tool) {
+      if (tool?.kind === "drizzle") {
+        const producer = parseNativeMigrationBinding(baseline.nativeMigrations);
+        if (producer.kind !== "drizzle")
+          throw new Error("Drizzle baseline binding is required.");
+        const toolchain = await inspectDrizzleToolchain({
+          projectRoot: loaded.projectRoot,
+          tool,
+        });
+        const inventory = await readDrizzleMigrationInventory(
+          pathToFileURL(`${directory}/`),
+        );
+        await deployDrizzleMigrations({
+          projectRoot: loaded.projectRoot,
+          tool,
+          directory,
+          runtimeWorkdir: loaded.paths.runtimeWorkdir,
+          entries: drizzleMigrationFiles(inventory.entries),
+          binding: { ...producer, toolchainSha256: toolchain.sha256 },
+          databaseUrl,
+          assertOwnedTarget,
+          assertExpectedBaseline: () => assertExpectedBaseline(baseline),
+        });
+        verifyLedger({
+          currentFiles: drizzleMigrationFiles(inventory.entries),
+          baseline,
+        });
+      } else if (tool) {
         const producer = parseNativeMigrationBinding(baseline.nativeMigrations);
         const toolchain = await inspectPrismaToolchain({
           projectRoot: loaded.projectRoot,
@@ -196,13 +280,34 @@ applied_at timestamptz not null default now());`);
         currentFiles: receipt.currentFiles,
         baseline,
       });
-      if (tool) {
+      if (tool?.kind === "drizzle") {
+        const entries = receipt.currentFiles.map((entry) => {
+          if (!isDrizzleMigrationFile(entry))
+            throw new Error("Native Drizzle identity missing.");
+          return entry;
+        });
+        await deployDrizzleMigrations({
+          projectRoot: loaded.projectRoot,
+          tool,
+          directory: loaded.paths.migrationDirectory,
+          runtimeWorkdir: loaded.paths.runtimeWorkdir,
+          entries,
+          binding: parseNativeMigrationBinding(receipt.nativeMigrations),
+          databaseUrl,
+          assertOwnedTarget,
+          assertExpectedBaseline: () => assertExpectedBaseline(baseline),
+        });
+      } else if (tool) {
         await deployPrismaMigrations({
           projectRoot: loaded.projectRoot,
           packageDirectory: tool.packageDirectory,
           directory: loaded.paths.migrationDirectory,
           runtimeWorkdir: loaded.paths.runtimeWorkdir,
-          entries: receipt.currentFiles,
+          entries: receipt.currentFiles.map((entry) => {
+            if (isDrizzleMigrationFile(entry))
+              throw new Error("Prisma requires timestamped native entries.");
+            return entry;
+          }),
           binding: parseNativeMigrationBinding(receipt.nativeMigrations),
           databaseUrl,
           assertOwnedTarget,
@@ -212,11 +317,14 @@ applied_at timestamptz not null default now());`);
         for (const migration of receipt.candidates.slice(
           before.appliedCandidateCount,
         ))
-          await applySql(
-            migration,
-            loaded.paths.migrationDirectory,
-            "candidate",
-          );
+          if (isDrizzleMigrationFile(migration))
+            throw new Error("SQL execution cannot consume Drizzle identities.");
+          else
+            await applySql(
+              migration,
+              loaded.paths.migrationDirectory,
+              "candidate",
+            );
       }
     },
   };

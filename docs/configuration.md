@@ -939,3 +939,78 @@ reviewed public type surface. The exact current boundary is documented in
 
 Undocumented files under `scripts/` are package internals and are not compatibility
 contracts.
+
+### Native Drizzle migrations
+
+Core 2.2 advertising `rehearsalContracts.drizzleMigrations: 1` adds opt-in
+PostgreSQL migrations in the pinned Drizzle format. Visual review requires Starter
+0.1.27 or later with explicit format 4 support. Prisma's `nativeMigrations: 1`
+and flat SQL histories keep their existing contracts.
+
+```ts
+postgresql: {
+  migrationDirectory: "drizzle",
+  migrationTool: {
+    kind: "drizzle",
+    kitVersion: "0.31.11",
+    ormVersion: "0.45.4",
+    driver: "pg",
+    driverVersion: "8.23.1",
+    packageDirectory: "node_modules/drizzle-kit",
+    ormPackageDirectory: "node_modules/drizzle-orm",
+    driverPackageDirectory: "node_modules/pg",
+  },
+},
+```
+
+Select exact installed project-local packages yourself. Rehearsal neither installs
+nor downloads the SDK, evaluates `drizzle.config.*`/schema files, generates
+migrations, nor runs `push`. Only Kit `migrate` with Core-generated closed CJS
+configuration targets an ownership-proven loopback PostgreSQL sandbox. The fixed
+ledger is `drizzle.__drizzle_migrations`; other schemas, tables, drivers, providers,
+Kit/ORM versions and release candidates are unsupported. Initially, Kit-resolvable
+`postgres`, `@vercel/postgres` and `@neondatabase/serverless` are refused so a failed
+`pg` import cannot silently select an alternate client. Kit's directly resolved
+`esbuild` must be a stable 0.25.x release at patch 4 or later and joins the full
+fingerprint; the isolated qualification fixture selects 0.25.12. This is not a
+conformance claim for every patch. The pinned Kit lock can also contain unused
+legacy esbuild 0.18.20 through `@esbuild-kit/core-utils`/`esm-loader`; the reviewed
+migrate path uses embedded tsx and the direct patched esbuild transform API, not
+those legacy loaders or esbuild's HTTP serve API. This narrow boundary does not
+certify other SDK commands, Studio, application servers or a clean security audit.
+
+Baseline creation uses explicit reviewed local records plus a native JSON ledger
+export with exactly `id`, `hash` and `created_at`. Every journal entry must already
+be applied before baseline creation: pending entries are refused before record
+streaming or artifact creation. Review the policy's native cutoff explicitly:
+
+```json
+{ "kind": "drizzle", "idx": 1, "when": 1720000001000, "tag": "a_index" }
+```
+
+Format 4 preserves the exact raw `meta/_journal.json` and SQL bytes, journal order,
+entry fields and source ledger IDs. Source serial-ID gaps are valid provenance;
+replay identity is the ordered SQL hash and native millisecond timestamp. SQL
+filename lexical order and Prisma timestamp-file versions are not substituted.
+Later candidate journals may append entries only while preserving the complete
+baseline semantic prefix and SQL hashes. Journal formatting changes require fresh
+candidate consent even when that prefix remains the same. No source history is
+truncated, synthesized or rewritten. Generator-only snapshot metadata is bounded
+and checked as regular files; it is not consumed by the selected migrate path.
+History is limited to 10,000 entries, 8 MiB per file and 64 MiB total, including
+journal and snapshot metadata sizes. The installed dependency closure is bounded
+to 256 packages, 16,384 files and 384 MiB total; four readers share a 64 MiB
+inflight buffer budget including growth sentinels.
+
+The full resolved runtime dependency closure, including Kit's actual selected ORM
+and `pg` packages, is fingerprinted before and after execution. Regular canonical
+project-local paths are required; symlinked, escaping or ambiguous installations
+are refused. Fingerprinting detects observed identity/content/timestamp drift; it
+is not a filesystem sandbox or an atomic snapshot against a malicious local owner.
+The existing 120-second native execution/verification bound, cancellation, output
+redaction and retained-volume recovery apply. A failed native migration preserves
+the volume and blocks automatic resume until reviewed explicit reset. Hosted
+source preparation, Storage, live impact measurement, statement-failure attribution, Client generation and
+automatic history repair are outside this integration. Initial SDK qualification
+targets PostgreSQL 17 on Ubuntu 24.04 x64 / Node 24; general Core platform checks do
+not qualify other SDK/host combinations.

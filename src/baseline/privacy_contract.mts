@@ -1,3 +1,4 @@
+import type { MigrationCutoff } from "../runtime/migration_identity.mjs";
 /** Typed, normalized contract shared by privacy validation and execution stages. */
 
 export type PrivacyAction =
@@ -162,7 +163,7 @@ export interface PrivacyTable {
 
 export interface ExecutablePrivacyPolicy {
   readonly policyVersion: 2;
-  readonly migrationCutoff: string;
+  readonly migrationCutoff: MigrationCutoff;
   readonly bindings: Readonly<Record<string, PrivacyBinding>>;
   readonly pathMappings: Readonly<Record<string, PrivacyPathMapping>>;
   readonly tables: readonly PrivacyTable[];

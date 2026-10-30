@@ -137,3 +137,14 @@ instead of treating missing Storage or relationship evidence as zero.
 Baseline files can still be sensitive after sanitization. Rehearsal stores them under the
 ignored `.rehearsal/` directory with checksums and read-only files. Keep them off shared
 drives, use encrypted disks, retain them only as long as needed, and never commit them.
+
+## Native Drizzle baseline format
+
+The separate [Drizzle integration](configuration.md#native-drizzle-migrations)
+uses format 4. `nativeMigrations` records the pinned producer/toolchain binding;
+`drizzleHistory` records ordered native entries, the raw journal receipt and source
+ledger provenance. The cutoff is `{kind:"drizzle",idx,when,tag}`. It requires the
+whole source journal applied at baseline creation and never regenerates history.
+Later consent binds the current whole journal and installed toolchain; baseline
+prefix comparison preserves the native semantic entries and SQL hashes. This is
+not an automatic conversion of older baseline formats or an editor-support claim.

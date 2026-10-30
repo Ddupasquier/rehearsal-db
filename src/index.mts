@@ -37,3 +37,11 @@ export {
   validateSanitizationCoverage,
   validateRuntimeSanitizationPolicy,
 } from "./baseline/sanitization_policy.mjs";
+export type {
+  MigrationCutoff,
+  DrizzleMigrationIdentity,
+} from "./runtime/migration_identity.mjs";
+export type {
+  NativeMigrationTool,
+  DrizzleMigrationTool,
+} from "./project/configuration_migration_tool.mjs";

@@ -306,6 +306,20 @@ Repository contracts keep each target driver at 900 lines or fewer and the share
 lifecycle engine at 300 lines or fewer. A new database target must use this lifecycle
 boundary rather than copying an existing driver's orchestration.
 
+## Native migration producers
+
+Explicit configuration selects native producers; metadata discovery never imports
+project migration configuration, schema or environment files. Prisma and the
+separate Drizzle integration share `runtime/native_toolchain*` for complete bounded
+resolved package fingerprints and `targets/native_migration_process.mts` for the
+private process/cancellation/target/source/baseline boundary. Producer recipes own
+their exact file inventory, generated closed configuration and actual CLI argv.
+No recipe generates or repairs source history. Format 3 remains Prisma-specific;
+format 4 records Drizzle's ordered native journal identities and raw receipt.
+The [baseline owner](baselines.md#native-drizzle-baseline-format) and
+[configuration contract](configuration.md#native-drizzle-migrations)
+explain the candidate's qualification and unsupported cases.
+
 ## Identity claim pipeline
 
 The [auth-platform contract proposal](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/auth-platform-contract.md) preserves this pipeline
