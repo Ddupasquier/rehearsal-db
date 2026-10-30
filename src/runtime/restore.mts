@@ -230,6 +230,8 @@ declare
 	has_rows boolean;
 	sequence_start bigint;
 	sequence_increment bigint;
+	sequence_minimum bigint;
+	sequence_maximum bigint;
 begin
 	if sequence_name is not null then
 		if not exists (
@@ -241,15 +243,25 @@ begin
 		) then
 			raise exception 'Rehearsal cannot restore an owned sequence on a non-integer column';
 		end if;
-		select seqstart, seqincrement into sequence_start, sequence_increment
+		select seqstart, seqincrement, seqmin, seqmax into sequence_start, sequence_increment, sequence_minimum, sequence_maximum
 		from pg_catalog.pg_sequence where seqrelid = sequence_name::pg_catalog.regclass;
-		if sequence_start is null or sequence_increment is null or sequence_increment = 0 then
+		if sequence_start is null or sequence_increment is null or sequence_increment = 0
+			or sequence_minimum is null or sequence_maximum is null
+			or sequence_minimum > sequence_maximum
+			or sequence_start not between sequence_minimum and sequence_maximum then
 			raise exception 'Rehearsal cannot verify the owned sequence configuration';
 		end if;
 		if sequence_increment > 0 then
 			execute ${quoteLiteral(sequenceValueQuery)} into boundary_value, has_rows;
 		else
 			execute ${quoteLiteral(descendingValueQuery)} into boundary_value, has_rows;
+		end if;
+		if (sequence_increment > 0 and boundary_value > sequence_maximum)
+			or (sequence_increment < 0 and boundary_value < sequence_minimum) then
+			raise exception 'Rehearsal cannot advance the owned sequence beyond restored IDs within its configured bounds';
+		elsif (sequence_increment > 0 and boundary_value < sequence_minimum)
+			or (sequence_increment < 0 and boundary_value > sequence_maximum) then
+			boundary_value := null;
 		end if;
 		perform pg_catalog.setval(sequence_name::pg_catalog.regclass, coalesce(boundary_value, sequence_start), boundary_value is not null and has_rows);
 	end if;
