@@ -12,6 +12,9 @@ import { delimiter, dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  OWNED_COLIMA_SHUTDOWN_TIMEOUT_MS,
+  runOwnedColimaStop,
+  runContainerEngineOwnershipCommand,
   CONTAINER_ENGINE_RECEIPT_FILENAME,
   releaseOwnedColimaWhenIdle,
   writeContainerEngineStartReceipt,
@@ -51,6 +54,7 @@ const fixture = async () => {
 const engine = () => {
   const state = {
     running: true,
+    clock: 0,
     bootId,
     containers: new Set(),
     calls: [],
@@ -62,7 +66,7 @@ const engine = () => {
   state.run = (command, args) => {
     state.calls.push([command, ...args]);
     if (command === "docker" && args[0] === "info")
-      return result(state.running ? 0 : 1);
+      return result(state.running ? 0 : 1, "synthetic-daemon");
     if (
       command === "docker" &&
       args[0] === "context" &&
@@ -90,17 +94,35 @@ const engine = () => {
     if (command === "colima" && args[0] === "stop") {
       state.running = false;
       state.onStop();
-      return result(0);
+      return state.stopResult ?? result(0);
     }
     throw new Error(
       "An unexpected command must never fall back to a real engine.",
     );
   };
+  state.confirm = async () => ({
+    profileStopped: !state.running,
+    vmProcessAbsent: !state.running,
+  });
+  state.qualify = async (_options, endpoint, daemonId) => ({
+    endpoint,
+    daemonId,
+    bootId: state.bootId,
+    environment: {},
+  });
   state.release = ({ input, target }, targets = [target]) =>
     releaseOwnedColimaWhenIdle({
       projectRoot: input.projectRoot,
       targets,
       run: state.run,
+      dependencies: {
+        qualify: (...args) => state.qualify(...args),
+        confirm: (...args) => state.confirm(...args),
+        now: () => state.clock,
+        wait: async () => {
+          state.clock += 1000;
+        },
+      },
     });
   return state;
 };
@@ -141,16 +163,16 @@ describe("guarded engine lifecycle interleavings", () => {
     const shared = engine();
     writeContainerEngineStartReceipt({ input: owner.input, run: shared.run });
     shared.containers.add("another-project-running-container");
-    expect(shared.release(owner).state).toBe("preserved");
+    expect((await shared.release(owner)).state).toBe("preserved");
     // A foreign project cannot use a different project's receipt to claim the boot.
     await writeFile(other.input.path, await readFile(owner.input.path), {
       mode: 0o600,
       flag: "wx",
     });
     shared.containers.clear();
-    expect(shared.release(other).state).toBe("preserved");
+    expect((await shared.release(other)).state).toBe("preserved");
     expect(shared.calls).not.toContainEqual(["colima", "stop"]);
-    expect(shared.release(owner).state).toBe("stopped");
+    expect((await shared.release(owner)).state).toBe("stopped");
   });
 
   it.each(["new-workload", "inspection-failure"])(
@@ -167,7 +189,7 @@ describe("guarded engine lifecycle interleavings", () => {
         shared.scans === 2 && interleaving === "inspection-failure"
           ? result(1)
           : undefined;
-      expect(shared.release(owner)).toMatchObject({
+      expect(await shared.release(owner)).toMatchObject({
         state: "preserved",
         message: expect.stringContaining("during idle shutdown review"),
       });
@@ -183,11 +205,11 @@ describe("guarded engine lifecycle interleavings", () => {
     const owner = await fixture();
     const shared = engine();
     writeContainerEngineStartReceipt({ input: owner.input, run: shared.run });
-    expect(shared.release(owner).state).toBe("stopped");
-    expect(shared.release(owner).state).toBe("already-stopped");
+    expect((await shared.release(owner)).state).toBe("stopped");
+    expect((await shared.release(owner)).state).toBe("unknown");
     shared.running = true;
     shared.bootId = "11111111-1111-1111-1111-111111111111";
-    expect(shared.release(owner).state).toBe("preserved");
+    expect((await shared.release(owner)).state).toBe("preserved");
     expect(
       shared.calls.filter(
         ([command, action]) => command === "colima" && action === "stop",
@@ -207,7 +229,7 @@ describe("guarded engine lifecycle interleavings", () => {
         run: shared.run,
       });
     };
-    expect(shared.release(owner).state).toBe("stopped");
+    expect((await shared.release(owner)).state).toBe("unknown");
     expect(JSON.parse(await readFile(owner.input.path, "utf8"))).toMatchObject({
       bootId: shared.bootId,
       operationId: "operation-owner-two",
@@ -237,7 +259,7 @@ describe("guarded engine lifecycle interleavings", () => {
         stop: async (target) => {
           events.push(`stop:${target}`);
           shared.containers.delete(target);
-          const released = shared.release(owner);
+          const released = await shared.release(owner);
           expect(released.state).toBe(
             shared.containers.size ? "preserved" : "stopped",
           );
@@ -322,8 +344,194 @@ catch { console.log("startup-refused"); }`;
       expect(calls).not.toContainEqual(["colima", "stop"]);
       // Even if the VM eventually becomes healthy, missing proof preserves it.
       const healthy = engine();
-      expect(healthy.release(owner).state).toBe("preserved");
+      expect((await healthy.release(owner)).state).toBe("preserved");
       expect(healthy.calls).not.toContainEqual(["colima", "stop"]);
     },
   );
+});
+
+describe("automatic owned shutdown result and independent confirmation", () => {
+  it("allows only the exact graceful stop a longer deadline and supports a harmless delayed executable", async () => {
+    const root = await mkdtemp(join(tmpdir(), "owned-stop-deadline-"));
+    roots.push(root);
+    const path = join(root, "colima");
+    await writeFile(
+      path,
+      `#!${process.execPath}\nif(process.argv[2]==='stop') setTimeout(()=>process.stdout.write('completed\\n'),10500); else process.stdout.write('metadata\\n');\n`,
+      { mode: 0o700 },
+    );
+    expect(OWNED_COLIMA_SHUTDOWN_TIMEOUT_MS).toBe(60000);
+    const metadata = runContainerEngineOwnershipCommand(
+      "colima",
+      ["list", "--json"],
+      root,
+      { PATH: root, HOME: root },
+    );
+    expect(metadata.status).toBe(0);
+    const started = performance.now(),
+      stopped = await runOwnedColimaStop(root, { PATH: root, HOME: root });
+    expect(stopped.status).toBe(0);
+    expect(stopped.error).toBeUndefined();
+    expect(performance.now() - started).toBeGreaterThan(10000);
+  }, 20000);
+
+  it("bounds a harmless owned CLI timeout and refuses cancelled pre-dispatch work", async () => {
+    const root = await mkdtemp(join(tmpdir(), "owned-stop-timeout-"));
+    roots.push(root);
+    await writeFile(
+      join(root, "colima"),
+      `#!${process.execPath}\nprocess.on('SIGTERM',()=>{}); setInterval(()=>{},100);\n`,
+      { mode: 0o700 },
+    );
+    const timedOut = await runOwnedColimaStop(
+      root,
+      { PATH: root, HOME: root },
+      { timeoutMs: 100 },
+    );
+    expect(timedOut.error?.code).toBe("ETIMEDOUT");
+    expect(timedOut.status).toBeNull();
+    expect(["SIGTERM", "SIGKILL"]).toContain(timedOut.signal);
+    const cancelled = new AbortController();
+    cancelled.abort();
+    const beforeDispatch = await runOwnedColimaStop(
+      "/does-not-exist",
+      {},
+      { signal: cancelled.signal },
+    );
+    expect(beforeDispatch.error?.code).toBe("ABORT_ERR");
+    expect(beforeDispatch.signal).toBeNull();
+  });
+
+  it.each([
+    "partial",
+    "observation-error",
+    "command-failure",
+    "caller-timeout",
+  ])("retains the receipt without false success (%s)", async (scenario) => {
+    const owner = await fixture(),
+      shared = engine();
+    writeContainerEngineStartReceipt({ input: owner.input, run: shared.run });
+    if (scenario === "partial")
+      shared.confirm = async () => ({
+        profileStopped: true,
+        vmProcessAbsent: false,
+      });
+    if (scenario === "observation-error")
+      shared.confirm = async () => {
+        throw Error("PRIVATE_PROVIDER_MESSAGE");
+      };
+    if (scenario === "command-failure" || scenario === "caller-timeout")
+      shared.confirm = async () => ({
+        profileStopped: false,
+        vmProcessAbsent: false,
+      });
+    if (scenario === "command-failure")
+      shared.stopResult = { ...result(1), stderr: "PRIVATE_PROVIDER_MESSAGE" };
+    if (scenario === "caller-timeout")
+      shared.stopResult = {
+        ...result(null),
+        signal: "SIGTERM",
+        error: Object.assign(Error("PRIVATE_PROVIDER_MESSAGE"), {
+          code: "ETIMEDOUT",
+        }),
+      };
+    const release = await shared.release(owner);
+    expect(release.state).toBe("unknown");
+    expect(release.message).not.toContain("Stopped the Colima boot");
+    expect(JSON.stringify(release)).not.toContain("PRIVATE");
+    expect(
+      JSON.parse(await readFile(owner.input.path, "utf8")).operationId,
+    ).toBe(owner.input.operationId);
+    if (scenario === "caller-timeout")
+      expect(release.shutdown.command).toMatchObject({
+        status: null,
+        signal: "SIGTERM",
+        errorCode: "ETIMEDOUT",
+      });
+  });
+
+  it.each(["nonzero", "timeout"])(
+    "reconciles independently confirmed VM-off with the original command warning (%s)",
+    async (scenario) => {
+      const owner = await fixture(),
+        shared = engine();
+      writeContainerEngineStartReceipt({ input: owner.input, run: shared.run });
+      shared.stopResult =
+        scenario === "nonzero"
+          ? { ...result(1), stderr: "PRIVATE_PROVIDER_MESSAGE" }
+          : {
+              ...result(null),
+              signal: "SIGTERM",
+              error: Object.assign(Error("PRIVATE_PROVIDER_MESSAGE"), {
+                code: "ETIMEDOUT",
+              }),
+            };
+      const release = await shared.release(owner);
+      expect(release).toMatchObject({
+        state: "stopped",
+        warning: "shutdown-command-failed",
+        shutdown: {
+          confirmed: { profileStopped: true, vmProcessAbsent: true },
+        },
+      });
+      expect(release.shutdown.command.status).toBe(
+        scenario === "nonzero" ? 1 : null,
+      );
+      expect(release.message).toContain(
+        "Orderly provider shutdown was not established",
+      );
+      expect(JSON.stringify(release)).not.toContain("PRIVATE");
+      await expect(readFile(owner.input.path)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    },
+  );
+
+  it("reports confirmed profile and exact captured VM exit before retiring an unchanged receipt", async () => {
+    const owner = await fixture(),
+      shared = engine();
+    writeContainerEngineStartReceipt({ input: owner.input, run: shared.run });
+    shared.onStop = () => {
+      shared.clock += 11000;
+    };
+    const release = await shared.release(owner);
+    expect(release).toMatchObject({
+      state: "stopped",
+      shutdown: {
+        command: {
+          status: 0,
+          signal: null,
+          errorCode: null,
+          elapsedMilliseconds: 11000,
+        },
+        confirmed: { profileStopped: true, vmProcessAbsent: true },
+      },
+    });
+    await expect(readFile(owner.input.path)).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("never dispatches when the captured backend proof is missing or belongs to another boot", async () => {
+    for (const scenario of ["missing", "changed-boot"]) {
+      const owner = await fixture(),
+        shared = engine();
+      writeContainerEngineStartReceipt({ input: owner.input, run: shared.run });
+      const original = shared.qualify;
+      shared.qualify =
+        scenario === "missing"
+          ? async () => {
+              throw Error("unqualified");
+            }
+          : async (...args) => ({
+              ...(await original(...args)),
+              bootId: "11111111-1111-1111-1111-111111111111",
+            });
+      expect((await shared.release(owner)).state).toBe("preserved");
+      expect(shared.calls).not.toContainEqual(["colima", "stop"]);
+      expect(await readFile(owner.input.path, "utf8")).toContain(
+        owner.input.operationId,
+      );
+    }
+  });
 });

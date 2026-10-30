@@ -5,16 +5,17 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
-## [2.2.0] - 2026-10-26
+## [2.2.0] - 2026-10-30
 
 ### Added
 
-- Isolated, unqualified Drizzle Kit 0.31.11 / ORM 0.45.4 / pg 8.23.1 PostgreSQL
-  candidate with explicit native identities and byte-exact journal baseline format 4. Whole-journal baseline preflight, native-prefix consent and shared bounded
-  private execution preserve existing SQL/Prisma contracts. Genuine installed SDK,
-  database and editor qualification is pending; this is not a release/support claim.
+- Opt-in Drizzle Kit 0.31.11 / ORM 0.45.4 / pg 8.23.1 PostgreSQL migrations,
+  with explicit native identities and byte-exact journal baseline format 4.
+  Whole-journal baseline checks, native-prefix consent and bounded private execution
+  preserve existing SQL/Prisma contracts. Initial SDK qualification targets
+  PostgreSQL 17 on Ubuntu 24.04 x64 / Node 24; other combinations remain unqualified.
 
-## [2.1.0] - 2026-10-26
+## [2.1.0] - 2026-10-30
 
 ### Added
 
@@ -23,6 +24,21 @@ a Changelog, and published versions follow Semantic Versioning.
   Reviewed execution uses a private configuration and the installed local toolchain;
   native failures, cancellation and timeouts retain the data volume for explicit
   recovery. Existing SQL histories and baseline formats 1/2 keep their behavior.
+
+## [2.0.1] - 2026-10-28
+
+### Fixed
+
+- Keep the reviewed Docker context during repeated manager operations, including
+  Supabase stop, even when the ambient default selects another context. Endpoint,
+  TLS, explicit-selector and client-configuration checks remain in force.
+- Automatic owned-Colima shutdown now confirms that the qualified profile is
+  stopped and its captured VM has exited before retiring the startup receipt.
+  An unavailable Docker daemon alone no longer counts as a stopped VM.
+- Give graceful shutdown its own bounded command and pipe-close handling, while
+  keeping metadata probes bounded separately. If Colima reports a command error
+  but independent observations confirm the VM is off, show that warning explicitly.
+  Unconfirmed outcomes preserve ownership receipts and data for recovery.
 
 ## [2.0.0] - 2026-10-25
 
@@ -945,8 +961,10 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...HEAD
-[2.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.0...v2.1.0
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.1...v2.1.0
+[2.0.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.3.0...v2.0.0
 [1.3.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v1.1.0...v1.2.0

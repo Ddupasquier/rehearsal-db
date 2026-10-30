@@ -120,12 +120,22 @@ describe("container engine ownership", () => {
     const input = await makeInput();
     writeContainerEngineStartReceipt({ input, run: engineIdentityRun() });
     const calls = [];
-    const release = releaseOwnedColimaWhenIdle({
+    const release = await releaseOwnedColimaWhenIdle({
       projectRoot: input.projectRoot,
       targets: [targetFor(input)],
+      dependencies: {
+        qualify: async (_options, endpoint, daemonId) => ({
+          endpoint,
+          daemonId,
+          bootId,
+          environment: {},
+        }),
+        confirm: async () => ({ profileStopped: true, vmProcessAbsent: true }),
+      },
       run: (command, args) => {
         calls.push([command, ...args]);
-        if (command === "docker" && args[0] === "info") return result(0);
+        if (command === "docker" && args[0] === "info")
+          return result(0, "synthetic-daemon");
         if (
           command === "docker" &&
           args[0] === "context" &&
@@ -175,7 +185,7 @@ describe("container engine ownership", () => {
     const input = await makeInput();
     writeContainerEngineStartReceipt({ input, run: engineIdentityRun() });
     const calls = [];
-    const release = releaseOwnedColimaWhenIdle({
+    const release = await releaseOwnedColimaWhenIdle({
       projectRoot: input.projectRoot,
       targets: [targetFor(input)],
       run: (command, args) => {
@@ -222,7 +232,7 @@ describe("container engine ownership", () => {
 
   it("preserves manually started engines and requires every target to opt in", async () => {
     const input = await makeInput();
-    const noReceipt = releaseOwnedColimaWhenIdle({
+    const noReceipt = await releaseOwnedColimaWhenIdle({
       projectRoot: input.projectRoot,
       targets: [targetFor(input)],
       run: (command, args) => {
@@ -262,13 +272,15 @@ describe("container engine ownership", () => {
     expect(noReceipt.message).toContain("no current owner-only receipt");
 
     expect(
-      releaseOwnedColimaWhenIdle({
-        projectRoot: input.projectRoot,
-        targets: [targetFor(input), targetFor(input, false)],
-        run: () => {
-          throw new Error("Disabled policy must not inspect the engine.");
-        },
-      }).state,
+      (
+        await releaseOwnedColimaWhenIdle({
+          projectRoot: input.projectRoot,
+          targets: [targetFor(input), targetFor(input, false)],
+          run: () => {
+            throw new Error("Disabled policy must not inspect the engine.");
+          },
+        })
+      ).state,
     ).toBe("disabled");
   });
 
@@ -308,11 +320,13 @@ describe("container engine ownership", () => {
       "could not bind",
     );
     expect(
-      releaseOwnedColimaWhenIdle({
-        projectRoot: input.projectRoot,
-        targets: [targetFor(input)],
-        run,
-      }).state,
+      (
+        await releaseOwnedColimaWhenIdle({
+          projectRoot: input.projectRoot,
+          targets: [targetFor(input)],
+          run,
+        })
+      ).state,
     ).toBe("preserved");
     expect(calls.filter(([command]) => command === "colima")).toEqual([]);
   });

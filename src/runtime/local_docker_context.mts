@@ -266,11 +266,14 @@ export const bindRuntimeDockerEnvironment = ({
   runner?: DockerContextRunner;
   inheritedEnvironment?: DockerSelectionEnvironment;
 } = {}) => {
+  // Helpers retain the reviewed selection rather than consulting a later
+  // ambient default. Metadata and binding drift are still checked on each call.
+  const selectedContext = context ?? boundRuntimeContext ?? undefined;
   const local = assertLocalDockerContext({
     cwd,
     runner,
     inheritedEnvironment,
-    ...(context === undefined ? {} : { context }),
+    ...(selectedContext === undefined ? {} : { context: selectedContext }),
   });
   if (expectedIdentity !== undefined && local.identity !== expectedIdentity)
     throw new Error(

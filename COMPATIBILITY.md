@@ -97,7 +97,7 @@ Prisma Migrate 7.10.1/PostgreSQL configuration and baseline format 3. Existing f
 SQL configurations and baseline formats 1/2 retain their meaning. Format 3 requires
 an editor that explicitly understands its native history and tool binding; older
 strict consumers may refuse it. Visual review requires Starter 0.1.26 or later
-with that explicit capability. Core 2.0.0 and Starter 0.1.25 do not support it.
+with that explicit capability. Core 2.0.x and Starter 0.1.25 do not support it.
 The initial SDK qualification target is PostgreSQL 17 / Ubuntu 24.04 x64 / Node 24;
 Core's general platform coverage does not qualify other SDK/host combinations.
 Prisma Client, hosted preparation, other providers and physical-schema-drift
@@ -172,14 +172,14 @@ version 1, and identity policy version 1 are strict declarative contracts. Unkno
 fields fail closed. They do not imply support for arbitrary transformations, SQL,
 provider administration, consent decisions, or every PostgreSQL extension.
 
-## Native Drizzle worktree candidate
+## Native Drizzle migrations
 
-`2.2.0` release-candidate source advertising `drizzleMigrations: 1` introduces a distinct
+Core 2.2 advertising `drizzleMigrations: 1` introduces a distinct
 format-4 PostgreSQL history, pinned to Kit 0.31.11, ORM 0.45.4 and pg 8.23.1.
-It is unqualified development work, not support inferred from Core 2.0.0/2.1.0 or
-an older editor. A consumer must understand format 4 and explicit native
+Core 2.0.x/2.1 and Starter 0.1.26 do not provide this capability. Visual review
+requires Starter 0.1.27 or later and explicit format 4 support, including native
 `{kind,idx,when,tag}` identities; older strict consumers may refuse it. Formats
-1/2/3 are not converted. Read the [candidate contract](docs/configuration.md#native-drizzle-migrations--unqualified-development-candidate)
+1/2/3 are not converted. Read the [native contract](docs/configuration.md#native-drizzle-migrations)
 for the fully-applied baseline constraint, dependency/layout limits and excluded
-alternate clients. Genuine installed SDK/database, platform and editor acceptance
-is separate from deterministic source tests.
+alternate clients. Initial SDK qualification targets PostgreSQL 17 on Ubuntu 24.04
+x64 / Node 24. General platform checks do not qualify other SDK/host combinations.

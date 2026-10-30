@@ -654,6 +654,9 @@ published or can be found.
 
 ## Supabase authentication
 
+Future platform/OIDC boundaries are a [design proposal](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/auth-platform-contract.md),
+not additional supported configuration.
+
 Rehearsal can configure a Google or GitHub OAuth connection in its disposable local
 Supabase runtime. Declare the provider and the names of its credential variables:
 
@@ -937,11 +940,11 @@ reviewed public type surface. The exact current boundary is documented in
 Undocumented files under `scripts/` are package internals and are not compatibility
 contracts.
 
-### Native Drizzle migrations — unqualified development candidate
+### Native Drizzle migrations
 
-Builds advertising `rehearsalContracts.drizzleMigrations: 1` add a separate,
-explicit PostgreSQL candidate. This worktree's `2.2.0` release-candidate source is not a
-published or independently qualified integration. Prisma's `nativeMigrations: 1`
+Core 2.2 advertising `rehearsalContracts.drizzleMigrations: 1` adds opt-in
+PostgreSQL migrations in the pinned Drizzle format. Visual review requires Starter
+0.1.27 or later with explicit format 4 support. Prisma's `nativeMigrations: 1`
 and flat SQL histories keep their existing contracts.
 
 ```ts
@@ -1008,5 +1011,6 @@ The existing 120-second native execution/verification bound, cancellation, outpu
 redaction and retained-volume recovery apply. A failed native migration preserves
 the volume and blocks automatic resume until reviewed explicit reset. Hosted
 source preparation, Storage, live impact measurement, statement-failure attribution, Client generation and
-automatic history repair are outside this candidate. Independent genuine Kit/ORM
-and database acceptance remains required before advertising support.
+automatic history repair are outside this integration. Initial SDK qualification
+targets PostgreSQL 17 on Ubuntu 24.04 x64 / Node 24; general Core platform checks do
+not qualify other SDK/host combinations.

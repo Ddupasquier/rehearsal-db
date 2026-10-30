@@ -2,9 +2,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { lstat, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { spawnScenarioCommand } from "../scenarios/process.mjs";
 import {
-  IMPACT_FIXTURE_CANARIES,
+  publicCliFailureSummary,
+  spawnScenarioCommand,
+} from "../scenarios/process.mjs";
+import {
   IMPACT_FIXTURE_FILENAME,
   IMPACT_FIXTURE_SCHEMA,
   IMPACT_FIXTURE_SQL,
@@ -18,6 +20,55 @@ const fail = () => {
   throw new Error(
     "Supabase impact verification failed; private inputs and output withheld.",
   );
+};
+
+const cliPhases = new Set([
+  "preview",
+  "initial-counts",
+  "edited-counts",
+  "rls-refusal",
+  "stale-consent",
+  "changed-preview",
+  "final-activity",
+]);
+
+/** Preserve the fixed failure phase and safe tuple without exposing private output. */
+export const readSupabaseImpactCliResult = (
+  result,
+  { success = true, phase },
+) => {
+  if (!cliPhases.has(phase)) fail();
+  assertImpactPublicOutput(result);
+  const failure = () => {
+    const summary = publicCliFailureSummary({
+      code: result.error?.code ?? result.status,
+      signal: result.signal,
+      killed: result.error?.code === "ETIMEDOUT",
+      stdout: result.stdout,
+      stderr: result.stderr,
+    });
+    throw new Error(
+      `Supabase impact CLI failed at ${phase}: ${JSON.stringify(summary)}; private inputs and output withheld.`,
+    );
+  };
+  if (
+    result.error ||
+    result.signal ||
+    !Number.isInteger(result.status) ||
+    result.status < 0 ||
+    result.status > 255 ||
+    (success && result.status !== 0)
+  )
+    failure();
+  let envelope;
+  try {
+    envelope = JSON.parse(result.stdout);
+  } catch {
+    failure();
+  }
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope))
+    failure();
+  return { result, envelope };
 };
 
 export async function proveSupabaseMigrationImpact({
@@ -60,17 +111,13 @@ export async function proveSupabaseMigrationImpact({
       "select pg_catalog.jsonb_build_object('widgets', (select pg_catalog.jsonb_agg(to_jsonb(w) order by id) from public.widgets w), 'ledger', (select pg_catalog.jsonb_agg(to_jsonb(m) order by version) from supabase_migrations.schema_migrations m));",
     ),
   );
-  const canaries = [...IMPACT_FIXTURE_CANARIES];
-  const cli = (args, success = true) => {
+  const cli = (args, phase, success = true) => {
     const result = spawnScenarioCommand(
       join(cwd, "node_modules/.bin/rehearsal"),
       [...args, "--json"],
       { cwd, timeout: 35000, maxBuffer: 131072 },
     );
-    assertImpactPublicOutput(result, canaries);
-    if (result.error || result.signal || (success && result.status !== 0))
-      fail();
-    return { result, envelope: JSON.parse(result.stdout) };
+    return readSupabaseImpactCliResult(result, { success, phase });
   };
   const marker = randomUUID();
   let schemaCreated = false,
@@ -88,8 +135,8 @@ export async function proveSupabaseMigrationImpact({
       insert into ${schema}.child values (1,1),(2,2),(3,9),(4,9),(5,null);`);
     await writeFile(file, IMPACT_FIXTURE_SQL, { flag: "wx", mode: 0o600 });
     fileCreated = true;
-    const preview = cli(["inspect", "impact", "--target=primary"]).envelope
-      .data;
+    const preview = cli(["inspect", "impact", "--target=primary"], "preview")
+      .envelope.data;
     if (
       preview?.target?.provider !== "supabase" ||
       preview.mode !== "preview" ||
@@ -104,9 +151,10 @@ export async function proveSupabaseMigrationImpact({
           `select pg_catalog.jsonb_build_object('parent', (select pg_catalog.jsonb_agg(to_jsonb(p) order by id) from ${schema}.parent p), 'child', (select pg_catalog.jsonb_agg(to_jsonb(c) order by id) from ${schema}.child c));`,
         ),
       );
-    const measure = (counts, reasons) => {
+    const measure = (phase, counts, reasons) => {
       const { result, envelope } = cli(
         ["measure", "impact", "--target=primary", confirmation],
+        phase,
         false,
       );
       const report = assertImpactFixtureCounts(envelope, {
@@ -124,13 +172,29 @@ export async function proveSupabaseMigrationImpact({
       return report;
     };
     const initialRows = rows();
-    const first = measure(["2", "4", "2", "2", "5", "6", "6"]);
+    const first = measure("initial-counts", [
+      "2",
+      "4",
+      "2",
+      "2",
+      "5",
+      "6",
+      "6",
+    ]);
     if (rows() !== initialRows) fail();
     sql(
       `update ${schema}.parent set payload = 'PRIVATE_IMPACT_ROW_CANARY' where id = 1;`,
     );
     const editedRows = rows();
-    const current = measure(["1", "5", "2", "2", "5", "6", "6"]);
+    const current = measure("edited-counts", [
+      "1",
+      "5",
+      "2",
+      "2",
+      "5",
+      "6",
+      "6",
+    ]);
     if (
       rows() !== editedRows ||
       first.runtimeIdentitySha256 !== current.runtimeIdentitySha256
@@ -139,6 +203,7 @@ export async function proveSupabaseMigrationImpact({
     sql(`alter table ${schema}.parent enable row level security;`);
     const guarded = [null, null, null, null, "5", null, null];
     measure(
+      "rls-refusal",
       guarded,
       guarded.map((count) =>
         count === null ? "unsupported_runtime_metadata" : null,
@@ -148,14 +213,15 @@ export async function proveSupabaseMigrationImpact({
     await writeFile(file, `${IMPACT_FIXTURE_SQL}-- changed reviewed bytes\n`);
     const stale = cli(
       ["measure", "impact", "--target=primary", confirmation],
+      "stale-consent",
       false,
     );
     if (
       stale.result.status !== 2 ||
       stale.envelope.error?.category !== "configuration_invalid" ||
       stale.envelope.error?.code !== "CONFIGURATION_INVALID" ||
-      cli(["inspect", "impact", "--target=primary"]).envelope.data
-        .candidateSha256 === preview.candidateSha256
+      cli(["inspect", "impact", "--target=primary"], "changed-preview").envelope
+        .data.candidateSha256 === preview.candidateSha256
     )
       fail();
     await writeFile(file, IMPACT_FIXTURE_SQL);
@@ -173,7 +239,7 @@ export async function proveSupabaseMigrationImpact({
       ) !== original
     )
       fail();
-    const publicActivity = cli(["activity"]).envelope;
+    const publicActivity = cli(["activity"], "final-activity").envelope;
     if (publicActivity.data.state !== "idle") fail();
     summary = {
       status: "passed",

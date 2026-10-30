@@ -16,8 +16,10 @@ import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { spawn } from "@lydell/node-pty";
 import { createSyntheticBaselineFromFiles } from "../../dist/src/baseline/builder.mjs";
+import { verifyActiveBaseline } from "../../dist/src/baseline/artifact.mjs";
 
 const roots = [];
+const retainedRoots = new Set();
 const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 
 const makeTreeWritable = async (path) => {
@@ -31,7 +33,16 @@ const makeTreeWritable = async (path) => {
   }
 };
 
-const runInPty = ({ cwd, interactions, plain, updateState, toolPath }) =>
+const runInPty = ({
+  cwd,
+  interactions,
+  plain,
+  updateState,
+  toolPath,
+  interactionTimeoutMs = 10_000,
+  maximumOutputBytes = 1024 * 1024,
+  spawnImplementation = spawn,
+}) =>
   new Promise((resolve, reject) => {
     const environment = Object.fromEntries(
       Object.entries(process.env).filter(
@@ -41,7 +52,7 @@ const runInPty = ({ cwd, interactions, plain, updateState, toolPath }) =>
           ),
       ),
     );
-    const terminal = spawn(
+    const terminal = spawnImplementation(
       process.execPath,
       [cliPath, ...(plain ? ["--plain"] : [])],
       {
@@ -65,28 +76,108 @@ const runInPty = ({ cwd, interactions, plain, updateState, toolPath }) =>
       },
     );
     let output = "";
+    let outputBytes = 0;
     let interactionIndex = 0;
     let searchOffset = 0;
-    const timeout = setTimeout(() => {
-      terminal.kill();
-      reject(new Error(`Guided terminal interaction timed out: ${output}`));
-    }, 10_000);
-    terminal.onData((chunk) => {
+    let settled = false;
+    let exitObserved = false;
+    let failure;
+    let forceTimer, exitTimer;
+    let dataSubscription, exitSubscription;
+    const diagnostic = (reason) =>
+      Object.assign(
+        new Error(
+          `Guided terminal ${reason}; interaction ${interactionIndex}/${interactions.length}, output ${outputBytes} bytes: ${output}`,
+        ),
+        {
+          reason,
+          interactionIndex,
+          interactionCount: interactions.length,
+          outputBytes,
+          terminalExitObserved: exitObserved,
+        },
+      );
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      clearTimeout(forceTimer);
+      clearTimeout(exitTimer);
+      dataSubscription?.dispose();
+      exitSubscription?.dispose();
+      if (error) reject(error);
+      else resolve(output);
+    };
+    const retainUncertain = () => {
+      retainedRoots.add(cwd);
+      finish(
+        Object.assign(
+          new AggregateError(
+            [failure, diagnostic("exit unconfirmed")],
+            "Guided terminal failed and exit was not confirmed; owned fixture retained.",
+          ),
+          {
+            fixtureRetained: true,
+            terminalExitObserved: false,
+            fixturePath: cwd,
+          },
+        ),
+      );
+    };
+    const beginFailure = (reason) => {
+      if (settled || failure) return;
+      failure = diagnostic(reason);
+      try {
+        terminal.kill();
+      } catch {
+        /* Wait for exit; never assume a signal reaped it. */
+      }
+      if (settled) return;
+      forceTimer = setTimeout(() => {
+        if (exitObserved) return;
+        try {
+          terminal.kill("SIGKILL");
+        } catch {
+          /* Uncertainty retains the fixture. */
+        }
+        if (!settled) exitTimer = setTimeout(retainUncertain, 500);
+      }, 500);
+    };
+    const timeout = setTimeout(
+      () => beginFailure("interaction timed out"),
+      interactionTimeoutMs,
+    );
+    dataSubscription = terminal.onData((chunk) => {
+      if (settled || failure) return;
+      outputBytes += Buffer.byteLength(chunk);
+      if (outputBytes > maximumOutputBytes) {
+        beginFailure("output limit exceeded");
+        return;
+      }
       output += chunk;
-      const interaction = interactions[interactionIndex];
-      if (
-        interaction &&
-        output.indexOf(interaction.after, searchOffset) !== -1
-      ) {
-        searchOffset = output.length;
+      while (interactionIndex < interactions.length) {
+        const interaction = interactions[interactionIndex];
+        const match = output.indexOf(interaction.after, searchOffset);
+        if (match === -1) break;
+        searchOffset = match + interaction.after.length;
         interactionIndex += 1;
-        terminal.write(interaction.write);
+        try {
+          terminal.write(interaction.write);
+        } catch {
+          beginFailure("input write failed");
+          break;
+        }
+        if (interaction.write !== "") break;
       }
     });
-    terminal.onExit(({ exitCode }) => {
-      clearTimeout(timeout);
-      if (exitCode === 0) resolve(output);
-      else reject(new Error(`Guided terminal exited ${exitCode}: ${output}`));
+    exitSubscription = terminal.onExit(({ exitCode }) => {
+      exitObserved = true;
+      if (failure) {
+        failure.terminalExitObserved = true;
+        finish(failure);
+      } else if (exitCode === 0 && interactionIndex === interactions.length)
+        finish();
+      else finish(diagnostic(`exited ${exitCode} before the complete journey`));
     });
   });
 
@@ -332,13 +423,187 @@ const makeCompleteProject = async () => {
   return root;
 };
 
+const makeUnavailableCleanupTools = async (root) => {
+  const toolPath = join(root, "cleanup-tools");
+  const audit = join(root, "cleanup-tool-calls.log");
+  await mkdir(toolPath, { mode: 0o700 });
+  for (const command of ["docker", "colima", "supabase"])
+    await writeFile(
+      join(toolPath, command),
+      `#!/bin/sh
+umask 077
+printf '%s\\n' '${command}' >> '${audit.replaceAll("'", "'\\''")}'
+exit 127
+`,
+      { mode: 0o700 },
+    );
+  return { toolPath, audit };
+};
+
 afterEach(async () => {
   await Promise.all(
-    roots.splice(0).map(async (root) => {
-      await makeTreeWritable(root);
-      await rm(root, { recursive: true, force: true });
-    }),
+    roots
+      .splice(0)
+      .filter((root) => !retainedRoots.has(root))
+      .map(async (root) => {
+        await makeTreeWritable(root);
+        await rm(root, { recursive: true, force: true });
+      }),
   );
+});
+
+const fakePty = ({ writeFailure = false } = {}) => {
+  let data, exit, didKill;
+  const killed = new Promise((resolve) => {
+    didKill = resolve;
+  });
+  const signals = [],
+    writes = [];
+  let disposed = 0;
+  return {
+    signals,
+    writes,
+    killed,
+    get disposed() {
+      return disposed;
+    },
+    emitData: (chunk) => data(chunk),
+    emitExit: (exitCode = 0) => exit({ exitCode }),
+    spawn: () => ({
+      kill(signal = "SIGTERM") {
+        signals.push(signal);
+        didKill();
+      },
+      write(value) {
+        if (writeFailure) throw new Error("synthetic private write failure");
+        writes.push(value);
+      },
+      onData(listener) {
+        data = listener;
+        return {
+          dispose() {
+            disposed++;
+          },
+        };
+      },
+      onExit(listener) {
+        exit = listener;
+        return {
+          dispose() {
+            disposed++;
+          },
+        };
+      },
+    }),
+  };
+};
+
+describe("guided PTY fixture lifecycle", () => {
+  it("waits for observed exit before rejecting a timed-out fixture", async () => {
+    const root = await makeProject();
+    const terminal = fakePty();
+    let settled = false;
+    const result = runInPty({
+      cwd: root,
+      plain: true,
+      interactions: [],
+      interactionTimeoutMs: 1,
+      spawnImplementation: terminal.spawn,
+    }).catch((error) => {
+      settled = true;
+      return error;
+    });
+    await terminal.killed;
+    expect(settled).toBe(false);
+    terminal.emitExit();
+    const error = await result;
+    expect(error.reason).toBe("interaction timed out");
+    expect(error.terminalExitObserved).toBe(true);
+    expect(terminal.disposed).toBe(2);
+    expect(terminal.signals).toEqual(["SIGTERM"]);
+    expect(retainedRoots.has(root)).toBe(false);
+  });
+
+  it("retains uncertain fixtures and the first failure after bounded forced cleanup", async () => {
+    const root = await makeProject();
+    const terminal = fakePty();
+    const error = await runInPty({
+      cwd: root,
+      plain: true,
+      interactions: [],
+      interactionTimeoutMs: 1,
+      spawnImplementation: terminal.spawn,
+    }).catch((failure) => failure);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect(error.errors[0].reason).toBe("interaction timed out");
+    expect(error.fixtureRetained).toBe(true);
+    expect(error.fixturePath).toBe(root);
+    expect(error.terminalExitObserved).toBe(false);
+    expect(terminal.signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(retainedRoots.has(root)).toBe(true);
+    expect(terminal.disposed).toBe(2);
+    // This fault used a fake terminal and never created a process; release its
+    // deliberate retention only after asserting the preservation boundary.
+    retainedRoots.delete(root);
+  });
+
+  it("bounds transcript memory and still waits for its owned exit", async () => {
+    const root = await makeProject();
+    const terminal = fakePty();
+    const result = runInPty({
+      cwd: root,
+      plain: true,
+      interactions: [],
+      maximumOutputBytes: 32,
+      spawnImplementation: terminal.spawn,
+    }).catch((error) => error);
+    terminal.emitData("x".repeat(33));
+    await terminal.killed;
+    terminal.emitExit();
+    const error = await result;
+    expect(error.reason).toBe("output limit exceeded");
+    expect(error.outputBytes).toBe(33);
+    expect(error.terminalExitObserved).toBe(true);
+    expect(error.message).not.toContain("x".repeat(33));
+  });
+
+  it("joins owned cleanup when a PTY write fails instead of throwing from its data callback", async () => {
+    const root = await makeProject();
+    const terminal = fakePty({ writeFailure: true });
+    const result = runInPty({
+      cwd: root,
+      plain: true,
+      interactions: [{ after: "CHOICE", write: "1\n" }],
+      spawnImplementation: terminal.spawn,
+    }).catch((error) => error);
+    expect(() => terminal.emitData("CHOICE")).not.toThrow();
+    await terminal.killed;
+    terminal.emitExit();
+    const error = await result;
+    expect(error.reason).toBe("input write failed");
+    expect(error.terminalExitObserved).toBe(true);
+    expect(error.message).not.toContain("synthetic private write failure");
+    expect(terminal.disposed).toBe(2);
+  });
+
+  it("consumes no-input milestones coalesced with the next prompt", async () => {
+    const root = await makeProject();
+    const terminal = fakePty();
+    const result = runInPty({
+      cwd: root,
+      plain: true,
+      interactions: [
+        { after: "A", write: "" },
+        { after: "B", write: "" },
+        { after: "C", write: "done\n" },
+      ],
+      spawnImplementation: terminal.spawn,
+    });
+    terminal.emitData("A--B--C");
+    expect(terminal.writes).toEqual(["", "", "done\n"]);
+    terminal.emitExit();
+    await expect(result).resolves.toBe("A--B--C");
+  });
 });
 
 describe("guided terminal journey", () => {
@@ -752,10 +1017,17 @@ describe("guided terminal journey", () => {
 
   it("previews cleanup from the completed plain guide without deleting", async () => {
     const root = await makeCompleteProject();
+    // This journey owns baseline-preview navigation, not ambient engine latency.
+    // Closed unavailable tools prevent contacting the developer/runner's daemon.
+    const tools = await makeUnavailableCleanupTools(root);
+    const artifactRoot = join(root, ".rehearsal");
+    const baseline = await verifyActiveBaseline({ artifactRoot });
+    const generation = await realpath(join(artifactRoot, "current"));
     const output = String(
       await runInPty({
         cwd: root,
         plain: true,
+        toolPath: tools.toolPath,
         interactions: [
           { after: "What would you like to do? [1]:", write: "5\n" },
           {
@@ -770,5 +1042,10 @@ describe("guided terminal journey", () => {
     expect(output).toContain("REHEARSAL CLEANUP — PREVIEW");
     expect(output).toContain("Nothing has been removed");
     expect(output).toContain("See you at the next rehearsal.");
+    expect(await verifyActiveBaseline({ artifactRoot })).toEqual(baseline);
+    expect(await realpath(join(artifactRoot, "current"))).toBe(generation);
+    const calls = (await readFile(tools.audit, "utf8")).trim().split("\n");
+    expect(calls.length).toBeGreaterThan(0);
+    expect([...new Set(calls)]).toEqual(["docker"]);
   }, 15_000);
 });
