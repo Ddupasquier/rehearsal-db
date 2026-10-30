@@ -1015,11 +1015,13 @@ automatic history repair are outside this integration. Initial SDK qualification
 targets PostgreSQL 17 on Ubuntu 24.04 x64 / Node 24; general Core platform checks do
 not qualify other SDK/host combinations.
 
-### Native Knex migrations — unqualified isolated candidate
+### Native Knex migrations
 
-`rehearsalContracts.knexMigrations: 1` identifies the separate `2.3.0-dev.1`
-source candidate, not a published or independently qualified integration. Select
-exact local Knex 3.3.0 and its actually resolved pg 8.23.1 installation explicitly:
+`rehearsalContracts.knexMigrations: 1` identifies the versioned Knex integration in
+Core 2.3.0. A source candidate is not a published package or proof of completed
+qualification: use the release only after its exact tested artifact appears in the
+official registry and review its documented platform scope. Select exact local
+Knex 3.3.0 and its actually resolved pg 8.23.1 installation explicitly:
 
 ```ts
 postgresql: {
@@ -1106,8 +1108,9 @@ requires reviewed reset or repair. Restricted COPY uses CONTINUE IDENTITY with
 catalog-guarded setval for reviewed serial/identity columns, rather than granting
 sequence ownership. Other migration producers retain their existing restart behavior. Runtime adapters
 receive restricted credentials and cannot replace generated PostgreSQL connection
-variables. These new boundaries remain unqualified pending genuine SQL-isolation,
-restore, cancellation and recovery acceptance.
+variables. Release qualification must exercise genuine SQL isolation, restore,
+cancellation and recovery for the exact candidate; metadata and unit fixtures alone
+do not establish those outcomes.
 
 The fixed worker completion receipt describes worker cleanup only: `dataDeletionRequested:false` means no target-volume deletion was requested by cleanup. It does not promise that reviewed migration SQL leaves rows or tables unchanged.
 
