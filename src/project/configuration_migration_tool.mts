@@ -21,7 +21,16 @@ export interface DrizzleMigrationTool {
   readonly ormPackageDirectory: string;
   readonly driverPackageDirectory: string;
 }
-export type NativeMigrationTool = PrismaMigrationTool | DrizzleMigrationTool;
+export interface KnexMigrationTool {
+  readonly kind: "knex";
+  readonly version: "3.3.0";
+  readonly driver: "pg";
+  readonly driverVersion: "8.23.1";
+  readonly packageDirectory: string;
+  readonly driverPackageDirectory: string;
+}
+export type NativeMigrationTool =
+  PrismaMigrationTool | DrizzleMigrationTool | KnexMigrationTool;
 const packagePath = (value: unknown, label: string) => {
   const path = assertRelativePath(value, label);
   if (path.length > 512 || /[\u0000-\u001f\u007f]/u.test(path))
@@ -33,6 +42,58 @@ export const normalizeMigrationTool = (
 ): NativeMigrationTool | null => {
   if (value === undefined) return null;
   const tool = assertPlainObject(value, "config.postgresql.migrationTool");
+  if (tool.kind === "knex") {
+    assertKnownKeys(
+      tool,
+      [
+        "kind",
+        "version",
+        "driver",
+        "driverVersion",
+        "packageDirectory",
+        "driverPackageDirectory",
+      ],
+      "config.postgresql.migrationTool",
+    );
+    if (
+      tool.version !== "3.3.0" ||
+      tool.driver !== "pg" ||
+      tool.driverVersion !== "8.23.1"
+    )
+      throw new Error(
+        "Isolated Knex requires exact Knex 3.3.0 and pg 8.23.1 / PostgreSQL.",
+      );
+    const selectedPath = (value: unknown, label: string) => {
+      const path = packagePath(value, label);
+      if (
+        path
+          .split("/")
+          .some(
+            (p) =>
+              !/^[A-Za-z0-9_@][A-Za-z0-9_@.-]{0,190}$/u.test(p) ||
+              p === "notes",
+          )
+      )
+        throw new Error(
+          "Knex requires a confined explicit package path outside personal notes.",
+        );
+      return path;
+    };
+    return Object.freeze({
+      kind: "knex",
+      version: "3.3.0",
+      driver: "pg",
+      driverVersion: "8.23.1",
+      packageDirectory: selectedPath(
+        tool.packageDirectory,
+        "migrationTool.packageDirectory",
+      ),
+      driverPackageDirectory: selectedPath(
+        tool.driverPackageDirectory,
+        "migrationTool.driverPackageDirectory",
+      ),
+    });
+  }
   if (tool.kind === "drizzle") {
     assertKnownKeys(
       tool,

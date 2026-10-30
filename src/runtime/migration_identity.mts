@@ -1,13 +1,19 @@
 /** Native migration identities are explicit; Drizzle milliseconds are never timestamp-file versions. */
 import type { MigrationFileEntry } from "./migration_history.mjs";
 import type { DrizzleMigrationEntry } from "./drizzle_history.mjs";
+import {
+  parseKnexMigrationIdentity,
+  type KnexMigrationIdentity,
+  type KnexMigrationEntry,
+} from "./knex_history.mjs";
 export interface DrizzleMigrationIdentity {
   readonly kind: "drizzle";
   readonly idx: number;
   readonly when: number;
   readonly tag: string;
 }
-export type MigrationCutoff = string | DrizzleMigrationIdentity;
+export type MigrationCutoff =
+  string | DrizzleMigrationIdentity | KnexMigrationIdentity;
 export interface DrizzleMigrationFileEntry {
   readonly nativeIdentity: DrizzleMigrationIdentity;
   readonly name: string;
@@ -16,7 +22,7 @@ export interface DrizzleMigrationFileEntry {
   readonly breakpoints: boolean;
 }
 export type AnyMigrationFileEntry =
-  MigrationFileEntry | DrizzleMigrationFileEntry;
+  MigrationFileEntry | DrizzleMigrationFileEntry | KnexMigrationEntry;
 export const parseDrizzleMigrationIdentity = (
   value: unknown,
 ): DrizzleMigrationIdentity => {
@@ -49,22 +55,41 @@ export const parseDrizzleMigrationIdentity = (
 };
 export const parseMigrationCutoff = (value: unknown): MigrationCutoff => {
   if (typeof value === "string" && /^\d{14}$/u.test(value)) return value;
+  if (
+    value &&
+    typeof value === "object" &&
+    (value as { kind?: unknown }).kind === "knex"
+  )
+    return parseKnexMigrationIdentity(value);
   return parseDrizzleMigrationIdentity(value);
 };
 export const sameMigrationCutoff = (a: MigrationCutoff, b: MigrationCutoff) =>
   typeof a === "string" || typeof b === "string"
     ? a === b
-    : a.kind === b.kind &&
-      a.idx === b.idx &&
-      a.when === b.when &&
-      a.tag === b.tag;
+    : a.kind === "knex" || b.kind === "knex"
+      ? a.kind === "knex" && b.kind === "knex" && a.name === b.name
+      : a.kind === b.kind &&
+        a.idx === b.idx &&
+        a.when === b.when &&
+        a.tag === b.tag;
 export const describeMigrationCutoff = (value: MigrationCutoff) =>
   typeof value === "string"
     ? value
-    : `Drizzle #${value.idx} (${value.when}, ${value.tag})`;
+    : value.kind === "knex"
+      ? `Knex ${value.name}`
+      : `Drizzle #${value.idx} (${value.when}, ${value.tag})`;
 export const isDrizzleMigrationFile = (
   entry: AnyMigrationFileEntry,
-): entry is DrizzleMigrationFileEntry => "nativeIdentity" in entry;
+): entry is DrizzleMigrationFileEntry =>
+  "nativeIdentity" in entry && entry.nativeIdentity.kind === "drizzle";
+export const isKnexMigrationFile = (
+  entry: AnyMigrationFileEntry,
+): entry is KnexMigrationEntry =>
+  "nativeIdentity" in entry && entry.nativeIdentity.kind === "knex";
+export const isNativeMigrationFile = (
+  entry: AnyMigrationFileEntry,
+): entry is DrizzleMigrationFileEntry | KnexMigrationEntry =>
+  "nativeIdentity" in entry;
 export const drizzleMigrationFiles = (
   entries: readonly DrizzleMigrationEntry[],
 ): DrizzleMigrationFileEntry[] =>
@@ -105,7 +130,7 @@ export const requireTimestampMigrationFiles = (
   if (entries.length > 10000)
     throw new Error("Timestamped migration inventory exceeds its bound.");
   return entries.map((entry) => {
-    if (isDrizzleMigrationFile(entry))
+    if (isNativeMigrationFile(entry))
       throw new Error(
         "This consumer requires timestamped SQL or Prisma migration identities.",
       );

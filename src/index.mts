@@ -44,4 +44,7 @@ export type {
 export type {
   NativeMigrationTool,
   DrizzleMigrationTool,
+  KnexMigrationTool,
 } from "./project/configuration_migration_tool.mjs";
+
+export type { KnexMigrationIdentity } from "./runtime/knex_history.mjs";

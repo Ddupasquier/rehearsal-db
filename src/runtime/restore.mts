@@ -1,5 +1,6 @@
 import {
   isDrizzleMigrationFile,
+  isKnexMigrationFile,
   type AnyMigrationFileEntry,
 } from "./migration_identity.mjs";
 /**
@@ -211,12 +212,15 @@ order by source.sequence;
 `;
 };
 
-const buildIdentitySequenceSql = (table: RestorePolicyTable): string =>
+const buildIdentitySequenceSql = (
+  table: RestorePolicyTable,
+  includeSerial = false,
+): string =>
   table.columns
     .filter(
       (column) =>
         column.action !== "EXCLUDE" &&
-        column.identity === "YES" &&
+        (column.identity === "YES" || includeSerial) &&
         column.generated !== "ALWAYS",
     )
     .map((column) => {
@@ -300,12 +304,18 @@ export const buildRestoreSqlSuffix = ({
   manifest,
   tableCounts,
   restoreSupabaseAuth = true,
+  identityMode = "restart",
 }: {
   manifest: RuntimeSanitizationPolicy;
   tableCounts: Readonly<Record<string, number>>;
   restoreSupabaseAuth?: boolean;
+  identityMode?: "restart" | "continue";
 }): string => {
-  if (!Array.isArray(manifest?.tables) || !tableCounts) {
+  if (
+    !Array.isArray(manifest?.tables) ||
+    !tableCounts ||
+    !["restart", "continue"].includes(identityMode)
+  ) {
     throw new Error("A reviewed manifest and exact row counts are required.");
   }
   const tables = includedPolicies(manifest);
@@ -319,10 +329,13 @@ export const buildRestoreSqlSuffix = ({
 create index rehearsal_restore_rows_table_name_idx
 on rehearsal_restore_rows (schema_name, table_name, sequence);
 truncate table ${manifest.tables.map(qualifiedRelation).join(", ")}
-restart identity cascade;
+${identityMode} identity cascade;
 ${restoreSupabaseAuth ? buildAuthRestoreSql(manifest) : ""}
 ${tables.map(buildTableRestoreSql).join("\n")}
-${tables.map(buildIdentitySequenceSql).filter(Boolean).join("\n")}
+${tables
+  .map((table) => buildIdentitySequenceSql(table, identityMode === "continue"))
+  .filter(Boolean)
+  .join("\n")}
 set local session_replication_role = origin;
 do $rehearsal_checks$
 begin
@@ -343,6 +356,55 @@ export const assertBaselineMigrationHistory = ({
   currentFiles: readonly AnyMigrationFileEntry[];
   nativeMigrations?: PrismaNativeBinding | NativeMigrationBinding | null;
 }): void => {
+  if (baselineManifest.formatVersion === 5) {
+    const bound = parseNativeMigrationBinding(
+      baselineManifest.nativeMigrations,
+    );
+    if (
+      bound.kind !== "knex" ||
+      nativeMigrations?.kind !== "knex" ||
+      bound.version !== nativeMigrations.version ||
+      bound.driverVersion !== nativeMigrations.driverVersion ||
+      bound.isolationPolicySha256 !== nativeMigrations.isolationPolicySha256
+    )
+      throw new Error(
+        "Knex tool, provider or isolation policy differs from baseline.",
+      );
+    const expected = baselineManifest.knexHistory;
+    if (
+      !expected?.entries.length ||
+      expected.entries.length > currentFiles.length
+    )
+      throw new Error("Knex baseline history is absent from current source.");
+    for (let i = 0; i < expected.entries.length; i++) {
+      const current = currentFiles[i]!,
+        old = expected.entries[i]!;
+      if (
+        !isKnexMigrationFile(current) ||
+        current.filename !== old.filename ||
+        current.fileSha256 !== old.fileSha256 ||
+        current.nativeIdentity.name !== old.nativeIdentity.name
+      )
+        throw new Error(
+          "Knex migration code diverges from the reviewed baseline prefix; native historical checksums remain unavailable.",
+        );
+    }
+    const files = new Map(
+      nativeMigrations.codeFiles.map((f) => [f.filename, f]),
+    );
+    for (const old of expected.files) {
+      const current = files.get(old.filename);
+      if (
+        !current ||
+        current.fileSha256 !== old.fileSha256 ||
+        current.bytes !== old.bytes
+      )
+        throw new Error(
+          "Knex historical support code changed; create a new reviewed baseline.",
+        );
+    }
+    return;
+  }
   if (baselineManifest.formatVersion === 4) {
     const bound = parseNativeMigrationBinding(
       baselineManifest.nativeMigrations,

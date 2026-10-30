@@ -140,3 +140,23 @@ whole source journal applied at baseline creation and never regenerates history.
 Later consent binds the current whole journal and installed toolchain; baseline
 prefix comparison preserves the native semantic entries and SQL hashes. This is
 not an automatic conversion of older baseline formats or an editor-support claim.
+
+## Native Knex candidate format
+
+The isolated [Knex candidate](configuration.md#native-knex-migrations--unqualified-isolated-candidate)
+uses format 5 and a native `{kind:"knex",name:"FILE.cjs"}` cutoff. `knexHistory`
+retains ordered migration entries, all reviewed code/support-file receipts and the
+native source ledger's `id`, `name`, `batch`, `migration_time` provenance. Serial-ID
+and batch gaps are legitimate; replay identity is the ordered native filename,
+not a fabricated timestamp or SQL statement ledger. The native ledger provides
+**no historical applied-file checksums**. Current bundle hashes protect reviewed
+bytes from subsequent drift but cannot attest originally applied bytes.
+
+The first baseline requires every source migration applied, before consuming rows
+or writing artifacts. Migration modules and nested support bytes are copied exactly;
+no source file or history is regenerated. Native execution may produce different
+batch/serial values and migration timestamps when replaying that same filename
+prefix. Fresh replay does not reproduce historical batch grouping or times;
+data-dependent migration behavior may differ from its original production run. Existing SQL formats
+1/2, Prisma format 3 and Drizzle format 4 are unchanged; older consumers must refuse
+format 5 instead of treating JavaScript as SQL. This source candidate is unqualified.

@@ -12,7 +12,9 @@ export const migrationReviewEntries = (
     throw new Error("Migration review exceeds the bounded 10,000-file plan.");
   const identity = (migration: Inspection["migrations"][number]) =>
     "nativeIdentity" in migration
-      ? `drizzle:${migration.nativeIdentity.idx}:${migration.nativeIdentity.when}:${migration.nativeIdentity.tag}`
+      ? migration.nativeIdentity.kind === "knex"
+        ? `knex:${migration.nativeIdentity.name}`
+        : `drizzle:${migration.nativeIdentity.idx}:${migration.nativeIdentity.when}:${migration.nativeIdentity.tag}`
       : migration.version;
   return migrations.map((migration, index) => ({
     ...migration,
@@ -23,7 +25,14 @@ export const migrationReviewEntries = (
     required: migration.status === "candidate",
     dependsOn: index ? [`${target}:${identity(migrations[index - 1]!)}`] : [],
     warnings:
-      migration.status === "candidate" ? ["sql_safety_not_inferred"] : [],
+      "nativeIdentity" in migration && migration.nativeIdentity.kind === "knex"
+        ? [
+            "historical_file_checksums_unavailable",
+            "native_javascript_isolated_execution_required",
+          ]
+        : migration.status === "candidate"
+          ? ["sql_safety_not_inferred"]
+          : [],
     selectionReason:
       migration.status === "candidate"
         ? "Every candidate is required: the reviewed ordered suffix cannot be skipped or reordered."
@@ -49,7 +58,8 @@ export const inspectMigrationReviewPlan = async (
       provider: target.config.runtime.target,
       baselineGenerationId: inspection.baselineGenerationId,
       candidateSha256: inspection.candidateSha256,
-      ...(inspection.migrationTool?.kind === "drizzle"
+      ...(inspection.migrationTool?.kind === "drizzle" ||
+      inspection.migrationTool?.kind === "knex"
         ? {
             baselineHistorySha256: inspection.baselineHistorySha256,
             baselinePrefixVerification: inspection.baselinePrefixVerification,

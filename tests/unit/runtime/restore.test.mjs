@@ -228,3 +228,51 @@ describe("Rehearsal runtime restore", () => {
     ).toThrow("diverges from the active baseline");
   });
 });
+
+it("uses CONTINUE IDENTITY only when explicitly selected and preserves catalog-guarded serial/identity setval", () => {
+  const policy = {
+    tables: [
+      {
+        name: "widgets",
+        sourceRows: "STREAM AND SANITIZE",
+        columns: [
+          {
+            name: "serial_id",
+            action: "KEEP",
+            generated: "NEVER",
+            identity: "NO",
+            foreignKey: null,
+          },
+          {
+            name: "identity_id",
+            action: "KEEP",
+            generated: "NEVER",
+            identity: "YES",
+            foreignKey: null,
+          },
+        ],
+      },
+    ],
+  };
+  const common = {
+    manifest: policy,
+    tableCounts: { widgets: 2 },
+    restoreSupabaseAuth: false,
+  };
+  const ordinary = buildRestoreSqlSuffix(common),
+    restricted = buildRestoreSqlSuffix({ ...common, identityMode: "continue" });
+  expect(ordinary).toContain("restart identity cascade");
+  expect(ordinary).not.toContain(
+    "pg_get_serial_sequence('public.widgets', 'serial_id')",
+  );
+  expect(restricted).toContain("continue identity cascade");
+  expect(restricted).not.toContain("restart identity");
+  for (const column of ["serial_id", "identity_id"])
+    expect(restricted).toContain(
+      `pg_get_serial_sequence('public.widgets', '${column}')`,
+    );
+  expect(restricted).toContain("if sequence_name is not null then");
+  expect(restricted).toContain(
+    "perform setval(sequence_name, coalesce(maximum_value, 1), has_rows)",
+  );
+});

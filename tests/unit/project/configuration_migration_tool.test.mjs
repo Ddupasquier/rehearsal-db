@@ -5,6 +5,30 @@ const selected = () => ({
   version: "7.10.1",
   packageDirectory: "node_modules/prisma",
 });
+const knexSelection = () => ({
+  kind: "knex",
+  version: "3.3.0",
+  driver: "pg",
+  driverVersion: "8.23.1",
+  packageDirectory: "node_modules/knex",
+  driverPackageDirectory: "node_modules/pg",
+});
+it("requires exact explicit isolated Knex pins without a host/config/image override", () => {
+  expect(normalizeMigrationTool(knexSelection())).toEqual(knexSelection());
+  for (const changed of [
+    { version: "^3.3.0" },
+    { driver: "postgres" },
+    { driverVersion: "8.23.0" },
+    { command: "host-command" },
+    { image: "unreviewed" },
+    { packageDirectory: "notes/private" },
+    { packageDirectory: "../foreign" },
+    { driverPackageDirectory: undefined },
+  ])
+    expect(() =>
+      normalizeMigrationTool({ ...knexSelection(), ...changed }),
+    ).toThrow();
+});
 it("leaves native tool support disabled when omitted and requires explicit pinned selection", () => {
   expect(normalizeMigrationTool(undefined)).toBeNull();
   const input = selected();

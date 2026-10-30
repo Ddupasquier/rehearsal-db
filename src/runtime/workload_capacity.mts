@@ -461,6 +461,10 @@ export const evaluateWorkloadCapacity = ({
     if (config.runtime.target === "postgresql") {
       requiredMemoryBytes += reviewed.targetMemoryBytes.postgresql;
       requiredContainers += 1;
+      if (config.postgresql?.migrationTool?.kind === "knex") {
+        requiredMemoryBytes += 268435456;
+        requiredContainers += 1;
+      }
     } else if (
       config.runtime.target === "supabase" &&
       config.supabase?.serviceProfile === "application"

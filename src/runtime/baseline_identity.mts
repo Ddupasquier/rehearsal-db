@@ -26,8 +26,8 @@ export const assertNativeBaselineManifestUnchanged = async ({
   artifactRoot: string;
   expected: BaselineManifest;
 }): Promise<void> => {
-  if (![3, 4].includes(expected.formatVersion))
-    throw new Error("Late native baseline identity requires format 3 or 4.");
+  if (![3, 4, 5].includes(expected.formatVersion))
+    throw new Error("Late native baseline identity requires format 3, 4 or 5.");
   const paths = await resolveActiveBaselinePaths({ artifactRoot });
   if (basename(paths.generationDirectory) !== expected.generationId)
     throw new Error(

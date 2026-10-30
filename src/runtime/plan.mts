@@ -1,5 +1,6 @@
+import { inspectKnexWorkerEngine } from "../targets/knex_worker_engine.mjs";
 import {
-  isDrizzleMigrationFile,
+  isNativeMigrationFile,
   describeMigrationCutoff,
 } from "./migration_identity.mjs";
 /**
@@ -285,7 +286,7 @@ const loadPlanInputs = async (
     candidateReceipt.candidates.map((entry) => entry.filename),
   );
   const migrations = currentFiles.map((entry) => ({
-    ...(isDrizzleMigrationFile(entry)
+    ...(isNativeMigrationFile(entry)
       ? { nativeIdentity: entry.nativeIdentity }
       : { version: entry.version }),
     name: entry.name,
@@ -358,6 +359,9 @@ const buildPlanFromInputs = async (
     baseline: {
       rehearsalVersion: REHEARSAL_VERSION,
       formatVersion: baseline.formatVersion,
+      ...(baseline.nativeMigrations?.kind === "knex"
+        ? { historicalFileChecksums: "unavailable" as const }
+        : {}),
       ...(baseline.nativeMigrations
         ? { nativeMigrations: baseline.nativeMigrations }
         : {}),
@@ -505,10 +509,14 @@ export const inspectRehearsalMigrations = async (
     baselineCutoff: inputs.baseline.migrationCutoff,
     candidateSha256: inputs.candidateReceipt.candidateSha256,
     migrations: inputs.migrations,
-    ...(inputs.migrationTool?.kind === "drizzle"
+    ...(inputs.migrationTool?.kind === "drizzle" ||
+    inputs.migrationTool?.kind === "knex"
       ? {
           baselineHistorySha256: inputs.baseline.migrationHistorySha256,
-          baselinePrefixVerification: "exact-native-semantic-prefix" as const,
+          baselinePrefixVerification:
+            inputs.migrationTool.kind === "knex"
+              ? ("exact-reviewed-code-prefix" as const)
+              : ("exact-native-semantic-prefix" as const),
         }
       : {}),
     ...(inputs.migrationTool ? { migrationTool: inputs.migrationTool } : {}),
@@ -690,6 +698,20 @@ export const runRehearsalDoctor = async (
       remediation:
         "Review the detected local engine options, select your intended Docker context, and start that engine explicitly. No automatic engine switch or data migration occurs.",
     },
+    ...(config.postgresql?.migrationTool?.kind === "knex"
+      ? [
+          {
+            id: "knex-worker-isolation",
+            label: "Isolated Knex worker image and local engine",
+            run: async () => {
+              inspectKnexWorkerEngine({ cwd: projectRoot });
+              return "Reviewed Node 24.21.0 Linux worker image is local and required isolation controls are available; no image was pulled.";
+            },
+            remediation:
+              "Review the pinned worker image and a local Linux Docker engine with enforced memory, PID, CPU and seccomp controls. There is no host execution fallback.",
+          },
+        ]
+      : []),
     {
       id: "paths",
       label: "Project-owned paths",

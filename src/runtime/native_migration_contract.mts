@@ -1,5 +1,7 @@
 /** Versioned exact native-tool binding, independent of filesystem/runtime execution. */
 import type { PrismaNativeBinding } from "./prisma_history.mjs";
+import { parseKnexCodeFiles, type KnexCodeFile } from "./knex_history.mjs";
+import { createHash } from "node:crypto";
 
 export interface PrismaMigrationBinding extends PrismaNativeBinding {
   readonly toolchainSha256: string;
@@ -21,8 +23,22 @@ export interface DrizzleMigrationBinding {
     table: "__drizzle_migrations";
   }>;
 }
+export interface KnexMigrationBinding {
+  readonly schemaVersion: 1;
+  readonly kind: "knex";
+  readonly version: "3.3.0";
+  readonly driver: "pg";
+  readonly driverVersion: "8.23.1";
+  readonly provider: "postgresql";
+  readonly bundleSha256: string;
+  readonly toolchainSha256: string;
+  readonly isolationPolicySha256: string;
+  readonly historicalFileChecksums: "unavailable";
+  readonly codeFiles: readonly KnexCodeFile[];
+  readonly ledger: Readonly<{ schema: "public"; table: "knex_migrations" }>;
+}
 export type NativeMigrationBinding =
-  PrismaMigrationBinding | DrizzleMigrationBinding;
+  PrismaMigrationBinding | DrizzleMigrationBinding | KnexMigrationBinding;
 
 export const parseNativeMigrationBinding = (
   value: unknown,
@@ -30,6 +46,62 @@ export const parseNativeMigrationBinding = (
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Native migration binding is missing or invalid.");
   const x = value as Record<string, unknown>;
+  if (x.kind === "knex") {
+    const keys = [
+      "schemaVersion",
+      "kind",
+      "version",
+      "driver",
+      "driverVersion",
+      "provider",
+      "bundleSha256",
+      "toolchainSha256",
+      "isolationPolicySha256",
+      "historicalFileChecksums",
+      "ledger",
+      "codeFiles",
+    ];
+    const ledger = x.ledger as Record<string, unknown> | undefined;
+    if (
+      Object.keys(x).length !== keys.length ||
+      Object.keys(x).some((k) => !keys.includes(k)) ||
+      x.schemaVersion !== 1 ||
+      x.version !== "3.3.0" ||
+      x.driver !== "pg" ||
+      x.driverVersion !== "8.23.1" ||
+      x.provider !== "postgresql" ||
+      x.historicalFileChecksums !== "unavailable" ||
+      ![x.bundleSha256, x.toolchainSha256, x.isolationPolicySha256].every(
+        (s) => typeof s === "string" && /^[a-f0-9]{64}$/u.test(s),
+      ) ||
+      !ledger ||
+      Array.isArray(ledger) ||
+      Object.keys(ledger).length !== 2 ||
+      ledger.schema !== "public" ||
+      ledger.table !== "knex_migrations"
+    )
+      throw new Error("Native Knex binding is invalid or unsupported.");
+    const codeFiles = Object.freeze(parseKnexCodeFiles(x.codeFiles));
+    if (
+      createHash("sha256").update(JSON.stringify(codeFiles)).digest("hex") !==
+      x.bundleSha256
+    )
+      throw new Error("Knex code bundle binding is inconsistent.");
+    return Object.freeze({
+      schemaVersion: 1,
+      kind: "knex",
+      version: "3.3.0",
+      driver: "pg",
+      driverVersion: "8.23.1",
+      provider: "postgresql",
+      bundleSha256: x.bundleSha256 as string,
+      toolchainSha256: x.toolchainSha256 as string,
+      isolationPolicySha256: x.isolationPolicySha256 as string,
+      historicalFileChecksums: "unavailable",
+      codeFiles,
+      ledger: Object.freeze({ schema: "public", table: "knex_migrations" }),
+    });
+  }
   if (x.kind === "drizzle") {
     const keys = [
       "schemaVersion",
@@ -131,10 +203,17 @@ export const sameNativeMigrationBinding = (
  * a historical producer journal SHA must not equal an appended current journal SHA.
  */
 export const sameNativeMigrationHistory = (
-  a: PrismaNativeBinding | DrizzleMigrationBinding,
-  b: PrismaNativeBinding | DrizzleMigrationBinding,
+  a: PrismaNativeBinding | DrizzleMigrationBinding | KnexMigrationBinding,
+  b: PrismaNativeBinding | DrizzleMigrationBinding | KnexMigrationBinding,
 ) => {
   if (a.kind !== b.kind) return false;
+  if (a.kind === "knex" && b.kind === "knex")
+    return (
+      a.version === b.version &&
+      a.driverVersion === b.driverVersion &&
+      a.bundleSha256 === b.bundleSha256 &&
+      a.isolationPolicySha256 === b.isolationPolicySha256
+    );
   if (a.kind === "drizzle" && b.kind === "drizzle")
     return (
       a.kitVersion === b.kitVersion &&

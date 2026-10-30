@@ -1,3 +1,8 @@
+import {
+  parseKnexMigrationIdentity,
+  readKnexMigrationInventory,
+  type KnexMigrationIdentity,
+} from "./knex_history.mjs";
 /** Read-only source references name reviewed input, never an attempted SDK statement. */
 import { join, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -12,12 +17,12 @@ import { readDrizzleMigrationInventory } from "./drizzle_history.mjs";
 import { inspectRehearsalMigrations } from "./plan.mjs";
 import { inspectRuntimeTopologyCandidates } from "./topology.mjs";
 import { isMigrationWorkspacePath } from "./migration_failure_source.mjs";
-export interface ReviewedDrizzleSourceReference {
+export interface ReviewedNativeSourceReference {
   readonly schemaVersion: 2;
   readonly evidence: "reviewed_source_input";
   readonly target: string;
   readonly candidateSha256: string;
-  readonly nativeIdentity: DrizzleMigrationIdentity;
+  readonly nativeIdentity: DrizzleMigrationIdentity | KnexMigrationIdentity;
   readonly filename: string;
   readonly sha256: string;
   readonly workspaceRelativePath: string;
@@ -44,7 +49,7 @@ export const inspectMigrationSource = async (
     sourceSha256?: string | undefined;
     candidateSha256?: string | undefined;
   },
-): Promise<ReviewedDrizzleSourceReference> => {
+): Promise<ReviewedNativeSourceReference> => {
   if (
     typeof request.target !== "string" ||
     !/^[a-z][a-z0-9_-]{0,63}$/u.test(request.target) ||
@@ -56,11 +61,13 @@ export const inspectMigrationSource = async (
     !/^[a-f0-9]{64}$/u.test(request.candidateSha256)
   )
     throw invalid();
-  let identity: DrizzleMigrationIdentity;
+  let identity: DrizzleMigrationIdentity | KnexMigrationIdentity;
   try {
-    identity = parseDrizzleMigrationIdentity(
-      JSON.parse(request.nativeIdentity),
-    );
+    const value = JSON.parse(request.nativeIdentity);
+    identity =
+      value?.kind === "knex"
+        ? parseKnexMigrationIdentity(value)
+        : parseDrizzleMigrationIdentity(value);
   } catch {
     throw invalid();
   }
@@ -83,8 +90,8 @@ export const inspectMigrationSource = async (
   if (
     !target ||
     !inspection ||
-    target.config.postgresql?.migrationTool?.kind !== "drizzle" ||
-    inspection.migrationTool?.kind !== "drizzle"
+    target.config.postgresql?.migrationTool?.kind !== identity.kind ||
+    inspection.migrationTool?.kind !== identity.kind
   )
     throw invalid();
   const entry = inspection.migrations.find(
@@ -96,25 +103,47 @@ export const inspectMigrationSource = async (
   // The full closure observation can outlast the initial file inventory. Re-read
   // its bounded native source after that observation; never return a stale path
   // solely because the first inventory once contained the requested checksum.
-  const fresh = await readDrizzleMigrationInventory(
-    pathToFileURL(`${target.paths.migrationDirectory}/`),
-  );
-  if (
-    fresh.binding.journalSha256 !== inspection.migrationTool.journalSha256 ||
-    fresh.entries.length !== inspection.migrations.length ||
-    fresh.entries.some((file, index) => {
-      const old = inspection.migrations[index]!;
-      return (
-        !("nativeIdentity" in old) ||
-        file.idx !== old.nativeIdentity.idx ||
-        file.when !== old.nativeIdentity.when ||
-        file.tag !== old.nativeIdentity.tag ||
-        file.filename !== old.filename ||
-        file.hash !== old.sha256
-      );
-    })
-  )
-    throw invalid();
+  if (inspection.migrationTool?.kind === "knex") {
+    const fresh = await readKnexMigrationInventory(
+      pathToFileURL(`${target.paths.migrationDirectory}/`),
+    );
+    if (
+      fresh.bundleSha256 !== inspection.migrationTool.bundleSha256 ||
+      fresh.entries.length !== inspection.migrations.length ||
+      fresh.entries.some((file, index) => {
+        const old = inspection.migrations[index]!;
+        return (
+          !("nativeIdentity" in old) ||
+          old.nativeIdentity.kind !== "knex" ||
+          old.nativeIdentity.name !== file.nativeIdentity.name ||
+          old.filename !== file.filename ||
+          old.sha256 !== file.fileSha256
+        );
+      })
+    )
+      throw invalid();
+  } else if (inspection.migrationTool?.kind === "drizzle") {
+    const fresh = await readDrizzleMigrationInventory(
+      pathToFileURL(`${target.paths.migrationDirectory}/`),
+    );
+    if (
+      fresh.binding.journalSha256 !== inspection.migrationTool.journalSha256 ||
+      fresh.entries.length !== inspection.migrations.length ||
+      fresh.entries.some((file, index) => {
+        const old = inspection.migrations[index]!;
+        return (
+          !("nativeIdentity" in old) ||
+          old.nativeIdentity.kind !== "drizzle" ||
+          file.idx !== old.nativeIdentity.idx ||
+          file.when !== old.nativeIdentity.when ||
+          file.tag !== old.nativeIdentity.tag ||
+          file.filename !== old.filename ||
+          file.hash !== old.sha256
+        );
+      })
+    )
+      throw invalid();
+  } else throw invalid();
   const path = relative(
     reviewed.topology.projectRoot,
     join(target.paths.migrationDirectory, entry.filename),
@@ -122,7 +151,16 @@ export const inspectMigrationSource = async (
     .split(sep)
     .join("/");
   if (
-    !isMigrationWorkspacePath(path) ||
+    !(identity.kind === "knex"
+      ? path.length <= 3072 &&
+        path
+          .split("/")
+          .every(
+            (p) =>
+              /^[A-Za-z0-9][A-Za-z0-9_.-]{0,190}$/u.test(p) &&
+              !["notes", "node_modules"].includes(p),
+          )
+      : isMigrationWorkspacePath(path)) ||
     path.split("/").at(-1) !== entry.filename
   )
     throw invalid();

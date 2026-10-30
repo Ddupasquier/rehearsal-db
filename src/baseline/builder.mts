@@ -1,3 +1,4 @@
+import { createKnexBaseline } from "./knex_builder.mjs";
 import { describeMigrationCutoff } from "../runtime/migration_identity.mjs";
 import { createDrizzleBaseline } from "./drizzle_builder.mjs";
 /**
@@ -176,9 +177,11 @@ export const createSyntheticBaselineFromFiles = async ({
   }
   if (loaded.config.postgresql?.migrationTool)
     return (
-      loaded.config.postgresql.migrationTool.kind === "drizzle"
-        ? createDrizzleBaseline
-        : createPrismaBaseline
+      loaded.config.postgresql.migrationTool.kind === "knex"
+        ? createKnexBaseline
+        : loaded.config.postgresql.migrationTool.kind === "drizzle"
+          ? createDrizzleBaseline
+          : createPrismaBaseline
     )({
       loaded,
       records: readRecords(records),

@@ -31,9 +31,11 @@ export interface NativePackageProfile {
 export const inspectNativeToolchain = async ({
   projectRoot,
   profiles,
+  onBytes,
 }: {
   projectRoot: string;
   profiles: readonly NativePackageProfile[];
+  onBytes?: (path: string, bytes: Buffer) => Promise<void> | void;
 }) => {
   const root = await realpath(projectRoot);
   const roots = profiles.map((profile) => {
@@ -225,6 +227,7 @@ export const inspectNativeToolchain = async ({
                 entry.nativePath = path;
               }
               hashes.push({ path: `${prefix}/${name}`, sha256 });
+              await onBytes?.(path, data);
               witnesses.push({ path, stat: before });
             } finally {
               await handle.close();

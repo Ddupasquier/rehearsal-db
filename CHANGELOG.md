@@ -7,6 +7,7 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ### Added
 
+- Separate unqualified Knex 3.3.0 / pg 8.23.1 PostgreSQL candidate with native filename identities, reviewed code/support baseline format 5 and an explicit historical-checksums-unavailable notice. Genuine SDK migration modules execute only in a bounded network-disabled Linux worker through a restricted-role fixed-target relay; unknown role/worker ownership and cleanup refuse instead of falling back to host JavaScript. Real SDK, database and isolation qualification remains pending.
 - Isolated, unqualified Drizzle Kit 0.31.11 / ORM 0.45.4 / pg 8.23.1 PostgreSQL
   candidate with explicit native identities and byte-exact journal baseline format 4. Whole-journal baseline preflight, native-prefix consent and shared bounded
   private execution preserve existing SQL/Prisma contracts. Genuine installed SDK,

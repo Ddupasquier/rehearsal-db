@@ -1,4 +1,7 @@
-import { addDrizzleMigrationDiscovery } from "./project_discovery_migration_tool.mjs";
+import {
+  addKnexMigrationDiscovery,
+  addDrizzleMigrationDiscovery,
+} from "./project_discovery_migration_tool.mjs";
 /**
  * Build a read-only, explainable profile from bounded project metadata.
  *
@@ -127,6 +130,7 @@ export const discoverProjectProfile = async ({
     "postgres",
     "@prisma/client",
     "drizzle-orm",
+    "knex",
   ].filter((name) => name in dependencies);
   const hasPostgresDependency = postgresPackages.length > 0;
   if (hasSupabaseConfig || hasSupabaseDependency) {
@@ -247,6 +251,7 @@ export const discoverProjectProfile = async ({
   );
   const nativeDrizzle =
     (await metadataKind(root, "drizzle/meta/_journal.json")) === "file";
+  if ("knex" in dependencies) addKnexMigrationDiscovery(facts, decisions);
   if (nativeDrizzle) addDrizzleMigrationDiscovery(facts, decisions);
   if (nativePrisma) addPrismaMigrationDiscovery(facts, decisions);
   if (migrationDirectories.length === 1 && !nativePrisma && !nativeDrizzle) {

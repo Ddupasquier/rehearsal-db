@@ -300,6 +300,7 @@ export const renderPlan = (
 };
 
 export const renderBaseline = (baseline: {
+  historicalFileChecksums?: "unavailable";
   rehearsalVersion: string;
   generationId: string;
   createdAt?: string | null;
@@ -319,6 +320,11 @@ export const renderBaseline = (baseline: {
     `Generation: ${baseline.generationId}`,
     `Created: ${baseline.createdAt ?? "unknown"}`,
     `Format: ${baseline.formatVersion}`,
+    ...(baseline.historicalFileChecksums === "unavailable"
+      ? [
+          "Knex historical file checksums: unavailable. Current reviewed code is locked; originally applied bytes are not attested.",
+        ]
+      : []),
     `Tables: ${baseline.tableCount}`,
     `Rows: ${baseline.rowCount}`,
     `Migrations: ${baseline.migrationCount} through ${describeMigrationCutoff(baseline.migrationCutoff)}`,
