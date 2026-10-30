@@ -45,6 +45,7 @@ import {
 } from "../scenarios/process.mjs";
 import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_environment.mjs";
 import { provePostgresqlMigrationImpact } from "./postgresql_impact.mjs";
+import { provePostgresqlRestoreSequences } from "./postgresql_sequences.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const fixtureSource = join(repositoryRoot, "tests/fixtures/postgresql-project");
@@ -1159,6 +1160,10 @@ const main = async () => {
     ]) {
       executeCliOrThrow({ cwd, label, args });
     }
+    const restoreSequenceEdges = await provePostgresqlRestoreSequences({
+      cwd,
+      projectId,
+    });
     const migrationImpact = await provePostgresqlMigrationImpact({
       cwd,
       projectId,
@@ -1411,6 +1416,7 @@ const main = async () => {
           tutorialPackageRecovery,
           dataSpecificMigration,
           migrationImpact,
+          restoreSequenceEdges,
         },
         null,
         2,

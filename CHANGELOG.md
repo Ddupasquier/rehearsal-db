@@ -15,6 +15,12 @@ a Changelog, and published versions follow Semantic Versioning.
   native failures, cancellation and timeouts retain the data volume for explicit
   recovery. Existing SQL histories and baseline formats 1/2 keep their behavior.
 
+### Fixed
+
+- Advance owned SERIAL and identity sequences beyond restored integer IDs, preserving
+  their configured direction and empty-table start. Non-sequence and generated columns
+  are not treated as auto-incrementing values.
+
 ## [2.0.1] - 2026-10-28
 
 ### Fixed
