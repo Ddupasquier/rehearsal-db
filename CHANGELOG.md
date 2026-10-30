@@ -18,7 +18,9 @@ a Changelog, and published versions follow Semantic Versioning.
 ### Fixed
 
 - Advance owned SERIAL and identity sequences beyond restored integer IDs, preserving
-  their configured direction and empty-table start. Non-sequence and generated columns
+  their configured direction, bounds and empty-table start. Explicit IDs before the
+  generation range use the configured start; IDs beyond the advancing range refuse
+  restoration. Non-sequence and generated columns
   are not treated as auto-incrementing values.
 
 ## [2.0.1] - 2026-10-28
