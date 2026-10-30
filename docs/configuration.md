@@ -1111,8 +1111,15 @@ restore, cancellation and recovery acceptance.
 
 The fixed worker completion receipt describes worker cleanup only: `dataDeletionRequested:false` means no target-volume deletion was requested by cleanup. It does not promise that reviewed migration SQL leaves rows or tables unchanged.
 
-Native transactions and lock semantics remain Knex-owned. Execution/verification
-has the existing 120-second native deadline. Cancellation tears down only the owned
+The configured `proofCommand` remains an ordinary reviewed application command.
+It receives the persistent application connection and must own its SQL query timeouts
+and cancellation. Core supervises its process, but the native SQL deadline and ephemeral
+session cleanup do not cover queries opened by that command. With a retained database,
+a query can outlive its client; existing application sessions are not terminated as a
+substitute for query cancellation. The configured stop/keep lifecycle still applies.
+
+Native transactions and lock semantics remain Knex-owned. Core's native migration
+execution and SQL verification phases each have a 120-second deadline. Cancellation tears down only the owned
 worker and verifies its database sessions; unknown cleanup preserves recovery
 receipts. A prior project worker blocks reset from deleting its mounted evidence.
 A migration failure preserves the disposable volume and blocks automatic resume
