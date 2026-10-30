@@ -97,7 +97,7 @@ Prisma Migrate 7.10.1/PostgreSQL configuration and baseline format 3. Existing f
 SQL configurations and baseline formats 1/2 retain their meaning. Format 3 requires
 an editor that explicitly understands its native history and tool binding; older
 strict consumers may refuse it. Visual review requires Starter 0.1.26 or later
-with that explicit capability. Core 2.0.0 and Starter 0.1.25 do not support it.
+with that explicit capability. Core 2.0.x and Starter 0.1.25 do not support it.
 The initial SDK qualification target is PostgreSQL 17 / Ubuntu 24.04 x64 / Node 24;
 Core's general platform coverage does not qualify other SDK/host combinations.
 Prisma Client, hosted preparation, other providers and physical-schema-drift

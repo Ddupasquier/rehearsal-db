@@ -48,6 +48,9 @@ rehearsal-db/
   It never retains raw child errors, argv, provider text or output in failure reports.
   An unrecognized failure stays unclassified; a later green test does not establish
   the cause of a historical failure. This test helper is not shipped product code.
+  The closed failure projection is shared with installed-consumer verification
+  through `scripts/verification/scenarios/process.mjs`. Supabase impact failures
+  add only a fixed phase and that projection; raw provider output remains withheld.
 
 ## Documentation audiences
 
@@ -274,6 +277,10 @@ against the exact target proven by `prisma_target_binding.mts`. A native migrati
 failure preserves its data volume and requires explicit recovery; the extension
 consumes the public review contract and never runs a second migration engine.
 
+The planning-only [database capability and conformance design](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/database-capabilities.md)
+owns future cross-family semantics, ownership and independent acceptance. It adds
+no supported runtime or execution backend.
+
 `runtime/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
 PostgreSQL and Supabase use it to dispatch commands, verify active baseline inputs,
 calculate and confirm the exact migration set, write target-bound receipts, validate
@@ -300,6 +307,9 @@ lifecycle engine at 300 lines or fewer. A new database target must use this life
 boundary rather than copying an existing driver's orchestration.
 
 ## Identity claim pipeline
+
+The [auth-platform contract proposal](https://github.com/Ddupasquier/rehearsal-db/blob/main/docs/auth-platform-contract.md) preserves this pipeline
+and separates future platform trust from application sign-in and account association.
 
 The stable `identity/claim.mts` facade exposes policy validation, deterministic planning,
 and confirmed execution while keeping those responsibilities separate:
