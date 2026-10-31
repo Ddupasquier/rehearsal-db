@@ -151,7 +151,7 @@ not an automatic conversion of older baseline formats or an editor-support claim
 
 ## Native Knex candidate format
 
-The isolated [Knex candidate](configuration.md#native-knex-migrations--unqualified-isolated-candidate)
+The isolated [Knex candidate](configuration.md#native-knex-migrations)
 uses format 5 and a native `{kind:"knex",name:"FILE.cjs"}` cutoff. `knexHistory`
 retains ordered migration entries, all reviewed code/support-file receipts and the
 native source ledger's `id`, `name`, `batch`, `migration_time` provenance. Serial-ID
@@ -167,4 +167,5 @@ batch/serial values and migration timestamps when replaying that same filename
 prefix. Fresh replay does not reproduce historical batch grouping or times;
 data-dependent migration behavior may differ from its original production run. Existing SQL formats
 1/2, Prisma format 3 and Drizzle format 4 are unchanged; older consumers must refuse
-format 5 instead of treating JavaScript as SQL. This source candidate is unqualified.
+format 5 instead of treating JavaScript as SQL. A source version does not establish
+execution qualification; review the exact published release for its verified scope.

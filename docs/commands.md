@@ -904,5 +904,5 @@ identities, hashes, whole-plan consent, caller paths and symlinks refuse without
 executing migration code or contacting an engine. SQL Insights/impact analysis does
 not analyze or execute JavaScript; failed native execution does not invent SQL-file
 or statement attribution. Read the
-[Knex configuration boundary](configuration.md#native-knex-migrations--unqualified-isolated-candidate)
-before selecting its unqualified worker candidate.
+[Knex configuration boundary](configuration.md#native-knex-migrations)
+for required versions, isolation limits and exact-release qualification scope.

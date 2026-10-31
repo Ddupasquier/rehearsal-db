@@ -460,7 +460,7 @@ remain necessary before this candidate can be qualified or supported.
 `knex_failure_recovery.mts` attempts owned shutdown even if failure recording fails;
 missing metadata never authorizes resetting retained resources. Target failure
 keeps data/recovery, and unknown worker cleanup blocks destructive reuse. See the
-[configuration owner](configuration.md#native-knex-migrations--unqualified-isolated-candidate)
+[configuration owner](configuration.md#native-knex-migrations)
 for the explicit security, resource and qualification boundaries.
 
 Knex isolation qualification must include an ordinary SERIAL and an identity-column

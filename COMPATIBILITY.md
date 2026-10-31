@@ -195,4 +195,4 @@ The fixed Node 24.21.0 Linux Docker worker requires supported POSIX mount paths
 Windows host execution refuses before reset. No engine, SDK, provider, adversarial
 isolation or editor conformance is claimed by these source/unit checks. Older
 consumers must refuse the new identity/format instead of treating JavaScript as
-SQL. See the [owning configuration boundary](docs/configuration.md#native-knex-migrations--unqualified-isolated-candidate).
+SQL. See the [owning configuration boundary](docs/configuration.md#native-knex-migrations).
