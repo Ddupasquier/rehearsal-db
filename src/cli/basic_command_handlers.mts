@@ -46,6 +46,8 @@ Commands:
   inspect migrations         Classify represented, applied, and candidate migrations
   inspect plan               Review ordered migrations, required dependencies, and warnings
   inspect insights           Review bounded static SQL warnings; never a safety verdict
+  inspect source --target= --native-identity= --source-sha256= --candidate-sha256=
+                             Resolve an exact reviewed native source reference
   inspect impact             Preview aggregate measurements for one explicit --target
   measure impact             Measure reviewed aggregates on that running local sandbox
   start                      Start an existing verified local runtime

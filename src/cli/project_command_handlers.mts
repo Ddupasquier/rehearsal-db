@@ -1,3 +1,4 @@
+import { describeMigrationCutoff } from "../runtime/migration_identity.mjs";
 /** Project setup, baseline creation, privacy-key, and cleanup command handlers. */
 
 import { relative } from "node:path";
@@ -83,7 +84,7 @@ export const createProjectCommandHandlers = ({
         data,
         render: (baseline) =>
           [
-            `Activated synthetic baseline ${baseline.generationId}: ${formatCount(baseline.rowCount, "row")} across ${formatCount(baseline.tableCount, "table")}; ${formatCount(baseline.migrationCount, "migration")} through ${baseline.migrationCutoff}.`,
+            `Activated synthetic baseline ${baseline.generationId}: ${formatCount(baseline.rowCount, "row")} across ${formatCount(baseline.tableCount, "table")}; ${formatCount(baseline.migrationCount, "migration")} through ${describeMigrationCutoff(baseline.migrationCutoff)}.`,
             "",
             flags.guided
               ? "Next: choose Run a rehearsal when you are ready."

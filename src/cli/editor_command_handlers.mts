@@ -1,3 +1,4 @@
+import { inspectMigrationSource } from "../runtime/migration_source_inspection.mjs";
 /** Versioned, read-only contracts for editor review; never a second runtime engine. */
 import { inspectMigrationReviewPlan } from "../runtime/migration_plan.mjs";
 import {
@@ -21,6 +22,24 @@ import {
   reviewConfigurationProposal,
 } from "../project/configuration_review.mjs";
 export const createEditorCommandHandlers = (): readonly CommandDefinition[] => [
+  exactCommands(
+    "migration-source",
+    ["inspect source"],
+    async ({ planOptions, flags }) => {
+      const data = await inspectMigrationSource(planOptions, {
+        target: flags.target,
+        nativeIdentity: flags.nativeIdentity,
+        sourceSha256: flags.sourceSha256,
+        candidateSha256: flags.candidateSha256,
+      });
+      return renderedCommand({
+        data,
+        render: (result) =>
+          `REVIEWED SOURCE — READ ONLY\n${result.target}: ${result.workspaceRelativePath}\nSHA-256: ${result.sha256}\nThis reference does not attribute an SDK failure or statement position.`,
+      });
+    },
+  ),
+
   exactCommands(
     "migration-impact-preview",
     ["inspect impact"],

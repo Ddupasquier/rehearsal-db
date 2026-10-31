@@ -18,6 +18,9 @@ export interface RehearsalCliFlags {
   ledgerPath: string | undefined;
   assetsPath: string | undefined;
   target: string | undefined;
+  nativeIdentity: string | undefined;
+  sourceSha256: string | undefined;
+  candidateSha256: string | undefined;
   includeRuntime: boolean;
   includeImages: boolean;
   imageIds: string[] | undefined;
@@ -59,6 +62,9 @@ export const parseArguments = (
     ledgerPath: undefined,
     assetsPath: undefined,
     target: undefined,
+    nativeIdentity: undefined,
+    sourceSha256: undefined,
+    candidateSha256: undefined,
     includeRuntime: false,
     includeImages: false,
     imageIds: undefined,
@@ -128,6 +134,12 @@ export const parseArguments = (
       flags.ledgerPath = argument.slice("--ledger=".length);
     else if (argument.startsWith("--assets="))
       flags.assetsPath = argument.slice("--assets=".length);
+    else if (argument.startsWith("--native-identity="))
+      flags.nativeIdentity = argument.slice("--native-identity=".length);
+    else if (argument.startsWith("--source-sha256="))
+      flags.sourceSha256 = argument.slice("--source-sha256=".length);
+    else if (argument.startsWith("--candidate-sha256="))
+      flags.candidateSha256 = argument.slice("--candidate-sha256=".length);
     else if (argument.startsWith("--target="))
       flags.target = argument.slice("--target=".length);
     else if (argument === "--include-runtime") flags.includeRuntime = true;
@@ -159,6 +171,9 @@ export const resetGuidedFlags = (flags: RehearsalCliFlags): void => {
     ledgerPath: undefined,
     assetsPath: undefined,
     target: undefined,
+    nativeIdentity: undefined,
+    sourceSha256: undefined,
+    candidateSha256: undefined,
     includeRuntime: false,
     includeImages: false,
     imageIds: undefined,

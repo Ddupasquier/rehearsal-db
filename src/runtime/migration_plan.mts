@@ -10,14 +10,18 @@ export const migrationReviewEntries = (
 ) => {
   if (migrations.length > 10000)
     throw new Error("Migration review exceeds the bounded 10,000-file plan.");
+  const identity = (migration: Inspection["migrations"][number]) =>
+    "nativeIdentity" in migration
+      ? `drizzle:${migration.nativeIdentity.idx}:${migration.nativeIdentity.when}:${migration.nativeIdentity.tag}`
+      : migration.version;
   return migrations.map((migration, index) => ({
     ...migration,
     target,
-    id: `${target}:${migration.version}`,
+    id: `${target}:${identity(migration)}`,
     order: index,
-    timestamp: migration.version,
+    ...("nativeIdentity" in migration ? {} : { timestamp: migration.version }),
     required: migration.status === "candidate",
-    dependsOn: index ? [`${target}:${migrations[index - 1]!.version}`] : [],
+    dependsOn: index ? [`${target}:${identity(migrations[index - 1]!)}`] : [],
     warnings:
       migration.status === "candidate" ? ["sql_safety_not_inferred"] : [],
     selectionReason:
@@ -45,6 +49,12 @@ export const inspectMigrationReviewPlan = async (
       provider: target.config.runtime.target,
       baselineGenerationId: inspection.baselineGenerationId,
       candidateSha256: inspection.candidateSha256,
+      ...(inspection.migrationTool?.kind === "drizzle"
+        ? {
+            baselineHistorySha256: inspection.baselineHistorySha256,
+            baselinePrefixVerification: inspection.baselinePrefixVerification,
+          }
+        : {}),
       ...(inspection.migrationTool
         ? { migrationTool: inspection.migrationTool }
         : {}),

@@ -1,3 +1,4 @@
+import { verifyDrizzleBaselineHistory } from "../runtime/drizzle_baseline_contract.mjs";
 /**
  * Purpose: Write, verify, and atomically activate immutable sanitized Rehearsal
  * baseline generations. Do not run directly; this module is reusable script
@@ -34,6 +35,17 @@ import {
   type NativeMigrationBinding,
 } from "../runtime/native_migration_contract.mjs";
 
+import type { MigrationCutoff } from "../runtime/migration_identity.mjs";
+import {
+  readDrizzleMigrationInventory,
+  type DrizzleMigrationEntry,
+  type DrizzleLedgerEntry,
+} from "../runtime/drizzle_history.mjs";
+import {
+  parseDrizzleMigrationIdentity,
+  sameMigrationCutoff,
+} from "../runtime/migration_identity.mjs";
+
 type ByteChunk = string | Uint8Array;
 type ByteStream = Iterable<ByteChunk> | AsyncIterable<ByteChunk>;
 
@@ -60,10 +72,20 @@ export interface BaselineStorageAsset {
 
 export interface BaselineMetadata extends Record<string, unknown> {
   readonly nativeMigrations?: NativeMigrationBinding;
-  readonly migrationCutoff: string;
+  readonly migrationCutoff: MigrationCutoff;
   readonly migrationHistorySha256: string;
   readonly sanitizationPolicySha256: string;
   readonly sourceMigrationHistory?: readonly MigrationLedgerEntry[];
+  readonly drizzleHistory?: Readonly<{
+    schemaVersion: 1;
+    entries: readonly DrizzleMigrationEntry[];
+    sourceLedger: readonly DrizzleLedgerEntry[];
+    journal: Readonly<{
+      path: "meta/_journal.json";
+      sha256: string;
+      bytes: number;
+    }>;
+  }>;
 }
 
 interface ContentReceipt {
@@ -78,7 +100,7 @@ interface StorageAssetReceipt extends ContentReceipt {
 }
 
 export interface BaselineManifest extends BaselineMetadata {
-  readonly formatVersion: 1 | 2 | 3;
+  readonly formatVersion: 1 | 2 | 3 | 4;
   readonly generationId: string;
   readonly rowCount: number;
   readonly tableCounts: Readonly<Record<string, number>>;
@@ -108,11 +130,11 @@ export interface BaselineGenerationSummary {
   readonly generationId: string;
   readonly createdAt: string | null;
   readonly active: boolean;
-  readonly formatVersion: 1 | 2 | 3;
+  readonly formatVersion: 1 | 2 | 3 | 4;
   readonly rowCount: number;
   readonly tableCount: number;
   readonly migrationCount: number;
-  readonly migrationCutoff: string;
+  readonly migrationCutoff: MigrationCutoff;
   readonly storageAssetCount: number;
 }
 
@@ -286,6 +308,7 @@ export const createAndActivateBaseline = async ({
   activate = true,
   shapeEvidence,
   migrationLock,
+  migrationJournal,
 }: {
   artifactRoot: string;
   generationId?: string;
@@ -303,7 +326,54 @@ export const createAndActivateBaseline = async ({
   activate?: boolean;
   shapeEvidence?: BaselineShapeEvidence;
   migrationLock?: Uint8Array;
+  migrationJournal?: Uint8Array;
 }): Promise<BaselineManifest> => {
+  let preparedDrizzleFiles: readonly BaselineMigrationFile[] | undefined;
+  if (metadata.nativeMigrations?.kind === "drizzle") {
+    const binding = parseNativeMigrationBinding(metadata.nativeMigrations);
+    if (migrationLock !== undefined || !migrationJournal)
+      throw new Error(
+        "Drizzle baseline requires its exact raw journal and no Prisma lock.",
+      );
+    const files =
+      typeof migrationFiles === "function"
+        ? await migrationFiles()
+        : await migrationFiles;
+    if (!Array.isArray(files) || files.length < 1 || files.length > 10000)
+      throw new Error("Drizzle baseline migration bundle is invalid.");
+    let migrationBytes = migrationJournal.byteLength;
+    const receipts: Record<string, { sha256: string }> = {};
+    for (const file of files) {
+      if (
+        !file ||
+        typeof file.filename !== "string" ||
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{0,190}\.sql$/u.test(file.filename) ||
+        typeof file.content !== "string" ||
+        Object.hasOwn(receipts, file.filename)
+      )
+        throw new Error("Drizzle baseline migration bundle is invalid.");
+      const fileBytes = Buffer.byteLength(file.content);
+      migrationBytes += fileBytes;
+      if (fileBytes > 8 * 1024 * 1024 || migrationBytes > 64 * 1024 * 1024)
+        throw new Error("Drizzle baseline migration byte boundary exceeded.");
+      const sha256 = createHash("sha256").update(file.content).digest("hex");
+      if (file.fileSha256 !== sha256)
+        throw new Error("Drizzle baseline SQL checksum is invalid.");
+      receipts[file.filename] = { sha256 };
+    }
+    verifyDrizzleBaselineHistory({
+      binding,
+      history: metadata.drizzleHistory,
+      historySha256: metadata.migrationHistorySha256,
+      cutoff: metadata.migrationCutoff,
+      migrations: receipts,
+      journal: migrationJournal,
+    });
+    preparedDrizzleFiles = files;
+  } else if (typeof metadata.migrationCutoff !== "string")
+    throw new Error(
+      "Legacy and Prisma baseline cutoffs must retain timestamp identities.",
+    );
   const root = assertArtifactRoot(artifactRoot);
   assertGenerationId(generationId);
   if (
@@ -378,9 +448,10 @@ export const createAndActivateBaseline = async ({
     }
 
     const resolvedMigrationFiles =
-      typeof migrationFiles === "function"
+      preparedDrizzleFiles ??
+      (typeof migrationFiles === "function"
         ? await migrationFiles()
-        : await migrationFiles;
+        : await migrationFiles);
     if (!Array.isArray(resolvedMigrationFiles)) {
       throw new Error("Rehearsal migration source must be an array.");
     }
@@ -406,7 +477,7 @@ export const createAndActivateBaseline = async ({
       metadata.nativeMigrations === undefined
         ? null
         : parseNativeMigrationBinding(metadata.nativeMigrations);
-    if (nativeBinding) {
+    if (nativeBinding?.kind === "prisma") {
       if (
         !migrationLock ||
         createHash("sha256").update(migrationLock).digest("hex") !==
@@ -419,7 +490,23 @@ export const createAndActivateBaseline = async ({
         join(migrationDirectory, "migration_lock.toml"),
         migrationLock,
       );
-    } else if (migrationLock !== undefined)
+    } else if (nativeBinding?.kind === "drizzle") {
+      if (
+        migrationLock !== undefined ||
+        !migrationJournal ||
+        createHash("sha256").update(migrationJournal).digest("hex") !==
+          nativeBinding.journalSha256
+      )
+        throw new Error(
+          "Drizzle baseline requires its exact reviewed raw journal.",
+        );
+      await mkdir(join(migrationDirectory, "meta"), { mode: 0o700 });
+      await writeImmutableFile(
+        join(migrationDirectory, "meta", "_journal.json"),
+        migrationJournal,
+      );
+      await chmod(join(migrationDirectory, "meta"), 0o500);
+    } else if (migrationLock !== undefined || migrationJournal !== undefined)
       throw new Error(
         "Migration lock requires a native-tool baseline binding.",
       );
@@ -428,9 +515,11 @@ export const createAndActivateBaseline = async ({
       if (
         !migration ||
         !(
-          nativeBinding
+          nativeBinding?.kind === "prisma"
             ? /^\d{14}_[A-Za-z0-9][A-Za-z0-9_-]{0,190}\/migration\.sql$/u
-            : migrationNamePattern
+            : nativeBinding?.kind === "drizzle"
+              ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,190}\.sql$/u
+              : migrationNamePattern
         ).test(migration.filename) ||
         typeof migration.content !== "string" ||
         Object.hasOwn(migrationManifest, migration.filename)
@@ -445,7 +534,7 @@ export const createAndActivateBaseline = async ({
           `Rehearsal migration source checksum mismatch for ${migration.filename}.`,
         );
       }
-      if (nativeBinding)
+      if (nativeBinding?.kind === "prisma")
         await mkdir(dirname(join(migrationDirectory, migration.filename)), {
           mode: 0o700,
         });
@@ -454,13 +543,13 @@ export const createAndActivateBaseline = async ({
         migration.content,
       );
       migrationManifest[migration.filename] = { sha256: contentHash };
-      if (nativeBinding)
+      if (nativeBinding?.kind === "prisma")
         await chmod(
           dirname(join(migrationDirectory, migration.filename)),
           0o500,
         );
     }
-    if (nativeBinding) {
+    if (nativeBinding?.kind === "prisma") {
       const inventory = await readPrismaMigrationInventory(
         pathToFileURL(`${migrationDirectory}/`),
       );
@@ -474,6 +563,26 @@ export const createAndActivateBaseline = async ({
       )
         throw new Error(
           "Native baseline files do not match the exact manifest.",
+        );
+    }
+    if (nativeBinding?.kind === "drizzle") {
+      const inventory = await readDrizzleMigrationInventory(
+        pathToFileURL(`${migrationDirectory}/`),
+      );
+      verifyDrizzleBaselineHistory({
+        binding: nativeBinding,
+        history: metadata.drizzleHistory,
+        historySha256: metadata.migrationHistorySha256,
+        cutoff: metadata.migrationCutoff,
+        migrations: migrationManifest,
+        journal: migrationJournal!,
+      });
+      if (
+        JSON.stringify(metadata.drizzleHistory?.entries) !==
+        JSON.stringify(inventory.entries)
+      )
+        throw new Error(
+          "Drizzle native inventory differs from baseline history.",
         );
     }
     await chmod(migrationDirectory, 0o500);
@@ -557,7 +666,14 @@ export const createAndActivateBaseline = async ({
     }
     const manifest: BaselineManifest = {
       ...metadata,
-      formatVersion: nativeBinding ? 3 : schemaReceipt ? 2 : 1,
+      formatVersion:
+        nativeBinding?.kind === "drizzle"
+          ? 4
+          : nativeBinding
+            ? 3
+            : schemaReceipt
+              ? 2
+              : 1,
       generationId,
       rowCount,
       tableCounts: Object.fromEntries([...tableCounts].sort()),
@@ -741,15 +857,18 @@ export const inspectBaselineGenerations = async ({
     );
     if (
       manifest.generationId !== entry.name ||
-      ![1, 2, 3].includes(manifest.formatVersion) ||
-      (manifest.formatVersion === 3) !==
+      ![1, 2, 3, 4].includes(manifest.formatVersion) ||
+      [3, 4].includes(manifest.formatVersion) !==
         (manifest.nativeMigrations !== undefined) ||
+      (manifest.formatVersion === 4) !==
+        (manifest.nativeMigrations?.kind === "drizzle") ||
       !Number.isSafeInteger(manifest.rowCount) ||
       manifest.rowCount < 0 ||
       !isObject(manifest.tableCounts) ||
       !isObject(manifest.migrations) ||
       !isObject(manifest.storageAssets) ||
-      typeof manifest.migrationCutoff !== "string"
+      (typeof manifest.migrationCutoff !== "string" &&
+        manifest.formatVersion !== 4)
     ) {
       throw new Error(
         `Rehearsal baseline generation ${entry.name} has an invalid manifest.`,
@@ -789,8 +908,11 @@ export const verifyActiveBaseline = async ({
   const { generationDirectory } = paths;
   const manifest = parseManifest(await readFile(paths.manifestPath, "utf8"));
   if (
-    ![1, 2, 3].includes(manifest.formatVersion) ||
-    (manifest.formatVersion === 3) !== (manifest.nativeMigrations !== undefined)
+    ![1, 2, 3, 4].includes(manifest.formatVersion) ||
+    [3, 4].includes(manifest.formatVersion) !==
+      (manifest.nativeMigrations !== undefined) ||
+    (manifest.formatVersion === 4) !==
+      (manifest.nativeMigrations?.kind === "drizzle")
   )
     throw new Error("Unsupported or inconsistent Rehearsal baseline format.");
   assertGenerationId(manifest.generationId);
@@ -852,36 +974,74 @@ export const verifyActiveBaseline = async ({
     manifest.nativeMigrations === undefined
       ? null
       : parseNativeMigrationBinding(manifest.nativeMigrations);
-  const nativeInventory = nativeBinding
-    ? await readPrismaMigrationInventory(
-        pathToFileURL(`${migrationDirectory}/`),
-      )
-    : null;
+  const nativeInventory =
+    nativeBinding?.kind === "prisma"
+      ? await readPrismaMigrationInventory(
+          pathToFileURL(`${migrationDirectory}/`),
+        )
+      : null;
   if (
-    nativeBinding &&
+    nativeBinding?.kind === "prisma" &&
     nativeInventory?.binding.lockSha256 !== nativeBinding.lockSha256
   )
     throw new Error("Native baseline migration lock changed.");
-  const actualMigrationNames = nativeInventory
-    ? nativeInventory.entries.map((entry) => entry.filename).sort()
-    : (await readdir(migrationDirectory)).sort();
-  const nativeChecksums = nativeInventory
+  let drizzleJournal: Buffer | undefined;
+  const drizzleInventory =
+    nativeBinding?.kind === "drizzle"
+      ? await readDrizzleMigrationInventory(
+          pathToFileURL(`${migrationDirectory}/`),
+          {
+            onBytes: (filename, bytes) => {
+              if (filename === "meta/_journal.json") drizzleJournal = bytes;
+            },
+          },
+        )
+      : null;
+  if (drizzleInventory) {
+    if (!drizzleJournal)
+      throw new Error("Drizzle baseline journal observation is missing.");
+    verifyDrizzleBaselineHistory({
+      binding: nativeBinding,
+      history: manifest.drizzleHistory,
+      historySha256: manifest.migrationHistorySha256,
+      cutoff: manifest.migrationCutoff,
+      migrations: manifest.migrations,
+      journal: drizzleJournal,
+    });
+    if (
+      JSON.stringify(manifest.drizzleHistory?.entries) !==
+      JSON.stringify(drizzleInventory.entries)
+    )
+      throw new Error("Drizzle baseline native inventory changed.");
+  }
+  const actualMigrationNames = drizzleInventory
+    ? drizzleInventory.entries.map((entry) => entry.filename).sort()
+    : nativeInventory
+      ? nativeInventory.entries.map((entry) => entry.filename).sort()
+      : (await readdir(migrationDirectory)).sort();
+  const nativeChecksums = drizzleInventory
     ? new Map(
-        nativeInventory.entries.map((entry) => [
-          entry.filename,
-          entry.fileSha256,
-        ]),
+        drizzleInventory.entries.map((entry) => [entry.filename, entry.hash]),
       )
-    : null;
+    : nativeInventory
+      ? new Map(
+          nativeInventory.entries.map((entry) => [
+            entry.filename,
+            entry.fileSha256,
+          ]),
+        )
+      : null;
   if (expectedMigrationNames.join("\0") !== actualMigrationNames.join("\0")) {
     throw new Error("The active Rehearsal migration bundle is not exact.");
   }
   for (const filename of expectedMigrationNames) {
     if (
       !(
-        nativeBinding
+        nativeBinding?.kind === "prisma"
           ? /^\d{14}_[A-Za-z0-9][A-Za-z0-9_-]{0,190}\/migration\.sql$/u
-          : migrationNamePattern
+          : nativeBinding?.kind === "drizzle"
+            ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,190}\.sql$/u
+            : migrationNamePattern
       ).test(filename)
     ) {
       throw new Error("The active Rehearsal migration manifest is invalid.");
