@@ -171,3 +171,28 @@ Executable privacy policy version 2, source-access policy version 1, runtime pol
 version 1, and identity policy version 1 are strict declarative contracts. Unknown
 fields fail closed. They do not imply support for arbitrary transformations, SQL,
 provider administration, consent decisions, or every PostgreSQL extension.
+
+## Native Drizzle migrations
+
+Core 2.2 advertising `drizzleMigrations: 1` introduces a distinct
+format-4 PostgreSQL history, pinned to Kit 0.31.11, ORM 0.45.4 and pg 8.23.1.
+Core 2.0.x/2.1 and Starter 0.1.26 do not provide this capability. Visual review
+requires Starter 0.1.27 or later and explicit format 4 support, including native
+`{kind,idx,when,tag}` identities; older strict consumers may refuse it. Formats
+1/2/3 are not converted. Read the [native contract](docs/configuration.md#native-drizzle-migrations)
+for the fully-applied baseline constraint, dependency/layout limits and excluded
+alternate clients. Initial SDK qualification targets PostgreSQL 17 on Ubuntu 24.04
+x64 / Node 24. General platform checks do not qualify other SDK/host combinations.
+
+## Isolated native Knex candidate
+
+Development builds advertising `rehearsalContracts.knexMigrations: 1` introduce the
+separate Knex 3.3.0 / pg 8.23.1 PostgreSQL format-5 slice. Only flat `.cjs` native
+migrations and the default ledger are selected. Historical applied-file checksums
+are unavailable; current reviewed bytes do not provide retrospective attestation.
+The fixed Node 24.21.0 Linux Docker worker requires supported POSIX mount paths
+(macOS, Linux or WSL), enforced isolation and restricted-role privileges. Native
+Windows host execution refuses before reset. No engine, SDK, provider, adversarial
+isolation or editor conformance is claimed by these source/unit checks. Older
+consumers must refuse the new identity/format instead of treating JavaScript as
+SQL. See the [owning configuration boundary](docs/configuration.md#native-knex-migrations--unqualified-isolated-candidate).

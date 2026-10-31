@@ -939,3 +939,196 @@ reviewed public type surface. The exact current boundary is documented in
 
 Undocumented files under `scripts/` are package internals and are not compatibility
 contracts.
+
+### Native Drizzle migrations
+
+Core 2.2 advertising `rehearsalContracts.drizzleMigrations: 1` adds opt-in
+PostgreSQL migrations in the pinned Drizzle format. Visual review requires Starter
+0.1.27 or later with explicit format 4 support. Prisma's `nativeMigrations: 1`
+and flat SQL histories keep their existing contracts.
+
+```ts
+postgresql: {
+  migrationDirectory: "drizzle",
+  migrationTool: {
+    kind: "drizzle",
+    kitVersion: "0.31.11",
+    ormVersion: "0.45.4",
+    driver: "pg",
+    driverVersion: "8.23.1",
+    packageDirectory: "node_modules/drizzle-kit",
+    ormPackageDirectory: "node_modules/drizzle-orm",
+    driverPackageDirectory: "node_modules/pg",
+  },
+},
+```
+
+Select exact installed project-local packages yourself. Rehearsal neither installs
+nor downloads the SDK, evaluates `drizzle.config.*`/schema files, generates
+migrations, nor runs `push`. Only Kit `migrate` with Core-generated closed CJS
+configuration targets an ownership-proven loopback PostgreSQL sandbox. The fixed
+ledger is `drizzle.__drizzle_migrations`; other schemas, tables, drivers, providers,
+Kit/ORM versions and release candidates are unsupported. Initially, Kit-resolvable
+`postgres`, `@vercel/postgres` and `@neondatabase/serverless` are refused so a failed
+`pg` import cannot silently select an alternate client. Kit's directly resolved
+`esbuild` must be a stable 0.25.x release at patch 4 or later and joins the full
+fingerprint; the isolated qualification fixture selects 0.25.12. This is not a
+conformance claim for every patch. The pinned Kit lock can also contain unused
+legacy esbuild 0.18.20 through `@esbuild-kit/core-utils`/`esm-loader`; the reviewed
+migrate path uses embedded tsx and the direct patched esbuild transform API, not
+those legacy loaders or esbuild's HTTP serve API. This narrow boundary does not
+certify other SDK commands, Studio, application servers or a clean security audit.
+
+Baseline creation uses explicit reviewed local records plus a native JSON ledger
+export with exactly `id`, `hash` and `created_at`. Every journal entry must already
+be applied before baseline creation: pending entries are refused before record
+streaming or artifact creation. Review the policy's native cutoff explicitly:
+
+```json
+{ "kind": "drizzle", "idx": 1, "when": 1720000001000, "tag": "a_index" }
+```
+
+Format 4 preserves the exact raw `meta/_journal.json` and SQL bytes, journal order,
+entry fields and source ledger IDs. Source serial-ID gaps are valid provenance;
+replay identity is the ordered SQL hash and native millisecond timestamp. SQL
+filename lexical order and Prisma timestamp-file versions are not substituted.
+Later candidate journals may append entries only while preserving the complete
+baseline semantic prefix and SQL hashes. Journal formatting changes require fresh
+candidate consent even when that prefix remains the same. No source history is
+truncated, synthesized or rewritten. Generator-only snapshot metadata is bounded
+and checked as regular files; it is not consumed by the selected migrate path.
+History is limited to 10,000 entries, 8 MiB per file and 64 MiB total, including
+journal and snapshot metadata sizes. The installed dependency closure is bounded
+to 256 packages, 16,384 files and 384 MiB total; four readers share a 64 MiB
+inflight buffer budget including growth sentinels.
+
+The full resolved runtime dependency closure, including Kit's actual selected ORM
+and `pg` packages, is fingerprinted before and after execution. Regular canonical
+project-local paths are required; symlinked, escaping or ambiguous installations
+are refused. Fingerprinting detects observed identity/content/timestamp drift; it
+is not a filesystem sandbox or an atomic snapshot against a malicious local owner.
+The existing 120-second native execution/verification bound, cancellation, output
+redaction and retained-volume recovery apply. A failed native migration preserves
+the volume and blocks automatic resume until reviewed explicit reset. Hosted
+source preparation, Storage, live impact measurement, statement-failure attribution, Client generation and
+automatic history repair are outside this integration. Initial SDK qualification
+targets PostgreSQL 17 on Ubuntu 24.04 x64 / Node 24; general Core platform checks do
+not qualify other SDK/host combinations.
+
+### Native Knex migrations
+
+`rehearsalContracts.knexMigrations: 1` identifies the versioned Knex integration in
+Core 2.3.0. A source candidate is not a published package or proof of completed
+qualification: use the release only after its exact tested artifact appears in the
+official registry and review its documented platform scope. Select exact local
+Knex 3.3.0 and its actually resolved pg 8.23.1 installation explicitly:
+
+```ts
+postgresql: {
+  migrationDirectory: "database/migrations",
+  migrationTool: {
+    kind: "knex",
+    version: "3.3.0",
+    driver: "pg",
+    driverVersion: "8.23.1",
+    packageDirectory: "node_modules/knex",
+    driverPackageDirectory: "node_modules/pg",
+  },
+},
+```
+
+Only PostgreSQL's default `public.knex_migrations` and its native lock are supported.
+Keep migration modules as flat, confined ASCII `.cjs` filenames in native filename
+order. Nested support files are part of the reviewed code bundle. Dotfiles,
+`notes`, `node_modules`, package manifests, symlinks and escaping paths inside that
+code root are refused. Inventory is limited to 10,000 migrations, 16,000 total
+entries, depth 16, 8 MiB per file and 64 MiB total. The complete SDK dependency
+closure uses the existing bounded native fingerprint; no persistent hash cache is
+introduced. Discovery/review does not evaluate knexfile, project modules or `.env`.
+There is no automatic install, dependency download, TypeScript/ESM loader, custom
+migration source, custom ledger, provider, `down` or automatic unlock/repair support.
+
+Knex's native ledger stores names, batches and times, **not historical file
+checksums**. The explicit `historicalFileChecksums: "unavailable"` notice means a
+baseline locks the currently reviewed migration/support bytes; it cannot prove
+those were the bytes originally applied. Initial baseline creation requires the
+complete source history already applied and the exact `{kind:"knex",name:"FILE.cjs"}`
+cutoff. Later candidates may append names only while preserving every baseline
+migration and support-file receipt. No source history is rewritten. See
+[baseline format 5](baselines.md#native-knex-candidate-format).
+
+Execution uses genuine `knex.migrate.latest()` inside a disposable Linux worker,
+not host JavaScript or a SQL translator. Only copied reviewed inputs and the full
+resolved SDK are mounted read-only. The fixed reviewed Node 24.21.0 image must
+already exist locally; no image is pulled. Its pinned index is
+`sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20`.
+The initial execution path requires macOS, Linux or WSL with supported POSIX mount paths; native Windows host execution refuses before reset. A local selected Linux Docker daemon must report and enforce the required controls:
+network `none`, nonroot UID 65532, read-only root/binds, private PID/IPC/cgroup
+namespaces, dropped capabilities, no-new-privileges, built-in seccomp, no Docker
+socket/host mounts or ports, no daemon logs, 256 MiB memory with no extra swap,
+one CPU, 32 PIDs and bounded `/tmp` tmpfs. The image and actual controls still need
+genuine SDK/platform qualification; metadata alone is not that proof.
+
+A bounded private Unix-socket relay reaches only the ownership-proven loopback
+PostgreSQL target. Startup must name its exact database and dedicated restricted
+role; worker-selected destinations, TLS/GSS/cancel negotiation and unknown startup
+options are refused. The worker never receives the administrative password. The
+role has no administrator membership, database CREATE, server-file/program,
+replication or bypass-RLS privileges; only the supported application schema is
+granted. Unsafe effective privileges, executable security-definer/untrusted
+functions, foreign servers/wrappers or privileged extensions refuse execution.
+Existing PUBLIC/application ACLs are never rewritten to make a target pass. Unknown
+same-name roles are never adopted; a private cluster/database/role-OID receipt binds
+reuse. Its temporary login credential is disabled and owned sessions are checked
+at completion. These restrictions can make administrator-dependent migrations
+unsupported; there is no privileged or host fallback.
+
+Post-worker ledger reads, row restore and verification use separately authenticated
+restricted PostgreSQL roles, not an administrative session followed by `SET ROLE`.
+Only the restore role temporarily receives `SET` permission on
+`session_replication_role` for cyclic-FK COPY restoration; catalog checks verify its
+revocation and owned sessions are terminated afterward. This can suppress triggers
+and FK enforcement inside the disposable database, so it is a specific restore
+capability, not a claim that arbitrary SQL cannot change owned data. It does not
+confer superuser, bypass-RLS, server-file or `ALTER SYSTEM` permission. Verification
+is granted SELECT access without that capability. The generated application
+connection uses a separate restricted DML role; its credential remains valid after
+successful setup, while temporary worker/restore/verification logins are disabled. Core configuration
+queries use a fifth ephemeral application-query role with application DML grants
+but no CREATE or restore-parameter capability. Its sessions are terminated/checked
+at phase exit even if SQL changes statement_timeout. Adapters receive the captured
+user application environment while their Core SQL callback uses the temporary role;
+that query credential is never written into the user environment. Existing live
+application connections and the persistent password are preserved on query failure.
+Each role has its own private project/cluster/database/OID receipt. The application
+credential is additionally bound to the baseline generation and stored owner-private;
+start and verify authenticate and reuse it without password rotation. Drift or failed
+authentication refuses reuse while preserving an already live credential; replacement
+requires reviewed reset or repair. Restricted COPY uses CONTINUE IDENTITY with
+catalog-guarded setval for reviewed serial/identity columns, rather than granting
+sequence ownership. Other migration producers retain their existing restart behavior. Runtime adapters
+receive restricted credentials and cannot replace generated PostgreSQL connection
+variables. Release qualification must exercise genuine SQL isolation, restore,
+cancellation and recovery for the exact candidate; metadata and unit fixtures alone
+do not establish those outcomes.
+
+The fixed worker completion receipt describes worker cleanup only: `dataDeletionRequested:false` means no target-volume deletion was requested by cleanup. It does not promise that reviewed migration SQL leaves rows or tables unchanged.
+
+The configured `proofCommand` remains an ordinary reviewed application command.
+It receives the persistent application connection and must own its SQL query timeouts
+and cancellation. Core supervises its process, but the native SQL deadline and ephemeral
+session cleanup do not cover queries opened by that command. With a retained database,
+a query can outlive its client; existing application sessions are not terminated as a
+substitute for query cancellation. The configured stop/keep lifecycle still applies.
+
+Native transactions and lock semantics remain Knex-owned. Core's native migration
+execution and SQL verification phases each have a 120-second deadline. Cancellation tears down only the owned
+worker and verifies its database sessions; unknown cleanup preserves recovery
+receipts. A prior project worker blocks reset from deleting its mounted evidence.
+A migration failure preserves the disposable volume and blocks automatic resume
+until explicit reviewed reset. Container/kernel isolation assumes a trusted local
+engine/kernel; it is not a hostile-host sandbox or a hard quota on PostgreSQL data
+writes. Optional capacity admission includes an additional 256 MiB worker and one
+container. JavaScript receives no static SQL Insights or statement-failure attribution.
+Independent real SDK, database, cancellation and adversarial isolation acceptance
+remain required before support is advertised.

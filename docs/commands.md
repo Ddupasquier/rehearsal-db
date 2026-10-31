@@ -422,22 +422,23 @@ obsolete placeholder key.
 
 ## Check and inspect
 
-| Command                                                                      | What it does                                                            |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `npx rehearsal doctor`                                                       | Check dependencies, inputs, and safety rules.                           |
-| `npx rehearsal discover`                                                     | Explain detected facts, suggestions, and decisions.                     |
-| `npx rehearsal support`                                                      | Print a privacy-safe report for a support request.                      |
-| `npx rehearsal activity`                                                     | Report whether another Rehearsal operation is active.                   |
-| `npx rehearsal environments`                                                 | Show owned runtimes, live resource use, and Docker capacity.            |
-| `npx rehearsal resources`                                                    | Browse images, volumes, container references, and cleanup explanations. |
-| `npx rehearsal explain`                                                      | Show the exact plan without changing anything.                          |
-| `npx rehearsal run --dry-run`                                                | Show the same non-mutating plan.                                        |
-| `npx rehearsal candidates`                                                   | List pending migrations and their approval digest.                      |
-| `npx rehearsal inspect baseline`                                             | Show active and retained baseline metadata without row values.          |
-| `npx rehearsal inspect migrations`                                           | Classify every historical and candidate migration.                      |
-| `npx rehearsal inspect impact --target=<name>`                               | Preview exact aggregate kinds without contacting a database.            |
-| `npx rehearsal measure impact --target=<name> --confirm-candidates=<sha256>` | Read bounded aggregates from that current verified sandbox.             |
-| `npx rehearsal status`                                                       | Report baseline, candidates, and local runtime state.                   |
+| Command                                                                                                 | What it does                                                            |
+| ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `npx rehearsal doctor`                                                                                  | Check dependencies, inputs, and safety rules.                           |
+| `npx rehearsal discover`                                                                                | Explain detected facts, suggestions, and decisions.                     |
+| `npx rehearsal support`                                                                                 | Print a privacy-safe report for a support request.                      |
+| `npx rehearsal activity`                                                                                | Report whether another Rehearsal operation is active.                   |
+| `npx rehearsal environments`                                                                            | Show owned runtimes, live resource use, and Docker capacity.            |
+| `npx rehearsal resources`                                                                               | Browse images, volumes, container references, and cleanup explanations. |
+| `npx rehearsal explain`                                                                                 | Show the exact plan without changing anything.                          |
+| `npx rehearsal run --dry-run`                                                                           | Show the same non-mutating plan.                                        |
+| `npx rehearsal candidates`                                                                              | List pending migrations and their approval digest.                      |
+| `npx rehearsal inspect baseline`                                                                        | Show active and retained baseline metadata without row values.          |
+| `npx rehearsal inspect migrations`                                                                      | Classify every historical and candidate migration.                      |
+| `npx rehearsal inspect source --target= --native-identity= --source-sha256= --candidate-sha256= --json` | Return an exact reviewed Drizzle source reference.                      |
+| `npx rehearsal inspect impact --target=<name>`                                                          | Preview exact aggregate kinds without contacting a database.            |
+| `npx rehearsal measure impact --target=<name> --confirm-candidates=<sha256>`                            | Read bounded aggregates from that current verified sandbox.             |
+| `npx rehearsal status`                                                                                  | Report baseline, candidates, and local runtime state.                   |
 
 State-reporting commands accept `--json` for scripts. Scripts should use the JSON fields
 and process exit code, not parse human-facing text.
@@ -817,3 +818,91 @@ When the selected config declares `dependentTargets`, the ordinary `doctor`, `ex
 `candidates`, `run`, `start`, `migrate`, `reset`, `status`, `verify`, `stop`, `discard`,
 and `cleanup` commands cover the complete runtime stack. Candidate and cleanup changes
 use one combined digest, so automation approves the exact cross-target set.
+
+### Native Drizzle review and exact source references
+
+Core 2.2 builds advertising `rehearsalContracts.drizzleMigrations: 1`
+use explicit `{kind:"drizzle",idx,when,tag}` identities in `inspect migrations`,
+`inspect plan` and static `inspect insights`. They do not manufacture timestamp-file
+versions. Drizzle inspection/review targets also return `baselineHistorySha256`,
+matching `inspect baseline.migrationHistorySha256`, and
+`baselinePrefixVerification: "exact-native-semantic-prefix"`. A successful review
+has checked the complete baseline semantic entry prefix and SQL hashes against
+current native source. Historical producer journal/toolchain hashes need not equal
+an appended current journal or a newly reviewed execution toolchain; compare the
+historical baseline identity and pinned tool/provider contract separately.
+
+Resolve a selected current review row with explicit identity and checksums:
+
+```sh
+npx --no-install rehearsal inspect source --target=primary --native-identity='{"kind":"drizzle","idx":2,"when":1720000002000,"tag":"m_pending"}' --source-sha256=FILE_SHA256 --candidate-sha256=ROOT_REVIEW_SHA256 --json
+```
+
+`--config=PROJECT_CONFIG` selects the owning primary configuration as usual.
+`--candidate-sha256` is the **root** `inspect plan` digest, including a combined
+stack digest when applicable. `--source-sha256` is that exact row's SHA-256.
+The command supports represented history and candidates. It accepts no caller
+filesystem path. Malformed identities, unknown targets, changed checksums/digests,
+unsafe paths or symlinks are refused. The bounded native inventory is rechecked
+after the installed-toolchain observation. No SDK command, SQL, engine startup or
+database connection is involved.
+
+The ordinary CLI JSON envelope's `data` is a closed source reference with exactly
+these ten properties:
+
+```json
+{
+  "schemaVersion": 2,
+  "evidence": "reviewed_source_input",
+  "target": "primary",
+  "candidateSha256": "ROOT_REVIEW_SHA256",
+  "nativeIdentity": {
+    "kind": "drizzle",
+    "idx": 2,
+    "when": 1720000002000,
+    "tag": "m_pending"
+  },
+  "filename": "m_pending.sql",
+  "sha256": "FILE_SHA256",
+  "workspaceRelativePath": "drizzle/m_pending.sql",
+  "line": null,
+  "column": null
+}
+```
+
+Checksums are lowercase 64-character SHA-256 values. The initial endpoint provides
+file-top navigation only. A reference describes reviewed source input; it does
+not attribute an SDK failure, infer a failed statement or include SQL text. It is a
+point-in-time observation, not a file lock: consumers must preserve their existing
+workspace confinement, current-hash and unsaved-document checks. Legacy attempted
+execution source frames remain schema 1 and retain their separate meaning.
+
+Drizzle static Insights retains its existing schema-1 envelope, limits, findings
+and safety fields; native entries replace `version` with `nativeIdentity` and keep
+flat filename/hash/workspace-relative-path fields. Findings retain actual bounded
+lexical line/column observations. No nested source-reference field is added.
+This is a static warning capability, not SQL validity, physical schema drift,
+provider conformance or permission to execute a source. The native runtime and
+installed SDK qualification boundary remains in the
+[configuration owner](configuration.md#native-drizzle-migrations).
+
+### Reviewed Knex source inputs
+
+The isolated Knex candidate advertises `knexMigrations: 1` separately. Its `inspect
+plan` rows use `{kind:"knex",name:"FILE.cjs"}` identities, IDs such as
+`primary:knex:FILE.cjs` and no invented timestamp/version. The migration tool binding
+includes the complete reviewed `codeFiles` receipts, bundle/toolchain/isolation
+hashes and `historicalFileChecksums:"unavailable"`. Baseline-prefix evidence is
+`baselinePrefixVerification:"exact-reviewed-code-prefix"` with the immutable
+`baselineHistorySha256`; it does not attest originally applied bytes.
+
+Use the same read-only `inspect source --target=NAME --native-identity=JSON
+--source-sha256=SHA --candidate-sha256=WHOLE_PLAN_SHA --json` command with that exact
+Knex identity. Its closed schema-2 reference has the same fields and reviewed-input
+meaning as Drizzle, a confined `.cjs` workspace path, and null line/column. Stale
+identities, hashes, whole-plan consent, caller paths and symlinks refuse without
+executing migration code or contacting an engine. SQL Insights/impact analysis does
+not analyze or execute JavaScript; failed native execution does not invent SQL-file
+or statement attribution. Read the
+[Knex configuration boundary](configuration.md#native-knex-migrations--unqualified-isolated-candidate)
+before selecting its unqualified worker candidate.

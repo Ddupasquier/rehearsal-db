@@ -271,7 +271,8 @@ rehash or newly verify row payloads and is not applied to SQL formats 1/2. Prepa
 native schema/config bytes are checked again after execution. Same-owner mutation
 races are not an atomic-openat or filesystem-sandbox guarantee. Baseline format 3
 preserves native paths and lock bytes; existing SQL formats remain unchanged.
-`targets/postgresql_migrations.mts` owns SQL/native dispatch, while
+`targets/postgresql_migrations.mts` owns SQL/native dispatch and exclusive private
+failure-receipt creation; the driver retains stopped-container cleanup in `finally`.
 `prisma_migration_process.mts` owns only private-config, bounded native execution
 against the exact target proven by `prisma_target_binding.mts`. A native migration
 failure preserves its data volume and requires explicit recovery; the extension
@@ -305,6 +306,20 @@ without interpreting database liveness as an active command or successful proof.
 Repository contracts keep each target driver at 900 lines or fewer and the shared
 lifecycle engine at 300 lines or fewer. A new database target must use this lifecycle
 boundary rather than copying an existing driver's orchestration.
+
+## Native migration producers
+
+Explicit configuration selects native producers; metadata discovery never imports
+project migration configuration, schema or environment files. Prisma and the
+separate Drizzle integration share `runtime/native_toolchain*` for complete bounded
+resolved package fingerprints and `targets/native_migration_process.mts` for the
+private process/cancellation/target/source/baseline boundary. Producer recipes own
+their exact file inventory, generated closed configuration and actual CLI argv.
+No recipe generates or repairs source history. Format 3 remains Prisma-specific;
+format 4 records Drizzle's ordered native journal identities and raw receipt.
+The [baseline owner](baselines.md#native-drizzle-baseline-format) and
+[configuration contract](configuration.md#native-drizzle-migrations)
+explain the candidate's qualification and unsupported cases.
 
 ## Identity claim pipeline
 
@@ -363,3 +378,105 @@ handler, focused boundary tests, and documentation—without widening policy ver
 
 Run `npm run build` after changing TypeScript source. Tests import the generated package
 code so the same JavaScript boundary consumers install is exercised locally.
+
+## Isolated native Knex candidate
+
+`runtime/knex_history.mts` owns bounded native names, raw code/support inventory and
+ledger-prefix validation. `knex_toolchain.mts` uses the shared native dependency
+owner to bind and copy the actual Knex/pg closure without executing it. Format 5's
+`knex_baseline_contract.mts` keeps source ledger provenance separate from current
+code hashes and explicitly unavailable historical checksums. Existing formats and
+native producers retain their contracts.
+
+`targets/knex_migration_process.mts` stages reviewed inputs and shared closure,
+rechecks source/copy/baseline/target, and calls only the disposable worker.
+`knex_worker_engine.mts` owns selected local daemon and fixed-image preflight before
+reset/role mutation; `knex_worker_resources.mts` checks actual isolation metadata.
+`knex_worker_process.mts` owns exact Docker ID, framing attachment and bounded
+cleanup. `knex_worker_bootstrap.mts` supplies immutable worker programs: its private
+Unix socket relays native pg traffic while genuine Knex runs in a separate child.
+`runtime/knex_worker_protocol.mts` and `knex_pg_broker.mts` own bounded backpressure,
+fixed destination and PostgreSQL startup/session verification. No migration is
+imported on the host, translated, unlocked or repaired.
+
+`knex_restricted_role.mts` owns least-privilege database access and cleanup;
+`knex_role_receipt.mts` binds a private role OID to project, cluster and database.
+No PUBLIC/app ACL correction or name-only role adoption is allowed.
+`knex_restricted_sql.mts` authenticates TCP sessions directly as the phase role,
+with private credentials, the bound engine and exact target identity. Worker,
+restore, verification, application and application-query roles have separate receipts binding
+project, cluster, database and role OIDs; an unknown role is never adopted. Nested
+work in the same phase reuses only its exact current ownership binding. Ledger
+reads and verification use the verification role; schema preparation and migrations
+use the worker role. Neither path uses an administrator connection plus `SET ROLE`.
+
+`postgresql_restore.mts` owns streaming COPY and its owned child. For Knex it uses
+the separate restore role, temporarily granted only PostgreSQL 17 `SET` permission
+on `session_replication_role`. Catalog checks prove the permission absent before
+work, present during restore, and revoked afterward. Credentials are disabled and
+owned database sessions terminated/checked even on failure or cancellation. No
+superuser, bypass-RLS or administrator membership is granted. Verification receives
+SELECT permissions without restore capability; application credentials allow DML
+without administrative access. Successful application credentials remain usable
+across repeated start/verify calls, independently of ephemeral phase cleanup.
+`knex_application_credential.mts` stores the owner-private generation/cluster/database/
+role-OID-bound credential; repeat calls authenticate that same credential without
+password rotation. Changed generation, identity or failed authentication refuses
+reuse without disabling a previously live application login. Only reviewed reset
+or repair may establish a replacement credential.
+`knex_application_configuration.mts` captures the persistent application environment
+before entering the separate ephemeral `application_query` role. Configuration
+adapters receive that frozen user environment while their Core-provided SQL callback
+uses the temporary query role, with DML but no CREATE or restore-parameter privilege.
+Query-role login is always disabled and its sessions terminated/checked on success,
+failure or cancellation; existing application connections and credentials are not
+terminated or rotated. Publishing the generated environment uses the captured
+application identity, never the temporary query credential. Persistent Core SQL is
+limited to the fixed session-user authentication probe; user-object evaluation is
+refused on that credential. Runtime adapters cannot override generated PostgreSQL
+credential variables. Adapter JavaScript remains owner-trusted host code, not part
+of the migration worker sandbox; custom clients it opens are not Core SQL callbacks. Administrative transport pins `search_path=pg_catalog`, disables psql startup files
+and password prompting, and qualifies its metadata functions/relations. It is
+confined to fixed catalog,
+permission and credential operations; it never evaluates migration-owned relations.
+
+Each private phase has a monotonic 120-second deadline combined with operation
+cancellation. Reset closes each worker scope before entering subsequent verification,
+row restore and application configuration; the whole reset is not a worker phase.
+Knex reset replay refuses entry from an already active role scope before preparation.
+Prerequisite/schema/finalization hooks remain worker-authenticated in their own bounded
+scopes, and native replay owns its worker scope. Sibling phases receive their own
+120-second budgets. Genuinely nested phases, including application configuration queries,
+inherit the earlier parent deadline; explicit budget checks refuse dispatch even when the event loop delays an abort timer. Bounded
+catalog cleanup remains permitted after expiry or cancellation;
+nested worker and COPY work share its signal. COPY has an owned termination/kill
+path and phase cleanup verifies backend absence. Synchronous adapter/query contracts
+retain bounded seven-second transport/five-second statement limits and observe
+cancellation before and after a query; they are not instantaneously interruptible.
+These are implementation contracts, not demonstrated PostgreSQL isolation. Focused
+mocked role/transport/worker tests and worktree build/types passed, but independent
+real SDK, SQL-privilege, data-preservation and adversarial cancellation acceptance
+remain necessary before this candidate can be qualified or supported.
+`knex_failure_recovery.mts` attempts owned shutdown even if failure recording fails;
+missing metadata never authorizes resetting retained resources. Target failure
+keeps data/recovery, and unknown worker cleanup blocks destructive reuse. See the
+[configuration owner](configuration.md#native-knex-migrations--unqualified-isolated-candidate)
+for the explicit security, resource and qualification boundaries.
+
+Knex isolation qualification must include an ordinary SERIAL and an identity-column
+restore with nontrivial values, followed by a default insert proving both next
+sequence values. Restricted COPY selects CONTINUE IDENTITY and uses catalog-guarded
+setval instead of ownership-dependent TRUNCATE RESTART IDENTITY. Other producers
+retain their existing restart behavior. The adversarial PostgreSQL fixture must
+also install an invoker `public.has_parameter_privilege(text,text,text)` overload
+that records `session_user` in an owned canary table when called. Fixed administrative
+metadata/credential cleanup must never invoke it or produce a privileged canary
+row, including with poisoned ambient PGOPTIONS/startup-file settings. These are
+required real-database observations, not established by mocked transport tests.
+
+Application-query qualification must keep a prior legitimate application connection
+open, invoke migration-owned SQL through the configuration callback that disables
+statement_timeout and exceeds its bound, then independently verify the temporary
+query role has no remaining backends while the original application connection,
+password and generated DATABASE_URL remain unchanged. Mocked phase-routing tests
+show callback/cleanup selection only; they do not prove PostgreSQL termination.

@@ -50,6 +50,29 @@ const snapshot = () => ({
 });
 
 describe("cooperative measured workload headroom", () => {
+  it("includes the fixed isolated Knex worker in selected memory/container demand", () => {
+    const selected = target();
+    selected.config.postgresql = { migrationTool: { kind: "knex" } };
+    expect(
+      evaluateWorkloadCapacity({
+        policy,
+        targets: [selected],
+        snapshot: snapshot(),
+      }),
+    ).toMatchObject({
+      requiredMemoryBytes: GiB + 268435456,
+      requiredContainers: 2,
+    });
+    const measured = snapshot();
+    measured.engine.measuredAvailableBytes = 2 * GiB;
+    expect(() =>
+      evaluateWorkloadCapacity({
+        policy,
+        targets: [selected],
+        snapshot: measured,
+      }),
+    ).toThrow(/reserve/);
+  });
   it("adds selected demand to all standing workload usage without claiming a hard scheduler", () => {
     const result = evaluateWorkloadCapacity({
       policy,

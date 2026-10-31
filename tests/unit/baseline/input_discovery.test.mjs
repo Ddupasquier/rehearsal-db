@@ -81,3 +81,59 @@ describe("baseline input discovery", () => {
     ).resolves.toEqual({ records: [], ledgers: [], assetManifests: [] });
   });
 });
+
+it("identifies bounded native ledger metadata without loading configuration or SQL", async () => {
+  const root = await mkdtemp(join(tmpdir(), "native-ledger-discovery-"));
+  roots.push(root);
+  await mkdir(join(root, "rehearsal"));
+  await writeFile(
+    join(root, "rehearsal/drizzle-ledger.json"),
+    JSON.stringify([
+      { id: 1, hash: "a".repeat(64), created_at: "1720000000000" },
+      { id: 3, hash: "b".repeat(64), created_at: "1720000001000" },
+    ]),
+  );
+  await writeFile(
+    join(root, "rehearsal/prisma-ledger.json"),
+    JSON.stringify([
+      {
+        migration_name: "20261026000000_init",
+        checksum: "c".repeat(64),
+        finished_at: "2026-10-26T00:00:00Z",
+        rolled_back_at: null,
+      },
+    ]),
+  );
+  await writeFile(
+    join(root, "drizzle.config.cjs"),
+    'throw new Error("must never execute discovery config");',
+  );
+  await writeFile(
+    join(root, "rehearsal/knex-ledger.json"),
+    JSON.stringify([
+      {
+        id: 3,
+        name: "001_init.cjs",
+        batch: 2,
+        migration_time: "2026-10-26T00:00:00Z",
+      },
+    ]),
+  );
+  await writeFile(
+    join(root, "rehearsal/invalid-knex.json"),
+    JSON.stringify([
+      {
+        id: 3,
+        name: "001_init.cjs",
+        batch: 0,
+        migration_time: "2026-10-26T00:00:00Z",
+      },
+    ]),
+  );
+  const result = await discoverBaselineInputFiles({ projectRoot: root });
+  expect(result.ledgers).toEqual([
+    "rehearsal/drizzle-ledger.json",
+    "rehearsal/knex-ledger.json",
+    "rehearsal/prisma-ledger.json",
+  ]);
+});

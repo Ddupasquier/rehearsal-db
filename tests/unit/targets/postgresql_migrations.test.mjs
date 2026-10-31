@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, writeFile, rm, unlink } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  stat,
+  rm,
+  unlink,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -52,7 +60,7 @@ async function fixture(native = true) {
             }
           : {},
       },
-      paths: { migrationDirectory: directory },
+      paths: { migrationDirectory: directory, runtimeWorkdir: root },
     },
     runSql,
     assertOwnedTarget: () => "b".repeat(64),
@@ -182,5 +190,36 @@ it.each([
       assertCandidateConfirmation({ plan: receipt, confirmation }),
     ),
   ).rejects.toThrow();
+  expect(f.runSql).not.toHaveBeenCalled();
+});
+
+it("retains an exclusive private native failure receipt without replacing prior recovery evidence", async () => {
+  const f = await fixture();
+  const baseline = { ...f.baseline, generationId: "owned-generation" };
+  const receipt = {
+    candidateSha256: "c".repeat(64),
+    nativeMigrations: f.baseline.nativeMigrations,
+  };
+  const file = join(f.root, "native-migration-failure.json");
+  await f.runtime.retainFailure(baseline, receipt);
+  const bytes = await readFile(file, "utf8");
+  expect(bytes).toBe(
+    `${JSON.stringify({
+      schemaVersion: 1,
+      state: "failed_or_interrupted",
+      baselineGenerationId: baseline.generationId,
+      candidateSha256: receipt.candidateSha256,
+      migrationTool: receipt.nativeMigrations,
+      recovery: "retained-volume-review-required",
+    })}\n`,
+  );
+  expect((await stat(file)).mode & 0o777).toBe(0o600);
+  await expect(
+    f.runtime.retainFailure(baseline, {
+      ...receipt,
+      candidateSha256: "d".repeat(64),
+    }),
+  ).rejects.toMatchObject({ code: "EEXIST" });
+  expect(await readFile(file, "utf8")).toBe(bytes);
   expect(f.runSql).not.toHaveBeenCalled();
 });

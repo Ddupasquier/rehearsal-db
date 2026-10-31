@@ -79,6 +79,10 @@ export const loadPreparationContext = async (
   planOptions: RehearsalConfigPathOptions,
 ) => {
   const loaded = await loadRehearsalConfig(planOptions);
+  if (loaded.config.postgresql?.migrationTool)
+    throw new Error(
+      "Hosted source preparation is not qualified for native migration tools; use reviewed local records and native ledger export.",
+    );
   if (!loaded.config.preparation) {
     throw new Error(
       "Source preparation is not configured. Review docs/standalone-workflow.md, then enable config.preparation.",

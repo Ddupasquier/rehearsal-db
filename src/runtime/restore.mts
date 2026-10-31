@@ -1,3 +1,8 @@
+import {
+  isDrizzleMigrationFile,
+  isKnexMigrationFile,
+  type AnyMigrationFileEntry,
+} from "./migration_identity.mjs";
 /**
  * Purpose: Build the bounded PostgreSQL restore program for a verified sanitized
  * Rehearsal baseline. Do not run directly; this module is reusable script infrastructure.
@@ -326,12 +331,18 @@ export const buildRestoreSqlSuffix = ({
   manifest,
   tableCounts,
   restoreSupabaseAuth = true,
+  identityMode = "restart",
 }: {
   manifest: RuntimeSanitizationPolicy;
   tableCounts: Readonly<Record<string, number>>;
   restoreSupabaseAuth?: boolean;
+  identityMode?: "restart" | "continue";
 }): string => {
-  if (!Array.isArray(manifest?.tables) || !tableCounts) {
+  if (
+    !Array.isArray(manifest?.tables) ||
+    !tableCounts ||
+    !["restart", "continue"].includes(identityMode)
+  ) {
     throw new Error("A reviewed manifest and exact row counts are required.");
   }
   const tables = includedPolicies(manifest);
@@ -345,7 +356,7 @@ export const buildRestoreSqlSuffix = ({
 create index rehearsal_restore_rows_table_name_idx
 on rehearsal_restore_rows (schema_name, table_name, sequence);
 truncate table ${manifest.tables.map(qualifiedRelation).join(", ")}
-restart identity cascade;
+${identityMode} identity cascade;
 ${restoreSupabaseAuth ? buildAuthRestoreSql(manifest) : ""}
 ${tables.map(buildTableRestoreSql).join("\n")}
 ${tables.map(buildOwnedSequenceRestoreSql).filter(Boolean).join("\n")}
@@ -366,9 +377,89 @@ export const assertBaselineMigrationHistory = ({
   nativeMigrations,
 }: {
   baselineManifest: BaselineManifest;
-  currentFiles: readonly MigrationFileEntry[];
-  nativeMigrations?: PrismaNativeBinding | null;
+  currentFiles: readonly AnyMigrationFileEntry[];
+  nativeMigrations?: PrismaNativeBinding | NativeMigrationBinding | null;
 }): void => {
+  if (baselineManifest.formatVersion === 5) {
+    const bound = parseNativeMigrationBinding(
+      baselineManifest.nativeMigrations,
+    );
+    if (
+      bound.kind !== "knex" ||
+      nativeMigrations?.kind !== "knex" ||
+      bound.version !== nativeMigrations.version ||
+      bound.driverVersion !== nativeMigrations.driverVersion ||
+      bound.isolationPolicySha256 !== nativeMigrations.isolationPolicySha256
+    )
+      throw new Error(
+        "Knex tool, provider or isolation policy differs from baseline.",
+      );
+    const expected = baselineManifest.knexHistory;
+    if (
+      !expected?.entries.length ||
+      expected.entries.length > currentFiles.length
+    )
+      throw new Error("Knex baseline history is absent from current source.");
+    for (let i = 0; i < expected.entries.length; i++) {
+      const current = currentFiles[i]!,
+        old = expected.entries[i]!;
+      if (
+        !isKnexMigrationFile(current) ||
+        current.filename !== old.filename ||
+        current.fileSha256 !== old.fileSha256 ||
+        current.nativeIdentity.name !== old.nativeIdentity.name
+      )
+        throw new Error(
+          "Knex migration code diverges from the reviewed baseline prefix; native historical checksums remain unavailable.",
+        );
+    }
+    const files = new Map(
+      nativeMigrations.codeFiles.map((f) => [f.filename, f]),
+    );
+    for (const old of expected.files) {
+      const current = files.get(old.filename);
+      if (
+        !current ||
+        current.fileSha256 !== old.fileSha256 ||
+        current.bytes !== old.bytes
+      )
+        throw new Error(
+          "Knex historical support code changed; create a new reviewed baseline.",
+        );
+    }
+    return;
+  }
+  if (baselineManifest.formatVersion === 4) {
+    const bound = parseNativeMigrationBinding(
+      baselineManifest.nativeMigrations,
+    );
+    if (
+      bound.kind !== "drizzle" ||
+      nativeMigrations?.kind !== "drizzle" ||
+      bound.kitVersion !== nativeMigrations.kitVersion ||
+      bound.ormVersion !== nativeMigrations.ormVersion ||
+      bound.driverVersion !== nativeMigrations.driverVersion
+    )
+      throw new Error("Native Drizzle tool/provider differs from baseline.");
+    const expected = baselineManifest.drizzleHistory?.entries;
+    if (!expected?.length || expected.length > currentFiles.length)
+      throw new Error("Drizzle baseline history is absent from source.");
+    for (let i = 0; i < expected.length; i++) {
+      const current = currentFiles[i]!,
+        old = expected[i]!;
+      if (
+        !isDrizzleMigrationFile(current) ||
+        current.nativeIdentity.idx !== old.idx ||
+        current.nativeIdentity.when !== old.when ||
+        current.nativeIdentity.tag !== old.tag ||
+        current.breakpoints !== old.breakpoints ||
+        current.filename !== old.filename ||
+        current.fileSha256 !== old.hash
+      )
+        throw new Error("Drizzle source diverges from baseline native prefix.");
+    }
+    return;
+  }
   if (
     baselineManifest.formatVersion === 3 ||
     baselineManifest.nativeMigrations !== undefined ||
@@ -417,7 +508,7 @@ export const createCandidateMigrationReceipt = ({
   nativeMigrations,
 }: {
   baselineManifest: BaselineManifest;
-  currentFiles: readonly MigrationFileEntry[];
+  currentFiles: readonly AnyMigrationFileEntry[];
   nativeMigrations?: NativeMigrationBinding | null;
 }) => {
   const currentBinding = nativeMigrations

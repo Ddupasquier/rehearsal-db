@@ -10,16 +10,29 @@ export const migrationReviewEntries = (
 ) => {
   if (migrations.length > 10000)
     throw new Error("Migration review exceeds the bounded 10,000-file plan.");
+  const identity = (migration: Inspection["migrations"][number]) =>
+    "nativeIdentity" in migration
+      ? migration.nativeIdentity.kind === "knex"
+        ? `knex:${migration.nativeIdentity.name}`
+        : `drizzle:${migration.nativeIdentity.idx}:${migration.nativeIdentity.when}:${migration.nativeIdentity.tag}`
+      : migration.version;
   return migrations.map((migration, index) => ({
     ...migration,
     target,
-    id: `${target}:${migration.version}`,
+    id: `${target}:${identity(migration)}`,
     order: index,
-    timestamp: migration.version,
+    ...("nativeIdentity" in migration ? {} : { timestamp: migration.version }),
     required: migration.status === "candidate",
-    dependsOn: index ? [`${target}:${migrations[index - 1]!.version}`] : [],
+    dependsOn: index ? [`${target}:${identity(migrations[index - 1]!)}`] : [],
     warnings:
-      migration.status === "candidate" ? ["sql_safety_not_inferred"] : [],
+      "nativeIdentity" in migration && migration.nativeIdentity.kind === "knex"
+        ? [
+            "historical_file_checksums_unavailable",
+            "native_javascript_isolated_execution_required",
+          ]
+        : migration.status === "candidate"
+          ? ["sql_safety_not_inferred"]
+          : [],
     selectionReason:
       migration.status === "candidate"
         ? "Every candidate is required: the reviewed ordered suffix cannot be skipped or reordered."
@@ -45,6 +58,13 @@ export const inspectMigrationReviewPlan = async (
       provider: target.config.runtime.target,
       baselineGenerationId: inspection.baselineGenerationId,
       candidateSha256: inspection.candidateSha256,
+      ...(inspection.migrationTool?.kind === "drizzle" ||
+      inspection.migrationTool?.kind === "knex"
+        ? {
+            baselineHistorySha256: inspection.baselineHistorySha256,
+            baselinePrefixVerification: inspection.baselinePrefixVerification,
+          }
+        : {}),
       ...(inspection.migrationTool
         ? { migrationTool: inspection.migrationTool }
         : {}),

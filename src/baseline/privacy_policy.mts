@@ -1,3 +1,4 @@
+import { parseMigrationCutoff } from "../runtime/migration_identity.mjs";
 /**
  * Validate and normalize the complete reviewed privacy policy version 2.
  */
@@ -69,14 +70,7 @@ export const validateExecutablePrivacyPolicy = (
       ],
     });
   }
-  if (
-    typeof policy.migrationCutoff !== "string" ||
-    !/^\d{14}$/u.test(policy.migrationCutoff)
-  ) {
-    throw new Error(
-      "Privacy policy migrationCutoff must be a timestamp version.",
-    );
-  }
+  const migrationCutoff = parseMigrationCutoff(policy.migrationCutoff);
   if (!Array.isArray(policy.tables) || policy.tables.length === 0) {
     throw new Error("Privacy policy must classify at least one table.");
   }
@@ -380,7 +374,7 @@ export const validateExecutablePrivacyPolicy = (
   validatePrivacyDependencyGraph({ tables, bindings, pathMappings });
   return Object.freeze({
     policyVersion: 2,
-    migrationCutoff: policy.migrationCutoff,
+    migrationCutoff,
     bindings: Object.freeze(bindings),
     pathMappings: Object.freeze(pathMappings),
     tables: Object.freeze(tables),

@@ -1,3 +1,16 @@
+import {
+  readKnexMigrationInventory,
+  verifyKnexMigrationLedger,
+} from "../runtime/knex_history.mjs";
+import {
+  readDrizzleMigrationInventory,
+  verifyDrizzleMigrationLedger,
+} from "../runtime/drizzle_history.mjs";
+import {
+  drizzleMigrationFiles,
+  type AnyMigrationFileEntry,
+  type MigrationCutoff,
+} from "../runtime/migration_identity.mjs";
 /**
  * Purpose: Inspect explicit local synthetic records and migration evidence, then
  * create a fail-closed sanitization-policy draft for human review.
@@ -39,8 +52,8 @@ export interface BaselineInputInspection extends SyntheticRecordInspection {
   readonly recordsPath: string;
   readonly ledgerPath: string;
   readonly assetsPath?: string;
-  readonly migrationHistory: (MigrationLedgerEntry | MigrationFileEntry)[];
-  readonly migrationCutoff: string;
+  readonly migrationHistory: (MigrationLedgerEntry | AnyMigrationFileEntry)[];
+  readonly migrationCutoff: MigrationCutoff;
   readonly migrationCount: number;
   readonly assetCount: number;
 }
@@ -51,7 +64,7 @@ export interface BaselinePreparationPlan extends SyntheticRecordInspection {
   readonly destinationRelative: string;
   readonly recordsPath: string;
   readonly ledgerPath: string;
-  readonly migrationCutoff: string;
+  readonly migrationCutoff: MigrationCutoff;
   readonly migrationCount: number;
   readonly content: string;
 }
@@ -282,7 +295,7 @@ export const inspectBaselineInputFiles = async ({
     (assetsPath || loaded.config.preparation)
   )
     throw new Error(
-      "Native Prisma baseline preparation requires reviewed local records and ledger without hosted preparation or Storage assets.",
+      "Native baseline preparation requires reviewed local records and ledger without hosted preparation or Storage assets.",
     );
   const records = resolveProjectInput(
     loaded.projectRoot,
@@ -316,14 +329,34 @@ export const inspectBaselineInputFiles = async ({
       cause: error,
     });
   }
-  const [inspection, assetInspection] = await Promise.all([
-    inspectSyntheticRecords(records),
-    assets
-      ? inspectAssetManifest(assets, loaded.projectRoot)
-      : Promise.resolve({ assetCount: 0 }),
-  ]);
-  let migrationHistory: (MigrationLedgerEntry | MigrationFileEntry)[];
-  if (loaded.config.postgresql?.migrationTool) {
+  let migrationHistory: (MigrationLedgerEntry | AnyMigrationFileEntry)[];
+  if (loaded.config.postgresql?.migrationTool?.kind === "knex") {
+    const inventory = await readKnexMigrationInventory(
+      pathToFileURL(`${loaded.paths.migrationDirectory}/`),
+    );
+    const history = verifyKnexMigrationLedger({
+      rows: ledgerRows,
+      entries: inventory.entries,
+    });
+    if (history.length !== inventory.entries.length)
+      throw new Error(
+        "Knex baseline requires the complete source history applied; pending migration entries are not supported during baseline creation.",
+      );
+    migrationHistory = inventory.entries;
+  } else if (loaded.config.postgresql?.migrationTool?.kind === "drizzle") {
+    const inventory = await readDrizzleMigrationInventory(
+      pathToFileURL(`${loaded.paths.migrationDirectory}/`),
+    );
+    const history = verifyDrizzleMigrationLedger({
+      rows: ledgerRows,
+      entries: inventory.entries,
+    });
+    if (history.length !== inventory.entries.length)
+      throw new Error(
+        "Drizzle baseline requires the complete source journal applied; pending journal entries are not supported during baseline creation.",
+      );
+    migrationHistory = drizzleMigrationFiles(inventory.entries);
+  } else if (loaded.config.postgresql?.migrationTool) {
     const inventory = await readPrismaMigrationInventory(
       pathToFileURL(`${loaded.paths.migrationDirectory}/`),
     );
@@ -343,13 +376,22 @@ export const inspectBaselineInputFiles = async ({
   if (!latestMigration) {
     throw new Error("Synthetic migration ledger is empty or unavailable.");
   }
+  const [inspection, assetInspection] = await Promise.all([
+    inspectSyntheticRecords(records),
+    assets
+      ? inspectAssetManifest(assets, loaded.projectRoot)
+      : Promise.resolve({ assetCount: 0 }),
+  ]);
   return {
     projectRoot: loaded.projectRoot,
     recordsPath: relative(loaded.projectRoot, records),
     ledgerPath: relative(loaded.projectRoot, ledger),
     ...(assets ? { assetsPath: relative(loaded.projectRoot, assets) } : {}),
     migrationHistory,
-    migrationCutoff: latestMigration.version,
+    migrationCutoff:
+      "nativeIdentity" in latestMigration
+        ? latestMigration.nativeIdentity
+        : latestMigration.version,
     migrationCount: migrationHistory.length,
     rowCount: inspection.rowCount,
     tables: inspection.tables,
@@ -361,7 +403,7 @@ const renderPolicyDraft = ({
   migrationCutoff,
   tables,
 }: {
-  migrationCutoff: string;
+  migrationCutoff: MigrationCutoff;
   tables: readonly SyntheticTableInspection[];
 }): string =>
   `${JSON.stringify(
@@ -457,7 +499,7 @@ export const summarizeBaselinePreparation = (
   destination: string;
   recordsPath: string;
   ledgerPath: string;
-  migrationCutoff: string;
+  migrationCutoff: MigrationCutoff;
   migrationCount: number;
   rowCount: number;
   tables: readonly SyntheticTableInspection[];

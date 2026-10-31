@@ -1,3 +1,6 @@
+import { createKnexBaseline } from "./knex_builder.mjs";
+import { describeMigrationCutoff } from "../runtime/migration_identity.mjs";
+import { createDrizzleBaseline } from "./drizzle_builder.mjs";
 /**
  * Build a synthetic baseline from explicit project-owned local files. This module does
  * not connect to a hosted source or decide which values are safe.
@@ -173,7 +176,13 @@ export const createSyntheticBaselineFromFiles = async ({
     throw new Error("The sanitization policy includes no restorable tables.");
   }
   if (loaded.config.postgresql?.migrationTool)
-    return createPrismaBaseline({
+    return (
+      loaded.config.postgresql.migrationTool.kind === "knex"
+        ? createKnexBaseline
+        : loaded.config.postgresql.migrationTool.kind === "drizzle"
+          ? createDrizzleBaseline
+          : createPrismaBaseline
+    )({
       loaded,
       records: readRecords(records),
       ledger: JSON.parse(ledgerBytes.toString("utf8")),
@@ -192,7 +201,7 @@ export const createSyntheticBaselineFromFiles = async ({
   }
   if (policy.migrationCutoff !== migrationCutoff.version) {
     throw new Error(
-      `The sanitization policy cutoff ${policy.migrationCutoff} does not match migration ledger cutoff ${migrationCutoff.version}.`,
+      `The sanitization policy cutoff ${describeMigrationCutoff(policy.migrationCutoff)} does not match migration ledger cutoff ${migrationCutoff.version}.`,
     );
   }
   const migrationFiles = await readMigrationSourceBundle({

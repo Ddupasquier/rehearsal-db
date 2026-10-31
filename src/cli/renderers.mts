@@ -1,3 +1,7 @@
+import {
+  describeMigrationCutoff,
+  type MigrationCutoff,
+} from "../runtime/migration_identity.mjs";
 /**
  * Human-readable CLI output. These functions are intentionally pure so the
  * command and guided workflow modules can focus on orchestration.
@@ -296,6 +300,7 @@ export const renderPlan = (
 };
 
 export const renderBaseline = (baseline: {
+  historicalFileChecksums?: "unavailable";
   rehearsalVersion: string;
   generationId: string;
   createdAt?: string | null;
@@ -303,7 +308,7 @@ export const renderBaseline = (baseline: {
   tableCount: number;
   rowCount: number;
   migrationCount: number;
-  migrationCutoff: string;
+  migrationCutoff: MigrationCutoff;
   dataSha256: string;
   sanitizationPolicySha256: string;
   verification: string;
@@ -315,9 +320,14 @@ export const renderBaseline = (baseline: {
     `Generation: ${baseline.generationId}`,
     `Created: ${baseline.createdAt ?? "unknown"}`,
     `Format: ${baseline.formatVersion}`,
+    ...(baseline.historicalFileChecksums === "unavailable"
+      ? [
+          "Knex historical file checksums: unavailable. Current reviewed code is locked; originally applied bytes are not attested.",
+        ]
+      : []),
     `Tables: ${baseline.tableCount}`,
     `Rows: ${baseline.rowCount}`,
-    `Migrations: ${baseline.migrationCount} through ${baseline.migrationCutoff}`,
+    `Migrations: ${baseline.migrationCount} through ${describeMigrationCutoff(baseline.migrationCutoff)}`,
     `Data SHA-256: ${baseline.dataSha256}`,
     `Sanitization policy SHA-256: ${baseline.sanitizationPolicySha256}`,
     `Verification: ${baseline.verification}`,
@@ -328,7 +338,7 @@ export const renderBaseline = (baseline: {
 export const renderMigrations = (
   inspection: {
     baselineGenerationId: string;
-    baselineCutoff: string;
+    baselineCutoff: MigrationCutoff;
     candidateSha256: string;
     migrations: readonly (RenderMigration & { status: string })[];
   },
@@ -340,7 +350,7 @@ export const renderMigrations = (
   });
   return [
     "REHEARSAL MIGRATIONS",
-    `Baseline: ${inspection.baselineGenerationId} through ${inspection.baselineCutoff}`,
+    `Baseline: ${inspection.baselineGenerationId} through ${describeMigrationCutoff(inspection.baselineCutoff)}`,
     `Candidate digest: ${inspection.candidateSha256}`,
     "",
     ...entries,
@@ -535,7 +545,7 @@ export const renderBaselinePreparation = (
     rowCount: number;
     recordsPath: string;
     migrationCount: number;
-    migrationCutoff: string;
+    migrationCutoff: MigrationCutoff;
     tables: readonly RenderTable[];
     nextAction: string;
   },
@@ -545,7 +555,7 @@ export const renderBaselinePreparation = (
     `BASELINE POLICY — ${result.mode.toUpperCase()}`,
     `Destination: ${result.destination}`,
     `Records: ${formatCount(result.rowCount, "row")} from ${result.recordsPath}`,
-    `Migrations: ${formatCount(result.migrationCount, "migration")} through ${result.migrationCutoff}`,
+    `Migrations: ${formatCount(result.migrationCount, "migration")} through ${describeMigrationCutoff(result.migrationCutoff)}`,
     "",
     "Detected shape (values are never printed)",
     ...result.tables.map(
@@ -564,7 +574,7 @@ export const renderBaselineInputInspection = (
     rowCount: number;
     recordsPath: string;
     migrationCount: number;
-    migrationCutoff: string;
+    migrationCutoff: MigrationCutoff;
     ledgerPath: string;
     assetsPath?: string;
     assetCount: number;
@@ -575,7 +585,7 @@ export const renderBaselineInputInspection = (
   [
     "BASELINE INPUTS — READY",
     `Records: ${formatCount(result.rowCount, "row")} across ${formatCount(result.tables.length, "table")} from ${result.recordsPath}`,
-    `Migrations: ${formatCount(result.migrationCount, "migration")} through ${result.migrationCutoff} from ${result.ledgerPath}`,
+    `Migrations: ${formatCount(result.migrationCount, "migration")} through ${describeMigrationCutoff(result.migrationCutoff)} from ${result.ledgerPath}`,
     result.assetsPath
       ? `Storage: ${formatCount(result.assetCount, "asset")} from ${result.assetsPath}`
       : "Storage: no asset manifest selected",

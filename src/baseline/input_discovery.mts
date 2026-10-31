@@ -1,3 +1,6 @@
+import { normalizeKnexMigrationLedger } from "../runtime/knex_history.mjs";
+import { normalizeDrizzleMigrationLedger } from "../runtime/drizzle_history.mjs";
+import { normalizePrismaMigrationLedger } from "../runtime/prisma_history.mjs";
 /**
  * Discover likely project-owned baseline inputs without exposing their values.
  * Discovery is bounded, ignores generated/private directories, and only sniffs
@@ -86,7 +89,7 @@ const isRecord = (value: unknown): boolean =>
     !Array.isArray(value.row),
   );
 
-const isMigrationLedger = (value: unknown): boolean =>
+const isSqlMigrationLedger = (value: unknown): boolean =>
   Array.isArray(value) &&
   value.length > 0 &&
   value.every(
@@ -100,6 +103,25 @@ const isMigrationLedger = (value: unknown): boolean =>
       "statements" in entry &&
       Array.isArray(entry.statements),
   );
+
+const isMigrationLedger = (value: unknown): boolean => {
+  if (isSqlMigrationLedger(value)) return true;
+  if (!Array.isArray(value) || !value.length || value.length > 10000)
+    return false;
+  for (const normalize of [
+    normalizeKnexMigrationLedger,
+    normalizePrismaMigrationLedger,
+    normalizeDrizzleMigrationLedger,
+  ]) {
+    try {
+      normalize(value);
+      return true;
+    } catch {
+      /* Metadata is not a usable native ledger. */
+    }
+  }
+  return false;
+};
 
 const isAssetManifest = (value: unknown): boolean =>
   Array.isArray(value) &&
