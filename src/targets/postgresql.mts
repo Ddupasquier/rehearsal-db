@@ -649,46 +649,51 @@ const resetRuntime = async (expectedBaseline?: BaselineManifest) => {
     operation: async function resetRuntimeOperation() {
       const password = randomBytes(24).toString("hex");
       await createContainer(password);
-      return migrationRuntime.withRestrictedPhase("worker", async () => {
-        const environment = databaseEnvironment(password);
-        prepareProjectPrerequisites();
-        migrationRuntime.initialize();
-        await migrationRuntime.restore(
-          active.baseline,
-          active.paths.migrationsDirectory,
-          environment.databaseUrl,
-        );
-        prepareProjectSchema({ baseline: active.baseline, environment });
-        finalizeProjectSchema();
-        await restoreBaselineRows({ ...active });
-        finalizeProjectRuntime();
-        const applicationEnvironment =
-          await migrationRuntime.withRestrictedPhase(
-            "application",
-            () =>
-              configureApplicationRuntime({
-                baseline: active.baseline,
-                environment,
-                announce: true,
-              }),
-            active.baseline.generationId,
-          );
-        await writeRuntimeMarker({
-          path: runtimeMarkerPath,
-          marker: {
-            formatVersion: 1,
-            target: "postgresql",
-            generationId: active.baseline.generationId,
-            dataSha256: active.baseline.files["sanitized-data.ndjson"]!.sha256,
-            image,
-            databasePassword: password,
-          },
+      const environment = databaseEnvironment(password);
+      await migrationRuntime.restore(
+        active.baseline,
+        active.paths.migrationsDirectory,
+        environment.databaseUrl,
+        () => {
+          prepareProjectPrerequisites();
+          migrationRuntime.initialize();
+        },
+      );
+      if (runtimeAdapter?.prepareSchema || runtimePolicy?.triggers.length)
+        await migrationRuntime.withRestrictedPhase("worker", () => {
+          prepareProjectSchema({ baseline: active.baseline, environment });
+          finalizeProjectSchema();
         });
-        console.log(
-          `Restored Rehearsal baseline ${active.baseline.generationId}: ${formatCount(active.baseline.rowCount, "row")} across ${formatCount(Object.keys(active.baseline.tableCounts).length, "table")}.`,
+      await restoreBaselineRows({ ...active });
+      if (runtimePolicy?.localRows.length)
+        await migrationRuntime.withRestrictedPhase("worker", () =>
+          finalizeProjectRuntime(),
         );
-        return applicationEnvironment;
+      const applicationEnvironment = await migrationRuntime.withRestrictedPhase(
+        "application",
+        () =>
+          configureApplicationRuntime({
+            baseline: active.baseline,
+            environment,
+            announce: true,
+          }),
+        active.baseline.generationId,
+      );
+      await writeRuntimeMarker({
+        path: runtimeMarkerPath,
+        marker: {
+          formatVersion: 1,
+          target: "postgresql",
+          generationId: active.baseline.generationId,
+          dataSha256: active.baseline.files["sanitized-data.ndjson"]!.sha256,
+          image,
+          databasePassword: password,
+        },
       });
+      console.log(
+        `Restored Rehearsal baseline ${active.baseline.generationId}: ${formatCount(active.baseline.rowCount, "row")} across ${formatCount(Object.keys(active.baseline.tableCounts).length, "table")}.`,
+      );
+      return applicationEnvironment;
     },
     rollback:
       postgresqlConfig.migrationTool?.kind === "knex"

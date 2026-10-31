@@ -681,3 +681,33 @@ it("distinguishes post-work privilege proof and keeps invalid phase private", as
     expect(error.message).not.toContain("PRIVATE_PHASE_CANARY");
   }
 });
+
+it("closes worker credentials before sibling phases and gives each its own unchanged budget", async () => {
+  const phases = ["worker", "verify", "restore", "application"];
+  const fixtures = await Promise.all(phases.map(() => fixture()));
+  let now = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  for (let index = 0; index < phases.length; index++) {
+    const f = fixtures[index];
+    if (index) {
+      expect(fixtures[0].state.login).toBe(false);
+      expect(fixtures[0].state.password).toBe(false);
+      expect(() => currentKnexSqlCredentials()).toThrow(
+        /authentication is required/,
+      );
+    }
+    await withKnexRestrictedRole({
+      ...f.options,
+      phase: phases[index],
+      work: async () => {
+        expect(currentKnexSqlRemainingMs()).toBe(120000);
+        now += 119000;
+        expect(currentKnexSqlRemainingMs()).toBe(1000);
+      },
+    });
+    if (phases[index] !== "application") expect(f.state.login).toBe(false);
+  }
+  expect(now).toBe(477000);
+  expect(fixtures[2].state.parameter).toBe(false);
+  expect(fixtures[3].state.login).toBe(true);
+});

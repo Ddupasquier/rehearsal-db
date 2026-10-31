@@ -440,8 +440,13 @@ confined to fixed catalog,
 permission and credential operations; it never evaluates migration-owned relations.
 
 Each private phase has a monotonic 120-second deadline combined with operation
-cancellation. Nested phases inherit the earlier parent deadline; explicit budget
-checks refuse dispatch even when the event loop delays an abort timer. Bounded
+cancellation. Reset closes each worker scope before entering subsequent verification,
+row restore and application configuration; the whole reset is not a worker phase.
+Knex reset replay refuses entry from an already active role scope before preparation.
+Prerequisite/schema/finalization hooks remain worker-authenticated in their own bounded
+scopes, and native replay owns its worker scope. Sibling phases receive their own
+120-second budgets. Genuinely nested phases, including application configuration queries,
+inherit the earlier parent deadline; explicit budget checks refuse dispatch even when the event loop delays an abort timer. Bounded
 catalog cleanup remains permitted after expiry or cancellation;
 nested worker and COPY work share its signal. COPY has an owned termination/kill
 path and phase cleanup verifies backend absence. Synchronous adapter/query contracts

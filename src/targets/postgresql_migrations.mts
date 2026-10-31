@@ -1,6 +1,7 @@
 import {
   withKnexRestrictedRole,
   currentKnexSqlCredentials,
+  currentKnexSqlSignal,
 } from "./knex_restricted_role.mjs";
 import { runKnexRestrictedSql } from "./knex_restricted_sql.mjs";
 import type { KnexSqlPhase } from "./knex_role_receipt.mjs";
@@ -343,7 +344,13 @@ applied_at timestamptz not null default now());`);
       baseline: BaselineManifest,
       directory: string,
       databaseUrl: string,
+      beforeReplay?: () => void,
     ) => {
+      if (tool?.kind === "knex" && currentKnexSqlSignal())
+        throw new Error(
+          "Knex reset schema restore requires an independent phase boundary; no preparation or replay was attempted.",
+        );
+      if (tool?.kind !== "knex") beforeReplay?.();
       if (tool?.kind === "knex") {
         const producer = parseNativeMigrationBinding(baseline.nativeMigrations);
         if (producer.kind !== "knex")
@@ -355,18 +362,21 @@ applied_at timestamptz not null default now());`);
         const inventory = await readKnexMigrationInventory(
           pathToFileURL(`${directory}/`),
         );
-        await deployKnexMigrations({
-          projectRoot: loaded.projectRoot,
-          tool,
-          directory,
-          runtimeWorkdir: loaded.paths.runtimeWorkdir,
-          projectId: loaded.config.runtime.projectId,
-          entries: inventory.entries,
-          binding: { ...producer, toolchainSha256: toolchain.sha256 },
-          databaseUrl,
-          runSql: runKnexSql,
-          assertOwnedTarget,
-          assertExpectedBaseline: () => assertExpectedBaseline(baseline),
+        await withRestrictedPhase("worker", async () => {
+          beforeReplay?.();
+          await deployKnexMigrations({
+            projectRoot: loaded.projectRoot,
+            tool,
+            directory,
+            runtimeWorkdir: loaded.paths.runtimeWorkdir,
+            projectId: loaded.config.runtime.projectId,
+            entries: inventory.entries,
+            binding: { ...producer, toolchainSha256: toolchain.sha256 },
+            databaseUrl,
+            runSql: runKnexSql,
+            assertOwnedTarget,
+            assertExpectedBaseline: () => assertExpectedBaseline(baseline),
+          });
         });
         await withRestrictedPhase("verify", () =>
           verifyLedger({ currentFiles: inventory.entries, baseline }),
