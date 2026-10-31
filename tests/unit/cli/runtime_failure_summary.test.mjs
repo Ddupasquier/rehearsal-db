@@ -165,3 +165,14 @@ Node.js v24.21.0`;
     expect(summary).not.toContain("private-row-canary");
   });
 });
+
+it("preserves closed Knex proof origin tags while withholding Node source and private context", () => {
+  const summary = summarizeRuntimeManagerFailure(
+    'file:///private/worker.mjs:19\nconst secret = "PRIVATE_PROOF_CANARY";\n^\nError: Knex worker database privilege isolation is unavailable or unsafe; the owned target is retained. [knex-proof phase=verify stage=effective-privileges]\n    at privateFunction (file:///private/worker.mjs:19:2)\nNode.js v24.0.0',
+  );
+  expect(summary).toContain(
+    "[knex-proof phase=verify stage=effective-privileges]",
+  );
+  expect(summary).not.toContain("PRIVATE_PROOF_CANARY");
+  expect(summary.length).toBeLessThanOrEqual(2000);
+});

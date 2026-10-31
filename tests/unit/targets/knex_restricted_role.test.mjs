@@ -617,3 +617,67 @@ it("refuses a genuinely true preexisting restore grant rather than changing it",
   expect(f.state.parameter).toBe(true);
   expect(f.state.login).toBe(false);
 });
+
+it.each([
+  [
+    "identity",
+    (f) => {
+      f.state.systemIdentifier = "PRIVATE_PROOF_CANARY";
+    },
+  ],
+  [
+    "parameter-before",
+    (f) => {
+      f.state.parameterReply = "PRIVATE_PROOF_CANARY";
+    },
+  ],
+  [
+    "effective-privileges",
+    (f) => {
+      f.state.unsafe = true;
+    },
+  ],
+])(
+  "labels successful-query invalid %s proof without exposing its values",
+  async (stage, change) => {
+    const f = await fixture();
+    change(f);
+    const work = vi.fn();
+    await expect(
+      withKnexRestrictedRole({ ...f.options, work }),
+    ).rejects.toThrow(`[knex-proof phase=worker stage=${stage}]`);
+    expect(work).not.toHaveBeenCalled();
+    try {
+      await withKnexRestrictedRole({ ...f.options, work });
+    } catch (error) {
+      expect(error.message).not.toContain("PRIVATE_PROOF_CANARY");
+    }
+  },
+);
+it("distinguishes post-work privilege proof and keeps invalid phase private", async () => {
+  const f = await fixture();
+  await expect(
+    withKnexRestrictedRole({
+      ...f.options,
+      work: async () => {
+        f.state.unsafe = true;
+      },
+    }),
+  ).rejects.toThrow("[knex-proof phase=worker stage=postcondition]");
+  await expect(
+    withKnexRestrictedRole({
+      ...f.options,
+      phase: "PRIVATE_PHASE_CANARY",
+      work: vi.fn(),
+    }),
+  ).rejects.toThrow("[knex-proof phase=unknown stage=invalid-phase]");
+  try {
+    await withKnexRestrictedRole({
+      ...f.options,
+      phase: "PRIVATE_PHASE_CANARY",
+      work: vi.fn(),
+    });
+  } catch (error) {
+    expect(error.message).not.toContain("PRIVATE_PHASE_CANARY");
+  }
+});

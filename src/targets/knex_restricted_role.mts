@@ -55,9 +55,21 @@ import {
 } from "./knex_role_receipt.mjs";
 const literal = (s: string) => `'${s.replaceAll("'", "''")}'`;
 const identifier = (s: string) => `"${s.replaceAll('"', '""')}"`;
-const refused = () =>
+type ProofStage =
+  | "invalid-phase"
+  | "nested-binding"
+  | "sql-binding-or-result"
+  | "identity"
+  | "receipt"
+  | "application-credential"
+  | "inactive-role"
+  | "parameter-before"
+  | "effective-privileges"
+  | "parameter-granted"
+  | "postcondition";
+const refusal = (phase: KnexSqlPhase | "unknown", stage: ProofStage) =>
   new Error(
-    "Knex worker database privilege isolation is unavailable or unsafe; the owned target is retained.",
+    `Knex worker database privilege isolation is unavailable or unsafe; the owned target is retained. [knex-proof phase=${phase} stage=${stage}]`,
   );
 export const knexRoleName = (
   projectId: string,
@@ -89,7 +101,9 @@ export const withKnexRestrictedRole = async <T,>({
     database: string;
   }) => Promise<T>;
 }): Promise<T> => {
-  if (!isKnexSqlPhase(phase)) throw refused();
+  if (!isKnexSqlPhase(phase)) throw refusal("unknown", "invalid-phase");
+  let proofStage: ProofStage = "nested-binding";
+  const refused = () => refusal(phase, proofStage);
   const active = phases.getStore();
   if (active) currentKnexSqlRemainingMs();
   if (
@@ -136,7 +150,7 @@ export const withKnexRestrictedRole = async <T,>({
       if (!cleaning) assertBudget();
       return runSql(query);
     } catch {
-      throw refused();
+      throw refusal(phase, "sql-binding-or-result");
     }
   };
   const check = () => {
@@ -162,6 +176,7 @@ export const withKnexRestrictedRole = async <T,>({
     )
       throw refused();
   };
+  proofStage = "receipt";
   const receipt = await readKnexRoleReceipt(runtimeWorkdir, phase);
   const observe = () => {
     let r;
@@ -189,7 +204,9 @@ export const withKnexRestrictedRole = async <T,>({
       roleOid: number | null;
     };
   };
+  proofStage = "identity";
   const before = observe();
+  proofStage = "receipt";
   if (
     before.roleOid !== null &&
     (!receipt ||
@@ -207,6 +224,7 @@ export const withKnexRestrictedRole = async <T,>({
       : null;
   const reusingApplication = phase === "application" && before.roleOid !== null;
   if (phase === "application") {
+    proofStage = "application-credential";
     if (
       !generationId ||
       !/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/u.test(generationId) ||
@@ -229,6 +247,7 @@ export const withKnexRestrictedRole = async <T,>({
     } else if (applicationCredential) throw refused();
   }
 
+  proofStage = "inactive-role";
   if (
     before.roleOid !== null &&
     phase !== "application" &&
@@ -248,6 +267,7 @@ export const withKnexRestrictedRole = async <T,>({
         `create role ${role} nologin nosuperuser nocreatedb nocreaterole noinherit noreplication nobypassrls;`,
       );
       created = true;
+      proofStage = "identity";
       const fresh = observe();
       if (
         fresh.systemIdentifier !== before.systemIdentifier ||
@@ -270,12 +290,14 @@ export const withKnexRestrictedRole = async <T,>({
         phase,
       );
     }
+    proofStage = "parameter-before";
     if (
       sql(
         `select pg_catalog.has_parameter_privilege(${literal(name)}, 'session_replication_role', 'SET')::text;`,
       ).trim() !== "false"
     )
       throw refused();
+    proofStage = "effective-privileges";
     check(); // Inspect unsafe effective PUBLIC privileges; never rewrite application ACLs.
     sql(
       `grant connect, temporary on database ${db} to ${role}; grant usage${phase === "worker" ? ", create" : ""} on schema public to ${role};`,
@@ -285,6 +307,7 @@ export const withKnexRestrictedRole = async <T,>({
         `grant ${phase === "verify" ? "select" : phase === "application" || phase === "application_query" ? "select, insert, update, delete" : "select, insert, update, delete, truncate, references"} on all tables in schema public to ${role}; grant ${phase === "verify" ? "select" : phase === "restore" ? "usage, select, update" : "usage, select"} on all sequences in schema public to ${role};`,
       );
     if (phase === "restore") {
+      proofStage = "parameter-granted";
       sql(`grant set on parameter session_replication_role to ${role};`);
       if (
         sql(
@@ -334,6 +357,7 @@ export const withKnexRestrictedRole = async <T,>({
       },
     );
     assertBudget();
+    proofStage = "postcondition";
     check();
     completed = true;
     return result;
