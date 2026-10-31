@@ -31,6 +31,8 @@ import { inspectDrizzleToolchain } from "../runtime/drizzle_toolchain.mjs";
 import { deployDrizzleMigrations } from "./drizzle_migration_process.mjs";
 /** PostgreSQL migration ownership: existing SQL ledger or explicitly selected native producer. */
 import { pathToFileURL } from "node:url";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { loadRehearsalConfig } from "../project/configuration.mjs";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
 import {
@@ -266,6 +268,16 @@ values (${quote(migration.version)}, ${quote(migration.name)}, ${quote(migration
     withRestrictedPhase,
     assertOwnedTarget,
     plan,
+    retainFailure: async (
+      baseline: BaselineManifest,
+      receipt: Awaited<ReturnType<typeof plan>>,
+    ): Promise<void> => {
+      await writeFile(
+        join(loaded.paths.runtimeWorkdir, "native-migration-failure.json"),
+        `${JSON.stringify({ schemaVersion: 1, state: "failed_or_interrupted", baselineGenerationId: baseline.generationId, candidateSha256: receipt.candidateSha256, migrationTool: receipt.nativeMigrations, recovery: "retained-volume-review-required" })}\n`,
+        { mode: 0o600, flag: "wx" },
+      );
+    },
     prepareMutation: async (
       baseline: BaselineManifest,
       confirm?: (receipt: Awaited<ReturnType<typeof plan>>) => void,

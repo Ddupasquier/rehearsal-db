@@ -843,11 +843,7 @@ const migrateRuntime = async () => {
     rollback: postgresqlConfig.migrationTool
       ? async () => {
           try {
-            await writeFile(
-              join(runtimeWorkdir, "native-migration-failure.json"),
-              `${JSON.stringify({ schemaVersion: 1, state: "failed_or_interrupted", baselineGenerationId: baseline.generationId, candidateSha256: receipt.candidateSha256, migrationTool: receipt.nativeMigrations, recovery: "retained-volume-review-required" })}\n`,
-              { mode: 0o600, flag: "wx" },
-            );
+            await migrationRuntime.retainFailure(baseline, receipt);
           } finally {
             await retainedContainerLifecycle.retireStopped();
           }

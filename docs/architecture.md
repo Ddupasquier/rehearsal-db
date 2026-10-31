@@ -271,7 +271,8 @@ rehash or newly verify row payloads and is not applied to SQL formats 1/2. Prepa
 native schema/config bytes are checked again after execution. Same-owner mutation
 races are not an atomic-openat or filesystem-sandbox guarantee. Baseline format 3
 preserves native paths and lock bytes; existing SQL formats remain unchanged.
-`targets/postgresql_migrations.mts` owns SQL/native dispatch, while
+`targets/postgresql_migrations.mts` owns SQL/native dispatch and exclusive private
+failure-receipt creation; the driver retains stopped-container cleanup in `finally`.
 `prisma_migration_process.mts` owns only private-config, bounded native execution
 against the exact target proven by `prisma_target_binding.mts`. A native migration
 failure preserves its data volume and requires explicit recovery; the extension
