@@ -3,7 +3,7 @@ import {
   preserveKnexFailure,
   withKnexFailureBoundary,
   type KnexFailureStage,
-} from "../runtime/knex_failure_diagnostic.mjs";
+} from "../runtime/migrations/knex_failure_diagnostic.mjs";
 import { performance } from "node:perf_hooks";
 import {
   readKnexApplicationCredential,

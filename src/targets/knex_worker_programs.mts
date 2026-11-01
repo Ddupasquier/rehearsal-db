@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { lstat, open, opendir } from "node:fs/promises";
 import { join } from "node:path";
 import { holdPathAncestry } from "../shared/held_path_ancestry.mjs";
-import { KNEX_WORKER_PROTOCOL_SOURCE } from "../runtime/knex_worker_protocol.mjs";
+import { KNEX_WORKER_PROTOCOL_SOURCE } from "../runtime/migrations/knex_worker_protocol.mjs";
 import {
   KNEX_WORKER_BOOTSTRAP_SOURCE,
   KNEX_WORKER_CHILD_SOURCE,

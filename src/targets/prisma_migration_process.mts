@@ -1,13 +1,13 @@
 /** Prisma recipe for the shared bounded owned-target native process boundary. */
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readPrismaMigrationInventory } from "../runtime/prisma_history.mjs";
-import { inspectPrismaToolchain } from "../runtime/prisma_toolchain.mjs";
+import { readPrismaMigrationInventory } from "../runtime/migrations/prisma_history.mjs";
+import { inspectPrismaToolchain } from "../runtime/migrations/prisma_toolchain.mjs";
 import {
   parseNativeMigrationBinding,
   type NativeMigrationBinding,
-} from "../runtime/native_migration_contract.mjs";
-import type { MigrationFileEntry } from "../runtime/migration_history.mjs";
+} from "../runtime/migrations/native_migration_contract.mjs";
+import type { MigrationFileEntry } from "../runtime/migrations/migration_history.mjs";
 import { deployNativeMigrations } from "./native_migration_process.mjs";
 export const deployPrismaMigrations = async (options: {
   projectRoot: string;

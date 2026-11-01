@@ -16,7 +16,7 @@ import pg from "pg";
 import {
   assertLocalDockerContext,
   scopedDockerEnvironment,
-} from "../../../dist/src/runtime/local_docker_context.mjs";
+} from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import {
   completeImpactBlockedMeasurement,
   createImpactSqlGate,
@@ -984,7 +984,7 @@ export const provePostgresqlMigrationImpact = async ({
       );
     const [{ loadRuntimeTopology }, { verifyActiveBaseline }, transport] =
       await Promise.all([
-        installedModule("runtime/topology.mjs"),
+        installedModule("runtime/lifecycle/topology.mjs"),
         installedModule("baseline/artifact.mjs"),
         installedModule("targets/migration_impact_runtime.mjs"),
       ]);

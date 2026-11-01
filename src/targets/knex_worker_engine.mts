@@ -5,11 +5,11 @@ import {
   scopedDockerEnvironment,
   runtimeDockerEnvironment,
   runtimeDockerContext,
-} from "../runtime/local_docker_context.mjs";
+} from "../runtime/engines/local_docker_context.mjs";
 import {
   KNEX_WORKER_POLICY,
   KNEX_WORKER_PLATFORM_IMAGES,
-} from "../runtime/knex_isolation_contract.mjs";
+} from "../runtime/migrations/knex_isolation_contract.mjs";
 const refused = () =>
   new Error(
     "The reviewed local Knex worker image or engine is unavailable or changed; no image was pulled and no runtime data was changed.",

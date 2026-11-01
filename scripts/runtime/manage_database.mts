@@ -7,13 +7,13 @@
 import {
   markKnexFailureBoundary,
   renderKnexFailureFrame,
-} from "../../src/runtime/knex_failure_diagnostic.mjs";
+} from "../../src/runtime/migrations/knex_failure_diagnostic.mjs";
 import { loadRehearsalConfig } from "../../src/project/configuration.mjs";
 import { parseRuntimeInvocation } from "../../src/targets/target.mjs";
 import { runRuntimeTarget } from "../../src/targets/driver.mjs";
 import { runWithOperationCancellation } from "../../src/shared/cancellation.mjs";
-import { withRuntimeStartupCleanup } from "../../src/runtime/runtime_startup_ownership.mjs";
-import { guardRuntimeManagerAction } from "../../src/runtime/runtime_manager_guards.mjs";
+import { withRuntimeStartupCleanup } from "../../src/runtime/lifecycle/runtime_startup_ownership.mjs";
+import { guardRuntimeManagerAction } from "../../src/runtime/lifecycle/runtime_manager_guards.mjs";
 
 const nativeFailureNonce = process.env.REHEARSAL_NATIVE_FAILURE_NONCE;
 delete process.env.REHEARSAL_NATIVE_FAILURE_NONCE;

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import {
   assertLocalDockerContext,
   scopedDockerEnvironment,
-} from "../../../dist/src/runtime/local_docker_context.mjs";
+} from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import {
   createScenarioWorkspace,
   removeScenarioWorkspace,

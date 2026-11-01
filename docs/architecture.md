@@ -11,11 +11,17 @@ independent migration of shared temporary coordination, fixtures or recovery evi
 rehearsal-db/
 ├── src/                    TypeScript product source
 │   ├── application/       application lifecycle and HTTP proofs
-│   ├── baseline/          sanitized baseline creation and validation
+│   ├── baseline/          baseline creation and validation; privacy/ owns privacy stages
 │   ├── cli/               the `rehearsal` executable
 │   ├── identity/          local account and Storage association
 │   ├── project/           configuration, setup, and support
-│   ├── runtime/           plans and disposable-runtime lifecycle
+│   ├── runtime/
+│   │   ├── engines/       engine discovery, selection and VM shutdown
+│   │   ├── lifecycle/     plans, topology, ownership, markers and sessions
+│   │   ├── resources/     inventory, retirement, caches and workload coordination
+│   │   ├── migrations/    history, review, insights, impact and native toolchains
+│   │   ├── recovery/      restore and reviewed stale-environment recovery
+│   │   └── managed/       managed prototype and its worker
 │   ├── shared/            small target-neutral utilities
 │   ├── source/            approved source access and refresh
 │   └── targets/           PostgreSQL and Supabase adapters
@@ -41,6 +47,11 @@ rehearsal-db/
 - Database-specific lifecycle behavior belongs in `src/targets/`.
 - `scripts/verification/` is never included in the npm package.
 - Public consumers use only the paths declared in `package.json#exports`.
+- Existing public `runtime/migration_history`, `container_retirement`,
+  `service_environment` and `managed_prototype` module paths remain small export
+  facades. Their implementations live in the domain folders above; private imports
+  use those owners directly. The public `baseline/privacy_engine` facade likewise
+  keeps its path while the privacy stages live together under `baseline/privacy/`.
 - Unit tests mirror their source domain. Cross-domain workflows belong in
   `tests/integration/`; durable public promises belong in `tests/contracts/`.
 - `tests/helpers/public_cli.mjs` bounds setup-test child output and projects only
@@ -94,12 +105,12 @@ typed registry and produce the same result contract:
   cleanup. `runtime_workload_admission.mts` applies optional lifecycle admission before
   that work; application proofs and interactive sessions are deliberately outside it.
 - `workload_command_handlers.mts` exposes local queue inspection and exact dead-holder
-  metadata recovery without a project lock or Docker. `runtime/workload_queue.mts`
+  metadata recovery without a project lock or Docker. `runtime/resources/workload_queue.mts`
   owns cooperative lifecycle admission; its store owns bounded private atomic tickets,
   and its location helper binds the local user, boot and PID namespace independently
   of per-command temporary directories. No background scheduler is installed.
 - `engine_command_handlers.mts` exposes configuration-independent engine status and
-  reviewed VM shutdown. `runtime/engine_lifecycle.mts` owns the closed result,
+  reviewed VM shutdown. `runtime/engines/engine_lifecycle.mts` owns the closed result,
   shared-workload review and coordination; `engine_colima_backend.mts` owns the
   qualified profile, disk, boot and process proofs. Explicit shutdown uses the
   shared `engine-stop` workload ticket instead of creating a project lock. Its
@@ -117,13 +128,13 @@ typed registry and produce the same result contract:
 Command handlers receive an explicit context containing parsed flags, selected config,
 guided state, and session-local caches. They return a rendered, text, or silent result;
 only the shared output boundary creates JSON envelopes or writes final human output.
-`runtime/migration_failure.mts` owns bounded provider-envelope SQLSTATE recognition,
+`runtime/migrations/migration_failure.mts` owns bounded provider-envelope SQLSTATE recognition,
 fixed classification/remediation and closed safe diagnostic validation. Target drivers
 never forward SQL or provider error details. The manager summary reconstructs that
 fixed diagnostic across the child-process boundary; CLI JSON and private operation
 history expose the same projection. Activity adds a separate `recentFailures` list,
 leaving existing strict progress/recent receipt shapes unchanged for old clients.
-The optional `source` projection is owned by `runtime/migration_failure_source.mts`.
+The optional `source` projection is owned by `runtime/migrations/migration_failure_source.mts`.
 For individually dispatched PostgreSQL files, it identifies the attempted execution
 input by its reviewed filename, exact SHA-256 and baseline/candidate kind. The driver
 hashes the bytes it loads before dispatch; changed reviewed bytes refuse execution.
@@ -146,7 +157,7 @@ existing family, or in a new focused family when it represents a genuinely separ
 responsibility.
 
 Static Migration Insights has a separate additive contract from migration-plan v1 and
-post-failure SQLSTATE diagnosis. `runtime/migration_insights_input.mts` owns bounded
+post-failure SQLSTATE diagnosis. `runtime/migrations/migration_insights_input.mts` owns bounded
 regular-file reads and private exact-input text; the existing inventory, baseline-prefix
 and topology owners still calculate the candidate digest. Repeated shared-directory
 inputs must keep the same raw hash; findings retrieve text only by its expected hash.
@@ -160,7 +171,7 @@ coverage/unknown states. The editor consumes that contract; it must not reimplem
 analysis or infer runtime measurements from static warnings.
 
 Migration impact is a separate optional contract, not a new rehearsal gate.
-`runtime/migration_impact_plan.mts` recognizes only bounded simple SQL forms and retains
+`runtime/migrations/migration_impact_plan.mts` recognizes only bounded simple SQL forms and retains
 private relation/column specifications; it does not execute migrations or claim SQL
 validity. `migration_impact_queries.mts` validates those specifications and generates
 fixed, identifier-quoted aggregate queries. `migration_impact_catalog.mts` owns the
@@ -256,7 +267,7 @@ data/Storage preservation checks. It does not infer a rollback from a failed mig
 
 ## Runtime lifecycle
 
-Explicit native Prisma configuration selects `runtime/prisma_history.mts` for
+Explicit native Prisma configuration selects `runtime/migrations/prisma_history.mts` for
 bounded raw-byte history and native-ledger validation. The toolchain owner binds
 the installed execution dependencies; `native_migration_contract.mts` distinguishes
 portable baseline history from the current execution binding. Read-only active
@@ -283,7 +294,7 @@ The planning-only [database capability and conformance design](https://github.co
 owns future cross-family semantics, ownership and independent acceptance. It adds
 no supported runtime or execution backend.
 
-`runtime/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
+`runtime/lifecycle/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
 PostgreSQL and Supabase use it to dispatch commands, verify active baseline inputs,
 calculate and confirm the exact migration set, write target-bound receipts, validate
 runtime markers, and attempt owned failure cleanup without hiding the original error.
@@ -382,7 +393,7 @@ code so the same JavaScript boundary consumers install is exercised locally.
 
 ## Isolated native Knex candidate
 
-`runtime/knex_history.mts` owns bounded native names, raw code/support inventory and
+`runtime/migrations/knex_history.mts` owns bounded native names, raw code/support inventory and
 ledger-prefix validation. `knex_toolchain.mts` uses the shared native dependency
 owner to bind and copy the actual Knex/pg closure without executing it. Format 5's
 `knex_baseline_contract.mts` keeps source ledger provenance separate from current
@@ -396,7 +407,7 @@ reset/role mutation; `knex_worker_resources.mts` checks actual isolation metadat
 `knex_worker_process.mts` owns exact Docker ID, framing attachment and bounded
 cleanup. `knex_worker_bootstrap.mts` supplies immutable worker programs: its private
 Unix socket relays native pg traffic while genuine Knex runs in a separate child.
-`runtime/knex_worker_protocol.mts` and `knex_pg_broker.mts` own bounded backpressure,
+`runtime/migrations/knex_worker_protocol.mts` and `knex_pg_broker.mts` own bounded backpressure,
 fixed destination and PostgreSQL startup/session verification. No migration is
 imported on the host, translated, unlocked or repaired.
 
@@ -458,7 +469,7 @@ These implementation contracts alone do not demonstrate PostgreSQL isolation.
 Qualification requires independent real SDK, SQL-privilege, data-preservation and
 adversarial cancellation acceptance for the exact release and supported environment;
 mocked tests and builds do not establish that evidence.
-`runtime/knex_failure_diagnostic.mts` owns closed host-generated native failure
+`runtime/migrations/knex_failure_diagnostic.mts` owns closed host-generated native failure
 phase/stage/reason evidence. Private error branding and bounded aggregate traversal
 preserve the first origin separately from cleanup uncertainty. The target manager
 emits one invocation-nonce-bound frame; the CLI validates it before text summarization

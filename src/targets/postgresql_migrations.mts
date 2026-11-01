@@ -11,8 +11,8 @@ import {
   readKnexMigrationInventory,
   normalizeKnexMigrationLedger,
   verifyKnexMigrationLedger,
-} from "../runtime/knex_history.mjs";
-import { inspectKnexToolchain } from "../runtime/knex_toolchain.mjs";
+} from "../runtime/migrations/knex_history.mjs";
+import { inspectKnexToolchain } from "../runtime/migrations/knex_toolchain.mjs";
 import { deployKnexMigrations } from "./knex_migration_process.mjs";
 import {
   drizzleMigrationFiles,
@@ -21,13 +21,13 @@ import {
   isKnexMigrationFile,
   isNativeMigrationFile,
   type AnyMigrationFileEntry,
-} from "../runtime/migration_identity.mjs";
+} from "../runtime/migrations/migration_identity.mjs";
 import {
   readDrizzleMigrationInventory,
   verifyDrizzleMigrationLedger,
   normalizeDrizzleMigrationLedger,
-} from "../runtime/drizzle_history.mjs";
-import { inspectDrizzleToolchain } from "../runtime/drizzle_toolchain.mjs";
+} from "../runtime/migrations/drizzle_history.mjs";
+import { inspectDrizzleToolchain } from "../runtime/migrations/drizzle_toolchain.mjs";
 import { deployDrizzleMigrations } from "./drizzle_migration_process.mjs";
 /** PostgreSQL migration ownership: existing SQL ledger or explicitly selected native producer. */
 import { pathToFileURL } from "node:url";
@@ -38,20 +38,20 @@ import type { BaselineManifest } from "../baseline/artifact.mjs";
 import {
   readMigrationFileInventory,
   type MigrationFileEntry,
-} from "../runtime/migration_history.mjs";
-import { readConfiguredMigrationSource } from "../runtime/native_migration_source.mjs";
-import { parseNativeMigrationBinding } from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/migration_history.mjs";
+import { readConfiguredMigrationSource } from "../runtime/migrations/native_migration_source.mjs";
+import { parseNativeMigrationBinding } from "../runtime/migrations/native_migration_contract.mjs";
 import {
   normalizePrismaMigrationLedger,
   readPrismaMigrationInventory,
-} from "../runtime/prisma_history.mjs";
+} from "../runtime/migrations/prisma_history.mjs";
 import {
   createCandidateMigrationReceipt,
   assertBaselineMigrationHistory,
-} from "../runtime/restore.mjs";
+} from "../runtime/recovery/restore.mjs";
 import { runOwnedPostgresqlMigration } from "./postgresql_process.mjs";
 import { deployPrismaMigrations } from "./prisma_migration_process.mjs";
-import { inspectPrismaToolchain } from "../runtime/prisma_toolchain.mjs";
+import { inspectPrismaToolchain } from "../runtime/migrations/prisma_toolchain.mjs";
 
 type Loaded = Awaited<ReturnType<typeof loadRehearsalConfig>>;
 const quote = (x: string) => `'${x.replaceAll("'", "''")}'`;

@@ -1,0 +1,92 @@
+/** Read-only editor plan. Dependencies express the verified ordered prefix, not guessed SQL safety. */
+import { inspectRehearsalMigrations } from "../lifecycle/plan.mjs";
+import { inspectRuntimeTopologyCandidates } from "../lifecycle/topology.mjs";
+import type { RehearsalConfigPathOptions } from "../../project/configuration.mjs";
+
+type Inspection = Awaited<ReturnType<typeof inspectRehearsalMigrations>>;
+export const migrationReviewEntries = (
+  target: string,
+  migrations: Inspection["migrations"],
+) => {
+  if (migrations.length > 10000)
+    throw new Error("Migration review exceeds the bounded 10,000-file plan.");
+  const identity = (migration: Inspection["migrations"][number]) =>
+    "nativeIdentity" in migration
+      ? migration.nativeIdentity.kind === "knex"
+        ? `knex:${migration.nativeIdentity.name}`
+        : `drizzle:${migration.nativeIdentity.idx}:${migration.nativeIdentity.when}:${migration.nativeIdentity.tag}`
+      : migration.version;
+  return migrations.map((migration, index) => ({
+    ...migration,
+    target,
+    id: `${target}:${identity(migration)}`,
+    order: index,
+    ...("nativeIdentity" in migration ? {} : { timestamp: migration.version }),
+    required: migration.status === "candidate",
+    dependsOn: index ? [`${target}:${identity(migrations[index - 1]!)}`] : [],
+    warnings:
+      "nativeIdentity" in migration && migration.nativeIdentity.kind === "knex"
+        ? [
+            "historical_file_checksums_unavailable",
+            "native_javascript_isolated_execution_required",
+          ]
+        : migration.status === "candidate"
+          ? ["sql_safety_not_inferred"]
+          : [],
+    selectionReason:
+      migration.status === "candidate"
+        ? "Every candidate is required: the reviewed ordered suffix cannot be skipped or reordered."
+        : "Already represented or applied; shown for history review only.",
+  }));
+};
+
+export const inspectMigrationReviewPlan = async (
+  options: RehearsalConfigPathOptions = {},
+  inspectMigrations: typeof inspectRehearsalMigrations = inspectRehearsalMigrations,
+) => {
+  const inspections = new Map<string, Inspection>();
+  const candidates = await inspectRuntimeTopologyCandidates(
+    options,
+    inspectMigrations,
+    (target, inspection) => inspections.set(target.configPath, inspection),
+  );
+  const targets = [];
+  for (const target of candidates.targets) {
+    const inspection = inspections.get(target.configPath)!;
+    targets.push({
+      name: target.name,
+      provider: target.config.runtime.target,
+      baselineGenerationId: inspection.baselineGenerationId,
+      candidateSha256: inspection.candidateSha256,
+      ...(inspection.migrationTool?.kind === "drizzle" ||
+      inspection.migrationTool?.kind === "knex"
+        ? {
+            baselineHistorySha256: inspection.baselineHistorySha256,
+            baselinePrefixVerification: inspection.baselinePrefixVerification,
+          }
+        : {}),
+      ...(inspection.migrationTool
+        ? { migrationTool: inspection.migrationTool }
+        : {}),
+      entries: migrationReviewEntries(target.name, inspection.migrations),
+    });
+  }
+  if (
+    targets.reduce((total, target) => total + target.entries.length, 0) > 10000
+  )
+    throw new Error(
+      "Combined migration review exceeds the bounded 10,000-file plan.",
+    );
+  return {
+    schemaVersion: 1 as const,
+    candidateSha256: candidates.candidateSha256,
+    candidateCount: candidates.candidateCount,
+    selection: "complete-ordered-suffix" as const,
+    targets,
+    safety: {
+      readsSqlBodiesForSafety: false,
+      executesSql: false,
+      startsEngine: false,
+    },
+  };
+};

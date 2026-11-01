@@ -12,8 +12,8 @@ import {
 
 import { resolve } from "node:path";
 import { addPrismaMigrationDiscovery } from "./project_discovery_migration_tool.mjs";
-import { inspectContainerEngineOptions } from "../runtime/engine_discovery.mjs";
-import type { ContainerEngineDiscovery } from "../runtime/engine_discovery.mjs";
+import { inspectContainerEngineOptions } from "../runtime/engines/engine_discovery.mjs";
+import type { ContainerEngineDiscovery } from "../runtime/engines/engine_discovery.mjs";
 import { discoverApplication } from "./project_discovery_application.mjs";
 import type {
   ContainerEngineProbe,

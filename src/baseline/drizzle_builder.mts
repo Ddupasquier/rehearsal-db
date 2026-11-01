@@ -5,14 +5,14 @@ import type { loadRehearsalConfig } from "../project/configuration.mjs";
 import {
   readDrizzleMigrationInventory,
   verifyDrizzleMigrationLedger,
-} from "../runtime/drizzle_history.mjs";
-import { inspectDrizzleToolchain } from "../runtime/drizzle_toolchain.mjs";
-import { parseNativeMigrationBinding } from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/drizzle_history.mjs";
+import { inspectDrizzleToolchain } from "../runtime/migrations/drizzle_toolchain.mjs";
+import { parseNativeMigrationBinding } from "../runtime/migrations/native_migration_contract.mjs";
 import {
   parseDrizzleMigrationIdentity,
   sameMigrationCutoff,
   type MigrationCutoff,
-} from "../runtime/migration_identity.mjs";
+} from "../runtime/migrations/migration_identity.mjs";
 import {
   createAndActivateBaseline,
   createBaselineGenerationId,

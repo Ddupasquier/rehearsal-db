@@ -1,7 +1,7 @@
 /** Own only the standalone scenario's newly created PostgreSQL source helper. */
 
 import { randomUUID } from "node:crypto";
-import { assertLocalDockerContext } from "../../../dist/src/runtime/local_docker_context.mjs";
+import { assertLocalDockerContext } from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import { spawnScenarioCommand } from "./process.mjs";
 
 const FIXTURE_LABEL = "com.rehearsal-db.fixture";

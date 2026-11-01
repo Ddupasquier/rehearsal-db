@@ -1,4 +1,4 @@
-import { readKnexFailure } from "../../../dist/src/runtime/knex_failure_diagnostic.mjs";
+import { readKnexFailure } from "../../../dist/src/runtime/migrations/knex_failure_diagnostic.mjs";
 import { configureKnexApplication } from "../../../dist/src/targets/knex_application_configuration.mjs";
 import { performance } from "node:perf_hooks";
 import { mkdtemp, rm, readFile, chmod } from "node:fs/promises";

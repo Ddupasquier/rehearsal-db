@@ -7,9 +7,9 @@ import {
   drizzleFixture,
   removeDrizzleFixture,
 } from "../../helpers/drizzle_fixture.mjs";
-import { readDrizzleMigrationInventory } from "../../../dist/src/runtime/drizzle_history.mjs";
-import { drizzleMigrationFiles } from "../../../dist/src/runtime/migration_identity.mjs";
-import { inspectDrizzleToolchain } from "../../../dist/src/runtime/drizzle_toolchain.mjs";
+import { readDrizzleMigrationInventory } from "../../../dist/src/runtime/migrations/drizzle_history.mjs";
+import { drizzleMigrationFiles } from "../../../dist/src/runtime/migrations/migration_identity.mjs";
+import { inspectDrizzleToolchain } from "../../../dist/src/runtime/migrations/drizzle_toolchain.mjs";
 import { deployDrizzleMigrations } from "../../../dist/src/targets/drizzle_migration_process.mjs";
 import { runWithOperationCancellation } from "../../../dist/src/shared/cancellation.mjs";
 const roots = [];

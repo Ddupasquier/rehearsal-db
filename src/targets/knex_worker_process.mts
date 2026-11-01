@@ -4,7 +4,7 @@ import {
   preserveKnexFailure,
   withKnexFailureBoundary,
   type KnexFailureStage,
-} from "../runtime/knex_failure_diagnostic.mjs";
+} from "../runtime/migrations/knex_failure_diagnostic.mjs";
 import { withOperationCancellationShield } from "../shared/cancellation.mjs";
 import { assertKnexWorkerPrograms } from "./knex_worker_programs.mjs";
 import { inspectKnexWorkerEngine } from "./knex_worker_engine.mjs";
@@ -14,13 +14,13 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { KNEX_WORKER_POLICY } from "../runtime/knex_isolation_contract.mjs";
+import { KNEX_WORKER_POLICY } from "../runtime/migrations/knex_isolation_contract.mjs";
 import {
   decodeKnexFrames,
   encodeKnexFrame,
   KNEX_WORKER_LIMITS,
-} from "../runtime/knex_worker_protocol.mjs";
-import { createKnexPgBroker } from "../runtime/knex_pg_broker.mjs";
+} from "../runtime/migrations/knex_worker_protocol.mjs";
+import { createKnexPgBroker } from "../runtime/migrations/knex_pg_broker.mjs";
 import { bindOwnedProcessCancellation } from "../shared/owned_process.mjs";
 const failure = (stage: KnexFailureStage) =>
   markKnexFailure(

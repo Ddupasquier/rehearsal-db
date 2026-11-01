@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { withRuntimeWorkloadAdmission } from "../../../dist/src/cli/runtime_workload_admission.mjs";
-import { inspectWorkloads } from "../../../dist/src/runtime/workload_queue.mjs";
+import { inspectWorkloads } from "../../../dist/src/runtime/resources/workload_queue.mjs";
 
 const roots = [];
 afterEach(async () => {

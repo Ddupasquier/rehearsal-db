@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import {
   runtimeDockerEnvironment,
   scopedDockerEnvironment,
-} from "../runtime/local_docker_context.mjs";
+} from "../runtime/engines/local_docker_context.mjs";
 export const knexCommandBounds = (
   kind: string | undefined,
   args: readonly string[],

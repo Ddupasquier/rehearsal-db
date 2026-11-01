@@ -7,7 +7,7 @@ import { RehearsalError } from "./diagnostics.mjs";
 import {
   parseMigrationFailureDiagnostic,
   type MigrationFailureDiagnostic,
-} from "../runtime/migration_failure.mjs";
+} from "../runtime/migrations/migration_failure.mjs";
 import {
   MAX_OPERATION_PROGRESS_EVENTS,
   MAX_OPERATION_PROGRESS_STAGES,

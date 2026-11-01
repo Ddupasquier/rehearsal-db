@@ -2,7 +2,7 @@ import {
   markKnexFailure,
   withKnexFailureBoundary,
   type KnexFailureStage,
-} from "../runtime/knex_failure_diagnostic.mjs";
+} from "../runtime/migrations/knex_failure_diagnostic.mjs";
 import { performance } from "node:perf_hooks";
 import { inspectKnexWorkerEngine } from "./knex_worker_engine.mjs";
 /** Copy exact reviewed inputs/SDK; execute only in the strictly inspected worker. */
@@ -12,13 +12,13 @@ import { pathToFileURL } from "node:url";
 import {
   readKnexMigrationInventory,
   type KnexMigrationEntry,
-} from "../runtime/knex_history.mjs";
-import { inspectKnexToolchain } from "../runtime/knex_toolchain.mjs";
-import { KNEX_WORKER_POLICY_SHA256 } from "../runtime/knex_isolation_contract.mjs";
+} from "../runtime/migrations/knex_history.mjs";
+import { inspectKnexToolchain } from "../runtime/migrations/knex_toolchain.mjs";
+import { KNEX_WORKER_POLICY_SHA256 } from "../runtime/migrations/knex_isolation_contract.mjs";
 import {
   parseNativeMigrationBinding,
   type NativeMigrationBinding,
-} from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/native_migration_contract.mjs";
 import type { KnexMigrationTool } from "../project/configuration_migration_tool.mjs";
 import {
   getOperationCancellationSignal,

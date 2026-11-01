@@ -52,14 +52,14 @@ their owning work remains separate.
 
 ## Existing owners and proposed contract
 
-| Responsibility        | Keep                                                              | Narrow addition                                                                                                                                      |
-| --------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Target/configuration  | `src/targets/target.mts`, `project/configuration_*.mts`           | PostgreSQL family with explicitly discriminated native/container backend; strict unknown-field refusal                                               |
-| Orchestration/consent | `runtime/lifecycle_engine.mts`, topology and input-binding owners | Native operations behind the existing lifecycle; backend identity enters exact consent                                                               |
-| Process/SQL transport | shared owned-process/cancellation and target transport            | Absolute reviewed binaries, argument arrays, bounded I/O and independently authenticated role-specific sessions                                      |
-| Ownership/recovery    | existing marker/receipt and project lock owners                   | Native cluster creation nonce, canonical directory identity, binary/build digest, OS user, process birth/executable, endpoint and server incarnation |
-| Resource coordination | workload admission and queue owners                               | Same user/boot coordination namespace; native tasks consume declared capacity without claiming a hard OS quota                                       |
-| Presentation          | negotiated Core capabilities and existing Editor transport        | Explicit native availability/qualification; no second engine manager or migration runner in the extension                                            |
+| Responsibility        | Keep                                                                        | Narrow addition                                                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Target/configuration  | `src/targets/target.mts`, `project/configuration_*.mts`                     | PostgreSQL family with explicitly discriminated native/container backend; strict unknown-field refusal                                               |
+| Orchestration/consent | `runtime/lifecycle/lifecycle_engine.mts`, topology and input-binding owners | Native operations behind the existing lifecycle; backend identity enters exact consent                                                               |
+| Process/SQL transport | shared owned-process/cancellation and target transport                      | Absolute reviewed binaries, argument arrays, bounded I/O and independently authenticated role-specific sessions                                      |
+| Ownership/recovery    | existing marker/receipt and project lock owners                             | Native cluster creation nonce, canonical directory identity, binary/build digest, OS user, process birth/executable, endpoint and server incarnation |
+| Resource coordination | workload admission and queue owners                                         | Same user/boot coordination namespace; native tasks consume declared capacity without claiming a hard OS quota                                       |
+| Presentation          | negotiated Core capabilities and existing Editor transport                  | Explicit native availability/qualification; no second engine manager or migration runner in the extension                                            |
 
 Proposed configuration describes an absolute reviewed binary directory, native
 workdir, selected version/build and resource policy. These are design requirements,

@@ -1,4 +1,4 @@
-import { inspectBaselineSizing } from "../runtime/baseline_sizing.mjs";
+import { inspectBaselineSizing } from "../runtime/resources/baseline_sizing.mjs";
 /** Read-only readiness, support, planning, and inspection command handlers. */
 
 import { collectRehearsalSupportReport } from "../project/support_report.mjs";
@@ -6,7 +6,7 @@ import { discoverProjectProfile } from "../project/project_discovery.mjs";
 import {
   inspectRehearsalBaseline,
   inspectRehearsalMigrations,
-} from "../runtime/plan.mjs";
+} from "../runtime/lifecycle/plan.mjs";
 import {
   buildRuntimeStackPlan,
   runRuntimeStackDoctor,
@@ -23,7 +23,7 @@ import {
 import { exactCommands, renderedCommand } from "./command_contract.mjs";
 import type { CommandDefinition } from "./command_contract.mjs";
 import { inspectProjectOperationState } from "../shared/operation_guard.mjs";
-import { inspectRehearsalResources } from "../runtime/resource_inventory.mjs";
+import { inspectRehearsalResources } from "../runtime/resources/resource_inventory.mjs";
 
 const formatBytes = (bytes: number): string =>
   `${(bytes / 1024 ** 3).toFixed(1)} GiB`;

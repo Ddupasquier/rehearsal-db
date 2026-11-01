@@ -1,9 +1,9 @@
 /** Attempt both recovery recording and exact owned stop; never delete retained data. */
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { NativeMigrationBinding } from "../runtime/native_migration_contract.mjs";
+import type { NativeMigrationBinding } from "../runtime/migrations/native_migration_contract.mjs";
 import { withOperationCancellationShield } from "../shared/cancellation.mjs";
-import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
+import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";
 import { assertDockerResourceLabels } from "./docker_resource_ownership.mjs";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
 const containerRows = (text: string) => {

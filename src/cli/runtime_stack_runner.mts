@@ -4,23 +4,23 @@ import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
 import {
   loadRuntimeTopology,
   selectRuntimeTargets,
-} from "../runtime/topology.mjs";
+} from "../runtime/lifecycle/topology.mjs";
 import {
   runtimeCompletionAction,
   assertRuntimeCompletionAllowed,
-} from "../runtime/persistence.mjs";
-import { releaseOwnedColimaWhenIdle } from "../runtime/container_engine_ownership.mjs";
-import { inspectRehearsalResources } from "../runtime/resource_inventory.mjs";
-import { assertLocalDockerContext } from "../runtime/local_docker_context.mjs";
-import { runtimeConfigurationSha256 } from "../runtime/configuration_binding.mjs";
+} from "../runtime/lifecycle/persistence.mjs";
+import { releaseOwnedColimaWhenIdle } from "../runtime/engines/container_engine_ownership.mjs";
+import { inspectRehearsalResources } from "../runtime/resources/resource_inventory.mjs";
+import { assertLocalDockerContext } from "../runtime/engines/local_docker_context.mjs";
+import { runtimeConfigurationSha256 } from "../runtime/lifecycle/configuration_binding.mjs";
 import {
   assertResourcePolicyAllowsStartup,
   evaluateResourcePolicy,
-} from "../runtime/resource_policy.mjs";
-import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
+} from "../runtime/resources/resource_policy.mjs";
+import type { RuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
 import { executeRuntimeTargetStack } from "./runtime_stack_execution.mjs";
 import { withRuntimeWorkloadAdmission } from "./runtime_workload_admission.mjs";
-import { assertRuntimeWorkloadCapacity } from "../runtime/workload_capacity.mjs";
+import { assertRuntimeWorkloadCapacity } from "../runtime/resources/workload_capacity.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
 import type { CliSessionState } from "./command_contract.mjs";
 type RuntimeTopology = Awaited<ReturnType<typeof loadRuntimeTopology>>;

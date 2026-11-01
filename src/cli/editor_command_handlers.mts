@@ -1,22 +1,22 @@
-import { inspectMigrationSource } from "../runtime/migration_source_inspection.mjs";
+import { inspectMigrationSource } from "../runtime/migrations/migration_source_inspection.mjs";
 /** Versioned, read-only contracts for editor review; never a second runtime engine. */
-import { inspectMigrationReviewPlan } from "../runtime/migration_plan.mjs";
+import { inspectMigrationReviewPlan } from "../runtime/migrations/migration_plan.mjs";
 import {
   inspectMigrationInsights,
   renderMigrationInsights,
-} from "../runtime/migration_insights.mjs";
+} from "../runtime/migrations/migration_insights.mjs";
 import {
   inspectMigrationImpact,
   measureMigrationImpact,
   renderMigrationImpact,
-} from "../runtime/migration_impact.mjs";
+} from "../runtime/migrations/migration_impact.mjs";
 import { exactCommands, renderedCommand } from "./command_contract.mjs";
 import type { CommandDefinition } from "./command_contract.mjs";
 import {
   applyStopStalePlan,
   inspectStopStalePlan,
   stopReviewedStaleTarget,
-} from "../runtime/stale_environment_plan.mjs";
+} from "../runtime/recovery/stale_environment_plan.mjs";
 import {
   inspectConfigurationMetadata,
   reviewConfigurationProposal,

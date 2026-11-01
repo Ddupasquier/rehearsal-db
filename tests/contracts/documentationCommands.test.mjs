@@ -452,7 +452,7 @@ describe("documented CLI contract", () => {
   it("respects user-owned container runtime capacity", async () => {
     const [runtimeSource, cleanupSource, configuration] = await Promise.all([
       readFile(join(root, "dist/src/targets/supabase_environment.mjs"), "utf8"),
-      readFile(join(root, "dist/src/runtime/cleanup.mjs"), "utf8"),
+      readFile(join(root, "dist/src/runtime/resources/cleanup.mjs"), "utf8"),
       readFile(join(root, "docs/configuration.md"), "utf8"),
     ]);
 
