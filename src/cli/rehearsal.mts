@@ -39,6 +39,7 @@ import {
 import { createCommandEmitter } from "./command_output.mjs";
 import { normalizeCliFailure } from "./failure_output.mjs";
 import { createGuidedHome } from "./guided.mjs";
+import { notifyStartupUpdate } from "./startup_updates.mjs";
 import { createProjectCommands } from "./project_commands.mjs";
 import {
   buildRuntimeStackPlan,
@@ -153,6 +154,7 @@ const main = async () => {
     !flags.help &&
     !flags.version &&
     (command === "guide" || wantsAutomaticGuide);
+  await notifyStartupUpdate({ projectRoot, flags, command, guided });
   if (
     !flags.help &&
     !flags.version &&

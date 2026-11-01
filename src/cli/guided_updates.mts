@@ -167,6 +167,9 @@ export function createGuidedUpdates({
       );
       return false;
     }
+    write(
+      `Rehearsal update available: ${installed} → ${release.version}.\nAfter exiting this guide, update with: ${command}`,
+    );
     const decision = await select({
       message: `Core update available: ${installed} → ${release.version} (${release.channel})`,
       flags,

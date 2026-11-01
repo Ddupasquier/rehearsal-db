@@ -5,6 +5,13 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Short update notices on ordinary interactive CLI startup, with an exact command
+  for verified compatible npm installations. Machine output and shutdown stay silent;
+  opt-outs and skipped releases remain respected. The guide displays the command
+  immediately instead of hiding it behind another choice.
+
 ## [2.2.0] - 2026-10-30
 
 ### Added
