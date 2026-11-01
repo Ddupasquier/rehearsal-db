@@ -16,7 +16,7 @@ import pg from "pg";
 import {
   assertLocalDockerContext,
   scopedDockerEnvironment,
-} from "../../../dist/src/runtime/local_docker_context.mjs";
+} from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import {
   completeImpactBlockedMeasurement,
   createImpactSqlGate,

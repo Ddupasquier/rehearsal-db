@@ -1,7 +1,7 @@
 import {
   describeMigrationCutoff,
   type MigrationCutoff,
-} from "../runtime/migration_identity.mjs";
+} from "../runtime/migrations/migration_identity.mjs";
 /**
  * Human-readable CLI output. These functions are intentionally pure so the
  * command and guided workflow modules can focus on orchestration.
@@ -473,7 +473,7 @@ const summarizeSetupReadinessChecks = (
 };
 
 export const renderSetup = (result: {
-  containerEngines?: import("../runtime/engine_discovery.mjs").ContainerEngineDiscovery;
+  containerEngines?: import("../runtime/engines/engine_discovery.mjs").ContainerEngineDiscovery;
   mode: RenderMode;
   project: string;
   configurationPath: string;

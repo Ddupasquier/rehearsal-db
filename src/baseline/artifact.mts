@@ -1,9 +1,9 @@
-import { readKnexMigrationInventory } from "../runtime/knex_history.mjs";
+import { readKnexMigrationInventory } from "../runtime/migrations/knex_history.mjs";
 import {
   verifyKnexBaselineHistory,
   type KnexBaselineHistory,
-} from "../runtime/knex_baseline_contract.mjs";
-import { verifyDrizzleBaselineHistory } from "../runtime/drizzle_baseline_contract.mjs";
+} from "../runtime/migrations/knex_baseline_contract.mjs";
+import { verifyDrizzleBaselineHistory } from "../runtime/migrations/drizzle_baseline_contract.mjs";
 /**
  * Purpose: Write, verify, and atomically activate immutable sanitized Rehearsal
  * baseline generations. Do not run directly; this module is reusable script
@@ -30,26 +30,26 @@ import {
   createMigrationReplayReceipt,
   type MigrationLedgerEntry,
   type MigrationSourceEntry,
-} from "../runtime/migration_history.mjs";
+} from "../runtime/migrations/migration_history.mjs";
 import { verifyBaselineShapeEvidence } from "../source/shape_evidence.mjs";
 import type { BaselineShapeEvidence } from "../source/shape_contract.mjs";
 import { readBoundedShapeJson } from "../source/shape_json.mjs";
-import { readPrismaMigrationInventory } from "../runtime/prisma_history.mjs";
+import { readPrismaMigrationInventory } from "../runtime/migrations/prisma_history.mjs";
 import {
   parseNativeMigrationBinding,
   type NativeMigrationBinding,
-} from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/native_migration_contract.mjs";
 
-import type { MigrationCutoff } from "../runtime/migration_identity.mjs";
+import type { MigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 import {
   readDrizzleMigrationInventory,
   type DrizzleMigrationEntry,
   type DrizzleLedgerEntry,
-} from "../runtime/drizzle_history.mjs";
+} from "../runtime/migrations/drizzle_history.mjs";
 import {
   parseDrizzleMigrationIdentity,
   sameMigrationCutoff,
-} from "../runtime/migration_identity.mjs";
+} from "../runtime/migrations/migration_identity.mjs";
 
 type ByteChunk = string | Uint8Array;
 type ByteStream = Iterable<ByteChunk> | AsyncIterable<ByteChunk>;
@@ -1123,7 +1123,7 @@ export const verifyActiveBaseline = async ({
     if (
       knexInventory.bundleSha256 !==
         (
-          nativeBinding as import("../runtime/native_migration_contract.mjs").KnexMigrationBinding
+          nativeBinding as import("../runtime/migrations/native_migration_contract.mjs").KnexMigrationBinding
         ).bundleSha256 ||
       JSON.stringify(knexInventory.files) !==
         JSON.stringify(manifest.knexHistory?.files)

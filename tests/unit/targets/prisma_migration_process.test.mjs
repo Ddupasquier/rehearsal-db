@@ -16,9 +16,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { deployPrismaMigrations } from "../../../dist/src/targets/prisma_migration_process.mjs";
-import { readPrismaMigrationInventory } from "../../../dist/src/runtime/prisma_history.mjs";
-import { inspectPrismaToolchain } from "../../../dist/src/runtime/prisma_toolchain.mjs";
-import { assertNativeBaselineManifestUnchanged } from "../../../dist/src/runtime/baseline_identity.mjs";
+import { readPrismaMigrationInventory } from "../../../dist/src/runtime/migrations/prisma_history.mjs";
+import { inspectPrismaToolchain } from "../../../dist/src/runtime/migrations/prisma_toolchain.mjs";
+import { assertNativeBaselineManifestUnchanged } from "../../../dist/src/runtime/lifecycle/baseline_identity.mjs";
 import { runWithOperationCancellation } from "../../../dist/src/shared/cancellation.mjs";
 const preparation = vi.hoisted(() => ({
   afterConfig: null,
@@ -57,18 +57,21 @@ vi.mock("node:fs/promises", async (original) => {
     },
   };
 });
-vi.mock("../../../dist/src/runtime/prisma_toolchain.mjs", async (original) => {
-  const actual = await original();
-  return {
-    ...actual,
-    inspectPrismaToolchain: async (...args) => {
-      preparation.hashes++;
-      const result = await actual.inspectPrismaToolchain(...args);
-      await preparation.duringHash?.();
-      return result;
-    },
-  };
-});
+vi.mock(
+  "../../../dist/src/runtime/migrations/prisma_toolchain.mjs",
+  async (original) => {
+    const actual = await original();
+    return {
+      ...actual,
+      inspectPrismaToolchain: async (...args) => {
+        preparation.hashes++;
+        const result = await actual.inspectPrismaToolchain(...args);
+        await preparation.duringHash?.();
+        return result;
+      },
+    };
+  },
+);
 const roots = [];
 afterEach(async () => {
   vi.unstubAllEnvs();

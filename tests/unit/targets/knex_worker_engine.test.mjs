@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({
   remote: false,
   capabilities: null,
 }));
-vi.mock("../../../dist/src/runtime/local_docker_context.mjs", () => ({
+vi.mock("../../../dist/src/runtime/engines/local_docker_context.mjs", () => ({
   assertLocalDockerContext: (options) => {
     state.selections.push(options);
     if (state.remote) throw Error("Remote refused");

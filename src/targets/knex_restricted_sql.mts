@@ -1,7 +1,7 @@
 import {
   atKnexFailureBoundary,
   markKnexFailure,
-} from "../runtime/knex_failure_diagnostic.mjs";
+} from "../runtime/migrations/knex_failure_diagnostic.mjs";
 import {
   currentKnexFailurePhase,
   currentKnexSqlSignal,
@@ -13,7 +13,7 @@ import { spawnSync } from "node:child_process";
 import {
   runtimeDockerEnvironment,
   scopedDockerEnvironment,
-} from "../runtime/local_docker_context.mjs";
+} from "../runtime/engines/local_docker_context.mjs";
 
 export interface KnexSqlCredentials {
   readonly user: string;

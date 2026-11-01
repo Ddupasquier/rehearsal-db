@@ -1,16 +1,16 @@
 import {
   readKnexMigrationInventory,
   verifyKnexMigrationLedger,
-} from "../runtime/knex_history.mjs";
+} from "../runtime/migrations/knex_history.mjs";
 import {
   readDrizzleMigrationInventory,
   verifyDrizzleMigrationLedger,
-} from "../runtime/drizzle_history.mjs";
+} from "../runtime/migrations/drizzle_history.mjs";
 import {
   drizzleMigrationFiles,
   type AnyMigrationFileEntry,
   type MigrationCutoff,
-} from "../runtime/migration_identity.mjs";
+} from "../runtime/migrations/migration_identity.mjs";
 /**
  * Purpose: Inspect explicit local synthetic records and migration evidence, then
  * create a fail-closed sanitization-policy draft for human review.
@@ -26,11 +26,11 @@ import {
   buildMigrationLedgerInventory,
   type MigrationLedgerEntry,
   type MigrationFileEntry,
-} from "../runtime/migration_history.mjs";
+} from "../runtime/migrations/migration_history.mjs";
 import {
   readPrismaMigrationInventory,
   verifyPrismaMigrationLedger,
-} from "../runtime/prisma_history.mjs";
+} from "../runtime/migrations/prisma_history.mjs";
 
 const identifierPattern = /^[a-z][a-z0-9_]{0,62}$/u;
 const storageBucketPattern = /^[a-z0-9][a-z0-9.-]{0,99}$/u;

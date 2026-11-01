@@ -2,15 +2,15 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import type { Writable } from "node:stream";
-import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
-import { restoreCopyChunks } from "../runtime/restore_cache.mjs";
+import type { ActiveRuntimeInput } from "../runtime/lifecycle/lifecycle_engine.mjs";
+import { restoreCopyChunks } from "../runtime/resources/restore_cache.mjs";
 import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
   summarizeRestoreError,
-} from "../runtime/restore.mjs";
+} from "../runtime/recovery/restore.mjs";
 import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
-import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
+import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";
 import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
 import {
   bindOwnedProcessCancellation,

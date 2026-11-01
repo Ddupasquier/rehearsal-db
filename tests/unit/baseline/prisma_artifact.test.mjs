@@ -31,7 +31,7 @@ import {
   verifyActiveBaseline,
   inspectBaselineGenerations,
 } from "../../../dist/src/baseline/artifact.mjs";
-import { createCandidateMigrationReceipt } from "../../../dist/src/runtime/restore.mjs";
+import { createCandidateMigrationReceipt } from "../../../dist/src/runtime/recovery/restore.mjs";
 
 const roots = [];
 async function writable(path) {

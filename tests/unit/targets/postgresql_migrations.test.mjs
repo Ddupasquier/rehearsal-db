@@ -13,9 +13,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it, vi } from "vitest";
 import { createPostgresqlMigrationRuntime } from "../../../dist/src/targets/postgresql_migrations.mjs";
-import { readPrismaMigrationInventory } from "../../../dist/src/runtime/prisma_history.mjs";
-import { assertCandidateConfirmation } from "../../../dist/src/runtime/lifecycle_engine.mjs";
-import { createCandidateMigrationReceipt } from "../../../dist/src/runtime/restore.mjs";
+import { readPrismaMigrationInventory } from "../../../dist/src/runtime/migrations/prisma_history.mjs";
+import { assertCandidateConfirmation } from "../../../dist/src/runtime/lifecycle/lifecycle_engine.mjs";
+import { createCandidateMigrationReceipt } from "../../../dist/src/runtime/recovery/restore.mjs";
 const roots = [];
 afterEach(async () => {
   for (const root of roots.splice(0))

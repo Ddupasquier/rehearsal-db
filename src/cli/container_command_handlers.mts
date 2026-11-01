@@ -6,8 +6,8 @@ import {
   planContainerRetirement,
   retireContainers,
   type ContainerRetirementClaim,
-} from "../runtime/container_retirement.mjs";
-import { assertLocalDockerContext } from "../runtime/local_docker_context.mjs";
+} from "../runtime/resources/container_retirement.mjs";
+import { assertLocalDockerContext } from "../runtime/engines/local_docker_context.mjs";
 import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
 import {
   exactCommands,

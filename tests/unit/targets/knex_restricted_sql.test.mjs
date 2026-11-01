@@ -12,7 +12,7 @@ vi.mock("node:child_process", () => ({
     };
   },
 }));
-vi.mock("../../../dist/src/runtime/local_docker_context.mjs", () => ({
+vi.mock("../../../dist/src/runtime/engines/local_docker_context.mjs", () => ({
   runtimeDockerEnvironment: () =>
     state.bound ? { DOCKER_HOST: "unix:///owned/engine.sock" } : {},
   scopedDockerEnvironment: ({ endpoint }) => ({ DOCKER_HOST: endpoint }),

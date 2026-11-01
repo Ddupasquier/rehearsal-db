@@ -15,7 +15,7 @@ import { readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { REHEARSAL_VERSION } from "./diagnostics.mjs";
-import type { MigrationFailureDiagnostic } from "../runtime/migration_failure.mjs";
+import type { MigrationFailureDiagnostic } from "../runtime/migrations/migration_failure.mjs";
 import {
   refreshLiveOperationProgress,
   type OperationProgressSnapshot,

@@ -10,7 +10,7 @@ import {
   REHEARSAL_VERSION,
   redactDiagnosticValue,
 } from "../shared/diagnostics.mjs";
-import { runRehearsalDoctor } from "../runtime/plan.mjs";
+import { runRehearsalDoctor } from "../runtime/lifecycle/plan.mjs";
 import type { RehearsalConfigPathOptions } from "./configuration.mjs";
 
 interface VersionCommandResult {

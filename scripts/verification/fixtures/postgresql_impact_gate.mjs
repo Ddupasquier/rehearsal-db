@@ -1,6 +1,6 @@
 /** Fixture-only public-CLI SQL scheduling; no product deadline is renewed. */
 import assert from "node:assert/strict";
-import { isLocalDockerEndpoint } from "../../../dist/src/runtime/local_docker_context.mjs";
+import { isLocalDockerEndpoint } from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import {

@@ -261,7 +261,10 @@ it("preserves closed host native origin through manager aggregation/serializatio
   const directory = await mkdtemp(join(tmpdir(), "rehearsal-native-failure-"));
   const managerPath = join(directory, "manager.mjs");
   const moduleUrl = pathToFileURL(
-    join(process.cwd(), "dist/src/runtime/knex_failure_diagnostic.mjs"),
+    join(
+      process.cwd(),
+      "dist/src/runtime/migrations/knex_failure_diagnostic.mjs",
+    ),
   ).href;
   await writeFile(
     managerPath,

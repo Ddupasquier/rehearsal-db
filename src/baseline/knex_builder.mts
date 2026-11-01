@@ -6,16 +6,16 @@ import {
   readKnexMigrationInventory,
   verifyKnexMigrationLedger,
   parseKnexMigrationIdentity,
-} from "../runtime/knex_history.mjs";
-import { inspectKnexToolchain } from "../runtime/knex_toolchain.mjs";
-import { KNEX_WORKER_POLICY_SHA256 } from "../runtime/knex_isolation_contract.mjs";
-import { parseNativeMigrationBinding } from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/knex_history.mjs";
+import { inspectKnexToolchain } from "../runtime/migrations/knex_toolchain.mjs";
+import { KNEX_WORKER_POLICY_SHA256 } from "../runtime/migrations/knex_isolation_contract.mjs";
+import { parseNativeMigrationBinding } from "../runtime/migrations/native_migration_contract.mjs";
 import {
   createAndActivateBaseline,
   createBaselineGenerationId,
   type BaselineStorageAsset,
 } from "./artifact.mjs";
-import type { MigrationCutoff } from "../runtime/migration_identity.mjs";
+import type { MigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 export const createKnexBaseline = async ({
   loaded,
   records,

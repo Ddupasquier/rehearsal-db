@@ -38,13 +38,16 @@ vi.mock("../../../dist/src/targets/knex_restricted_sql.mjs", () => ({
     return JSON.stringify(state.rows);
   },
 }));
-vi.mock("../../../dist/src/runtime/knex_toolchain.mjs", () => ({
+vi.mock("../../../dist/src/runtime/migrations/knex_toolchain.mjs", () => ({
   inspectKnexToolchain: async () => ({ sha256: "a".repeat(64) }),
 }));
-vi.mock("../../../dist/src/runtime/knex_history.mjs", async (original) => ({
-  ...(await original()),
-  readKnexMigrationInventory: async () => ({ entries: currentFiles }),
-}));
+vi.mock(
+  "../../../dist/src/runtime/migrations/knex_history.mjs",
+  async (original) => ({
+    ...(await original()),
+    readKnexMigrationInventory: async () => ({ entries: currentFiles }),
+  }),
+);
 vi.mock("../../../dist/src/targets/knex_migration_process.mjs", () => ({
   deployKnexMigrations: async () => {
     const { withKnexRestrictedRole } =

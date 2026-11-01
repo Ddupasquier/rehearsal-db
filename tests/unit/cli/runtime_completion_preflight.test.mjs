@@ -2,18 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../../../dist/src/cli/runtime_workload_admission.mjs", () => ({
   withRuntimeWorkloadAdmission: ({ execute }) => execute(),
 }));
-vi.mock("../../../dist/src/runtime/local_docker_context.mjs", () => ({
+vi.mock("../../../dist/src/runtime/engines/local_docker_context.mjs", () => ({
   assertLocalDockerContext: vi.fn(() => ({
     context: "owned",
     endpoint: "unix:///synthetic/owned.sock",
     identity: "a".repeat(64),
   })),
 }));
-vi.mock("../../../dist/src/runtime/topology.mjs", () => ({
+vi.mock("../../../dist/src/runtime/lifecycle/topology.mjs", () => ({
   loadRuntimeTopology: vi.fn(),
   selectRuntimeTargets: (targets) => targets,
 }));
-import { assertLocalDockerContext } from "../../../dist/src/runtime/local_docker_context.mjs";
+import { assertLocalDockerContext } from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import { createRuntimeStackRunner } from "../../../dist/src/cli/runtime_stack_runner.mjs";
 const topology = (protectedRuntime = false) => {
   const primary = {

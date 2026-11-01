@@ -1,5 +1,5 @@
 /** IPC-only queue participant: no Docker, application or database operations. */
-import { acquireWorkload } from "../../dist/src/runtime/workload_queue.mjs";
+import { acquireWorkload } from "../../dist/src/runtime/resources/workload_queue.mjs";
 
 const controller = new AbortController();
 let lease;

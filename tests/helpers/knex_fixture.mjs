@@ -73,7 +73,7 @@ export const configureKnexFixture = async (f) => {
   const { createKnexBaseline } =
     await import("../../dist/src/baseline/knex_builder.mjs");
   const { inspectMigrationReviewPlan } =
-    await import("../../dist/src/runtime/migration_plan.mjs");
+    await import("../../dist/src/runtime/migrations/migration_plan.mjs");
   const cutoff = { kind: "knex", name: "002_index.cjs" };
   const policyBytes = Buffer.from(
     JSON.stringify({

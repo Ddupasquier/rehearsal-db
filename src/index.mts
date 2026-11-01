@@ -40,11 +40,11 @@ export {
 export type {
   MigrationCutoff,
   DrizzleMigrationIdentity,
-} from "./runtime/migration_identity.mjs";
+} from "./runtime/migrations/migration_identity.mjs";
 export type {
   NativeMigrationTool,
   DrizzleMigrationTool,
   KnexMigrationTool,
 } from "./project/configuration_migration_tool.mjs";
 
-export type { KnexMigrationIdentity } from "./runtime/knex_history.mjs";
+export type { KnexMigrationIdentity } from "./runtime/migrations/knex_history.mjs";

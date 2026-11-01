@@ -1,4 +1,4 @@
-import { assertNativeBaselineManifestUnchanged } from "../../../dist/src/runtime/baseline_identity.mjs";
+import { assertNativeBaselineManifestUnchanged } from "../../../dist/src/runtime/lifecycle/baseline_identity.mjs";
 import { createHash } from "node:crypto";
 import { writeFile, readFile, chmod, access } from "node:fs/promises";
 import { join } from "node:path";
@@ -7,8 +7,8 @@ import { afterEach, expect, it } from "vitest";
 import { knexFixture, removeKnexFixture } from "../../helpers/knex_fixture.mjs";
 import { createKnexBaseline } from "../../../dist/src/baseline/knex_builder.mjs";
 import { verifyActiveBaseline } from "../../../dist/src/baseline/artifact.mjs";
-import { readConfiguredMigrationSource } from "../../../dist/src/runtime/native_migration_source.mjs";
-import { createCandidateMigrationReceipt } from "../../../dist/src/runtime/restore.mjs";
+import { readConfiguredMigrationSource } from "../../../dist/src/runtime/migrations/native_migration_source.mjs";
+import { createCandidateMigrationReceipt } from "../../../dist/src/runtime/recovery/restore.mjs";
 const roots = [];
 afterEach(async () => {
   for (const root of roots.splice(0)) await removeKnexFixture(root);

@@ -1,4 +1,4 @@
-import { readKnexFailure } from "../../../dist/src/runtime/knex_failure_diagnostic.mjs";
+import { readKnexFailure } from "../../../dist/src/runtime/migrations/knex_failure_diagnostic.mjs";
 /** Owned tiny attachment/metadata fakes: no Docker, SDK, SQL or service execution. */
 import { EventEmitter } from "node:events";
 import { Readable, Writable } from "node:stream";
@@ -65,29 +65,32 @@ vi.mock("../../../dist/src/targets/knex_worker_engine.mjs", () => ({
     revalidate: () => {},
   }),
 }));
-vi.mock("../../../dist/src/runtime/knex_pg_broker.mjs", async (original) => {
-  const actual = await original();
-  return {
-    ...actual,
-    createKnexPgBroker: (...args) =>
-      state.brokerFailure
-        ? {
-            accept: async () => {
-              if (state.brokerFailure === "accept")
-                throw Error("PRIVATE_BROKER_CANARY");
-            },
-            assertHealthy: () => {
-              if (state.brokerFailure === "health")
-                throw Error("PRIVATE_BROKER_CANARY");
-            },
-            close: async () => {
-              if (state.brokerFailure === "cleanup")
-                throw Error("PRIVATE_BROKER_CANARY");
-            },
-          }
-        : actual.createKnexPgBroker(...args),
-  };
-});
+vi.mock(
+  "../../../dist/src/runtime/migrations/knex_pg_broker.mjs",
+  async (original) => {
+    const actual = await original();
+    return {
+      ...actual,
+      createKnexPgBroker: (...args) =>
+        state.brokerFailure
+          ? {
+              accept: async () => {
+                if (state.brokerFailure === "accept")
+                  throw Error("PRIVATE_BROKER_CANARY");
+              },
+              assertHealthy: () => {
+                if (state.brokerFailure === "health")
+                  throw Error("PRIVATE_BROKER_CANARY");
+              },
+              close: async () => {
+                if (state.brokerFailure === "cleanup")
+                  throw Error("PRIVATE_BROKER_CANARY");
+              },
+            }
+          : actual.createKnexPgBroker(...args),
+    };
+  },
+);
 import { KNEX_WORKER_PROGRAMS } from "../../../dist/src/targets/knex_worker_programs.mjs";
 import { runKnexWorker } from "../../../dist/src/targets/knex_worker_process.mjs";
 const roots = [];

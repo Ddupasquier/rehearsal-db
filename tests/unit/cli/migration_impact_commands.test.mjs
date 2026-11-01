@@ -10,7 +10,10 @@ const impact = vi.hoisted(() => ({
   measureMigrationImpact: vi.fn(),
   renderMigrationImpact: vi.fn(() => "CURRENT SNAPSHOT — NOT A SAFETY VERDICT"),
 }));
-vi.mock("../../../dist/src/runtime/migration_impact.mjs", () => impact);
+vi.mock(
+  "../../../dist/src/runtime/migrations/migration_impact.mjs",
+  () => impact,
+);
 
 import { parseArguments } from "../../../dist/src/cli/arguments.mjs";
 import { createCliSessionState } from "../../../dist/src/cli/command_contract.mjs";
