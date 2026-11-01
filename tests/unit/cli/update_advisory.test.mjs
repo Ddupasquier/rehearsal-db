@@ -22,6 +22,7 @@ import {
   saveUpdatePreference,
 } from "../../../dist/src/cli/update_advisory.mjs";
 import { createGuidedUpdates } from "../../../dist/src/cli/guided_updates.mjs";
+import { notifyStartupUpdate } from "../../../dist/src/cli/startup_updates.mjs";
 
 const roots = [];
 afterEach(async () => {
@@ -299,6 +300,14 @@ describe("explicit core update discovery", () => {
 });
 
 describe("interactive consent and bounded reminders", () => {
+  it("shows the update command immediately even when the guide user chooses Later", async () => {
+    const input = await fixture();
+    const subject = harness(input, ["once", "later"]);
+    expect(await subject.run({})).toBe(false);
+    expect(subject.write.mock.calls.flat().join("\n")).toContain(
+      "After exiting this guide, update with: npm install --save-dev --save-exact @rehearsal-db/core@0.1.0-rc.8",
+    );
+  });
   it("offers consent by default, makes no request on Not now, and does not repeat across home screens or the same day", async () => {
     const input = await fixture(),
       first = harness(input, ["later"]);
@@ -676,5 +685,121 @@ describe("private preferences and custom installations", () => {
     ).toBe(false);
     expect(await readFile(target, "utf8")).toBe("private-target");
     expect(await readdir(input.directory)).toEqual(["updates-v1.lock"]);
+  });
+});
+
+describe("terminal startup update notice", () => {
+  async function startup(input, extra = {}) {
+    const fetchImplementation = vi.fn(async () => response());
+    const write = vi.fn();
+    await notifyStartupUpdate({
+      projectRoot: input.project,
+      flags: {},
+      command: "doctor",
+      guided: false,
+      installed: "0.1.0-rc.7",
+      terminal: true,
+      environment: { REHEARSAL_UPDATE_STATE_DIR: input.directory },
+      fetchImplementation,
+      write,
+      ...extra,
+    });
+    return { fetchImplementation, write };
+  }
+  it("prints the exact npm command without modifying the project or creating a cache", async () => {
+    const input = await fixture();
+    const before = await readFile(join(input.project, "package.json"), "utf8");
+    const subject = await startup(input);
+    expect(subject.write).toHaveBeenCalledExactlyOnceWith(
+      "Rehearsal update available: 0.1.0-rc.7 → 0.1.0-rc.8.\nAfter this command finishes, update with: npm install --save-dev --save-exact @rehearsal-db/core@0.1.0-rc.8",
+    );
+    expect(await readFile(join(input.project, "package.json"), "utf8")).toBe(
+      before,
+    );
+    await expect(readdir(input.directory)).rejects.toThrow();
+  });
+  it("never checks machine output, help, version, shutdown, the guide or opted-out sessions", async () => {
+    for (const extra of [
+      { flags: { json: true } },
+      { flags: { help: true } },
+      { flags: { version: true } },
+      { command: "version" },
+      { command: "help" },
+      { command: "engine stop" },
+      { command: "stop" },
+      { command: "stop-stale" },
+      { guided: true },
+      { terminal: false },
+      { environment: { CI: "1" } },
+      { environment: { CODEX_CI: "1" } },
+      { environment: { REHEARSAL_UPDATE_CHECK: "off" } },
+      { environment: { REHEARSAL_UPDATE_STATE_DIR: "relative" } },
+    ]) {
+      const subject = await startup(await fixture(), extra);
+      expect(subject.fetchImplementation).not.toHaveBeenCalled();
+      expect(subject.write).not.toHaveBeenCalled();
+    }
+  });
+  it("honours disabled checks and skipped releases without rewriting preferences", async () => {
+    for (const patch of [
+      { permission: "disabled" },
+      { skippedVersion: "0.1.0-rc.8" },
+    ]) {
+      const input = await fixture();
+      await saveUpdatePreference(input.directory, {
+        ...emptyUpdatePreference(),
+        ...patch,
+      });
+      const before = await readFile(
+        join(input.directory, "updates-v1.json"),
+        "utf8",
+      );
+      const subject = await startup(input);
+      expect(subject.write).not.toHaveBeenCalled();
+      if (patch.permission)
+        expect(subject.fetchImplementation).not.toHaveBeenCalled();
+      expect(
+        await readFile(join(input.directory, "updates-v1.json"), "utf8"),
+      ).toBe(before);
+    }
+  });
+  it("does not claim an update when current, ahead, offline or metadata is invalid", async () => {
+    for (const fetchImplementation of [
+      async () => response(metadata("0.1.0-rc.7")),
+      async () => response(metadata("0.1.0-rc.6")),
+      async () => {
+        throw new Error("offline");
+      },
+      async () => response({ ...metadata(), name: "other" }),
+    ]) {
+      const subject = await startup(await fixture(), { fetchImplementation });
+      expect(subject.write).not.toHaveBeenCalled();
+    }
+  });
+  it("bounds an unresponsive registry to 750ms and aborts the request", async () => {
+    vi.useFakeTimers();
+    const input = await fixture();
+    const signals = [];
+    const pending = startup(input, {
+      fetchImplementation: async (_url, options) => {
+        signals.push(options.signal);
+        return new Promise(() => {});
+      },
+    });
+    // Preference reads use real filesystem I/O before the network timer is armed.
+    await vi.waitFor(() => expect(signals.length).toBe(2));
+    await vi.advanceTimersByTimeAsync(750);
+    const subject = await pending;
+    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    expect(subject.write).not.toHaveBeenCalled();
+  });
+  it("keeps unverified origins and breaking upgrades manual instead of inventing an install command", async () => {
+    const input = await fixture();
+    await writeFile(join(input.project, "package.json"), "{}");
+    const subject = await startup(input);
+    expect(subject.write.mock.calls[0][0]).toContain(
+      "Review compatibility and installation instructions:",
+    );
+    expect(subject.write.mock.calls[0][0]).not.toContain("npm install");
   });
 });

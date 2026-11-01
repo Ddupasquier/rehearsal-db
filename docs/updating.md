@@ -36,6 +36,18 @@ instead of installing both extension identities together.
 
 ### Project CLI package
 
+Normal interactive terminal commands show a short notice when a newer release is
+available, followed by the exact update command for a verified, compatible npm
+installation. Run it after the active command finishes. The startup registry check
+has a 750 ms network deadline; offline checks are silent. It never installs anything.
+Help, version, shutdown, JSON, CI and piped commands do not check. Disable checks with
+`REHEARSAL_UPDATE_CHECK=off` or **Disable reminders** in the guide; skipped releases
+remain hidden. The guide keeps its optional daily-check flow and now shows the update
+command directly when an update is found.
+
+Unverified installation origins, other package managers and breaking upgrades show
+these instructions instead of guessing an install command.
+
 Finish active Rehearsal commands first. Read the [release notes](https://github.com/Ddupasquier/rehearsal-db/releases),
 then use your project's existing package manager and dependency location. For an npm
 project that keeps Rehearsal in development dependencies, update to the reviewed 2.3.0

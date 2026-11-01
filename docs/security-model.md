@@ -65,8 +65,11 @@ both so they can discover promotion to a stable release.
 No project names, paths, credentials, database values or telemetry are sent. npm still
 receives an ordinary network request, including its originating network address.
 
-Daily reminders require explicit consent and run only when opening the guide. JSON,
-CI, noninteractive commands and passive inspection do not check. The owner-private
+The guide's daily reminders require explicit consent. Ordinary human-terminal commands
+also make a best-effort startup check, with a shorter 750 ms network deadline and no
+preference writes. This is public release discovery only, not installation consent.
+Help, version and shutdown remain network-free. JSON, CI and noninteractive commands
+do not check. The owner-private
 `~/.cache/rehearsal/updates-v1.json` stores only bounded preference timestamps and a skipped
 public version, never project data. Disable reminders in the guide or set
 `REHEARSAL_UPDATE_CHECK=off`; network/cache failures never block local recovery.
@@ -76,7 +79,7 @@ selector cannot redirect the network request or authorize an installation.
 Preference saves use a private exclusive-create `updates-v1.lock` and compare the previously
 read state while holding it, so a stale guide cannot overwrite a successfully saved Disable
 choice. Contention fails immediately; locks are never stolen or removed based on age.
-Automatic checks stop if that save fails; an explicitly approved one-time check may continue
+Automatic guide checks stop if that save fails; an explicitly approved one-time check may continue
 without saving preferences. If an abnormal exit leaves a lock, close other guide sessions
 and inspect the selected state directory before manually removing only `updates-v1.lock`.
 This is an advisory preference lock, not a runtime or cross-project operation lock.
@@ -85,7 +88,7 @@ Release availability is not compatibility or successful installation. Stable ins
 never receive preview suggestions. Preview installations can discover a newer stable
 release, explicitly labelled as stable; nothing changes channel automatically.
 Equal/newer or custom/unverified installations are not replaced.
-The guide only prints an exact update command and exits before installation, preserving
+The guide prints an exact update command before its choice and exits if the user selects installation instructions, preserving
 the installed-package fingerprint guard. Dependency changes still require the user's
 separate action and review. Checks never start infrastructure or change a release channel.
 

@@ -80,6 +80,7 @@ typed registry and produce the same result contract:
 - `cli_commands.mts` composes those focused families in precedence order without
   implementing their behavior.
 - `guided.mts` owns the interactive home screen and first-run questions.
+- `startup_updates.mts` owns best-effort, human-terminal startup notices without preference writes.
 - `guided_updates.mts` owns optional update consent and reminders in that guide;
   `update_advisory.mts` bounds public release metadata, private preferences and
   installation-origin checks. Neither participates in passive JSON inspection.

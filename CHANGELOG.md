@@ -5,6 +5,13 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Short update notices on ordinary interactive CLI startup, with an exact command
+  for verified compatible npm installations. Machine output and shutdown stay silent;
+  opt-outs and skipped releases remain respected. The guide displays the command
+  immediately instead of hiding it behind another choice.
+
 ### Fixed
 
 - Preserve closed host-generated Knex failure origins across manager error summaries, with separate cleanup uncertainty and no provider output, SQL or credential disclosure. Existing public error categories and exit codes are unchanged.
