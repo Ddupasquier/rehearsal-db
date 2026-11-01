@@ -1,5 +1,6 @@
 import {
   markKnexFailure,
+  preserveKnexFailure,
   withKnexFailureBoundary,
   type KnexFailureStage,
 } from "../runtime/knex_failure_diagnostic.mjs";
@@ -26,21 +27,23 @@ const phases = new AsyncLocalStorage<{
   signal: AbortSignal;
   deadlineSignal: AbortSignal;
   deadline: number;
+  checkpoint: KnexFailureStage;
 }>();
 export const currentKnexFailurePhase = () =>
   phases.getStore()?.phase ?? "unknown";
 export const currentKnexSqlSignal = (): AbortSignal | undefined =>
   phases.getStore()?.signal;
-export const currentKnexSqlRemainingMs = (): number => {
+export const currentKnexSqlRemainingMs = (stage?: KnexFailureStage): number => {
   const scope = phases.getStore();
   if (!scope) throw new Error("Restricted Knex phase required.");
+  const checkpoint = stage ?? scope.checkpoint;
   throwIfOperationCancelled();
   try {
     scope.signal.throwIfAborted();
   } catch (error) {
     throw markKnexFailure(error, {
       phase: scope.phase,
-      stage: "execution",
+      stage: checkpoint,
       reason:
         scope.deadlineSignal.aborted &&
         scope.signal.reason === scope.deadlineSignal.reason
@@ -52,7 +55,7 @@ export const currentKnexSqlRemainingMs = (): number => {
   if (remaining <= 0)
     throw markKnexFailure(
       new Error("Restricted Knex phase deadline expired; dispatch is refused."),
-      { phase: scope.phase, stage: "execution", reason: "deadline" },
+      { phase: scope.phase, stage: checkpoint, reason: "deadline" },
     );
   return Math.ceil(remaining);
 };
@@ -63,7 +66,9 @@ export const currentKnexSqlCredentials = (): KnexSqlCredentials => {
       "Restricted Knex phase authentication is required; administrator fallback is refused.",
     );
   throwIfOperationCancelled();
-  currentKnexSqlRemainingMs();
+  currentKnexSqlRemainingMs(
+    current.phase === "application" ? "application-credential" : undefined,
+  );
   return current.credentials;
 };
 import { withOperationCancellationShield } from "../shared/cancellation.mjs";
@@ -138,7 +143,7 @@ export const withKnexRestrictedRole = async <T,>({
       const refused = () => refusal(phase, proofStage);
       failureStage = "nested-binding";
       const active = phases.getStore();
-      if (active) currentKnexSqlRemainingMs();
+      if (active) currentKnexSqlRemainingMs("nested-binding");
       if (
         active?.phase === phase &&
         active.projectId === projectId &&
@@ -164,14 +169,14 @@ export const withKnexRestrictedRole = async <T,>({
         ...(active ? [active.signal] : []),
       ]);
       let cleaning = false;
-      const assertBudget = () => {
+      const assertBudget = (stage: KnexFailureStage = proofStage) => {
         throwIfOperationCancelled();
         try {
           phaseSignal.throwIfAborted();
         } catch (error) {
           throw markKnexFailure(error, {
             phase,
-            stage: "execution",
+            stage,
             reason:
               deadlineSignal.aborted &&
               phaseSignal.reason === deadlineSignal.reason
@@ -184,7 +189,7 @@ export const withKnexRestrictedRole = async <T,>({
             new Error(
               "Restricted Knex phase deadline expired; dispatch is refused.",
             ),
-            { phase, stage: "execution", reason: "deadline" },
+            { phase, stage, reason: "deadline" },
           );
       };
       const name = knexRoleName(projectId, phase),
@@ -198,8 +203,11 @@ export const withKnexRestrictedRole = async <T,>({
           if (assertOwnedTarget() !== identity) throw refused();
           if (!cleaning) assertBudget();
           return runSql(query);
-        } catch {
-          throw refusal(phase, "sql-binding-or-result");
+        } catch (error) {
+          throw preserveKnexFailure(
+            error,
+            refusal(phase, "sql-binding-or-result"),
+          );
         }
       };
       const check = () => {
@@ -236,8 +244,8 @@ export const withKnexRestrictedRole = async <T,>({
               `select pg_catalog.json_build_object('systemIdentifier',(select system_identifier::text from pg_catalog.pg_control_system()),'databaseOid',(select oid::bigint from pg_catalog.pg_database where datname=pg_catalog.current_database()),'roleOid',(select oid::bigint from pg_catalog.pg_roles where rolname=${literal(name)}))::text;`,
             ),
           );
-        } catch {
-          throw refused();
+        } catch (error) {
+          throw preserveKnexFailure(error, refused());
         }
         if (
           typeof r.systemIdentifier !== "string" ||
@@ -389,33 +397,36 @@ export const withKnexRestrictedRole = async <T,>({
           );
         }
         const credentials = { user: name, password, database };
-        failureStage = "execution";
-        const result = await phases.run(
-          {
-            phase,
-            ...(generationId ? { generationId } : {}),
-            projectId,
-            database,
-            runtimeWorkdir,
-            identity,
-            credentials,
-            signal: phaseSignal,
-            deadlineSignal,
-            deadline,
-          },
-          () => {
-            currentKnexSqlRemainingMs();
-            if (phase === "application") {
-              failureStage = "authentication";
-              authenticateApplication!(credentials);
-            }
-            failureStage = "execution";
-            currentKnexSqlRemainingMs();
-            return work(credentials);
-          },
-        );
+        failureStage = "admission";
+        const scope = {
+          phase,
+          ...(generationId ? { generationId } : {}),
+          projectId,
+          database,
+          runtimeWorkdir,
+          identity,
+          credentials,
+          signal: phaseSignal,
+          deadlineSignal,
+          deadline,
+          checkpoint: "execution" as KnexFailureStage,
+        };
+        const result = await phases.run(scope, () => {
+          currentKnexSqlRemainingMs("admission");
+          if (phase === "application") {
+            failureStage = "authentication";
+            scope.checkpoint = "authentication";
+            authenticateApplication!(credentials);
+          }
+          currentKnexSqlRemainingMs(
+            phase === "application" ? "authentication" : "admission",
+          );
+          failureStage = "execution";
+          scope.checkpoint = "execution";
+          return work(credentials);
+        });
         failureStage = "postcondition";
-        assertBudget();
+        assertBudget("postcondition");
         proofStage = "postcondition";
         check();
         completed = true;

@@ -822,3 +822,240 @@ it("records the actual private deadline signal and retains it before cleanup unc
   });
   expect(JSON.stringify(readKnexFailure(final))).not.toContain("PRIVATE");
 });
+
+const capturedFailure = async (task) => {
+  try {
+    await task();
+  } catch (error) {
+    return error;
+  }
+  throw Error("Expected owned phase refusal");
+};
+it("retains the actual proof checkpoint when admission expires before any role mutation", async () => {
+  const f = await fixture();
+  let now = 1000,
+    workCalls = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const error = await capturedFailure(() =>
+    withKnexRestrictedRole({
+      ...f.options,
+      phase: "application",
+      assertOwnedTarget: () => {
+        now = 121001;
+        return "a".repeat(64);
+      },
+      work: async () => {
+        workCalls++;
+      },
+    }),
+  );
+  expect(String(error)).toContain("privilege isolation");
+  expect(readKnexFailure(error)?.primary).toEqual({
+    phase: "application",
+    stage: "identity",
+    reason: "deadline",
+  });
+  expect(f.state.oid).toBeNull();
+  expect(f.state.mutations).toEqual([]);
+  expect(f.state.authentications).toBe(0);
+  expect(workCalls).toBe(0);
+});
+
+it("labels completed admission expiry before authentication and does not start the callback", async () => {
+  const f = await fixture();
+  let now = 1000,
+    workCalls = 0;
+  const runSql = f.options.runSql;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const error = await capturedFailure(() =>
+    withKnexRestrictedRole({
+      ...f.options,
+      phase: "application",
+      runSql: (sql) => {
+        const result = runSql(sql);
+        if (sql.includes(" login password ")) now = 121001;
+        return result;
+      },
+      work: async () => {
+        workCalls++;
+      },
+    }),
+  );
+  expect(readKnexFailure(error)?.primary).toEqual({
+    phase: "application",
+    stage: "admission",
+    reason: "deadline",
+  });
+  expect(f.state.authentications).toBe(0);
+  expect(workCalls).toBe(0);
+  expect(f.state.login).toBe(false);
+});
+
+it.each(["inside", "after"])(
+  "records %s authentication expiry without starting application configuration",
+  async (where) => {
+    const f = await fixture();
+    let now = 1000,
+      workCalls = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const error = await capturedFailure(() =>
+      withKnexRestrictedRole({
+        ...f.options,
+        phase: "application",
+        authenticateApplication: (credentials) => {
+          f.options.authenticateApplication(credentials);
+          now = 121001;
+          if (where === "inside") currentKnexSqlRemainingMs();
+        },
+        work: async () => {
+          workCalls++;
+        },
+      }),
+    );
+    expect(readKnexFailure(error)?.primary).toEqual({
+      phase: "application",
+      stage: "authentication",
+      reason: "deadline",
+    });
+    expect(f.state.authentications).toBe(1);
+    expect(workCalls).toBe(0);
+    expect(f.state.login).toBe(false);
+  },
+);
+
+it("identifies credential capture separately from an expired nested entry", async () => {
+  const app = await fixture();
+  let now = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const error = await capturedFailure(() =>
+    withKnexRestrictedRole({
+      ...app.options,
+      phase: "application",
+      work: async () => {
+        now = 121001;
+        currentKnexSqlCredentials();
+      },
+    }),
+  );
+  expect(readKnexFailure(error)?.primary).toEqual({
+    phase: "application",
+    stage: "application-credential",
+    reason: "deadline",
+  });
+  expect(app.state.login).toBe(false);
+});
+
+it("refuses an expired parent at nested entry before any child admission or callback", async () => {
+  const app = await fixture(),
+    query = await fixture();
+  let now = 1000,
+    queryCalls = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const error = await capturedFailure(() =>
+    withKnexRestrictedRole({
+      ...app.options,
+      phase: "application",
+      work: async () => {
+        now = 121001;
+        await withKnexRestrictedRole({
+          ...query.options,
+          phase: "application_query",
+          work: async () => {
+            queryCalls++;
+          },
+        });
+      },
+    }),
+  );
+  expect(readKnexFailure(error)?.primary).toEqual({
+    phase: "application",
+    stage: "nested-binding",
+    reason: "deadline",
+  });
+  expect(query.state.oid).toBeNull();
+  expect(queryCalls).toBe(0);
+  expect(app.state.login).toBe(false);
+});
+
+it("keeps a nested callback's inherited deadline before cleanup uncertainty", async () => {
+  const app = await fixture(),
+    query = await fixture();
+  let now = 1000,
+    queryCalls = 0,
+    original;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const runSql = query.options.runSql;
+  let cleaning = false;
+  const error = await capturedFailure(() =>
+    withKnexRestrictedRole({
+      ...app.options,
+      phase: "application",
+      work: async () => {
+        now = 119000;
+        await withKnexRestrictedRole({
+          ...query.options,
+          phase: "application_query",
+          runSql: (sql) => {
+            if (cleaning && sql.includes("pg_terminate_backend"))
+              throw Error("PRIVATE_CLEANUP");
+            return runSql(sql);
+          },
+          work: async () => {
+            queryCalls++;
+            expect(currentKnexSqlRemainingMs()).toBe(2000);
+            now = 121001;
+            cleaning = true;
+            try {
+              currentKnexSqlRemainingMs();
+            } catch (error) {
+              original = error;
+              throw error;
+            }
+          },
+        });
+      },
+    }),
+  );
+  expect(error).toBeInstanceOf(AggregateError);
+  expect(error.errors[0]).toBe(original);
+  expect(readKnexFailure(error)).toMatchObject({
+    primary: {
+      phase: "application_query",
+      stage: "execution",
+      reason: "deadline",
+    },
+    cleanup: {
+      phase: "application_query",
+      stage: "cleanup",
+      reason: "cleanup-unconfirmed",
+    },
+  });
+  expect(queryCalls).toBe(1);
+  expect(app.state.login).toBe(false);
+  expect(JSON.stringify(readKnexFailure(error))).not.toContain("PRIVATE");
+});
+
+it("labels postcondition expiry only after the callback returns", async () => {
+  const f = await fixture();
+  let now = 1000,
+    workCalls = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const error = await capturedFailure(() =>
+    withKnexRestrictedRole({
+      ...f.options,
+      phase: "verify",
+      work: async () => {
+        workCalls++;
+        now = 121001;
+        return "done";
+      },
+    }),
+  );
+  expect(readKnexFailure(error)?.primary).toEqual({
+    phase: "verify",
+    stage: "postcondition",
+    reason: "deadline",
+  });
+  expect(workCalls).toBe(1);
+  expect(f.state.login).toBe(false);
+});
