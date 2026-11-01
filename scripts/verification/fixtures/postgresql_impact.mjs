@@ -34,6 +34,64 @@ const ROW_CANARY = "PRIVATE_IMPACT_ROW_CANARY";
 const UDF_CANARY = "PRIVATE_IMPACT_UDF_CANARY";
 const ID = /^[a-f0-9]{64}$/u;
 const MAX_BYTES = 131072;
+const IMPACT_FAILURE_CATEGORIES = new Set([
+  "configuration_invalid",
+  "unsafe_environment",
+  "baseline_invalid",
+  "baseline_checksum_mismatch",
+  "migration_candidate_failure",
+  "migration_verification_failure",
+  "application_proof_failure",
+  "runtime_dependency_failure",
+  "internal_failure",
+  "operation_cancelled",
+]);
+
+/** Closed diagnostic observations only; no child text or arbitrary fields escape. */
+export const projectImpactClientSnapshot = (client) => {
+  const projection = {
+    observation: "bounded-child-output-snapshot",
+    category: "unknown",
+    code: "unknown",
+    refusal: "unknown",
+    fault: null,
+  };
+  try {
+    const exited =
+      (Number.isInteger(client?.child?.exitCode) &&
+        client.child.exitCode >= 0 &&
+        client.child.exitCode <= 255) ||
+      ["SIGINT", "SIGTERM", "SIGKILL", "SIGHUP"].includes(
+        client?.child?.signalCode,
+      );
+    if (!exited || typeof client?.output !== "function") return projection;
+    const stdout = client.output();
+    if (
+      typeof stdout !== "string" ||
+      stdout.length > MAX_BYTES ||
+      Buffer.byteLength(stdout) > MAX_BYTES
+    )
+      return projection;
+    const envelope = JSON.parse(stdout);
+    if (envelope?.schemaVersion !== 1 || envelope.status !== "error")
+      return projection;
+    const error = envelope.error;
+    if (!IMPACT_FAILURE_CATEGORIES.has(error?.category)) return projection;
+    projection.category = error.category;
+    if (error.code === error.category.toUpperCase())
+      projection.code = error.code;
+    if (
+      projection.category === "unsafe_environment" &&
+      projection.code === "UNSAFE_ENVIRONMENT" &&
+      error.message ===
+        "The selected sandbox is not a verified, unchanged running local runtime. No counts are returned."
+    )
+      projection.refusal = "impact-runtime-preflight";
+  } catch {
+    // Malformed or incomplete output stays unknown; provider text is never emitted.
+  }
+  return projection;
+};
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 const fail = () => {
   throw new Error(
@@ -890,8 +948,12 @@ export const provePostgresqlMigrationImpact = async ({
               120000,
               Math.max(0, Math.round(performance.now() - holderStarted)),
             );
+      // A direct-exit snapshot is not stdio closure. Never add a diagnostic drain
+      // before the existing cleanup; partial output stays unknown.
+      const childFailure = projectImpactClientSnapshot(raceMeasurement);
+      const gateMetadata = await raceGate.readMetadata();
       throw new Error(
-        `The bounded impact race setup failed: stage=${stage}, elapsedMs=${elapsed}, childStatus=${status}, childSignal=${signal}, holderAgeMs=${holderAge}; private output withheld.`,
+        `The bounded impact race setup failed: stage=${stage}, elapsedMs=${elapsed}, childStatus=${status}, childSignal=${signal}, holderAgeMs=${holderAge}, childFailure=${JSON.stringify(childFailure)}, gateMetadata=${JSON.stringify(gateMetadata)}; private output withheld.`,
       );
     }
     await release(raceHolder);
