@@ -984,7 +984,7 @@ export const provePostgresqlMigrationImpact = async ({
       );
     const [{ loadRuntimeTopology }, { verifyActiveBaseline }, transport] =
       await Promise.all([
-        installedModule("runtime/topology.mjs"),
+        installedModule("runtime/lifecycle/topology.mjs"),
         installedModule("baseline/artifact.mjs"),
         installedModule("targets/migration_impact_runtime.mjs"),
       ]);
