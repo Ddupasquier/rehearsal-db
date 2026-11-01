@@ -1,16 +1,16 @@
-import { normalizeRuntimeMarkerProtocol } from "../runtime/runtime_marker_protocol.mjs";
+import { normalizeRuntimeMarkerProtocol } from "../runtime/lifecycle/runtime_marker_protocol.mjs";
 /** Private non-starting transport for one explicitly selected owned local runtime. */
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { BaselineManifest } from "../baseline/artifact.mjs";
-import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
+import type { RuntimeTopologyTarget } from "../runtime/lifecycle/topology.mjs";
 import {
   assertLocalDockerContext,
   scopedDockerEnvironment,
-} from "../runtime/local_docker_context.mjs";
-import { diagnoseMigrationFailure } from "../runtime/migration_failure.mjs";
+} from "../runtime/engines/local_docker_context.mjs";
+import { diagnoseMigrationFailure } from "../runtime/migrations/migration_failure.mjs";
 import { holdPathAncestry } from "../shared/held_path_ancestry.mjs";
 import type { HeldPathAncestry } from "../shared/held_path_ancestry.mjs";
 import { runOwnedProcess } from "../shared/owned_process.mjs";

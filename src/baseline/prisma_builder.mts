@@ -5,9 +5,9 @@ import type { loadRehearsalConfig } from "../project/configuration.mjs";
 import {
   readPrismaMigrationInventory,
   verifyPrismaMigrationLedger,
-} from "../runtime/prisma_history.mjs";
-import { inspectPrismaToolchain } from "../runtime/prisma_toolchain.mjs";
-import { parseNativeMigrationBinding } from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/prisma_history.mjs";
+import { inspectPrismaToolchain } from "../runtime/migrations/prisma_toolchain.mjs";
+import { parseNativeMigrationBinding } from "../runtime/migrations/native_migration_contract.mjs";
 import {
   createAndActivateBaseline,
   createBaselineGenerationId,
@@ -27,7 +27,7 @@ export const createPrismaBaseline = async ({
   records: AsyncIterable<unknown>;
   ledger: unknown;
   policyBytes: Buffer;
-  cutoff: import("../runtime/migration_identity.mjs").MigrationCutoff;
+  cutoff: import("../runtime/migrations/migration_identity.mjs").MigrationCutoff;
   expectedTables: string[];
   assets: BaselineStorageAsset[];
 }) => {

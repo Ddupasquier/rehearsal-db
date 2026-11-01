@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import {
   parseMigrationFailureDiagnostic,
   type MigrationFailureDiagnostic,
-} from "../runtime/migration_failure.mjs";
+} from "../runtime/migrations/migration_failure.mjs";
 import {
   MAX_RECENT_OPERATION_PROGRESS,
   parseOperationProgressSnapshot,

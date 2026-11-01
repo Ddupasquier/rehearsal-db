@@ -200,7 +200,7 @@ localCommandSucceeds("supabase", ["status"]);`;
 
   it("refuses a reviewed endpoint identity drift before a Supabase health probe", async () => {
     const fake = await fakeCommandEnvironment({ dockerReady: true });
-    const source = `import { bindRuntimeDockerEnvironment } from ${JSON.stringify(join(process.cwd(), "dist/src/runtime/local_docker_context.mjs"))};
+    const source = `import { bindRuntimeDockerEnvironment } from ${JSON.stringify(join(process.cwd(), "dist/src/runtime/engines/local_docker_context.mjs"))};
 import { localCommandSucceeds } from ${JSON.stringify(environmentModule)};
 bindRuntimeDockerEnvironment({ expectedIdentity: "${"0".repeat(64)}" });
 localCommandSucceeds("supabase", ["status"]);`;

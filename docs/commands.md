@@ -885,3 +885,24 @@ This is a static warning capability, not SQL validity, physical schema drift,
 provider conformance or permission to execute a source. The native runtime and
 installed SDK qualification boundary remains in the
 [configuration owner](configuration.md#native-drizzle-migrations).
+
+### Reviewed Knex source inputs
+
+The isolated Knex candidate advertises `knexMigrations: 1` separately. Its `inspect
+plan` rows use `{kind:"knex",name:"FILE.cjs"}` identities, IDs such as
+`primary:knex:FILE.cjs` and no invented timestamp/version. The migration tool binding
+includes the complete reviewed `codeFiles` receipts, bundle/toolchain/isolation
+hashes and `historicalFileChecksums:"unavailable"`. Baseline-prefix evidence is
+`baselinePrefixVerification:"exact-reviewed-code-prefix"` with the immutable
+`baselineHistorySha256`; it does not attest originally applied bytes.
+
+Use the same read-only `inspect source --target=NAME --native-identity=JSON
+--source-sha256=SHA --candidate-sha256=WHOLE_PLAN_SHA --json` command with that exact
+Knex identity. Its closed schema-2 reference has the same fields and reviewed-input
+meaning as Drizzle, a confined `.cjs` workspace path, and null line/column. Stale
+identities, hashes, whole-plan consent, caller paths and symlinks refuse without
+executing migration code or contacting an engine. SQL Insights/impact analysis does
+not analyze or execute JavaScript; failed native execution does not invent SQL-file
+or statement attribution. Read the
+[Knex configuration boundary](configuration.md#native-knex-migrations)
+for required versions, isolation limits and exact-release qualification scope.

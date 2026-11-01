@@ -41,8 +41,8 @@ import {
   resolvePostgresqlSourceStatePaths,
   retirePostgresqlSourceAccess,
 } from "../source/postgresql_access.mjs";
-import { loadRuntimeTopology } from "../runtime/topology.mjs";
-import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
+import { loadRuntimeTopology } from "../runtime/lifecycle/topology.mjs";
+import type { RuntimeTopologyTarget } from "../runtime/lifecycle/topology.mjs";
 import {
   isOperationCancelled,
   throwIfOperationCancelled,

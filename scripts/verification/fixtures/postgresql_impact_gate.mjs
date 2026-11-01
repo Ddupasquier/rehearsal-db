@@ -1,6 +1,6 @@
 /** Fixture-only public-CLI SQL scheduling; no product deadline is renewed. */
 import assert from "node:assert/strict";
-import { isLocalDockerEndpoint } from "../../../dist/src/runtime/local_docker_context.mjs";
+import { isLocalDockerEndpoint } from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import { spawn } from "node:child_process";
 import { constants } from "node:fs";
 import {
@@ -46,6 +46,22 @@ const PSQL = [
   "postgres",
 ];
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const METADATA_JOURNAL = "metadata.jsonl";
+const METADATA_BYTES = 16384;
+const METADATA_ACTIONS = [
+  "context-endpoint",
+  "context-tls",
+  "daemon-id",
+  "container-inspect",
+];
+const METADATA_SIGNALS = [
+  "SIGINT",
+  "SIGTERM",
+  "SIGKILL",
+  "SIGHUP",
+  "error",
+  "unknown",
+];
 const refused = () =>
   new Error(
     "The bounded impact SQL gate refused its fixed fixture contract; private output withheld.",
@@ -112,7 +128,111 @@ async function privateDirectory(path) {
     throw refused();
   return { dev: s.dev, ino: s.ino };
 }
-async function gateFile(root, name) {
+
+const privateMetadataFile = (value) => {
+  if (
+    !value.isFile() ||
+    value.nlink !== 1 ||
+    value.size > METADATA_BYTES ||
+    value.mode & 0o077 ||
+    (process.getuid && value.uid !== process.getuid())
+  )
+    throw refused();
+};
+const metadataFact = (value) => {
+  if (
+    !value ||
+    !equal(
+      Object.keys(value).sort(),
+      [
+        "action",
+        "stage",
+        "elapsedMs",
+        "status",
+        "signal",
+        "abortObserved",
+      ].sort(),
+    ) ||
+    !METADATA_ACTIONS.includes(value.action) ||
+    !["started", "closed"].includes(value.stage) ||
+    !Number.isSafeInteger(value.elapsedMs) ||
+    value.elapsedMs < 0 ||
+    value.elapsedMs > 120000 ||
+    !(
+      value.status === null ||
+      (Number.isSafeInteger(value.status) &&
+        value.status >= 0 &&
+        value.status <= 255)
+    ) ||
+    !(value.signal === null || METADATA_SIGNALS.includes(value.signal)) ||
+    typeof value.abortObserved !== "boolean" ||
+    (value.stage === "started" &&
+      (value.status !== null || value.signal !== null))
+  )
+    throw refused();
+  return {
+    action: value.action,
+    stage: value.stage,
+    elapsedMs: value.elapsedMs,
+    status: value.status,
+    signal: value.signal,
+    abortObserved: value.abortObserved,
+  };
+};
+async function recordMetadata(root, fact) {
+  let handle;
+  try {
+    const identity = await privateDirectory(root);
+    handle = await open(
+      join(root, METADATA_JOURNAL),
+      constants.O_WRONLY |
+        constants.O_CREAT |
+        constants.O_APPEND |
+        constants.O_NOFOLLOW |
+        constants.O_NONBLOCK,
+      0o600,
+    );
+    const before = await handle.stat();
+    privateMetadataFile(before);
+    const line = JSON.stringify(metadataFact(fact)) + "\n";
+    if (before.size + Buffer.byteLength(line) > METADATA_BYTES - 32) {
+      // A bounded overflow sentinel makes a truncated history unavailable.
+      if (before.size + 18 <= METADATA_BYTES)
+        await handle.writeFile('{"overflow":true}\n');
+      return;
+    }
+    if (!equal(identity, await privateDirectory(root))) return;
+    await handle.writeFile(line);
+  } catch {
+    // Diagnostics cannot authorize a command, change its outcome or mask its error.
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+async function readMetadata(root) {
+  const unavailable = (state) => ({
+    state,
+    started: null,
+    closed: null,
+    last: null,
+  });
+  try {
+    const text = await gateFile(root, METADATA_JOURNAL, METADATA_BYTES);
+    if (!text.endsWith("\n")) throw refused();
+    const lines = text.slice(0, -1).split("\n");
+    if (!lines.length || lines.length > 128) throw refused();
+    const facts = lines.map((line) => metadataFact(JSON.parse(line)));
+    return {
+      state: "recorded",
+      started: facts.filter((x) => x.stage === "started").length,
+      closed: facts.filter((x) => x.stage === "closed").length,
+      last: facts.at(-1),
+    };
+  } catch (error) {
+    return unavailable(error.code === "ENOENT" ? "absent" : "unavailable");
+  }
+}
+async function gateFile(root, name, maximumBytes = 32) {
   const before = await privateDirectory(root);
   const handle = await open(
     join(root, name),
@@ -122,13 +242,13 @@ async function gateFile(root, name) {
     const s = await handle.stat();
     if (
       !s.isFile() ||
-      s.size > 32 ||
+      s.size > maximumBytes ||
       s.mode & 0o077 ||
       (process.getuid && s.uid !== process.getuid())
     )
       throw refused();
-    const bytes = Buffer.alloc(33),
-      { bytesRead } = await handle.read(bytes, 0, 33, 0),
+    const bytes = Buffer.alloc(maximumBytes + 1),
+      { bytesRead } = await handle.read(bytes, 0, bytes.length, 0),
       after = await handle.stat();
     if (
       bytesRead !== s.size ||
@@ -210,6 +330,45 @@ export async function runImpactGateWrapper(config, args) {
       }
     }
     controller.signal.throwIfAborted();
+    const action =
+      kind === "metadata"
+        ? args[0] === "context"
+          ? args[3] === TLS
+            ? "context-tls"
+            : "context-endpoint"
+          : args[2] === "info"
+            ? "daemon-id"
+            : "container-inspect"
+        : null;
+    const started = performance.now();
+    const record = (stage, result = { status: null, signal: null }) =>
+      action === null
+        ? undefined
+        : recordMetadata(config.root, {
+            action,
+            stage,
+            elapsedMs: Math.min(
+              120000,
+              Math.max(0, Math.round(performance.now() - started)),
+            ),
+            status:
+              Number.isSafeInteger(result.status) &&
+              result.status >= 0 &&
+              result.status <= 255
+                ? result.status
+                : null,
+            signal:
+              result.signal === null
+                ? null
+                : METADATA_SIGNALS.includes(result.signal)
+                  ? result.signal
+                  : "unknown",
+            abortObserved: controller.signal.aborted,
+          });
+    if (action !== null) {
+      await record("started");
+      controller.signal.throwIfAborted();
+    }
     const child = spawn(config.docker, args, {
       env: process.env,
       detached: process.platform !== "win32",
@@ -242,8 +401,10 @@ export async function runImpactGateWrapper(config, args) {
     clearTimeout(killTimer);
     controller.signal.removeEventListener("abort", stop);
     if (kind === "sql") process.stdin.unpipe(child.stdin);
-    if (controller.signal.aborted || result.signal || result.status !== 0)
-      throw refused();
+    const failed =
+      controller.signal.aborted || result.signal || result.status !== 0;
+    if (action !== null) await record("closed", result);
+    if (failed) throw refused();
   } finally {
     clearTimeout(timer);
     for (const event of events) process.removeListener(event, cancel);
@@ -275,6 +436,7 @@ export async function createImpactSqlGate({
   return {
     expiresAt,
     environment: { PATH: root + delimiter + path },
+    readMetadata: () => readMetadata(root),
     readReady: async () => {
       try {
         return (await gateFile(root, "ready")) === "ready\n";

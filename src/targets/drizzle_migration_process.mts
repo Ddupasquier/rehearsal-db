@@ -1,16 +1,16 @@
 /** Execute pinned Kit migrate, never a project-owned executable config or schema. */
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readDrizzleMigrationInventory } from "../runtime/drizzle_history.mjs";
-import { inspectDrizzleToolchain } from "../runtime/drizzle_toolchain.mjs";
+import { readDrizzleMigrationInventory } from "../runtime/migrations/drizzle_history.mjs";
+import { inspectDrizzleToolchain } from "../runtime/migrations/drizzle_toolchain.mjs";
 import {
   parseNativeMigrationBinding,
   type NativeMigrationBinding,
-} from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/native_migration_contract.mjs";
 import {
   drizzleMigrationFiles,
   type DrizzleMigrationFileEntry,
-} from "../runtime/migration_identity.mjs";
+} from "../runtime/migrations/migration_identity.mjs";
 import type { DrizzleMigrationTool } from "../project/configuration_migration_tool.mjs";
 import { deployNativeMigrations } from "./native_migration_process.mjs";
 export const deployDrizzleMigrations = async (options: {

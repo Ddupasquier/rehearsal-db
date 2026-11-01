@@ -16,7 +16,7 @@ import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAndActivateBaseline } from "../../dist/src/baseline/artifact.mjs";
-import { readMigrationFileInventory } from "../../dist/src/runtime/migration_history.mjs";
+import { readMigrationFileInventory } from "../../dist/src/runtime/migrations/migration_history.mjs";
 
 const execute = promisify(execFile);
 const fixtureRoot = join(process.cwd(), "tests/fixtures/rehearsal-project");

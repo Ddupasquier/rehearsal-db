@@ -1,4 +1,9 @@
-import { verifyDrizzleBaselineHistory } from "../runtime/drizzle_baseline_contract.mjs";
+import { readKnexMigrationInventory } from "../runtime/migrations/knex_history.mjs";
+import {
+  verifyKnexBaselineHistory,
+  type KnexBaselineHistory,
+} from "../runtime/migrations/knex_baseline_contract.mjs";
+import { verifyDrizzleBaselineHistory } from "../runtime/migrations/drizzle_baseline_contract.mjs";
 /**
  * Purpose: Write, verify, and atomically activate immutable sanitized Rehearsal
  * baseline generations. Do not run directly; this module is reusable script
@@ -25,26 +30,26 @@ import {
   createMigrationReplayReceipt,
   type MigrationLedgerEntry,
   type MigrationSourceEntry,
-} from "../runtime/migration_history.mjs";
+} from "../runtime/migrations/migration_history.mjs";
 import { verifyBaselineShapeEvidence } from "../source/shape_evidence.mjs";
 import type { BaselineShapeEvidence } from "../source/shape_contract.mjs";
 import { readBoundedShapeJson } from "../source/shape_json.mjs";
-import { readPrismaMigrationInventory } from "../runtime/prisma_history.mjs";
+import { readPrismaMigrationInventory } from "../runtime/migrations/prisma_history.mjs";
 import {
   parseNativeMigrationBinding,
   type NativeMigrationBinding,
-} from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/native_migration_contract.mjs";
 
-import type { MigrationCutoff } from "../runtime/migration_identity.mjs";
+import type { MigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 import {
   readDrizzleMigrationInventory,
   type DrizzleMigrationEntry,
   type DrizzleLedgerEntry,
-} from "../runtime/drizzle_history.mjs";
+} from "../runtime/migrations/drizzle_history.mjs";
 import {
   parseDrizzleMigrationIdentity,
   sameMigrationCutoff,
-} from "../runtime/migration_identity.mjs";
+} from "../runtime/migrations/migration_identity.mjs";
 
 type ByteChunk = string | Uint8Array;
 type ByteStream = Iterable<ByteChunk> | AsyncIterable<ByteChunk>;
@@ -76,6 +81,7 @@ export interface BaselineMetadata extends Record<string, unknown> {
   readonly migrationHistorySha256: string;
   readonly sanitizationPolicySha256: string;
   readonly sourceMigrationHistory?: readonly MigrationLedgerEntry[];
+  readonly knexHistory?: KnexBaselineHistory;
   readonly drizzleHistory?: Readonly<{
     schemaVersion: 1;
     entries: readonly DrizzleMigrationEntry[];
@@ -100,7 +106,7 @@ interface StorageAssetReceipt extends ContentReceipt {
 }
 
 export interface BaselineManifest extends BaselineMetadata {
-  readonly formatVersion: 1 | 2 | 3 | 4;
+  readonly formatVersion: 1 | 2 | 3 | 4 | 5;
   readonly generationId: string;
   readonly rowCount: number;
   readonly tableCounts: Readonly<Record<string, number>>;
@@ -130,7 +136,7 @@ export interface BaselineGenerationSummary {
   readonly generationId: string;
   readonly createdAt: string | null;
   readonly active: boolean;
-  readonly formatVersion: 1 | 2 | 3 | 4;
+  readonly formatVersion: 1 | 2 | 3 | 4 | 5;
   readonly rowCount: number;
   readonly tableCount: number;
   readonly migrationCount: number;
@@ -309,6 +315,7 @@ export const createAndActivateBaseline = async ({
   shapeEvidence,
   migrationLock,
   migrationJournal,
+  migrationSupportFiles = [],
 }: {
   artifactRoot: string;
   generationId?: string;
@@ -327,9 +334,81 @@ export const createAndActivateBaseline = async ({
   shapeEvidence?: BaselineShapeEvidence;
   migrationLock?: Uint8Array;
   migrationJournal?: Uint8Array;
+  migrationSupportFiles?: readonly {
+    filename: string;
+    fileSha256: string;
+    content: Buffer;
+  }[];
 }): Promise<BaselineManifest> => {
-  let preparedDrizzleFiles: readonly BaselineMigrationFile[] | undefined;
-  if (metadata.nativeMigrations?.kind === "drizzle") {
+  let preparedNativeFiles: readonly BaselineMigrationFile[] | undefined;
+  if (metadata.nativeMigrations?.kind === "knex") {
+    if (migrationLock !== undefined || migrationJournal !== undefined)
+      throw new Error(
+        "Knex baseline cannot contain another native producer's metadata.",
+      );
+    const files =
+      typeof migrationFiles === "function"
+        ? await migrationFiles()
+        : await migrationFiles;
+    if (
+      !Array.isArray(files) ||
+      files.length < 1 ||
+      files.length > 10000 ||
+      migrationSupportFiles.length > 16000
+    )
+      throw new Error("Knex baseline bundle exceeds its boundary.");
+    const receipts: Record<string, { sha256: string }> = {};
+    const all = new Map<string, { sha256: string; bytes: number }>();
+    let codeBytes = 0;
+    for (const file of [...files, ...migrationSupportFiles]) {
+      const content = file.content;
+      if (
+        typeof file.filename !== "string" ||
+        file.filename.length > 3072 ||
+        file.filename
+          .split("/")
+          .some(
+            (part: string) =>
+              !/^[A-Za-z0-9][A-Za-z0-9_.-]{0,190}$/u.test(part) ||
+              ["node_modules", "notes", "package.json"].includes(part),
+          ) ||
+        all.has(file.filename) ||
+        (typeof content !== "string" && !Buffer.isBuffer(content))
+      )
+        throw new Error("Knex baseline code path or bytes are invalid.");
+      const bytes = Buffer.byteLength(content);
+      if (bytes > 8 * 1024 * 1024 || (codeBytes += bytes) > 64 * 1024 * 1024)
+        throw new Error("Knex baseline code byte boundary exceeded.");
+      const sha256 = createHash("sha256").update(content).digest("hex");
+      if (file.fileSha256 !== sha256)
+        throw new Error("Knex baseline code checksum is invalid.");
+      all.set(file.filename, { sha256, bytes });
+      if (!file.filename.includes("/")) receipts[file.filename] = { sha256 };
+    }
+    const history = verifyKnexBaselineHistory({
+      binding: metadata.nativeMigrations,
+      history: metadata.knexHistory,
+      cutoff: metadata.migrationCutoff,
+      migrations: receipts,
+      historySha256: metadata.migrationHistorySha256,
+    });
+    if (
+      history.files.length !== all.size ||
+      history.files.some(
+        (f) =>
+          all.get(f.filename)?.sha256 !== f.fileSha256 ||
+          all.get(f.filename)?.bytes !== f.bytes,
+      ) ||
+      files.some((f) => f.filename.includes("/")) ||
+      migrationSupportFiles.some((f) => !f.filename.includes("/"))
+    )
+      throw new Error("Knex baseline code bundle is not exact.");
+    preparedNativeFiles = files;
+  } else if (migrationSupportFiles.length)
+    throw new Error(
+      "Code support files require the isolated Knex baseline format.",
+    );
+  else if (metadata.nativeMigrations?.kind === "drizzle") {
     const binding = parseNativeMigrationBinding(metadata.nativeMigrations);
     if (migrationLock !== undefined || !migrationJournal)
       throw new Error(
@@ -369,7 +448,7 @@ export const createAndActivateBaseline = async ({
       migrations: receipts,
       journal: migrationJournal,
     });
-    preparedDrizzleFiles = files;
+    preparedNativeFiles = files;
   } else if (typeof metadata.migrationCutoff !== "string")
     throw new Error(
       "Legacy and Prisma baseline cutoffs must retain timestamp identities.",
@@ -448,7 +527,7 @@ export const createAndActivateBaseline = async ({
     }
 
     const resolvedMigrationFiles =
-      preparedDrizzleFiles ??
+      preparedNativeFiles ??
       (typeof migrationFiles === "function"
         ? await migrationFiles()
         : await migrationFiles);
@@ -517,9 +596,11 @@ export const createAndActivateBaseline = async ({
         !(
           nativeBinding?.kind === "prisma"
             ? /^\d{14}_[A-Za-z0-9][A-Za-z0-9_-]{0,190}\/migration\.sql$/u
-            : nativeBinding?.kind === "drizzle"
-              ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,190}\.sql$/u
-              : migrationNamePattern
+            : nativeBinding?.kind === "knex"
+              ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,185}\.cjs$/u
+              : nativeBinding?.kind === "drizzle"
+                ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,190}\.sql$/u
+                : migrationNamePattern
         ).test(migration.filename) ||
         typeof migration.content !== "string" ||
         Object.hasOwn(migrationManifest, migration.filename)
@@ -548,6 +629,39 @@ export const createAndActivateBaseline = async ({
           dirname(join(migrationDirectory, migration.filename)),
           0o500,
         );
+    }
+    if (nativeBinding?.kind === "knex") {
+      const directories = new Set<string>();
+      for (const file of migrationSupportFiles) {
+        const target = join(migrationDirectory, file.filename);
+        await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+        await writeImmutableFile(target, file.content);
+        let parent = dirname(target);
+        while (parent !== migrationDirectory) {
+          directories.add(parent);
+          parent = dirname(parent);
+        }
+      }
+      const inventory = await readKnexMigrationInventory(
+        pathToFileURL(`${migrationDirectory}/`),
+      );
+      verifyKnexBaselineHistory({
+        binding: nativeBinding,
+        history: metadata.knexHistory,
+        cutoff: metadata.migrationCutoff,
+        migrations: migrationManifest,
+        historySha256: metadata.migrationHistorySha256,
+      });
+      if (
+        inventory.bundleSha256 !== nativeBinding.bundleSha256 ||
+        JSON.stringify(inventory.entries) !==
+          JSON.stringify(metadata.knexHistory?.entries)
+      )
+        throw new Error("Knex baseline code differs from receipt.");
+      for (const directory of [...directories].sort(
+        (a, b) => b.length - a.length,
+      ))
+        await chmod(directory, 0o500);
     }
     if (nativeBinding?.kind === "prisma") {
       const inventory = await readPrismaMigrationInventory(
@@ -667,13 +781,15 @@ export const createAndActivateBaseline = async ({
     const manifest: BaselineManifest = {
       ...metadata,
       formatVersion:
-        nativeBinding?.kind === "drizzle"
-          ? 4
-          : nativeBinding
-            ? 3
-            : schemaReceipt
-              ? 2
-              : 1,
+        nativeBinding?.kind === "knex"
+          ? 5
+          : nativeBinding?.kind === "drizzle"
+            ? 4
+            : nativeBinding
+              ? 3
+              : schemaReceipt
+                ? 2
+                : 1,
       generationId,
       rowCount,
       tableCounts: Object.fromEntries([...tableCounts].sort()),
@@ -857,9 +973,11 @@ export const inspectBaselineGenerations = async ({
     );
     if (
       manifest.generationId !== entry.name ||
-      ![1, 2, 3, 4].includes(manifest.formatVersion) ||
-      [3, 4].includes(manifest.formatVersion) !==
+      ![1, 2, 3, 4, 5].includes(manifest.formatVersion) ||
+      [3, 4, 5].includes(manifest.formatVersion) !==
         (manifest.nativeMigrations !== undefined) ||
+      (manifest.formatVersion === 5) !==
+        (manifest.nativeMigrations?.kind === "knex") ||
       (manifest.formatVersion === 4) !==
         (manifest.nativeMigrations?.kind === "drizzle") ||
       !Number.isSafeInteger(manifest.rowCount) ||
@@ -868,7 +986,8 @@ export const inspectBaselineGenerations = async ({
       !isObject(manifest.migrations) ||
       !isObject(manifest.storageAssets) ||
       (typeof manifest.migrationCutoff !== "string" &&
-        manifest.formatVersion !== 4)
+        manifest.formatVersion !== 4 &&
+        manifest.formatVersion !== 5)
     ) {
       throw new Error(
         `Rehearsal baseline generation ${entry.name} has an invalid manifest.`,
@@ -908,9 +1027,11 @@ export const verifyActiveBaseline = async ({
   const { generationDirectory } = paths;
   const manifest = parseManifest(await readFile(paths.manifestPath, "utf8"));
   if (
-    ![1, 2, 3, 4].includes(manifest.formatVersion) ||
-    [3, 4].includes(manifest.formatVersion) !==
+    ![1, 2, 3, 4, 5].includes(manifest.formatVersion) ||
+    [3, 4, 5].includes(manifest.formatVersion) !==
       (manifest.nativeMigrations !== undefined) ||
+    (manifest.formatVersion === 5) !==
+      (manifest.nativeMigrations?.kind === "knex") ||
     (manifest.formatVersion === 4) !==
       (manifest.nativeMigrations?.kind === "drizzle")
   )
@@ -985,6 +1106,30 @@ export const verifyActiveBaseline = async ({
     nativeInventory?.binding.lockSha256 !== nativeBinding.lockSha256
   )
     throw new Error("Native baseline migration lock changed.");
+  const knexInventory =
+    nativeBinding?.kind === "knex"
+      ? await readKnexMigrationInventory(
+          pathToFileURL(`${migrationDirectory}/`),
+        )
+      : null;
+  if (knexInventory) {
+    verifyKnexBaselineHistory({
+      binding: nativeBinding,
+      history: manifest.knexHistory,
+      cutoff: manifest.migrationCutoff,
+      migrations: manifest.migrations,
+      historySha256: manifest.migrationHistorySha256,
+    });
+    if (
+      knexInventory.bundleSha256 !==
+        (
+          nativeBinding as import("../runtime/migrations/native_migration_contract.mjs").KnexMigrationBinding
+        ).bundleSha256 ||
+      JSON.stringify(knexInventory.files) !==
+        JSON.stringify(manifest.knexHistory?.files)
+    )
+      throw new Error("Knex baseline code bundle changed.");
+  }
   let drizzleJournal: Buffer | undefined;
   const drizzleInventory =
     nativeBinding?.kind === "drizzle"
@@ -1014,23 +1159,27 @@ export const verifyActiveBaseline = async ({
     )
       throw new Error("Drizzle baseline native inventory changed.");
   }
-  const actualMigrationNames = drizzleInventory
-    ? drizzleInventory.entries.map((entry) => entry.filename).sort()
-    : nativeInventory
-      ? nativeInventory.entries.map((entry) => entry.filename).sort()
-      : (await readdir(migrationDirectory)).sort();
-  const nativeChecksums = drizzleInventory
-    ? new Map(
-        drizzleInventory.entries.map((entry) => [entry.filename, entry.hash]),
-      )
-    : nativeInventory
+  const actualMigrationNames = knexInventory
+    ? knexInventory.entries.map((e) => e.filename).sort()
+    : drizzleInventory
+      ? drizzleInventory.entries.map((entry) => entry.filename).sort()
+      : nativeInventory
+        ? nativeInventory.entries.map((entry) => entry.filename).sort()
+        : (await readdir(migrationDirectory)).sort();
+  const nativeChecksums = knexInventory
+    ? new Map(knexInventory.entries.map((e) => [e.filename, e.fileSha256]))
+    : drizzleInventory
       ? new Map(
-          nativeInventory.entries.map((entry) => [
-            entry.filename,
-            entry.fileSha256,
-          ]),
+          drizzleInventory.entries.map((entry) => [entry.filename, entry.hash]),
         )
-      : null;
+      : nativeInventory
+        ? new Map(
+            nativeInventory.entries.map((entry) => [
+              entry.filename,
+              entry.fileSha256,
+            ]),
+          )
+        : null;
   if (expectedMigrationNames.join("\0") !== actualMigrationNames.join("\0")) {
     throw new Error("The active Rehearsal migration bundle is not exact.");
   }
@@ -1039,9 +1188,11 @@ export const verifyActiveBaseline = async ({
       !(
         nativeBinding?.kind === "prisma"
           ? /^\d{14}_[A-Za-z0-9][A-Za-z0-9_-]{0,190}\/migration\.sql$/u
-          : nativeBinding?.kind === "drizzle"
-            ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,190}\.sql$/u
-            : migrationNamePattern
+          : nativeBinding?.kind === "knex"
+            ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,185}\.cjs$/u
+            : nativeBinding?.kind === "drizzle"
+              ? /^[A-Za-z0-9][A-Za-z0-9_-]{0,190}\.sql$/u
+              : migrationNamePattern
       ).test(filename)
     ) {
       throw new Error("The active Rehearsal migration manifest is invalid.");

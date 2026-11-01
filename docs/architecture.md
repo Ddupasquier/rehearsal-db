@@ -11,11 +11,17 @@ independent migration of shared temporary coordination, fixtures or recovery evi
 rehearsal-db/
 ├── src/                    TypeScript product source
 │   ├── application/       application lifecycle and HTTP proofs
-│   ├── baseline/          sanitized baseline creation and validation
+│   ├── baseline/          baseline creation and validation; privacy/ owns privacy stages
 │   ├── cli/               the `rehearsal` executable
 │   ├── identity/          local account and Storage association
 │   ├── project/           configuration, setup, and support
-│   ├── runtime/           plans and disposable-runtime lifecycle
+│   ├── runtime/
+│   │   ├── engines/       engine discovery, selection and VM shutdown
+│   │   ├── lifecycle/     plans, topology, ownership, markers and sessions
+│   │   ├── resources/     inventory, retirement, caches and workload coordination
+│   │   ├── migrations/    history, review, insights, impact and native toolchains
+│   │   ├── recovery/      restore and reviewed stale-environment recovery
+│   │   └── managed/       managed prototype and its worker
 │   ├── shared/            small target-neutral utilities
 │   ├── source/            approved source access and refresh
 │   └── targets/           PostgreSQL and Supabase adapters
@@ -41,6 +47,11 @@ rehearsal-db/
 - Database-specific lifecycle behavior belongs in `src/targets/`.
 - `scripts/verification/` is never included in the npm package.
 - Public consumers use only the paths declared in `package.json#exports`.
+- Existing public `runtime/migration_history`, `container_retirement`,
+  `service_environment` and `managed_prototype` module paths remain small export
+  facades. Their implementations live in the domain folders above; private imports
+  use those owners directly. The public `baseline/privacy_engine` facade likewise
+  keeps its path while the privacy stages live together under `baseline/privacy/`.
 - Unit tests mirror their source domain. Cross-domain workflows belong in
   `tests/integration/`; durable public promises belong in `tests/contracts/`.
 - `tests/helpers/public_cli.mjs` bounds setup-test child output and projects only
@@ -80,6 +91,7 @@ typed registry and produce the same result contract:
 - `cli_commands.mts` composes those focused families in precedence order without
   implementing their behavior.
 - `guided.mts` owns the interactive home screen and first-run questions.
+- `startup_updates.mts` owns best-effort, human-terminal startup notices without preference writes.
 - `guided_updates.mts` owns optional update consent and reminders in that guide;
   `update_advisory.mts` bounds public release metadata, private preferences and
   installation-origin checks. Neither participates in passive JSON inspection.
@@ -93,12 +105,12 @@ typed registry and produce the same result contract:
   cleanup. `runtime_workload_admission.mts` applies optional lifecycle admission before
   that work; application proofs and interactive sessions are deliberately outside it.
 - `workload_command_handlers.mts` exposes local queue inspection and exact dead-holder
-  metadata recovery without a project lock or Docker. `runtime/workload_queue.mts`
+  metadata recovery without a project lock or Docker. `runtime/resources/workload_queue.mts`
   owns cooperative lifecycle admission; its store owns bounded private atomic tickets,
   and its location helper binds the local user, boot and PID namespace independently
   of per-command temporary directories. No background scheduler is installed.
 - `engine_command_handlers.mts` exposes configuration-independent engine status and
-  reviewed VM shutdown. `runtime/engine_lifecycle.mts` owns the closed result,
+  reviewed VM shutdown. `runtime/engines/engine_lifecycle.mts` owns the closed result,
   shared-workload review and coordination; `engine_colima_backend.mts` owns the
   qualified profile, disk, boot and process proofs. Explicit shutdown uses the
   shared `engine-stop` workload ticket instead of creating a project lock. Its
@@ -116,13 +128,13 @@ typed registry and produce the same result contract:
 Command handlers receive an explicit context containing parsed flags, selected config,
 guided state, and session-local caches. They return a rendered, text, or silent result;
 only the shared output boundary creates JSON envelopes or writes final human output.
-`runtime/migration_failure.mts` owns bounded provider-envelope SQLSTATE recognition,
+`runtime/migrations/migration_failure.mts` owns bounded provider-envelope SQLSTATE recognition,
 fixed classification/remediation and closed safe diagnostic validation. Target drivers
 never forward SQL or provider error details. The manager summary reconstructs that
 fixed diagnostic across the child-process boundary; CLI JSON and private operation
 history expose the same projection. Activity adds a separate `recentFailures` list,
 leaving existing strict progress/recent receipt shapes unchanged for old clients.
-The optional `source` projection is owned by `runtime/migration_failure_source.mts`.
+The optional `source` projection is owned by `runtime/migrations/migration_failure_source.mts`.
 For individually dispatched PostgreSQL files, it identifies the attempted execution
 input by its reviewed filename, exact SHA-256 and baseline/candidate kind. The driver
 hashes the bytes it loads before dispatch; changed reviewed bytes refuse execution.
@@ -145,7 +157,7 @@ existing family, or in a new focused family when it represents a genuinely separ
 responsibility.
 
 Static Migration Insights has a separate additive contract from migration-plan v1 and
-post-failure SQLSTATE diagnosis. `runtime/migration_insights_input.mts` owns bounded
+post-failure SQLSTATE diagnosis. `runtime/migrations/migration_insights_input.mts` owns bounded
 regular-file reads and private exact-input text; the existing inventory, baseline-prefix
 and topology owners still calculate the candidate digest. Repeated shared-directory
 inputs must keep the same raw hash; findings retrieve text only by its expected hash.
@@ -159,7 +171,7 @@ coverage/unknown states. The editor consumes that contract; it must not reimplem
 analysis or infer runtime measurements from static warnings.
 
 Migration impact is a separate optional contract, not a new rehearsal gate.
-`runtime/migration_impact_plan.mts` recognizes only bounded simple SQL forms and retains
+`runtime/migrations/migration_impact_plan.mts` recognizes only bounded simple SQL forms and retains
 private relation/column specifications; it does not execute migrations or claim SQL
 validity. `migration_impact_queries.mts` validates those specifications and generates
 fixed, identifier-quoted aggregate queries. `migration_impact_catalog.mts` owns the
@@ -255,7 +267,7 @@ data/Storage preservation checks. It does not infer a rollback from a failed mig
 
 ## Runtime lifecycle
 
-Explicit native Prisma configuration selects `runtime/prisma_history.mts` for
+Explicit native Prisma configuration selects `runtime/migrations/prisma_history.mts` for
 bounded raw-byte history and native-ledger validation. The toolchain owner binds
 the installed execution dependencies; `native_migration_contract.mts` distinguishes
 portable baseline history from the current execution binding. Read-only active
@@ -271,7 +283,8 @@ rehash or newly verify row payloads and is not applied to SQL formats 1/2. Prepa
 native schema/config bytes are checked again after execution. Same-owner mutation
 races are not an atomic-openat or filesystem-sandbox guarantee. Baseline format 3
 preserves native paths and lock bytes; existing SQL formats remain unchanged.
-`targets/postgresql_migrations.mts` owns SQL/native dispatch, while
+`targets/postgresql_migrations.mts` owns SQL/native dispatch and exclusive private
+failure-receipt creation; the driver retains stopped-container cleanup in `finally`.
 `prisma_migration_process.mts` owns only private-config, bounded native execution
 against the exact target proven by `prisma_target_binding.mts`. A native migration
 failure preserves its data volume and requires explicit recovery; the extension
@@ -281,7 +294,7 @@ The planning-only [database capability and conformance design](https://github.co
 owns future cross-family semantics, ownership and independent acceptance. It adds
 no supported runtime or execution backend.
 
-`runtime/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
+`runtime/lifecycle/lifecycle_engine.mts` owns the target-neutral lifecycle contract. Both
 PostgreSQL and Supabase use it to dispatch commands, verify active baseline inputs,
 calculate and confirm the exact migration set, write target-bound receipts, validate
 runtime markers, and attempt owned failure cleanup without hiding the original error.
@@ -377,3 +390,115 @@ handler, focused boundary tests, and documentation—without widening policy ver
 
 Run `npm run build` after changing TypeScript source. Tests import the generated package
 code so the same JavaScript boundary consumers install is exercised locally.
+
+## Isolated native Knex candidate
+
+`runtime/migrations/knex_history.mts` owns bounded native names, raw code/support inventory and
+ledger-prefix validation. `knex_toolchain.mts` uses the shared native dependency
+owner to bind and copy the actual Knex/pg closure without executing it. Format 5's
+`knex_baseline_contract.mts` keeps source ledger provenance separate from current
+code hashes and explicitly unavailable historical checksums. Existing formats and
+native producers retain their contracts.
+
+`targets/knex_migration_process.mts` stages reviewed inputs and shared closure,
+rechecks source/copy/baseline/target, and calls only the disposable worker.
+`knex_worker_engine.mts` owns selected local daemon and fixed-image preflight before
+reset/role mutation; `knex_worker_resources.mts` checks actual isolation metadata.
+`knex_worker_process.mts` owns exact Docker ID, framing attachment and bounded
+cleanup. `knex_worker_bootstrap.mts` supplies immutable worker programs: its private
+Unix socket relays native pg traffic while genuine Knex runs in a separate child.
+`runtime/migrations/knex_worker_protocol.mts` and `knex_pg_broker.mts` own bounded backpressure,
+fixed destination and PostgreSQL startup/session verification. No migration is
+imported on the host, translated, unlocked or repaired.
+
+`knex_restricted_role.mts` owns least-privilege database access and cleanup;
+`knex_role_receipt.mts` binds a private role OID to project, cluster and database.
+No PUBLIC/app ACL correction or name-only role adoption is allowed.
+`knex_restricted_sql.mts` authenticates TCP sessions directly as the phase role,
+with private credentials, the bound engine and exact target identity. Worker,
+restore, verification, application and application-query roles have separate receipts binding
+project, cluster, database and role OIDs; an unknown role is never adopted. Nested
+work in the same phase reuses only its exact current ownership binding. Ledger
+reads and verification use the verification role; schema preparation and migrations
+use the worker role. Neither path uses an administrator connection plus `SET ROLE`.
+
+`postgresql_restore.mts` owns streaming COPY and its owned child. For Knex it uses
+the separate restore role, temporarily granted only PostgreSQL 17 `SET` permission
+on `session_replication_role`. Catalog checks prove the permission absent before
+work, present during restore, and revoked afterward. Credentials are disabled and
+owned database sessions terminated/checked even on failure or cancellation. No
+superuser, bypass-RLS or administrator membership is granted. Verification receives
+SELECT permissions without restore capability; application credentials allow DML
+without administrative access. Successful application credentials remain usable
+across repeated start/verify calls, independently of ephemeral phase cleanup.
+`knex_application_credential.mts` stores the owner-private generation/cluster/database/
+role-OID-bound credential; repeat calls authenticate that same credential without
+password rotation. Changed generation, identity or failed authentication refuses
+reuse without disabling a previously live application login. Only reviewed reset
+or repair may establish a replacement credential.
+`knex_application_configuration.mts` captures the persistent application environment
+before entering the separate ephemeral `application_query` role. Configuration
+adapters receive that frozen user environment while their Core-provided SQL callback
+uses the temporary query role, with DML but no CREATE or restore-parameter privilege.
+Query-role login is always disabled and its sessions terminated/checked on success,
+failure or cancellation; existing application connections and credentials are not
+terminated or rotated. Publishing the generated environment uses the captured
+application identity, never the temporary query credential. Persistent Core SQL is
+limited to the fixed session-user authentication probe; user-object evaluation is
+refused on that credential. Runtime adapters cannot override generated PostgreSQL
+credential variables. Adapter JavaScript remains owner-trusted host code, not part
+of the migration worker sandbox; custom clients it opens are not Core SQL callbacks. Administrative transport pins `search_path=pg_catalog`, disables psql startup files
+and password prompting, and qualifies its metadata functions/relations. It is
+confined to fixed catalog,
+permission and credential operations; it never evaluates migration-owned relations.
+
+Each private phase has a monotonic 120-second deadline combined with operation
+cancellation. Reset closes each worker scope before entering subsequent verification,
+row restore and application configuration; the whole reset is not a worker phase.
+Knex reset replay refuses entry from an already active role scope before preparation.
+Prerequisite/schema/finalization hooks remain worker-authenticated in their own bounded
+scopes, and native replay owns its worker scope. Sibling phases receive their own
+120-second budgets. Genuinely nested phases, including application configuration queries,
+inherit the earlier parent deadline; explicit budget checks refuse dispatch even when the event loop delays an abort timer. Bounded
+catalog cleanup remains permitted after expiry or cancellation;
+nested worker and COPY work share its signal. COPY has an owned termination/kill
+path and phase cleanup verifies backend absence. Synchronous adapter/query contracts
+retain bounded seven-second transport/five-second statement limits and observe
+cancellation before and after a query; they are not instantaneously interruptible.
+These implementation contracts alone do not demonstrate PostgreSQL isolation.
+Qualification requires independent real SDK, SQL-privilege, data-preservation and
+adversarial cancellation acceptance for the exact release and supported environment;
+mocked tests and builds do not establish that evidence.
+`runtime/migrations/knex_failure_diagnostic.mts` owns closed host-generated native failure
+phase/stage/reason evidence. Private error branding and bounded aggregate traversal
+preserve the first origin separately from cleanup uncertainty. The target manager
+emits one invocation-nonce-bound frame; the CLI validates it before text summarization
+and exposes optional `error.context.nativeFailure`, without changing existing error
+codes or inventing SQLSTATE. Frame bytes/nonces are removed from public prose and
+never enter migration-worker inputs or environment. Worker/provider logs cannot
+supply trusted evidence; unknown errors remain explicitly unclassified. This is
+diagnostic evidence, not permission, cleanup proof or a claim of root cause.
+
+`knex_failure_recovery.mts` attempts owned shutdown even if failure recording fails;
+missing metadata never authorizes resetting retained resources. Target failure
+keeps data/recovery, and unknown worker cleanup blocks destructive reuse. See the
+[configuration owner](configuration.md#native-knex-migrations)
+for the explicit security, resource and qualification boundaries.
+
+Knex isolation qualification must include an ordinary SERIAL and an identity-column
+restore with nontrivial values, followed by a default insert proving both next
+sequence values. Restricted COPY selects CONTINUE IDENTITY and uses catalog-guarded
+setval instead of ownership-dependent TRUNCATE RESTART IDENTITY. Other producers
+retain their existing restart behavior. The adversarial PostgreSQL fixture must
+also install an invoker `public.has_parameter_privilege(text,text,text)` overload
+that records `session_user` in an owned canary table when called. Fixed administrative
+metadata/credential cleanup must never invoke it or produce a privileged canary
+row, including with poisoned ambient PGOPTIONS/startup-file settings. These are
+required real-database observations, not established by mocked transport tests.
+
+Application-query qualification must keep a prior legitimate application connection
+open, invoke migration-owned SQL through the configuration callback that disables
+statement_timeout and exceeds its bound, then independently verify the temporary
+query role has no remaining backends while the original application connection,
+password and generated DATABASE_URL remain unchanged. Mocked phase-routing tests
+show callback/cleanup selection only; they do not prove PostgreSQL termination.

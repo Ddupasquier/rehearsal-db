@@ -5,6 +5,21 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-01
+
+### Added
+
+- Short update notices on ordinary interactive CLI startup, with an exact command
+  for verified compatible npm installations. Machine output and shutdown stay silent;
+  opt-outs and skipped releases remain respected. The guide displays the command
+  immediately instead of hiding it behind another choice.
+
+- Opt-in Knex 3.3.0 / pg 8.23.1 PostgreSQL migrations with native filename identities, reviewed code/support baseline format 5 and an explicit historical-checksums-unavailable notice. Genuine SDK migration modules execute only in a bounded network-disabled Linux worker through a restricted-role fixed-target relay; unknown role/worker ownership and cleanup refuse instead of falling back to host JavaScript. Qualification targets PostgreSQL 17 on Ubuntu 24.04 x64 / Node 24; source candidates do not establish published availability or completed qualification.
+
+### Fixed
+
+- Preserve closed host-generated Knex failure origins across manager error summaries, with separate cleanup uncertainty and no provider output, SQL or credential disclosure. Existing public error categories and exit codes are unchanged.
+
 ## [2.2.0] - 2026-10-30
 
 ### Added
@@ -969,7 +984,8 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.0...v2.0.1

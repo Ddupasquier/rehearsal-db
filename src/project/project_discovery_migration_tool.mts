@@ -68,3 +68,30 @@ export const addDrizzleMigrationDiscovery = (
     ),
   );
 };
+
+export const addKnexMigrationDiscovery = (
+  facts: DetectedDiscoveryItem[],
+  decisions: DecisionDiscoveryItem[],
+) => {
+  facts.push(
+    detected("database.knex", "Knex migration metadata", "Knex", [
+      {
+        kind: "manifest",
+        source: "package.json",
+        detail:
+          "A Knex declaration is present; knexfile, migrations and environment code were not evaluated.",
+      },
+    ]),
+  );
+  decisions.push(
+    decision(
+      "database.migrationTool",
+      "Native migration tool",
+      "Knex requires isolated execution",
+      "Review explicitly pinned Knex 3.3.0 / pg 8.23.1 PostgreSQL and its disposable restricted worker before configuring native JavaScript.",
+      "Package metadata is not isolation or native execution conformance evidence; historical file checksums are unavailable.",
+      [],
+      "postgresql.migrationTool",
+    ),
+  );
+};

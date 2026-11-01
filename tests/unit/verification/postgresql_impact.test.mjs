@@ -26,6 +26,7 @@ import {
   buildImpactDeadlineProbe,
   buildImpactRaceIndexProbe,
   waitForImpactLock,
+  projectImpactClientSnapshot,
 } from "../../../scripts/verification/fixtures/postgresql_impact.mjs";
 
 vi.mock("node:fs/promises", async (original) => {
@@ -120,6 +121,122 @@ const options = (values = counts, reasons) => ({
 });
 
 describe("installed PostgreSQL impact fixture's independent oracles", () => {
+  it("projects only closed child refusal categories without provider text or private fields", () => {
+    const snapshot = (stdout) =>
+      projectImpactClientSnapshot({
+        child: { exitCode: 3, signalCode: null },
+        output: () => stdout,
+      });
+    const result = snapshot(
+      JSON.stringify({
+        schemaVersion: 1,
+        status: "error",
+        error: {
+          category: "unsafe_environment",
+          code: "UNSAFE_ENVIRONMENT",
+          message:
+            "The selected sandbox is not a verified, unchanged running local runtime. No counts are returned.",
+          actual: "PRIVATE_PROVIDER_CANARY",
+          context: { sql: "PRIVATE_PROVIDER_CANARY" },
+        },
+      }),
+    );
+    expect(result).toEqual({
+      observation: "bounded-child-output-snapshot",
+      category: "unsafe_environment",
+      code: "UNSAFE_ENVIRONMENT",
+      refusal: "impact-runtime-preflight",
+      fault: null,
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_CANARY");
+    for (const stdout of [
+      "PRIVATE_PROVIDER_CANARY",
+      "x".repeat(131073),
+      JSON.stringify({
+        schemaVersion: 1,
+        status: "error",
+        error: {
+          category: "unsafe_environment",
+          code: "UNSAFE_ENVIRONMENT",
+          context: "é".repeat(70000),
+        },
+      }),
+      JSON.stringify({
+        schemaVersion: 2,
+        status: "error",
+        error: { category: "unsafe_environment" },
+      }),
+      JSON.stringify({
+        schemaVersion: 1,
+        status: "error",
+        error: {
+          category: "PRIVATE_PROVIDER_CANARY",
+          code: "PRIVATE_PROVIDER_CANARY",
+        },
+      }),
+    ])
+      expect(snapshot(stdout)).toEqual({
+        observation: "bounded-child-output-snapshot",
+        category: "unknown",
+        code: "unknown",
+        refusal: "unknown",
+        fault: null,
+      });
+    const unknown = snapshot(
+      JSON.stringify({
+        schemaVersion: 1,
+        status: "error",
+        error: {
+          category: "unsafe_environment",
+          code: "PRIVATE_PROVIDER_CANARY",
+          message: "PRIVATE_PROVIDER_CANARY",
+        },
+      }),
+    );
+    expect(unknown).toEqual({
+      observation: "bounded-child-output-snapshot",
+      category: "unsafe_environment",
+      code: "unknown",
+      refusal: "unknown",
+      fault: null,
+    });
+  });
+  it("takes no completion wait and leaves still-active child output unobserved", () => {
+    const client = {
+      child: { exitCode: 3, signalCode: null },
+      output: () =>
+        JSON.stringify({
+          schemaVersion: 1,
+          status: "error",
+          error: { category: "unsafe_environment", code: "UNSAFE_ENVIRONMENT" },
+        }),
+      get completion() {
+        throw new Error("A diagnostic must not read or await completion.");
+      },
+    };
+    expect(projectImpactClientSnapshot(client).category).toBe(
+      "unsafe_environment",
+    );
+    const output = vi.fn(() => {
+      throw new Error("A live child stays with existing cleanup.");
+    });
+    expect(
+      projectImpactClientSnapshot({
+        child: { exitCode: null, signalCode: null },
+        output,
+        get completion() {
+          throw new Error("A live diagnostic must not await completion.");
+        },
+      }),
+    ).toEqual({
+      observation: "bounded-child-output-snapshot",
+      category: "unknown",
+      code: "unknown",
+      refusal: "unknown",
+      fault: null,
+    });
+    expect(output).not.toHaveBeenCalled();
+  });
   it("separates bounded runtime opening from the unchanged 35-second probe budget", async () => {
     vi.useFakeTimers();
     try {
@@ -655,6 +772,109 @@ describe("atomic impact gate signal publication", () => {
 });
 
 describe("fixture-only public impact SQL gate", () => {
+  it("records only bounded metadata actions and actual closed statuses", async () => {
+    const f = await gateTestFixture();
+    try {
+      expect(await f.gate.readMetadata()).toEqual({
+        state: "absent",
+        started: null,
+        closed: null,
+        last: null,
+      });
+      const client = f.launch(gateInfoArgs);
+      client.child.stdin.end();
+      expect((await client.completion).status).toBe(0);
+      const facts = await f.gate.readMetadata();
+      expect(facts).toMatchObject({
+        state: "recorded",
+        started: 1,
+        closed: 1,
+        last: {
+          action: "daemon-id",
+          stage: "closed",
+          status: 0,
+          signal: null,
+          abortObserved: false,
+        },
+      });
+      expect(Number.isSafeInteger(facts.last.elapsedMs)).toBe(true);
+      expect(facts.last.elapsedMs).toBeGreaterThanOrEqual(0);
+      expect(JSON.stringify(facts)).not.toContain(gateBinding.endpoint);
+      expect(JSON.stringify(facts)).not.toContain(gateBinding.containerId);
+    } finally {
+      await f.gate.cleanup();
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+  it("keeps metadata I/O failures diagnostic and preserves failing child control status", async () => {
+    const f = await gateTestFixture();
+    try {
+      const journal = join(
+        f.gate.environment.PATH.split(":")[0],
+        "metadata.jsonl",
+      );
+      await filesystem.mkdir(journal);
+      const success = f.launch(gateInfoArgs);
+      success.child.stdin.end();
+      expect((await success.completion).status).toBe(0);
+      expect((await f.gate.readMetadata()).state).toBe("unavailable");
+      await writeFile(f.docker, `#!${process.execPath}\nprocess.exit(7);\n`, {
+        mode: 0o700,
+      });
+      const failure = f.launch(gateInfoArgs);
+      failure.child.stdin.end();
+      expect((await failure.completion).status).toBe(1);
+      expect((await f.gate.readMetadata()).state).toBe("unavailable");
+      await rm(journal, { recursive: true });
+      const recordedFailure = f.launch(gateInfoArgs);
+      recordedFailure.child.stdin.end();
+      expect((await recordedFailure.completion).status).toBe(1);
+      expect(await f.gate.readMetadata()).toMatchObject({
+        state: "recorded",
+        started: 1,
+        closed: 1,
+        last: { status: 7, stage: "closed" },
+      });
+    } finally {
+      await f.gate.cleanup();
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
+  it("withholds malformed oversized and unknown-key metadata rather than trusting a private journal", async () => {
+    const f = await gateTestFixture();
+    try {
+      const journal = join(
+        f.gate.environment.PATH.split(":")[0],
+        "metadata.jsonl",
+      );
+      for (const bytes of [
+        "PRIVATE_METADATA_CANARY\n",
+        "x".repeat(16385),
+        JSON.stringify({
+          action: "daemon-id",
+          stage: "closed",
+          elapsedMs: 1,
+          status: 0,
+          signal: null,
+          abortObserved: false,
+          providerOutput: "PRIVATE_METADATA_CANARY",
+        }) + "\n",
+      ]) {
+        await writeFile(journal, bytes, { mode: 0o600 });
+        const facts = await f.gate.readMetadata();
+        expect(facts).toEqual({
+          state: "unavailable",
+          started: null,
+          closed: null,
+          last: null,
+        });
+        expect(JSON.stringify(facts)).not.toContain("PRIVATE_METADATA_CANARY");
+      }
+    } finally {
+      await f.gate.cleanup();
+      await rm(f.root, { recursive: true, force: true });
+    }
+  });
   it("permits only exact pinned metadata and the one sanitized owned SQL command", () => {
     expect(classifyImpactGateCommand(gateInfoArgs, gateBinding)).toBe(
       "metadata",

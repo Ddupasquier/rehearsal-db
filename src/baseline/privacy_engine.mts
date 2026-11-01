@@ -1,12 +1,12 @@
 /** Stable public facade for the versioned, fail-closed privacy pipeline. */
 
-export { validateExecutablePrivacyPolicy } from "./privacy_policy.mjs";
-export { createPrivacyEngine } from "./privacy_pipeline.mjs";
+export { validateExecutablePrivacyPolicy } from "./privacy/privacy_policy.mjs";
+export { createPrivacyEngine } from "./privacy/privacy_pipeline.mjs";
 export {
   assertPrivacyKeyFingerprint,
   createPrivacyKey,
   readPrivacyKey,
-} from "./privacy_key.mjs";
+} from "./privacy/privacy_key.mjs";
 export type {
   ExecutablePrivacyPolicy,
   PrivacyColumn,
@@ -14,4 +14,4 @@ export type {
   PrivacyForeignKey,
   PrivacySourceRecord,
   PrivacyTable,
-} from "./privacy_policy.mjs";
+} from "./privacy/privacy_policy.mjs";

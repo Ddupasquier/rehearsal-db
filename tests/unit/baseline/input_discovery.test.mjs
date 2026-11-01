@@ -108,9 +108,32 @@ it("identifies bounded native ledger metadata without loading configuration or S
     join(root, "drizzle.config.cjs"),
     'throw new Error("must never execute discovery config");',
   );
+  await writeFile(
+    join(root, "rehearsal/knex-ledger.json"),
+    JSON.stringify([
+      {
+        id: 3,
+        name: "001_init.cjs",
+        batch: 2,
+        migration_time: "2026-10-26T00:00:00Z",
+      },
+    ]),
+  );
+  await writeFile(
+    join(root, "rehearsal/invalid-knex.json"),
+    JSON.stringify([
+      {
+        id: 3,
+        name: "001_init.cjs",
+        batch: 0,
+        migration_time: "2026-10-26T00:00:00Z",
+      },
+    ]),
+  );
   const result = await discoverBaselineInputFiles({ projectRoot: root });
   expect(result.ledgers).toEqual([
     "rehearsal/drizzle-ledger.json",
+    "rehearsal/knex-ledger.json",
     "rehearsal/prisma-ledger.json",
   ]);
 });

@@ -1,4 +1,4 @@
-import { describeMigrationCutoff } from "../runtime/migration_identity.mjs";
+import { describeMigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 /** Project setup, baseline creation, privacy-key, and cleanup command handlers. */
 
 import { relative } from "node:path";
@@ -85,6 +85,11 @@ export const createProjectCommandHandlers = ({
         render: (baseline) =>
           [
             `Activated synthetic baseline ${baseline.generationId}: ${formatCount(baseline.rowCount, "row")} across ${formatCount(baseline.tableCount, "table")}; ${formatCount(baseline.migrationCount, "migration")} through ${describeMigrationCutoff(baseline.migrationCutoff)}.`,
+            ...("historicalFileChecksums" in baseline
+              ? [
+                  "Knex historical applied-file checksums are unavailable; this baseline locks the reviewed current code, not proof of the bytes originally applied.",
+                ]
+              : []),
             "",
             flags.guided
               ? "Next: choose Run a rehearsal when you are ready."

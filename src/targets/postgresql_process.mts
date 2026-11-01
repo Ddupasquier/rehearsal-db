@@ -4,12 +4,12 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { MigrationFileEntry } from "../runtime/migration_history.mjs";
+import type { MigrationFileEntry } from "../runtime/migrations/migration_history.mjs";
 import {
   isMigrationWorkspacePath,
   parseMigrationFailureSource,
   type MigrationFailureSource,
-} from "../runtime/migration_failure_source.mjs";
+} from "../runtime/migrations/migration_failure_source.mjs";
 
 import {
   getOperationCancellationSignal,
@@ -17,12 +17,12 @@ import {
 } from "../shared/cancellation.mjs";
 import { runOwnedProcess } from "../shared/owned_process.mjs";
 import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
-import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
-import { captureRuntimeStartupOwnership } from "../runtime/runtime_startup_ownership.mjs";
+import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";
+import { captureRuntimeStartupOwnership } from "../runtime/lifecycle/runtime_startup_ownership.mjs";
 import {
   diagnoseMigrationFailure,
   renderMigrationFailureDiagnostic,
-} from "../runtime/migration_failure.mjs";
+} from "../runtime/migrations/migration_failure.mjs";
 
 export const runPostgresqlCommand = (
   command: string,
@@ -32,11 +32,13 @@ export const runPostgresqlCommand = (
     capture = false,
     input,
     allowFailure = false,
+    timeoutMs,
   }: {
     readonly cwd: string;
     readonly capture?: boolean;
     readonly input?: string;
     readonly allowFailure?: boolean;
+    readonly timeoutMs?: number;
   },
 ) => {
   if (
@@ -54,6 +56,9 @@ export const runPostgresqlCommand = (
       overrides: command === "docker" ? runtimeDockerEnvironment() : {},
     }),
     maxBuffer: 16 * 1024 * 1024,
+    ...(timeoutMs === undefined
+      ? {}
+      : { timeout: timeoutMs, killSignal: "SIGKILL" as const }),
     stdio: piped ? ["pipe", "pipe", "pipe"] : "inherit",
   });
   throwIfOperationCancelled();

@@ -4,14 +4,14 @@ import { mkdir, mkdtemp, rm, writeFile, open, lstat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { AnyMigrationFileEntry } from "../runtime/migration_identity.mjs";
+import type { AnyMigrationFileEntry } from "../runtime/migrations/migration_identity.mjs";
 
 import {
   sameNativeMigrationBinding,
   sameNativeMigrationHistory,
   parseNativeMigrationBinding,
   type NativeMigrationBinding,
-} from "../runtime/native_migration_contract.mjs";
+} from "../runtime/migrations/native_migration_contract.mjs";
 import { createCleanProcessEnvironment } from "../shared/process_environment.mjs";
 import {
   getOperationCancellationSignal,

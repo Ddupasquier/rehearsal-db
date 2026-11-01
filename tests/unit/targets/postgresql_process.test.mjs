@@ -8,7 +8,7 @@ import {
 } from "../../../dist/src/targets/postgresql_process.mjs";
 import { normalizeRehearsalError } from "../../../dist/src/shared/diagnostics.mjs";
 import { runOwnedSupabaseMigration } from "../../../dist/src/targets/supabase_process.mjs";
-import { readManagerMigrationFailure } from "../../../dist/src/runtime/migration_failure.mjs";
+import { readManagerMigrationFailure } from "../../../dist/src/runtime/migrations/migration_failure.mjs";
 import { createUnitTemporaryDirectory } from "../../helpers/unit_temporary_global.mjs";
 
 const roots = [];

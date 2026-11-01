@@ -1,4 +1,5 @@
-import { describeMigrationCutoff } from "../runtime/migration_identity.mjs";
+import { createKnexBaseline } from "./knex_builder.mjs";
+import { describeMigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 import { createDrizzleBaseline } from "./drizzle_builder.mjs";
 /**
  * Build a synthetic baseline from explicit project-owned local files. This module does
@@ -20,7 +21,7 @@ import {
   buildMigrationLedgerInventory,
   createMigrationReplayReceipt,
   readMigrationSourceBundle,
-} from "../runtime/migration_history.mjs";
+} from "../runtime/migrations/migration_history.mjs";
 import { validateRuntimeSanitizationPolicy } from "./sanitization_policy.mjs";
 import { createPrismaBaseline } from "./prisma_builder.mjs";
 
@@ -176,9 +177,11 @@ export const createSyntheticBaselineFromFiles = async ({
   }
   if (loaded.config.postgresql?.migrationTool)
     return (
-      loaded.config.postgresql.migrationTool.kind === "drizzle"
-        ? createDrizzleBaseline
-        : createPrismaBaseline
+      loaded.config.postgresql.migrationTool.kind === "knex"
+        ? createKnexBaseline
+        : loaded.config.postgresql.migrationTool.kind === "drizzle"
+          ? createDrizzleBaseline
+          : createPrismaBaseline
     )({
       loaded,
       records: readRecords(records),

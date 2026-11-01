@@ -1,7 +1,7 @@
 import {
   describeMigrationCutoff,
   type MigrationCutoff,
-} from "../runtime/migration_identity.mjs";
+} from "../runtime/migrations/migration_identity.mjs";
 /**
  * Human-readable CLI output. These functions are intentionally pure so the
  * command and guided workflow modules can focus on orchestration.
@@ -300,6 +300,7 @@ export const renderPlan = (
 };
 
 export const renderBaseline = (baseline: {
+  historicalFileChecksums?: "unavailable";
   rehearsalVersion: string;
   generationId: string;
   createdAt?: string | null;
@@ -319,6 +320,11 @@ export const renderBaseline = (baseline: {
     `Generation: ${baseline.generationId}`,
     `Created: ${baseline.createdAt ?? "unknown"}`,
     `Format: ${baseline.formatVersion}`,
+    ...(baseline.historicalFileChecksums === "unavailable"
+      ? [
+          "Knex historical file checksums: unavailable. Current reviewed code is locked; originally applied bytes are not attested.",
+        ]
+      : []),
     `Tables: ${baseline.tableCount}`,
     `Rows: ${baseline.rowCount}`,
     `Migrations: ${baseline.migrationCount} through ${describeMigrationCutoff(baseline.migrationCutoff)}`,
@@ -467,7 +473,7 @@ const summarizeSetupReadinessChecks = (
 };
 
 export const renderSetup = (result: {
-  containerEngines?: import("../runtime/engine_discovery.mjs").ContainerEngineDiscovery;
+  containerEngines?: import("../runtime/engines/engine_discovery.mjs").ContainerEngineDiscovery;
   mode: RenderMode;
   project: string;
   configurationPath: string;

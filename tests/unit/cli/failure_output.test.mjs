@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeCliFailure } from "../../../dist/src/cli/failure_output.mjs";
 import { executeRuntimeTargetStack } from "../../../dist/src/cli/runtime_stack_execution.mjs";
-import { migrationFailureDiagnostic } from "../../../dist/src/runtime/migration_failure.mjs";
+import { migrationFailureDiagnostic } from "../../../dist/src/runtime/migrations/migration_failure.mjs";
 import {
   RehearsalError,
   normalizeRehearsalError,

@@ -11,20 +11,20 @@ import {
   type ProcessEnvironment,
 } from "../shared/process_environment.mjs";
 import { throwIfOperationCancelled } from "../shared/cancellation.mjs";
-import { assertContainerCapacityForRuntime } from "../runtime/resource_inventory.mjs";
+import { assertContainerCapacityForRuntime } from "../runtime/resources/resource_inventory.mjs";
 import {
   writeContainerEngineStartReceipt,
   CONTAINER_ENGINE_RECEIPT_FILENAME,
   assertDefaultColimaCanBeStarted,
   type ContainerEngineReceiptInput,
-} from "../runtime/container_engine_ownership.mjs";
+} from "../runtime/engines/container_engine_ownership.mjs";
 import {
   bindRuntimeDockerEnvironment,
   runtimeDockerEnvironment,
   runtimeDockerContext,
-} from "../runtime/local_docker_context.mjs";
+} from "../runtime/engines/local_docker_context.mjs";
 import { assertOwnedSupabaseResourceInspection } from "./docker_resource_ownership.mjs";
-import { captureRuntimeStartupOwnership } from "../runtime/runtime_startup_ownership.mjs";
+import { captureRuntimeStartupOwnership } from "../runtime/lifecycle/runtime_startup_ownership.mjs";
 import { summarizeSupabaseStartupFailure } from "./supabase_start_failure.mjs";
 
 type ContainerRuntimePolicy = Readonly<{
