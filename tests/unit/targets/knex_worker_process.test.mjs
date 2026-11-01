@@ -1,3 +1,4 @@
+import { readKnexFailure } from "../../../dist/src/runtime/knex_failure_diagnostic.mjs";
 /** Owned tiny attachment/metadata fakes: no Docker, SDK, SQL or service execution. */
 import { EventEmitter } from "node:events";
 import { Readable, Writable } from "node:stream";
@@ -232,6 +233,18 @@ it("an un-reaped attachment remains an uncertainty error even when exact contain
   }
   expect(error).toBeInstanceOf(AggregateError);
   expect(String(error)).toMatch(/cleanup is unconfirmed/);
+  expect(readKnexFailure(error)).toMatchObject({
+    primary: {
+      phase: "worker",
+      stage: "worker-protocol",
+      reason: "execution-unconfirmed",
+    },
+    cleanup: {
+      phase: "worker",
+      stage: "cleanup",
+      reason: "cleanup-unconfirmed",
+    },
+  });
   expect(String(error)).not.toContain("PRIVATE_EPHEMERAL_CANARY");
   expect(state.operations.some((x) => x[0] === "rm")).toBe(true);
   expect(

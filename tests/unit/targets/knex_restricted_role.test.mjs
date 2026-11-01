@@ -1,3 +1,4 @@
+import { readKnexFailure } from "../../../dist/src/runtime/knex_failure_diagnostic.mjs";
 import { configureKnexApplication } from "../../../dist/src/targets/knex_application_configuration.mjs";
 import { performance } from "node:perf_hooks";
 import { mkdtemp, rm, readFile, chmod } from "node:fs/promises";
@@ -464,6 +465,15 @@ it("refuses expired work synchronously even when the abort timer has not fired, 
         now = 121001;
         expect(currentKnexSqlSignal().aborted).toBe(false);
         expect(() => currentKnexSqlCredentials()).toThrow(/deadline expired/);
+        try {
+          currentKnexSqlCredentials();
+        } catch (error) {
+          expect(readKnexFailure(error)?.primary).toEqual({
+            phase: "worker",
+            stage: "execution",
+            reason: "deadline",
+          });
+        }
       },
     }),
   ).rejects.toThrow(/deadline expired/);
@@ -710,4 +720,105 @@ it("closes worker credentials before sibling phases and gives each its own uncha
   expect(now).toBe(477000);
   expect(fixtures[2].state.parameter).toBe(false);
   expect(fixtures[3].state.login).toBe(true);
+});
+
+it("keeps unrelated abort failures unclassified rather than declaring a deadline", async () => {
+  const f = await fixture();
+  const error = new Error("PRIVATE_ABORT_NOT_A_DEADLINE");
+  await expect(
+    withKnexRestrictedRole({
+      ...f.options,
+      phase: "verify",
+      work: async () => {
+        throw error;
+      },
+    }),
+  ).rejects.toBe(error);
+  expect(readKnexFailure(error)?.primary).toEqual({
+    phase: "verify",
+    stage: "execution",
+    reason: "unclassified",
+  });
+  expect(JSON.stringify(readKnexFailure(error))).not.toContain("PRIVATE");
+});
+
+it("does not classify actual operation cancellation as a private-phase deadline", async () => {
+  const f = await fixture(),
+    signals = new EventEmitter();
+  let observed;
+  let final;
+  try {
+    await runWithOperationCancellation({
+      signalTarget: signals,
+      task: () =>
+        withKnexRestrictedRole({
+          ...f.options,
+          phase: "verify",
+          work: async () => {
+            signals.emit("SIGINT");
+            try {
+              currentKnexSqlRemainingMs();
+            } catch (error) {
+              observed = error;
+              throw error;
+            }
+          },
+        }),
+    });
+  } catch (error) {
+    final = error;
+  }
+  expect(observed).toBeDefined();
+  expect(final).toBe(observed);
+  expect(readKnexFailure(observed)?.primary).toEqual({
+    phase: "verify",
+    stage: "execution",
+    reason: "unclassified",
+  });
+  expect(f.state.login).toBe(false);
+});
+
+it("records the actual private deadline signal and retains it before cleanup uncertainty", async () => {
+  const f = await fixture(),
+    deadline = new AbortController();
+  vi.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+  const reason = new DOMException("PRIVATE_TIMER", "TimeoutError");
+  let original;
+  const runSql = f.options.runSql;
+  let cleaning = false;
+  let final;
+  try {
+    await withKnexRestrictedRole({
+      ...f.options,
+      phase: "verify",
+      runSql: (sql) => {
+        if (cleaning && sql.includes("pg_terminate_backend"))
+          throw Error("PRIVATE_CLEANUP");
+        return runSql(sql);
+      },
+      work: async () => {
+        deadline.abort(reason);
+        cleaning = true;
+        try {
+          currentKnexSqlRemainingMs();
+        } catch (error) {
+          original = error;
+          throw error;
+        }
+      },
+    });
+  } catch (error) {
+    final = error;
+  }
+  expect(original).toBe(reason);
+  expect(final).toBeInstanceOf(AggregateError);
+  expect(readKnexFailure(final)).toMatchObject({
+    primary: { phase: "verify", stage: "execution", reason: "deadline" },
+    cleanup: {
+      phase: "verify",
+      stage: "cleanup",
+      reason: "cleanup-unconfirmed",
+    },
+  });
+  expect(JSON.stringify(readKnexFailure(final))).not.toContain("PRIVATE");
 });

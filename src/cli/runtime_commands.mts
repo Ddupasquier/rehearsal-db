@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+import { readKnexFailureFrame } from "../runtime/knex_failure_diagnostic.mjs";
 /** Orchestrate isolated database runtimes and project-owned application proofs. */
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
@@ -400,7 +402,9 @@ export const createRuntimeCommands = ({
     // Node mode. Preserve that mode only for Rehearsal's nested Node manager;
     // project-owned application commands continue to receive the reduced
     // project environment above.
+    const nativeFailureNonce = randomBytes(32).toString("hex");
     const managerEnvironment: NodeJS.ProcessEnv = {
+      REHEARSAL_NATIVE_FAILURE_NONCE: nativeFailureNonce,
       ...(getOwnedOperationProgressId()
         ? { REHEARSAL_OWNER_OPERATION_ID: getOwnedOperationProgressId()! }
         : {}),
@@ -446,7 +450,13 @@ export const createRuntimeCommands = ({
         .filter(Boolean)
         .join("\n")
         .trim();
-      const conciseOutput = summarizeRuntimeManagerFailure(completeOutput);
+      const nativeDiagnostic = readKnexFailureFrame(
+        completeOutput,
+        nativeFailureNonce,
+      );
+      const conciseOutput = summarizeRuntimeManagerFailure(
+        nativeDiagnostic.output,
+      );
       const inferred = normalizeRehearsalError(
         new Error(conciseOutput || `Rehearsal ${action} failed.`),
       );
@@ -456,7 +466,9 @@ export const createRuntimeCommands = ({
         inferredCategory: inferred.category,
       });
       const startupFailure = category === "runtime_dependency_failure";
-      const migrationFailure = readManagerMigrationFailure(completeOutput);
+      const migrationFailure = readManagerMigrationFailure(
+        nativeDiagnostic.output,
+      );
       const portGuidance = runtimePortFailureGuidance(conciseOutput);
       const engineCapacity =
         startupFailure && portGuidance.length === 0
@@ -472,6 +484,9 @@ export const createRuntimeCommands = ({
           action,
           target: targetName ?? "primary",
           ...(migrationFailure ? { migrationFailure } : {}),
+          ...(nativeDiagnostic.nativeFailure
+            ? { nativeFailure: nativeDiagnostic.nativeFailure }
+            : {}),
           ...(engineCapacity ? { engineCapacity } : {}),
         },
         refused: "The runtime was not reported as trusted.",
@@ -510,7 +525,14 @@ export const createRuntimeCommands = ({
       durationMs: Math.round(durationMs * 100) / 100,
       output: runtimeStatus
         ? renderRuntimeStatusSnapshot(runtimeStatus)
-        : String(redactDiagnosticValue(String(result.stdout ?? "").trim())),
+        : String(
+            redactDiagnosticValue(
+              readKnexFailureFrame(
+                String(result.stdout ?? ""),
+                nativeFailureNonce,
+              ).output.trim(),
+            ),
+          ),
       ...(runtimeStatus ? { runtimeStatus } : {}),
     };
   };

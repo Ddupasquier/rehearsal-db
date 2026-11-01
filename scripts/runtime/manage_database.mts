@@ -4,6 +4,10 @@
  * lifecycle action to its isolated driver.
  */
 
+import {
+  markKnexFailureBoundary,
+  renderKnexFailureFrame,
+} from "../../src/runtime/knex_failure_diagnostic.mjs";
 import { loadRehearsalConfig } from "../../src/project/configuration.mjs";
 import { parseRuntimeInvocation } from "../../src/targets/target.mjs";
 import { runRuntimeTarget } from "../../src/targets/driver.mjs";
@@ -11,6 +15,10 @@ import { runWithOperationCancellation } from "../../src/shared/cancellation.mjs"
 import { withRuntimeStartupCleanup } from "../../src/runtime/runtime_startup_ownership.mjs";
 import { guardRuntimeManagerAction } from "../../src/runtime/runtime_manager_guards.mjs";
 
+const nativeFailureNonce = process.env.REHEARSAL_NATIVE_FAILURE_NONCE;
+delete process.env.REHEARSAL_NATIVE_FAILURE_NONCE;
+let nativeFailureEnabled = false;
+let nativeFailureStage: "admission" | "lifecycle" = "admission";
 const run = async () => {
   const invocation = parseRuntimeInvocation();
   const loaded = await loadRehearsalConfig({
@@ -19,6 +27,8 @@ const run = async () => {
       ? {}
       : { configPath: invocation.configPath }),
   });
+  nativeFailureEnabled =
+    loaded.config.postgresql?.migrationTool?.kind === "knex";
   await guardRuntimeManagerAction(loaded, invocation.action);
   await withRuntimeStartupCleanup({
     projectRoot: loaded.projectRoot,
@@ -26,12 +36,32 @@ const run = async () => {
     config: loaded.config,
     action: invocation.action,
     ownerOperationId: process.env.REHEARSAL_OWNER_OPERATION_ID,
-    task: () => runRuntimeTarget(loaded.config.runtime.target),
+    task: () => {
+      nativeFailureStage = "lifecycle";
+      return runRuntimeTarget(loaded.config.runtime.target);
+    },
   });
 };
 
-if (process.env.REHEARSAL_CANCELLABLE_OPERATION === "1") {
-  await runWithOperationCancellation({ task: run });
-} else {
-  await run();
+try {
+  if (process.env.REHEARSAL_CANCELLABLE_OPERATION === "1") {
+    await runWithOperationCancellation({ task: run });
+  } else {
+    await run();
+  }
+} catch (error) {
+  try {
+    if (nativeFailureEnabled) {
+      const failure = markKnexFailureBoundary(error, {
+        phase: "lifecycle",
+        stage: nativeFailureStage,
+        reason: "unclassified",
+      });
+      const frame = renderKnexFailureFrame(failure, nativeFailureNonce);
+      if (frame) process.stderr.write(frame + "\n");
+    }
+  } catch {
+    /* Diagnostic emission cannot replace the original failure. */
+  }
+  throw error;
 }

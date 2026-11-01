@@ -457,6 +457,16 @@ These are implementation contracts, not demonstrated PostgreSQL isolation. Focus
 mocked role/transport/worker tests and worktree build/types passed, but independent
 real SDK, SQL-privilege, data-preservation and adversarial cancellation acceptance
 remain necessary before this candidate can be qualified or supported.
+`runtime/knex_failure_diagnostic.mts` owns closed host-generated native failure
+phase/stage/reason evidence. Private error branding and bounded aggregate traversal
+preserve the first origin separately from cleanup uncertainty. The target manager
+emits one invocation-nonce-bound frame; the CLI validates it before text summarization
+and exposes optional `error.context.nativeFailure`, without changing existing error
+codes or inventing SQLSTATE. Frame bytes/nonces are removed from public prose and
+never enter migration-worker inputs or environment. Worker/provider logs cannot
+supply trusted evidence; unknown errors remain explicitly unclassified. This is
+diagnostic evidence, not permission, cleanup proof or a claim of root cause.
+
 `knex_failure_recovery.mts` attempts owned shutdown even if failure recording fails;
 missing metadata never authorizes resetting retained resources. Target failure
 keeps data/recovery, and unknown worker cleanup blocks destructive reuse. See the

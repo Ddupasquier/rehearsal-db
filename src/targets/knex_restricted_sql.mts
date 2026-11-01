@@ -1,4 +1,9 @@
 import {
+  atKnexFailureBoundary,
+  markKnexFailure,
+} from "../runtime/knex_failure_diagnostic.mjs";
+import {
+  currentKnexFailurePhase,
   currentKnexSqlSignal,
   currentKnexSqlRemainingMs,
 } from "./knex_restricted_role.mjs";
@@ -17,8 +22,15 @@ export interface KnexSqlCredentials {
 }
 
 const refused = () =>
-  new Error(
-    "Restricted Knex SQL authentication, target or execution could not be verified; private SQL and provider output are withheld.",
+  markKnexFailure(
+    new Error(
+      "Restricted Knex SQL authentication, target or execution could not be verified; private SQL and provider output are withheld.",
+    ),
+    {
+      phase: currentKnexFailurePhase(),
+      stage: "sql",
+      reason: "execution-unconfirmed",
+    },
   );
 
 /** Shared by bounded queries and the streaming restore owner. No SET ROLE. */
@@ -94,38 +106,45 @@ export const runKnexRestrictedSql = ({
   readonly credentials: KnexSqlCredentials;
   readonly assertOwnedTarget: () => string;
   readonly sql: string;
-}): string => {
-  throwIfOperationCancelled();
-  if (
-    Buffer.byteLength(sql) > 65536 ||
-    (credentials.user.endsWith("_application") &&
-      sql !== "select session_user;")
-  )
-    throw refused();
-  const containerId = assertOwnedTarget();
-  const invocation = knexRestrictedSqlInvocation({ containerId, credentials });
-  const result = spawnSync(invocation.command, invocation.args, {
-    cwd,
-    env: invocation.environment,
-    input: sql,
-    encoding: "utf8",
-    timeout: Math.min(
-      7000,
-      currentKnexSqlSignal() ? currentKnexSqlRemainingMs() : 7000,
-    ),
-    killSignal: "SIGKILL",
-    maxBuffer: 4 * 1024 * 1024,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  throwIfOperationCancelled();
-  currentKnexSqlSignal()?.throwIfAborted();
-  if (currentKnexSqlSignal()) currentKnexSqlRemainingMs();
-  if (
-    result.error ||
-    result.status !== 0 ||
-    assertOwnedTarget() !== containerId
-  )
-    throw refused();
-  if (currentKnexSqlSignal()) currentKnexSqlRemainingMs();
-  return result.stdout;
-};
+}): string =>
+  atKnexFailureBoundary(
+    { phase: currentKnexFailurePhase(), stage: "sql", reason: "unclassified" },
+    () => {
+      throwIfOperationCancelled();
+      if (
+        Buffer.byteLength(sql) > 65536 ||
+        (credentials.user.endsWith("_application") &&
+          sql !== "select session_user;")
+      )
+        throw refused();
+      const containerId = assertOwnedTarget();
+      const invocation = knexRestrictedSqlInvocation({
+        containerId,
+        credentials,
+      });
+      const result = spawnSync(invocation.command, invocation.args, {
+        cwd,
+        env: invocation.environment,
+        input: sql,
+        encoding: "utf8",
+        timeout: Math.min(
+          7000,
+          currentKnexSqlSignal() ? currentKnexSqlRemainingMs() : 7000,
+        ),
+        killSignal: "SIGKILL",
+        maxBuffer: 4 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      throwIfOperationCancelled();
+      currentKnexSqlSignal()?.throwIfAborted();
+      if (currentKnexSqlSignal()) currentKnexSqlRemainingMs();
+      if (
+        result.error ||
+        result.status !== 0 ||
+        assertOwnedTarget() !== containerId
+      )
+        throw refused();
+      if (currentKnexSqlSignal()) currentKnexSqlRemainingMs();
+      return result.stdout;
+    },
+  );
