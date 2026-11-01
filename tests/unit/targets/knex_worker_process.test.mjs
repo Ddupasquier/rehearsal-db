@@ -23,6 +23,11 @@ const state = vi.hoisted(() => ({
   foreign: false,
   operations: [],
   record: null,
+  stdout: null,
+  brokerFailure: null,
+  pendingWrite: false,
+  writeCallback: null,
+  stderr: null,
 }));
 vi.mock("node:child_process", async (original) => {
   const actual = await original();
@@ -33,13 +38,16 @@ vi.mock("node:child_process", async (original) => {
       const child = new EventEmitter();
       child.stdin = new Writable({
         write(_b, _e, cb) {
-          cb();
+          if (state.pendingWrite) state.writeCallback = cb;
+          else cb();
         },
       });
-      child.stdout = Readable.from([Buffer.from([88, 0, 0, 0, 1, 0])]);
-      child.stderr = Readable.from([]);
+      child.stdout = Readable.from(
+        state.stdout ?? [Buffer.from([88, 0, 0, 0, 1, 0])],
+      );
+      child.stderr = Readable.from(state.stderr ?? []);
       child.kill = () => true;
-      queueMicrotask(() => state.onSpawn?.());
+      queueMicrotask(() => state.onSpawn?.(child));
       return child;
     },
   };
@@ -57,6 +65,29 @@ vi.mock("../../../dist/src/targets/knex_worker_engine.mjs", () => ({
     revalidate: () => {},
   }),
 }));
+vi.mock("../../../dist/src/runtime/knex_pg_broker.mjs", async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    createKnexPgBroker: (...args) =>
+      state.brokerFailure
+        ? {
+            accept: async () => {
+              if (state.brokerFailure === "accept")
+                throw Error("PRIVATE_BROKER_CANARY");
+            },
+            assertHealthy: () => {
+              if (state.brokerFailure === "health")
+                throw Error("PRIVATE_BROKER_CANARY");
+            },
+            close: async () => {
+              if (state.brokerFailure === "cleanup")
+                throw Error("PRIVATE_BROKER_CANARY");
+            },
+          }
+        : actual.createKnexPgBroker(...args),
+  };
+});
 import { KNEX_WORKER_PROGRAMS } from "../../../dist/src/targets/knex_worker_programs.mjs";
 import { runKnexWorker } from "../../../dist/src/targets/knex_worker_process.mjs";
 const roots = [];
@@ -83,6 +114,12 @@ afterEach(async () => {
   state.fake = state.foreign = false;
   state.operations = [];
   state.onSpawn = null;
+  state.stdout =
+    state.brokerFailure =
+    state.stderr =
+    state.writeCallback =
+      null;
+  state.pendingWrite = false;
 });
 const fixture = async (mode = "complete") => {
   const root = await mkdtemp(join(tmpdir(), "knex-worker-process-"));
@@ -236,7 +273,7 @@ it("an un-reaped attachment remains an uncertainty error even when exact contain
   expect(readKnexFailure(error)).toMatchObject({
     primary: {
       phase: "worker",
-      stage: "worker-protocol",
+      stage: "worker-parent-abort",
       reason: "execution-unconfirmed",
     },
     cleanup: {
@@ -318,3 +355,174 @@ it.skipIf(process.platform === "win32")(
     ]);
   },
 );
+
+const frame = (kind, value) =>
+  Buffer.from([kind.charCodeAt(0), 0, 0, 0, value.length, ...value]);
+it.each([
+  ["reported failure", [frame("X", [1])], 1, null, "worker-result-nonzero"],
+  ["missing completion", [], 0, null, "worker-result-missing"],
+  ["invalid completion", [frame("X", [2])], 0, null, "worker-result-invalid"],
+  ["invalid frame", [frame("Z", [0])], 0, null, "worker-frame"],
+  [
+    "broker acceptance",
+    [frame("O", [0, 0, 0, 1])],
+    0,
+    "accept",
+    "worker-broker-accept",
+  ],
+  ["broker health", [frame("X", [0])], 0, "health", "worker-broker-health"],
+  ["attachment exit", [frame("X", [0])], 1, null, "worker-exit"],
+  [
+    "reported failure before cleanup",
+    [frame("X", [1])],
+    1,
+    "cleanup",
+    "worker-result-nonzero",
+  ],
+])(
+  "retains the host-observed %s branch without provider data",
+  async (_name, stdout, code, brokerFailure, stage) => {
+    const f = await fixture();
+    state.fake = true;
+    state.stdout = stdout;
+    state.brokerFailure = brokerFailure;
+    state.onSpawn = (child) =>
+      setImmediate(() => child.emit("close", code, null));
+    let error;
+    try {
+      await runKnexWorker(f.options);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeTruthy();
+    const diagnostic = readKnexFailure(error);
+    expect(diagnostic.primary).toEqual({
+      phase: "worker",
+      stage,
+      reason: "execution-unconfirmed",
+    });
+    expect(JSON.stringify(diagnostic)).not.toMatch(
+      /PRIVATE|CANARY|postgres|59422/,
+    );
+    if (brokerFailure === "cleanup")
+      expect(diagnostic.cleanup).toMatchObject({
+        stage: "cleanup",
+        reason: "cleanup-unconfirmed",
+      });
+  },
+);
+
+it.each([
+  ["spawn", "worker-spawn"],
+  ["stdin", "worker-stdin"],
+  ["abort", "worker-parent-abort"],
+])(
+  "retains a fixed %s observation without exposing the event error",
+  async (kind, stage) => {
+    const f = await fixture();
+    state.fake = true;
+    state.onSpawn = (child) => {
+      if (kind === "spawn") child.emit("error", Error("PRIVATE_EVENT_CANARY"));
+      else if (kind === "stdin")
+        child.stdin.emit("error", Error("PRIVATE_EVENT_CANARY"));
+      else f.controller.abort();
+      setImmediate(() => child.emit("close", 1, null));
+    };
+    let error;
+    try {
+      await runKnexWorker(f.options);
+    } catch (e) {
+      error = e;
+    }
+    expect(readKnexFailure(error).primary.stage).toBe(stage);
+    expect(JSON.stringify(readKnexFailure(error))).not.toContain("PRIVATE");
+  },
+);
+it("keeps an earlier reported failure through a later stdin error", async () => {
+  const f = await fixture();
+  state.fake = true;
+  state.stdout = [frame("X", [1])];
+  state.onSpawn = (child) =>
+    setImmediate(() => {
+      child.stdin.emit("error", Error("PRIVATE_EPIPE"));
+      child.emit("close", 1, null);
+    });
+  let error;
+  try {
+    await runKnexWorker(f.options);
+  } catch (e) {
+    error = e;
+  }
+  expect(readKnexFailure(error).primary.stage).toBe("worker-result-nonzero");
+});
+
+it("retains X1 across a direct pending initialization write rejection", async () => {
+  const f = await fixture();
+  state.fake = true;
+  state.pendingWrite = true;
+  state.stdout = [frame("X", [1])];
+  state.onSpawn = (child) =>
+    setImmediate(() => {
+      state.writeCallback(Error("PRIVATE_EPIPE"));
+      setImmediate(() => child.emit("close", 1, null));
+    });
+  let error;
+  try {
+    await runKnexWorker(f.options);
+  } catch (e) {
+    error = e;
+  }
+  expect(readKnexFailure(error).primary.stage).toBe("worker-result-nonzero");
+});
+it.each([false, true])(
+  "enforces the cumulative log boundary (overflow=%s)",
+  async (overflow) => {
+    const f = await fixture();
+    state.fake = true;
+    const log = Buffer.alloc(65541);
+    log[0] = 76;
+    log.writeUInt32BE(65536, 1);
+    state.stdout = [
+      ...Array.from({ length: 16 }, () => log),
+      ...(overflow ? [frame("L", [0])] : []),
+      frame("X", [0]),
+    ];
+    state.onSpawn = (child) => setImmediate(() => child.emit("close", 0, null));
+    if (overflow) {
+      let error;
+      try {
+        await runKnexWorker(f.options);
+      } catch (e) {
+        error = e;
+      }
+      expect(readKnexFailure(error).primary.stage).toBe("worker-output-limit");
+    } else expect((await runKnexWorker(f.options)).status).toBe("completed");
+  },
+);
+it("classifies stderr overflow without retaining stderr bytes", async () => {
+  const f = await fixture();
+  state.fake = true;
+  state.stderr = [Buffer.alloc(1024 * 1024 + 1, 65)];
+  state.onSpawn = (child) => setImmediate(() => child.emit("close", 0, null));
+  let error;
+  try {
+    await runKnexWorker(f.options);
+  } catch (e) {
+    error = e;
+  }
+  expect(readKnexFailure(error).primary.stage).toBe("worker-output-limit");
+  expect(JSON.stringify(readKnexFailure(error))).not.toContain("AAAA");
+});
+it("classifies a signalled attachment despite a successful result frame", async () => {
+  const f = await fixture();
+  state.fake = true;
+  state.onSpawn = (child) =>
+    setImmediate(() => child.emit("close", null, "SIGTERM"));
+  let error;
+  try {
+    await runKnexWorker(f.options);
+  } catch (e) {
+    error = e;
+  }
+  expect(readKnexFailure(error).primary.stage).toBe("worker-exit");
+});

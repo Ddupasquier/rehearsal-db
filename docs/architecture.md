@@ -454,10 +454,10 @@ nested worker and COPY work share its signal. COPY has an owned termination/kill
 path and phase cleanup verifies backend absence. Synchronous adapter/query contracts
 retain bounded seven-second transport/five-second statement limits and observe
 cancellation before and after a query; they are not instantaneously interruptible.
-These are implementation contracts, not demonstrated PostgreSQL isolation. Focused
-mocked role/transport/worker tests and worktree build/types passed, but independent
-real SDK, SQL-privilege, data-preservation and adversarial cancellation acceptance
-remain necessary before this candidate can be qualified or supported.
+These implementation contracts alone do not demonstrate PostgreSQL isolation.
+Qualification requires independent real SDK, SQL-privilege, data-preservation and
+adversarial cancellation acceptance for the exact release and supported environment;
+mocked tests and builds do not establish that evidence.
 `runtime/knex_failure_diagnostic.mts` owns closed host-generated native failure
 phase/stage/reason evidence. Private error branding and bounded aggregate traversal
 preserve the first origin separately from cleanup uncertainty. The target manager

@@ -54,6 +54,7 @@ export const runKnexWorker = async ({
   return withKnexFailureBoundary(
     () => ({ phase: "worker", stage: failureStage, reason: "unclassified" }),
     async () => {
+      const parentSignal = signal;
       const interruption = new AbortController();
       signal = AbortSignal.any([signal, interruption.signal]);
       if (signal.aborted) throw failure(failureStage);
@@ -194,12 +195,25 @@ export const runKnexWorker = async ({
           signal,
           cancellationGraceMs: 1000,
         });
+        let firstConcreteFailure: unknown;
+        const remember = (error: unknown) => {
+          firstConcreteFailure ??= error;
+          return firstConcreteFailure;
+        };
         const write = async (bytes: Buffer) => {
-          if (child.stdin.destroyed || signal.aborted)
-            throw failure(failureStage);
+          if (child.stdin.destroyed) throw remember(failure("worker-stdin"));
+          if (signal.aborted)
+            throw (
+              firstConcreteFailure ??
+              remember(
+                failure(
+                  parentSignal.aborted ? "worker-parent-abort" : "worker-abort",
+                ),
+              )
+            );
           await new Promise<void>((resolve, reject) =>
             child.stdin.write(bytes, (error) =>
-              error ? reject(failure(failureStage)) : resolve(),
+              error ? reject(remember(failure("worker-stdin"))) : resolve(),
             ),
           );
         };
@@ -224,7 +238,7 @@ export const runKnexWorker = async ({
               if (
                 (logBytes += bytes.length) > KNEX_WORKER_LIMITS.maximumLogBytes
               )
-                throw failure(failureStage);
+                throw failure("worker-output-limit");
               continue;
             }
             if (kind === "X") {
@@ -233,26 +247,34 @@ export const runKnexWorker = async ({
                 bytes.length !== 1 ||
                 ![0, 1].includes(bytes[0]!)
               )
-                throw failure(failureStage);
+                throw failure("worker-result-invalid");
               result = bytes[0]!;
+              if (result !== 0) remember(failure("worker-result-nonzero"));
               continue;
             }
-            await broker.accept(kind, bytes);
+            try {
+              await broker.accept(kind, bytes);
+            } catch (error) {
+              throw preserveKnexFailure(error, failure("worker-broker-accept"));
+            }
           }
-        })().catch(() => {
-          protocolFailure = failure(failureStage);
+          if (result === null) remember(failure("worker-result-missing"));
+        })().catch((error) => {
+          protocolFailure = preserveKnexFailure(error, failure("worker-frame"));
+          remember(protocolFailure);
           interruption.abort();
         });
         let stderr = 0;
         child.stderr.on("data", (bytes: Buffer) => {
           if ((stderr += bytes.length) > 1024 * 1024) {
-            protocolFailure = failure(failureStage);
+            protocolFailure = remember(failure("worker-output-limit"));
             interruption.abort();
           }
         });
         let spawnFailure = false;
         child.once("error", () => {
           spawnFailure = true;
+          remember(failure("worker-spawn"));
           interruption.abort();
         });
         const exit = new Promise<{
@@ -266,14 +288,20 @@ export const runKnexWorker = async ({
         let reaped = false;
         let onInterrupted: () => void = () => {};
         const interrupted = new Promise<{ ok: false }>((resolve) => {
-          onInterrupted = () => resolve({ ok: false });
+          onInterrupted = () => {
+            if (parentSignal.aborted) remember(failure("worker-parent-abort"));
+            resolve({ ok: false });
+          };
           signal.addEventListener("abort", onInterrupted, { once: true });
           if (signal.aborted) onInterrupted();
         });
         void exit.then(() => {
           reaped = true;
         });
-        child.stdin.on("error", () => interruption.abort());
+        child.stdin.on("error", () => {
+          remember(failure("worker-stdin"));
+          interruption.abort();
+        });
         let innerFailure: unknown;
         try {
           const init = Buffer.from(
@@ -288,10 +316,17 @@ export const runKnexWorker = async ({
           init.fill(0);
           frame.fill(0);
           const ended = await Promise.race([exit, interrupted]);
-          if (!ended.ok) throw failure(failureStage);
+          if (!ended.ok) throw firstConcreteFailure ?? failure("worker-abort");
           const [code, terminated] = ended.value;
           await processing;
-          broker.assertHealthy();
+          try {
+            broker.assertHealthy();
+          } catch (error) {
+            throw preserveKnexFailure(
+              firstConcreteFailure ?? error,
+              failure("worker-broker-health"),
+            );
+          }
           if (
             spawnFailure ||
             code !== 0 ||
@@ -300,7 +335,24 @@ export const runKnexWorker = async ({
             protocolFailure ||
             signal.aborted
           )
-            throw failure(failureStage);
+            throw (
+              firstConcreteFailure ??
+              failure(
+                spawnFailure
+                  ? "worker-spawn"
+                  : code !== 0 || terminated
+                    ? "worker-exit"
+                    : result === null
+                      ? "worker-result-missing"
+                      : result !== 0
+                        ? "worker-result-nonzero"
+                        : signal.aborted
+                          ? parentSignal.aborted
+                            ? "worker-parent-abort"
+                            : "worker-abort"
+                          : "worker-frame",
+              )
+            );
         } catch (error) {
           innerFailure = markKnexFailureBoundary(error, {
             phase: "worker",

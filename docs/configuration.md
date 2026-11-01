@@ -1066,8 +1066,9 @@ The initial execution path requires macOS, Linux or WSL with supported POSIX mou
 network `none`, nonroot UID 65532, read-only root/binds, private PID/IPC/cgroup
 namespaces, dropped capabilities, no-new-privileges, built-in seccomp, no Docker
 socket/host mounts or ports, no daemon logs, 256 MiB memory with no extra swap,
-one CPU, 32 PIDs and bounded `/tmp` tmpfs. The image and actual controls still need
-genuine SDK/platform qualification; metadata alone is not that proof.
+one CPU, 32 PIDs and bounded `/tmp` tmpfs. Qualification requires genuine SDK and
+platform evidence for the exact release, image and enforced controls; metadata
+alone is not that proof.
 
 A bounded private Unix-socket relay reaches only the ownership-proven loopback
 PostgreSQL target. Startup must name its exact database and dedicated restricted
