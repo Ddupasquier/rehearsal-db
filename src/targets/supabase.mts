@@ -1,5 +1,5 @@
-import { requireTimestampMigrationFiles } from "../runtime/migration_identity.mjs";
-import { restoreCopyChunks } from "../runtime/restore_cache.mjs";
+import { requireTimestampMigrationFiles } from "../runtime/migrations/migration_identity.mjs";
+import { restoreCopyChunks } from "../runtime/resources/restore_cache.mjs";
 /** Restore and manage the disposable local Supabase runtime from its verified baseline.
  * Reset deletes only this dedicated runtime and its Docker volumes. */
 import { spawn } from "node:child_process";
@@ -24,16 +24,16 @@ import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
   summarizeRestoreError,
-} from "../runtime/restore.mjs";
+} from "../runtime/recovery/restore.mjs";
 import {
   buildMigrationLedgerInventory,
   compareSourceToReplay,
   createMigrationReplayReceipt,
   readMigrationFileInventory,
-} from "../runtime/migration_history.mjs";
-import type { MigrationFileEntry } from "../runtime/migration_history.mjs";
+} from "../runtime/migrations/migration_history.mjs";
+import type { MigrationFileEntry } from "../runtime/migrations/migration_history.mjs";
 import { loadRehearsalConfig } from "../project/configuration.mjs";
-import { readRehearsalServiceEnvironment } from "../runtime/service_environment.mjs";
+import { readRehearsalServiceEnvironment } from "../runtime/lifecycle/service_environment.mjs";
 import { applySupabaseAuthenticationProviders } from "../identity/provider_configuration.mjs";
 import {
   captureLocalPublicSchema,
@@ -44,14 +44,14 @@ import { parseRuntimeInvocation } from "./target.mjs";
 import {
   guardRuntimeManagerAction,
   createRuntimeManagerEnvironment,
-} from "../runtime/runtime_manager_guards.mjs";
+} from "../runtime/lifecycle/runtime_manager_guards.mjs";
 import {
   buildRuntimeFinalizationSql,
   buildRuntimePostSchemaSql,
   buildRuntimePrerequisiteSql,
   buildRuntimeVerificationSql,
   validateRuntimePolicy,
-} from "../runtime/policy.mjs";
+} from "../runtime/lifecycle/policy.mjs";
 import {
   assertCandidateConfirmation,
   readActiveRuntimeInput,
@@ -61,9 +61,9 @@ import {
   withOwnedRuntimeRollback,
   writeCandidateMigrationReceipt,
   writeRuntimeMarker,
-} from "../runtime/lifecycle_engine.mjs";
-import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
-import { emitRuntimeStatusSnapshot } from "../runtime/status.mjs";
+} from "../runtime/lifecycle/lifecycle_engine.mjs";
+import type { ActiveRuntimeInput } from "../runtime/lifecycle/lifecycle_engine.mjs";
+import { emitRuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
 import { inspectSupabaseRuntimeStatus } from "./supabase_status.mjs";
 import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
 import {

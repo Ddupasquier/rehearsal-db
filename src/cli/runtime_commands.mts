@@ -23,8 +23,8 @@ import {
   inspectRuntimeTopologyCandidates,
   loadRuntimeTopology,
   selectRuntimeTargets,
-} from "../runtime/topology.mjs";
-import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
+} from "../runtime/lifecycle/topology.mjs";
+import type { RuntimeTopologyTarget } from "../runtime/lifecycle/topology.mjs";
 import {
   RehearsalError,
   normalizeRehearsalError,
@@ -46,12 +46,12 @@ import { buildRuntimeManagerArguments } from "../targets/target.mjs";
 import {
   parseRuntimeStatusSnapshot,
   renderRuntimeStatusSnapshot,
-} from "../runtime/status.mjs";
+} from "../runtime/lifecycle/status.mjs";
 import {
   applyRuntimePersistence,
   runtimeCompletionAction,
   assertRuntimeCompletionAllowed,
-} from "../runtime/persistence.mjs";
+} from "../runtime/lifecycle/persistence.mjs";
 import {
   createRuntimeStackRunner,
   type ManagerReceipt,
@@ -61,12 +61,12 @@ import {
   summarizeRuntimeManagerFailure,
   runtimePortFailureGuidance,
 } from "./runtime_failure_summary.mjs";
-import { readManagerMigrationFailure } from "../runtime/migration_failure.mjs";
-import { runtimeConfigurationSha256 } from "../runtime/configuration_binding.mjs";
+import { readManagerMigrationFailure } from "../runtime/migrations/migration_failure.mjs";
+import { runtimeConfigurationSha256 } from "../runtime/lifecycle/configuration_binding.mjs";
 import {
   assertLocalDockerContext,
   scopedDockerEnvironment,
-} from "../runtime/local_docker_context.mjs";
+} from "../runtime/engines/local_docker_context.mjs";
 import {
   formatDuration,
   isHumanTerminal,

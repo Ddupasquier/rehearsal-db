@@ -1,4 +1,4 @@
-import { verifyDrizzleBaselineHistory } from "../../../dist/src/runtime/drizzle_baseline_contract.mjs";
+import { verifyDrizzleBaselineHistory } from "../../../dist/src/runtime/migrations/drizzle_baseline_contract.mjs";
 import { createHash } from "node:crypto";
 import { readFile, writeFile, chmod } from "node:fs/promises";
 import { join } from "node:path";
@@ -8,14 +8,14 @@ import {
   drizzleFixture,
   removeDrizzleFixture,
 } from "../../helpers/drizzle_fixture.mjs";
-import { readDrizzleMigrationInventory } from "../../../dist/src/runtime/drizzle_history.mjs";
-import { drizzleMigrationFiles } from "../../../dist/src/runtime/migration_identity.mjs";
+import { readDrizzleMigrationInventory } from "../../../dist/src/runtime/migrations/drizzle_history.mjs";
+import { drizzleMigrationFiles } from "../../../dist/src/runtime/migrations/migration_identity.mjs";
 import { createDrizzleBaseline } from "../../../dist/src/baseline/drizzle_builder.mjs";
 import {
   verifyActiveBaseline,
   inspectBaselineGenerations,
 } from "../../../dist/src/baseline/artifact.mjs";
-import { createCandidateMigrationReceipt } from "../../../dist/src/runtime/restore.mjs";
+import { createCandidateMigrationReceipt } from "../../../dist/src/runtime/recovery/restore.mjs";
 const rawRead = vi.hoisted(() => ({ directory: null, attempts: 0 }));
 vi.mock("node:fs/promises", async (original) => {
   const actual = await original();

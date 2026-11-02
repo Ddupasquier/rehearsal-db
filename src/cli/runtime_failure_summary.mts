@@ -3,7 +3,7 @@ import { redactDiagnosticValue } from "../shared/diagnostics.mjs";
 import {
   readManagerMigrationFailure,
   renderMigrationFailureDiagnostic,
-} from "../runtime/migration_failure.mjs";
+} from "../runtime/migrations/migration_failure.mjs";
 import { portStartupGuidance } from "../targets/port_start_failure.mjs";
 
 export const runtimePortFailureGuidance = (

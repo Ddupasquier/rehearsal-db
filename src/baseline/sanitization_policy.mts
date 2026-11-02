@@ -1,5 +1,5 @@
-import { parseMigrationCutoff } from "../runtime/migration_identity.mjs";
-import type { MigrationCutoff } from "../runtime/migration_identity.mjs";
+import { parseMigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
+import type { MigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 /**
  * Generic, fail-closed sanitization policy validation and value operations.
  * Projects own the policy, schema inventory, pseudonym keys, and derivation logic.

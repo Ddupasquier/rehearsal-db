@@ -3,7 +3,7 @@
 import type {
   ExecutablePrivacyPolicy,
   PrivacyEngine,
-} from "../baseline/privacy_contract.mjs";
+} from "../baseline/privacy/privacy_contract.mjs";
 import type {
   BaselineShapeEvidence,
   BaselineShapePolicy,

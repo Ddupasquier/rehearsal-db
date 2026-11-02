@@ -8,8 +8,8 @@ import { loadRehearsalConfig } from "./configuration.mjs";
 import { findRehearsalConfigPath } from "./configuration_discovery.mjs";
 import type { RehearsalConfigPathOptions } from "./configuration.mjs";
 import { normalizeRehearsalConfig } from "./configuration_normalization.mjs";
-import { loadRuntimeTopology } from "../runtime/topology.mjs";
-import { assertRuntimeTopologyApplicationPorts } from "../runtime/topology_application_ports.mjs";
+import { loadRuntimeTopology } from "../runtime/lifecycle/topology.mjs";
+import { assertRuntimeTopologyApplicationPorts } from "../runtime/lifecycle/topology_application_ports.mjs";
 import { createConfigurationValidationError } from "./configuration_validation.mjs";
 
 export const EDITABLE_CONFIGURATION_FIELDS = Object.freeze([

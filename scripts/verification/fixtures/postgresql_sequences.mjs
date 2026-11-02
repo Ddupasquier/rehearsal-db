@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import {
   assertLocalDockerContext,
   scopedDockerEnvironment,
-} from "../../../dist/src/runtime/local_docker_context.mjs";
+} from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import { runScenarioCommand } from "../scenarios/process.mjs";
 
 export async function provePostgresqlRestoreSequences({ cwd, projectId }) {
@@ -53,7 +53,10 @@ export async function provePostgresqlRestoreSequences({ cwd, projectId }) {
   const identity = observe();
   const compiler = await import(
     pathToFileURL(
-      join(cwd, "node_modules/@rehearsal-db/core/dist/src/runtime/restore.mjs"),
+      join(
+        cwd,
+        "node_modules/@rehearsal-db/core/dist/src/runtime/recovery/restore.mjs",
+      ),
     ).href
   );
   const cases = [

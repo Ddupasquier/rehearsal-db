@@ -8,7 +8,7 @@ import {
   diagnoseMigrationFailure,
   readManagerMigrationFailure,
   renderMigrationFailureDiagnostic,
-} from "../../../dist/src/runtime/migration_failure.mjs";
+} from "../../../dist/src/runtime/migrations/migration_failure.mjs";
 
 describe("runtime manager failure summary", () => {
   it("reconstructs only validated source frames and keeps bounded cleanup guidance for long paths", () => {

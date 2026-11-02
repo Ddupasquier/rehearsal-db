@@ -10,7 +10,7 @@ import {
   readManagedPrototypeRequest,
   executeManagedPrototype,
   recoverManagedPrototype,
-} from "../runtime/managed_prototype.mjs";
+} from "../runtime/managed/managed_prototype.mjs";
 import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
 const tenant = "synthetic-tenant";
 export const createManagedCommandHandlers =

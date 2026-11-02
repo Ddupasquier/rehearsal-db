@@ -1,7 +1,7 @@
 /** Bind configured lifecycle-only admission without queuing proofs or interactive sessions. */
 import type { RehearsalResourcePolicy } from "../project/configuration_contract.mjs";
 import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
-import { withWorkloadAdmission } from "../runtime/workload_queue.mjs";
+import { withWorkloadAdmission } from "../runtime/resources/workload_queue.mjs";
 
 export const withRuntimeWorkloadAdmission = async <Result,>({
   policy,

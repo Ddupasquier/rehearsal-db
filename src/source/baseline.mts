@@ -19,7 +19,7 @@ import {
   buildMigrationLedgerInventory,
   createMigrationReplayReceipt,
   readMigrationSourceBundle,
-} from "../runtime/migration_history.mjs";
+} from "../runtime/migrations/migration_history.mjs";
 import {
   createPrivacyEngine,
   validateExecutablePrivacyPolicy,
@@ -29,7 +29,7 @@ import type {
   PrivacyEngine,
   PrivacySourceRecord,
 } from "../baseline/privacy_engine.mjs";
-import type { MigrationLedgerEntry } from "../runtime/migration_history.mjs";
+import type { MigrationLedgerEntry } from "../runtime/migrations/migration_history.mjs";
 import {
   sourceAccessPolicyFingerprint,
   sourceTargetFingerprint,

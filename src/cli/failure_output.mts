@@ -7,7 +7,7 @@ import {
 import {
   parseMigrationFailureDiagnostic,
   type MigrationFailureDiagnostic,
-} from "../runtime/migration_failure.mjs";
+} from "../runtime/migrations/migration_failure.mjs";
 
 const aggregateMigrationFailure = (
   error: AggregateError,

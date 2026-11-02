@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import {
   assertLocalDockerContext,
   DOCKER_CONTEXT_TLS_FORMAT,
-} from "../../../dist/src/runtime/local_docker_context.mjs";
+} from "../../../dist/src/runtime/engines/local_docker_context.mjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   appendFile,

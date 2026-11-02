@@ -1,12 +1,12 @@
-import { describeMigrationCutoff } from "../runtime/migration_identity.mjs";
+import { describeMigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 import {
   assertActiveBaselineUnchanged,
   assertNativeBaselineManifestUnchanged,
-} from "../runtime/baseline_identity.mjs";
+} from "../runtime/lifecycle/baseline_identity.mjs";
 import { createPostgresqlMigrationRuntime } from "./postgresql_migrations.mjs";
 import { requirePrismaTargetBinding } from "./prisma_target_binding.mjs";
 import { createPostgresqlContainerLifecycle } from "./postgresql_container_resume.mjs";
-import { restoreCopyChunks } from "../runtime/restore_cache.mjs";
+import { restoreCopyChunks } from "../runtime/resources/restore_cache.mjs";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { Writable } from "node:stream";
@@ -23,7 +23,7 @@ import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
   summarizeRestoreError,
-} from "../runtime/restore.mjs";
+} from "../runtime/recovery/restore.mjs";
 import {
   assertCandidateConfirmation,
   readActiveRuntimeInput,
@@ -32,9 +32,9 @@ import {
   withOwnedRuntimeRollback,
   writeCandidateMigrationReceipt,
   writeRuntimeMarker,
-} from "../runtime/lifecycle_engine.mjs";
-import type { ActiveRuntimeInput } from "../runtime/lifecycle_engine.mjs";
-import { emitRuntimeStatusSnapshot } from "../runtime/status.mjs";
+} from "../runtime/lifecycle/lifecycle_engine.mjs";
+import type { ActiveRuntimeInput } from "../runtime/lifecycle/lifecycle_engine.mjs";
+import { emitRuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
 import { inspectPostgresqlRuntimeStatus } from "./postgresql_status.mjs";
 import { ensureConfiguredContainerRuntime } from "./supabase_environment.mjs";
 import {
@@ -47,8 +47,8 @@ import {
 } from "../shared/owned_process.mjs";
 import { runPostgresqlCommand } from "./postgresql_process.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
-import { guardRuntimeManagerAction } from "../runtime/runtime_manager_guards.mjs";
-import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
+import { guardRuntimeManagerAction } from "../runtime/lifecycle/runtime_manager_guards.mjs";
+import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";
 import { runPostgresqlStartupCommand } from "./port_start_failure.mjs";
 import { assertDockerResourceLabels } from "./docker_resource_ownership.mjs";
 import {
@@ -57,7 +57,7 @@ import {
   buildRuntimePrerequisiteSql,
   buildRuntimeVerificationSql,
   validateRuntimePolicy,
-} from "../runtime/policy.mjs";
+} from "../runtime/lifecycle/policy.mjs";
 const repositoryRoot = process.cwd();
 const invocation = parseRuntimeInvocation();
 const loadedConfiguration = await loadRehearsalConfig({

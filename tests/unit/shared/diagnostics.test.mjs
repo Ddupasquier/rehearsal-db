@@ -14,7 +14,7 @@ import {
 import {
   buildAuthenticationReview,
   buildBaselineScopeReview,
-} from "../../../dist/src/runtime/project_review.mjs";
+} from "../../../dist/src/runtime/lifecycle/project_review.mjs";
 import {
   createAndActivateBaseline,
   removeBaselineArtifactRoot,

@@ -1,5 +1,5 @@
 /** Pure runtime readiness and engine-choice presentation; no engine operations. */
-import type { ContainerEngineDiscovery } from "../runtime/engine_discovery.mjs";
+import type { ContainerEngineDiscovery } from "../runtime/engines/engine_discovery.mjs";
 
 export interface ReadinessCheck {
   readonly id: string;

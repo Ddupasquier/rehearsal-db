@@ -17,8 +17,8 @@ import type {
 } from "../project/configuration.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
 import type { CliSessionState } from "./command_contract.mjs";
-import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
-import type { RehearsalCleanupPlan } from "../runtime/cleanup.mjs";
+import type { RuntimeTopologyTarget } from "../runtime/lifecycle/topology.mjs";
+import type { RehearsalCleanupPlan } from "../runtime/resources/cleanup.mjs";
 import type { ChoiceOption } from "./terminal.mjs";
 import { validateRuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
 import {

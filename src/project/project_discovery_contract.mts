@@ -49,7 +49,7 @@ export interface DiscoveredConfigurationField {
 
 export interface ProjectDiscoveryResult {
   readonly schemaVersion: typeof PROJECT_DISCOVERY_SCHEMA_VERSION;
-  readonly containerEngines?: import("../runtime/engine_discovery.mjs").ContainerEngineDiscovery;
+  readonly containerEngines?: import("../runtime/engines/engine_discovery.mjs").ContainerEngineDiscovery;
   readonly project: {
     readonly name: string;
     readonly packageManifest: "present" | "missing";

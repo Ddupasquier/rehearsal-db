@@ -29,7 +29,7 @@ import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs
 import {
   buildRehearsalPlan,
   inspectRehearsalMigrations,
-} from "../../../dist/src/runtime/plan.mjs";
+} from "../../../dist/src/runtime/lifecycle/plan.mjs";
 import { streamApprovedSupabaseAssets } from "../../../dist/src/source/asset_transfer.mjs";
 import {
   installCandidateArtifact,
