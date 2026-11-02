@@ -44,4 +44,4 @@ export type {
 export type {
   NativeMigrationTool,
   DrizzleMigrationTool,
-} from "./project/configuration_migration_tool.mjs";
+} from "./project/configuration/configuration_migration_tool.mjs";

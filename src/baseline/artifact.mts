@@ -1,4 +1,4 @@
-import { verifyDrizzleBaselineHistory } from "../runtime/migrations/drizzle_baseline_contract.mjs";
+import { verifyDrizzleBaselineHistory } from "../runtime/migrations/native/drizzle/drizzle_baseline_contract.mjs";
 /**
  * Purpose: Write, verify, and atomically activate immutable sanitized Rehearsal
  * baseline generations. Do not run directly; this module is reusable script
@@ -26,21 +26,21 @@ import {
   type MigrationLedgerEntry,
   type MigrationSourceEntry,
 } from "../runtime/migrations/migration_history.mjs";
-import { verifyBaselineShapeEvidence } from "../source/shape_evidence.mjs";
-import type { BaselineShapeEvidence } from "../source/shape_contract.mjs";
-import { readBoundedShapeJson } from "../source/shape_json.mjs";
-import { readPrismaMigrationInventory } from "../runtime/migrations/prisma_history.mjs";
+import { verifyBaselineShapeEvidence } from "../source/shaping/shape_evidence.mjs";
+import type { BaselineShapeEvidence } from "../source/shaping/shape_contract.mjs";
+import { readBoundedShapeJson } from "../source/shaping/shape_json.mjs";
+import { readPrismaMigrationInventory } from "../runtime/migrations/native/prisma/prisma_history.mjs";
 import {
   parseNativeMigrationBinding,
   type NativeMigrationBinding,
-} from "../runtime/migrations/native_migration_contract.mjs";
+} from "../runtime/migrations/native/native_migration_contract.mjs";
 
 import type { MigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 import {
   readDrizzleMigrationInventory,
   type DrizzleMigrationEntry,
   type DrizzleLedgerEntry,
-} from "../runtime/migrations/drizzle_history.mjs";
+} from "../runtime/migrations/native/drizzle/drizzle_history.mjs";
 import {
   parseDrizzleMigrationIdentity,
   sameMigrationCutoff,

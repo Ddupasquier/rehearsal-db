@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeRehearsalConfig } from "../../../../dist/src/project/configuration_normalization.mjs";
+import { normalizeRehearsalConfig } from "../../../../dist/src/project/configuration/configuration_normalization.mjs";
 import {
   applyStopStalePlan,
   createStopStalePlan,

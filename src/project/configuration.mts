@@ -7,19 +7,19 @@ export {
   defineRehearsalConfig,
   REHEARSAL_CONFIG_VERSION,
   REHEARSAL_DEFAULTS,
-} from "./configuration_contract.mjs";
+} from "./configuration/configuration_contract.mjs";
 export type {
   ApplicationRequiredService,
   RehearsalResourcePolicy,
   RehearsalConfig,
   RehearsalConfigVersion,
-} from "./configuration_contract.mjs";
-export { findRehearsalConfigPath } from "./configuration_discovery.mjs";
-export type { RehearsalConfigPathOptions } from "./configuration_discovery.mjs";
-export { loadRehearsalConfig } from "./configuration_resolution.mjs";
-export type { NormalizedRehearsalConfig } from "./configuration_resolution.mjs";
-export { inspectDetectedProject } from "./project_detection.mjs";
-export type { DetectedProject } from "./project_detection.mjs";
+} from "./configuration/configuration_contract.mjs";
+export { findRehearsalConfigPath } from "./configuration/configuration_discovery.mjs";
+export type { RehearsalConfigPathOptions } from "./configuration/configuration_discovery.mjs";
+export { loadRehearsalConfig } from "./configuration/configuration_resolution.mjs";
+export type { NormalizedRehearsalConfig } from "./configuration/configuration_resolution.mjs";
+export { inspectDetectedProject } from "./discovery/project_detection.mjs";
+export type { DetectedProject } from "./discovery/project_detection.mjs";
 export {
   discoverProjectProfile,
   probeContainerEngineWithoutStarting,
@@ -39,4 +39,4 @@ export type {
 export {
   renderDetectedConfig,
   renderDetectedPostgresqlConfig,
-} from "./configuration_rendering.mjs";
+} from "./configuration/configuration_rendering.mjs";

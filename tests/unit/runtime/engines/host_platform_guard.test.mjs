@@ -30,7 +30,7 @@ vi.mock("node:child_process", async (importOriginal) => ({
 }));
 
 import { runRehearsalDoctor } from "../../../../dist/src/runtime/lifecycle/plan.mjs";
-import { runRuntimeStackDoctor } from "../../../../dist/src/cli/runtime_planning.mjs";
+import { runRuntimeStackDoctor } from "../../../../dist/src/cli/runtime/runtime_planning.mjs";
 
 describe("unsupported host doctor boundaries", () => {
   beforeEach(() => {

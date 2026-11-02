@@ -19,7 +19,7 @@ import {
   startLocalSupabase,
   stopLocalSupabase,
   type LocalSupabaseEnvironment,
-} from "./supabase_environment.mjs";
+} from "./supabase/supabase_environment.mjs";
 import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
@@ -64,13 +64,13 @@ import {
 } from "../runtime/lifecycle/lifecycle_engine.mjs";
 import type { ActiveRuntimeInput } from "../runtime/lifecycle/lifecycle_engine.mjs";
 import { emitRuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
-import { inspectSupabaseRuntimeStatus } from "./supabase_status.mjs";
+import { inspectSupabaseRuntimeStatus } from "./supabase/supabase_status.mjs";
 import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
 import {
   bindOwnedProcessCancellation,
   signalOwnedProcessGroup,
 } from "../shared/owned_process.mjs";
-import { runOwnedSupabaseMigration } from "./supabase_process.mjs";
+import { runOwnedSupabaseMigration } from "./supabase/supabase_process.mjs";
 
 const repositoryRoot = process.cwd();
 const invocation = parseRuntimeInvocation();

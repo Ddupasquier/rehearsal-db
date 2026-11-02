@@ -4,6 +4,8 @@ import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
 import type { RehearsalStatus } from "../shared/diagnostics.mjs";
 import type { RehearsalCliFlags, RehearsalVerbosity } from "./arguments.mjs";
 
+export type RenderMode = "preview" | "written";
+
 export interface CliSessionState {
   lastGuidedDetails: string | undefined;
   runtimeTopology: unknown | undefined;

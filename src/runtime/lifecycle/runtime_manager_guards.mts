@@ -11,7 +11,7 @@ import {
   assertResourcePolicyAllowsStartup,
   evaluateResourcePolicy,
 } from "../resources/resource_policy.mjs";
-import { assertRequiredSupabaseServicesEnabled } from "../../targets/supabase_service_requirements.mjs";
+import { assertRequiredSupabaseServicesEnabled } from "../../targets/supabase/supabase_service_requirements.mjs";
 import { assertRuntimeConfigurationBinding } from "./configuration_binding.mjs";
 
 export const createRuntimeManagerEnvironment = () =>

@@ -1,5 +1,5 @@
 import { describeMigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
-import { createDrizzleBaseline } from "./drizzle_builder.mjs";
+import { createDrizzleBaseline } from "./producers/drizzle_builder.mjs";
 /**
  * Build a synthetic baseline from explicit project-owned local files. This module does
  * not connect to a hosted source or decide which values are safe.
@@ -22,7 +22,7 @@ import {
   readMigrationSourceBundle,
 } from "../runtime/migrations/migration_history.mjs";
 import { validateRuntimeSanitizationPolicy } from "./sanitization_policy.mjs";
-import { createPrismaBaseline } from "./prisma_builder.mjs";
+import { createPrismaBaseline } from "./producers/prisma_builder.mjs";
 
 interface SyntheticBaselineOptions {
   readonly projectRoot?: string;

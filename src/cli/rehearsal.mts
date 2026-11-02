@@ -9,11 +9,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import * as prompts from "@clack/prompts";
-import {
-  RehearsalError,
-  renderHumanError,
-  serializeRehearsalError,
-} from "../shared/diagnostics.mjs";
+import { RehearsalError } from "../shared/diagnostics.mjs";
 import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
 import {
   acquireProjectOperation,
@@ -30,28 +26,31 @@ import {
   resetGuidedFlags,
 } from "./arguments.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
-import { usage } from "./basic_command_handlers.mjs";
-import { createCliCommandRegistry } from "./cli_commands.mjs";
+import { usage } from "./commands/basic_command_handlers.mjs";
+import { createCliCommandRegistry } from "./commands/cli_commands.mjs";
 import {
   createCliSessionState,
   resetCommandSessionState,
 } from "./command_contract.mjs";
-import { createCommandEmitter } from "./command_output.mjs";
-import { normalizeCliFailure } from "./failure_output.mjs";
+import { createCommandEmitter } from "./presentation/command_output.mjs";
+import { renderCliFailureOutput } from "./presentation/failure_output.mjs";
 import { createGuidedHome } from "./guided.mjs";
-import { createProjectCommands } from "./project_commands.mjs";
+import { createProjectCommands } from "./commands/project_commands.mjs";
 import {
   buildRuntimeStackPlan,
   createRuntimeCommands,
   runRuntimeStackDoctor,
   topologyCandidateSummary,
   topologyCommandEnvironment,
-} from "./runtime_commands.mjs";
+} from "./runtime/runtime_commands.mjs";
 import {
   buildRefreshWorkflowPlan,
   createRefreshWorkflow,
-} from "./source_commands.mjs";
-import { installGuidedExitShortcut, useStyledPrompts } from "./terminal.mjs";
+} from "./commands/source_commands.mjs";
+import {
+  installGuidedExitShortcut,
+  useStyledPrompts,
+} from "./presentation/terminal.mjs";
 import {
   runWithOperationCancellation,
   supportsOperationCancellation,
@@ -101,9 +100,6 @@ const runGuidedHome = createGuidedHome({
   getLastGuidedDetails: () => state.lastGuidedDetails,
   session: state,
 });
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 const executeCommand = async ({
   command,
@@ -278,20 +274,11 @@ const main = async () => {
 try {
   await main();
 } catch (error) {
-  const failure = normalizeCliFailure(error, {
-    expected: "a safe, versioned, local-only Rehearsal operation",
-    actual: errorMessage(error),
-    refused: "No further Rehearsal action was performed.",
-    suggestions: ["Run rehearsal doctor for actionable readiness checks."],
-  });
-  const wantsJson = process.argv.includes("--json");
-  const debug = process.argv.includes("--debug");
-  if (wantsJson) {
-    console.log(
-      JSON.stringify(serializeRehearsalError(failure, { debug }), null, 2),
-    );
+  const failure = renderCliFailureOutput(error, process.argv);
+  if (failure.json) {
+    console.log(failure.text);
   } else {
-    console.error(renderHumanError(failure, { debug }));
+    console.error(failure.text);
   }
   process.exitCode = failure.exitCode;
 }

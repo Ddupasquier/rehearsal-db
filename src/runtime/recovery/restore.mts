@@ -10,13 +10,13 @@ import {
 import { createHash } from "node:crypto";
 import type { BaselineManifest } from "../../baseline/artifact.mjs";
 import type { RuntimeSanitizationPolicy } from "../../baseline/sanitization_policy.mjs";
-import type { PrismaNativeBinding } from "../migrations/prisma_history.mjs";
+import type { PrismaNativeBinding } from "../migrations/native/prisma/prisma_history.mjs";
 import type { MigrationFileEntry } from "../migrations/migration_history.mjs";
 import {
   parseNativeMigrationBinding,
   sameNativeMigrationHistory,
   type NativeMigrationBinding,
-} from "../migrations/native_migration_contract.mjs";
+} from "../migrations/native/native_migration_contract.mjs";
 
 const identifierPattern = /^[a-z][a-z0-9_]{0,62}$/u;
 const constraintFailurePattern =

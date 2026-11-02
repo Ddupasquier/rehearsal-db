@@ -2,15 +2,15 @@ import { performance } from "node:perf_hooks";
 import { describe, expect, it, vi } from "vitest";
 import packageMetadata from "../../../package.json" with { type: "json" };
 import { parseArguments } from "../../../dist/src/cli/arguments.mjs";
-import { createApplicationCommandHandlers } from "../../../dist/src/cli/application_command_handlers.mjs";
-import { createBasicCommandHandlers } from "../../../dist/src/cli/basic_command_handlers.mjs";
+import { createApplicationCommandHandlers } from "../../../dist/src/cli/commands/application_command_handlers.mjs";
+import { createBasicCommandHandlers } from "../../../dist/src/cli/commands/basic_command_handlers.mjs";
 import {
   createCliSessionState,
   exactCommands,
   renderedCommand,
   textCommand,
 } from "../../../dist/src/cli/command_contract.mjs";
-import { createCommandEmitter } from "../../../dist/src/cli/command_output.mjs";
+import { createCommandEmitter } from "../../../dist/src/cli/presentation/command_output.mjs";
 import { createCommandRegistry } from "../../../dist/src/cli/command_registry.mjs";
 
 const context = (command, arguments_ = []) => ({
