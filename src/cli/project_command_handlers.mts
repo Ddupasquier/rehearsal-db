@@ -1,4 +1,4 @@
-import { describeMigrationCutoff } from "../runtime/migration_identity.mjs";
+import { describeMigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 /** Project setup, baseline creation, privacy-key, and cleanup command handlers. */
 
 import { relative } from "node:path";

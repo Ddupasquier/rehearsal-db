@@ -1,9 +1,9 @@
 import {
   normalizeRuntimeMarkerProtocol,
   protectPostgresqlRuntimeMarker,
-} from "../runtime/runtime_marker_protocol.mjs";
+} from "../runtime/lifecycle/runtime_marker_protocol.mjs";
 import { isDeepStrictEqual } from "node:util";
-import { captureRuntimeStartupOwnership } from "../runtime/runtime_startup_ownership.mjs";
+import { captureRuntimeStartupOwnership } from "../runtime/lifecycle/runtime_startup_ownership.mjs";
 /** Reconstruct a deliberately retired PostgreSQL container without resetting its retained data. */
 import { assertDockerResourceLabels } from "./docker_resource_ownership.mjs";
 export interface PostgresqlRetainedContainerReceipt {
@@ -319,13 +319,13 @@ import {
   runtimeDockerContext,
   isLocalDockerEndpoint,
   scopedDockerEnvironment,
-} from "../runtime/local_docker_context.mjs";
+} from "../runtime/engines/local_docker_context.mjs";
 import {
   planContainerRetirement,
   retireContainers,
   type ContainerRetirementBinding,
   type ContainerRetirementRunner,
-} from "../runtime/container_retirement.mjs";
+} from "../runtime/resources/container_retirement.mjs";
 import { runOwnedProcess } from "../shared/owned_process.mjs";
 import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
 const bytesHash = (bytes: string | Buffer) =>

@@ -4,7 +4,7 @@ import {
   planEngineShutdown,
   shutdownEngine,
   ENGINE_LIFECYCLE_REASON_LABELS,
-} from "../runtime/engine_lifecycle.mjs";
+} from "../runtime/engines/engine_lifecycle.mjs";
 import { RehearsalError } from "../shared/diagnostics.mjs";
 import { fileURLToPath } from "node:url";
 import {

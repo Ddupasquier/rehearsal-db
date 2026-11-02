@@ -1,11 +1,14 @@
 /** Read-only stack planning and candidate receipts, shared by CLI and editor contracts. */
 import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
-import { buildRehearsalPlan, runRehearsalDoctor } from "../runtime/plan.mjs";
+import {
+  buildRehearsalPlan,
+  runRehearsalDoctor,
+} from "../runtime/lifecycle/plan.mjs";
 import {
   inspectRuntimeTopologyCandidates,
   loadRuntimeTopology,
-} from "../runtime/topology.mjs";
-import type { RuntimeTopologyTarget } from "../runtime/topology.mjs";
+} from "../runtime/lifecycle/topology.mjs";
+import type { RuntimeTopologyTarget } from "../runtime/lifecycle/topology.mjs";
 import { redactDiagnosticValue } from "../shared/diagnostics.mjs";
 import { inspectHostPlatform } from "../shared/host_platform.mjs";
 

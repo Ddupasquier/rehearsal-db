@@ -9,11 +9,11 @@ import {
   createCleanProcessEnvironment,
   type ProcessEnvironment,
 } from "../shared/process_environment.mjs";
-import { runtimeDockerEnvironment } from "../runtime/local_docker_context.mjs";
+import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";
 import {
   diagnoseMigrationFailure,
   renderMigrationFailureDiagnostic,
-} from "../runtime/migration_failure.mjs";
+} from "../runtime/migrations/migration_failure.mjs";
 
 export const runOwnedSupabaseMigration = async ({
   environment,

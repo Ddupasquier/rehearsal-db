@@ -1,7 +1,7 @@
 /** Execute and verify one confirmed local identity claim transaction. */
 
 import pg from "pg";
-import { IDENTITY_CLAIM_RECEIPT_SQL } from "../runtime/policy.mjs";
+import { IDENTITY_CLAIM_RECEIPT_SQL } from "../runtime/lifecycle/policy.mjs";
 import type {
   IdentityClaimPlan,
   IdentityClaimResult,

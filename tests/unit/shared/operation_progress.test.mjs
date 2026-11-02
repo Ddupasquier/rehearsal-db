@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createOperationCancelledError } from "../../../dist/src/shared/cancellation.mjs";
 import { RehearsalError } from "../../../dist/src/shared/diagnostics.mjs";
-import { migrationFailureDiagnostic } from "../../../dist/src/runtime/migration_failure.mjs";
+import { migrationFailureDiagnostic } from "../../../dist/src/runtime/migrations/migration_failure.mjs";
 import {
   acquireProjectOperation,
   inspectProjectOperationState,

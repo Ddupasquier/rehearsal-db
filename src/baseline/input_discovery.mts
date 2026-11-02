@@ -1,5 +1,5 @@
-import { normalizeDrizzleMigrationLedger } from "../runtime/drizzle_history.mjs";
-import { normalizePrismaMigrationLedger } from "../runtime/prisma_history.mjs";
+import { normalizeDrizzleMigrationLedger } from "../runtime/migrations/drizzle_history.mjs";
+import { normalizePrismaMigrationLedger } from "../runtime/migrations/prisma_history.mjs";
 /**
  * Discover likely project-owned baseline inputs without exposing their values.
  * Discovery is bounded, ignores generated/private directories, and only sniffs

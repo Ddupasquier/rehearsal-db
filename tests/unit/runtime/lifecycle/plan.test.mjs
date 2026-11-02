@@ -1,0 +1,353 @@
+import * as baselineArtifact from "../../../../dist/src/baseline/artifact.mjs";
+import { inspectBaselineSizing } from "../../../../dist/src/runtime/resources/baseline_sizing.mjs";
+import { createHash } from "node:crypto";
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createAndActivateBaseline } from "../../../../dist/src/baseline/artifact.mjs";
+import {
+  buildRehearsalPlan,
+  inspectRehearsalMigrations,
+  inspectRehearsalBaseline,
+} from "../../../../dist/src/runtime/lifecycle/plan.mjs";
+
+const roots = [];
+const configurationModuleUrl = pathToFileURL(
+  join(process.cwd(), "dist/src/project/configuration.mjs"),
+).href;
+
+const makeTreeWritable = async (path) => {
+  await chmod(path, 0o700).catch(() => undefined);
+  for (const entry of await import("node:fs/promises").then(({ readdir }) =>
+    readdir(path, { withFileTypes: true }).catch(() => []),
+  )) {
+    const child = join(path, entry.name);
+    if (entry.isDirectory()) await makeTreeWritable(child);
+    else if (!entry.isSymbolicLink()) await chmod(child, 0o600);
+  }
+};
+
+const createFixture = async (metadata = {}) => {
+  const root = await mkdtemp(join(tmpdir(), "rehearsal-plan-test-"));
+  roots.push(root);
+  await Promise.all([
+    mkdir(join(root, "supabase/migrations"), { recursive: true }),
+    mkdir(join(root, "infrastructure/rehearsal/supabase"), {
+      recursive: true,
+    }),
+  ]);
+  const historical = {
+    filename: "20260912000000_create_widget.sql",
+    content: "create table public.widget(id bigint primary key);\n",
+  };
+  const policySource = `${JSON.stringify({
+    policyVersion: 1,
+    migrationCutoff: "20260912000000",
+    tables: [
+      {
+        name: "widget",
+        sourceRows: "STREAM AND SANITIZE",
+        columns: [
+          {
+            name: "id",
+            action: "KEEP",
+            generated: "NEVER",
+            identity: "NO",
+            foreignKey: null,
+          },
+        ],
+      },
+    ],
+  })}\n`;
+  await writeFile(
+    join(root, "supabase/migrations", historical.filename),
+    historical.content,
+  );
+  await writeFile(
+    join(root, "infrastructure/rehearsal/supabase/config.toml"),
+    'project_id = "fixture-rehearsal"\n[api]\nport = 58321\n[db]\nport = 58322\n[studio]\nport = 58323\n',
+  );
+  await writeFile(
+    join(root, "infrastructure/rehearsal/policy.json"),
+    policySource,
+  );
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({
+      name: "fixture",
+      scripts: { dev: "vite", test: "vitest" },
+    }),
+  );
+  await writeFile(
+    join(root, "rehearsal.config.mjs"),
+    `import { defineRehearsalConfig } from ${JSON.stringify(configurationModuleUrl)};
+export default defineRehearsalConfig({
+	schemaVersion: 1,
+	project: { name: "fixture" },
+	supabase: { workdir: ".", migrationDirectory: "supabase/migrations", rehearsalConfig: "infrastructure/rehearsal/supabase/config.toml", runtimeWorkdir: ".rehearsal/runtime" },
+	baseline: { artifactDirectory: ".rehearsal", sanitizationPolicy: "infrastructure/rehearsal/policy.json" },
+	application: { startCommand: "npm run dev", proofCommand: "npm test" },
+	runtime: { applicationUrl: "http://localhost:5175", projectId: "fixture-rehearsal", apiPort: 58321, databasePort: 58322, studioPort: 58323 },
+});\n`,
+  );
+  await createAndActivateBaseline({
+    artifactRoot: join(root, ".rehearsal"),
+    generationId: "20260912T120000Z-aaaaaaaaaaaa",
+    records: [{ table: "widget", row: { id: 1 } }],
+    metadata: {
+      migrationCutoff: "20260912000000",
+      migrationHistorySha256: "a".repeat(64),
+      sanitizationPolicySha256: createHash("sha256")
+        .update(policySource)
+        .digest("hex"),
+      ...metadata,
+    },
+    expectedTables: ["widget"],
+    migrationFiles: [historical],
+  });
+  return root;
+};
+
+afterEach(async () => {
+  for (const root of roots.splice(0)) {
+    await makeTreeWritable(root);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+describe("Rehearsal plan", () => {
+  it("exposes reviewed source-schema identity only when exact metadata exists", async () => {
+    const legacy = await createFixture();
+    expect(
+      (await buildRehearsalPlan({ projectRoot: legacy })).baseline
+        .sourceSchemaSha256,
+    ).toBeNull();
+    const sourceSchemaSha256 = "c".repeat(64);
+    const known = await createFixture({ sourceSchemaSha256 });
+    expect(
+      (await buildRehearsalPlan({ projectRoot: known })).baseline
+        .sourceSchemaSha256,
+    ).toBe(sourceSchemaSha256);
+    expect(
+      (await inspectRehearsalBaseline({ projectRoot: known }))
+        .sourceSchemaSha256,
+    ).toBe(sourceSchemaSha256);
+    const invalid = await createFixture({
+      sourceSchemaSha256: "PRIVATE_SCHEMA_CANARY",
+    });
+    expect(
+      (await buildRehearsalPlan({ projectRoot: invalid })).baseline
+        .sourceSchemaSha256,
+    ).toBeNull();
+  });
+  it("builds deterministic plan semantics without mutating the project", async () => {
+    const root = await createFixture();
+    const first = await buildRehearsalPlan({ projectRoot: root });
+    const second = await buildRehearsalPlan({ projectRoot: root });
+
+    expect(second).toEqual(first);
+    expect(first.environment.target).toBe("supabase");
+    expect(first.baseline.rowCount).toBe(1);
+    expect(first.migrations.representedCount).toBe(1);
+    expect(first.migrations.candidateCount).toBe(0);
+    expect(first.lifecycle).toEqual({
+      openIdleTimeoutSeconds: null,
+      run: "stop-after-run",
+      open: "stop-on-application-exit",
+      dataOnStop: "preserved",
+    });
+    expect(first.application).toEqual({
+      activity: null,
+      startCommand: "npm run dev",
+      proofCommand: "npm test",
+      readiness: null,
+    });
+    expect(first.cleanup).toEqual({ retainBaselineGenerations: 2 });
+    expect(first.guarantee).toBe("No production resources will be contacted.");
+  });
+
+  it("reports the exact generated local OAuth callback", async () => {
+    const root = await createFixture();
+    const configPath = join(root, "rehearsal.config.mjs");
+    const source = await readFile(configPath, "utf8");
+    await writeFile(
+      configPath,
+      source.replace(
+        'runtimeWorkdir: ".rehearsal/runtime"',
+        `runtimeWorkdir: ".rehearsal/runtime", authentication: {
+          enableLocalSignup: true,
+          environmentFile: ".env.rehearsal-service.local",
+          providers: [{
+            name: "github",
+            clientIdEnvironmentVariable: "REHEARSAL_GITHUB_CLIENT_ID",
+            clientSecretEnvironmentVariable: "REHEARSAL_GITHUB_CLIENT_SECRET",
+          }],
+        }`,
+      ),
+    );
+
+    const plan = await buildRehearsalPlan({ projectRoot: root });
+
+    expect(plan.environment.authenticationProviders).toEqual(["github"]);
+    expect(plan.environment.authenticationCallback).toBe(
+      "http://127.0.0.1:58321/auth/v1/callback",
+    );
+  });
+
+  it("classifies only exact suffix files as candidates", async () => {
+    const root = await createFixture();
+    await writeFile(
+      join(root, "supabase/migrations/20260912000100_add_widget_name.sql"),
+      "alter table public.widget add column name text;\n",
+    );
+    const inspection = await inspectRehearsalMigrations({ projectRoot: root });
+    expect(inspection.migrations.map(({ status }) => status)).toEqual([
+      "represented_by_baseline",
+      "candidate",
+    ]);
+    expect(inspection.candidateSha256).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it("accepts an applied-candidate receipt only for its exact runtime target", async () => {
+    const root = await createFixture();
+    const candidatePath = join(
+      root,
+      "supabase/migrations/20260912000100_add_widget_name.sql",
+    );
+    await writeFile(
+      candidatePath,
+      "alter table public.widget add column name text;\n",
+    );
+    const inspection = await inspectRehearsalMigrations({ projectRoot: root });
+    const receiptPath = join(root, ".rehearsal/runtime/candidate-receipt.json");
+    await mkdir(join(root, ".rehearsal/runtime"), { recursive: true });
+    const receipt = {
+      formatVersion: 1,
+      target: "postgresql",
+      baselineGenerationId: inspection.baselineGenerationId,
+      candidateSha256: inspection.candidateSha256,
+      candidates: [],
+    };
+    await writeFile(receiptPath, `${JSON.stringify(receipt)}\n`);
+
+    expect(
+      (await inspectRehearsalMigrations({ projectRoot: root })).migrations.at(
+        -1,
+      ).status,
+    ).toBe("candidate");
+
+    await writeFile(
+      receiptPath,
+      `${JSON.stringify({ ...receipt, target: "supabase" })}\n`,
+    );
+    expect(
+      (await inspectRehearsalMigrations({ projectRoot: root })).migrations.at(
+        -1,
+      ).status,
+    ).toBe("applied_to_current_runtime");
+  });
+
+  it("fails closed when represented migration bytes change", async () => {
+    const root = await createFixture();
+    await writeFile(
+      join(root, "supabase/migrations/20260912000000_create_widget.sql"),
+      "select 'tampered';\n",
+    );
+    await expect(buildRehearsalPlan({ projectRoot: root })).rejects.toThrow(
+      "diverges from the active baseline",
+    );
+  });
+
+  it("fails closed when the reviewed sanitization policy changes", async () => {
+    const root = await createFixture();
+    const policyPath = join(root, "infrastructure/rehearsal/policy.json");
+    const policy = JSON.parse(
+      await import("node:fs/promises").then(({ readFile }) =>
+        readFile(policyPath, "utf8"),
+      ),
+    );
+    policy.tables[0].columns[0].action = "REPLACE";
+    await writeFile(policyPath, `${JSON.stringify(policy)}\n`);
+
+    await expect(buildRehearsalPlan({ projectRoot: root })).rejects.toThrow(
+      "does not match the reviewed baseline policy checksum",
+    );
+  });
+});
+
+describe("verified baseline sizing", () => {
+  it("reports exact immutable rows/bytes without assuming sampled fidelity or mutating inputs", async () => {
+    const root = await createFixture();
+    const first = await inspectBaselineSizing({ projectRoot: root });
+    expect(first).toMatchObject({
+      schemaVersion: 1,
+      baselineRows: 1,
+      tables: [{ table: "widget", rows: 1 }],
+      selection: "complete-sanitized-input",
+      sourceRows: null,
+      relationshipsChecked: null,
+      requiredGoals: null,
+      copyCache: "disabled",
+    });
+    expect(first.baselineBytes).toBeGreaterThan(0);
+    expect(first.limits.join(" ")).toContain("No rows are removed");
+    expect(await inspectBaselineSizing({ projectRoot: root })).toEqual(first);
+  });
+  it("refuses corrupted baseline bytes rather than recommending a smaller or cached substitute", async () => {
+    const root = await createFixture();
+    const { resolveActiveBaselinePaths } =
+      await import("../../../../dist/src/baseline/artifact.mjs");
+    const active = await resolveActiveBaselinePaths({
+      artifactRoot: join(root, ".rehearsal"),
+    });
+    await chmod(active.dataPath, 0o600);
+    await writeFile(active.dataPath, '{"table":"widget","row":{"id":999}}\n');
+    await expect(inspectBaselineSizing({ projectRoot: root })).rejects.toThrow(
+      /checksum/,
+    );
+  });
+});
+
+it("refuses an active-generation switch between verification and sizing projection", async () => {
+  const root = await createFixture();
+  const originalVerify = baselineArtifact.verifyActiveBaseline;
+  const spy = vi
+    .spyOn(baselineArtifact, "verifyActiveBaseline")
+    .mockImplementationOnce(async (options) => {
+      const first = await originalVerify(options);
+      await createAndActivateBaseline({
+        artifactRoot: join(root, ".rehearsal"),
+        generationId: "20260912T120001Z-bbbbbbbbbbbb",
+        records: [{ table: "widget", row: { id: 2 } }],
+        metadata: {
+          migrationCutoff: first.migrationCutoff,
+          migrationHistorySha256: first.migrationHistorySha256,
+          sanitizationPolicySha256: first.sanitizationPolicySha256,
+        },
+        expectedTables: ["widget"],
+        migrationFiles: [
+          {
+            filename: "20260912000000_create_widget.sql",
+            content: "create table public.widget(id bigint primary key);\n",
+          },
+        ],
+      });
+      return first;
+    });
+  try {
+    await expect(inspectBaselineSizing({ projectRoot: root })).rejects.toThrow(
+      /active baseline changed during sizing/,
+    );
+  } finally {
+    spy.mockRestore();
+  }
+});

@@ -23,14 +23,14 @@ import type { RehearsalSetupPlan } from "../project/setup.mjs";
 import {
   applyRehearsalCleanup,
   planRehearsalCleanup,
-} from "../runtime/cleanup.mjs";
-import type { RehearsalCleanupPlan } from "../runtime/cleanup.mjs";
-import { runRehearsalDoctor } from "../runtime/plan.mjs";
-import { inspectContainerEngineOptions } from "../runtime/engine_discovery.mjs";
+} from "../runtime/resources/cleanup.mjs";
+import type { RehearsalCleanupPlan } from "../runtime/resources/cleanup.mjs";
+import { runRehearsalDoctor } from "../runtime/lifecycle/plan.mjs";
+import { inspectContainerEngineOptions } from "../runtime/engines/engine_discovery.mjs";
 import {
   loadRuntimeTopology,
   selectRuntimeTargets,
-} from "../runtime/topology.mjs";
+} from "../runtime/lifecycle/topology.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
 import type { CliSessionState } from "./command_contract.mjs";
 

@@ -6,7 +6,7 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { CONFIG_FILENAMES } from "./configuration_discovery.mjs";
-import { inspectContainerEngineOptions } from "../runtime/engine_discovery.mjs";
+import { inspectContainerEngineOptions } from "../runtime/engines/engine_discovery.mjs";
 import type { ContainerEngineProbe } from "./project_discovery_contract.mjs";
 
 const MAX_METADATA_BYTES = 1024 * 1024;

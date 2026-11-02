@@ -9,7 +9,7 @@ import {
 import {
   applyRuntimePersistence,
   runtimeCompletionAction,
-} from "../runtime/persistence.mjs";
+} from "../runtime/lifecycle/persistence.mjs";
 import { trackOperationStage } from "../shared/operation_progress.mjs";
 import {
   exactCommands,

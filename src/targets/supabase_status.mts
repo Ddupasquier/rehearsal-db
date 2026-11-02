@@ -3,9 +3,9 @@
 import {
   parseRuntimeStatusSnapshot,
   RUNTIME_STATUS_SCHEMA_VERSION,
-} from "../runtime/status.mjs";
-import type { RuntimeStatusSnapshot } from "../runtime/status.mjs";
-import { hasMatchingRuntimeMarker } from "../runtime/lifecycle_engine.mjs";
+} from "../runtime/lifecycle/status.mjs";
+import type { RuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
+import { hasMatchingRuntimeMarker } from "../runtime/lifecycle/lifecycle_engine.mjs";
 import type { ProcessEnvironment } from "../shared/process_environment.mjs";
 import {
   localCommandSucceeds,

@@ -40,7 +40,7 @@ export {
 export type {
   MigrationCutoff,
   DrizzleMigrationIdentity,
-} from "./runtime/migration_identity.mjs";
+} from "./runtime/migrations/migration_identity.mjs";
 export type {
   NativeMigrationTool,
   DrizzleMigrationTool,

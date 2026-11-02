@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const inspect = vi.hoisted(() => vi.fn());
-vi.mock("../../../dist/src/runtime/engine_discovery.mjs", () => ({
+vi.mock("../../../dist/src/runtime/engines/engine_discovery.mjs", () => ({
   inspectContainerEngineOptions: inspect,
 }));
 import { probeContainerEngineWithoutStarting } from "../../../dist/src/project/project_discovery_metadata.mjs";

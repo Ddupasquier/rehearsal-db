@@ -3,7 +3,7 @@ import {
   inspectWorkloads,
   recoverWorkloads,
   withWorkloadDiagnostics,
-} from "../runtime/workload_queue.mjs";
+} from "../runtime/resources/workload_queue.mjs";
 import {
   exactCommands,
   renderedCommand,
