@@ -323,7 +323,7 @@ boundary rather than copying an existing driver's orchestration.
 
 Explicit configuration selects native producers; metadata discovery never imports
 project migration configuration, schema or environment files. Prisma and the
-separate Drizzle integration share `runtime/native_toolchain*` for complete bounded
+separate Drizzle integration share `runtime/migrations/native_toolchain*` for complete bounded
 resolved package fingerprints and `targets/native_migration_process.mts` for the
 private process/cancellation/target/source/baseline boundary. Producer recipes own
 their exact file inventory, generated closed configuration and actual CLI argv.
