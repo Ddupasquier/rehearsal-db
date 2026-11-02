@@ -7,12 +7,12 @@ import type {
   IdentityDatabaseClient,
   IdentityProvider,
   JsonObject,
-} from "./claim_contract.mjs";
+} from "./claims/claim_contract.mjs";
 import {
   findVerifiedLocalIdentity,
   isIdentityNotFoundError,
-} from "./claim_identity_lookup.mjs";
-import { getIdentityPlanMatchValue } from "./claim_plan.mjs";
+} from "./claims/claim_identity_lookup.mjs";
+import { getIdentityPlanMatchValue } from "./claims/claim_plan.mjs";
 
 const { Client } = pg;
 const UUID =

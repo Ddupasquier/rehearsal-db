@@ -3,9 +3,9 @@ import {
   assertActiveBaselineUnchanged,
   assertNativeBaselineManifestUnchanged,
 } from "../runtime/lifecycle/baseline_identity.mjs";
-import { createPostgresqlMigrationRuntime } from "./postgresql_migrations.mjs";
-import { requirePrismaTargetBinding } from "./prisma_target_binding.mjs";
-import { createPostgresqlContainerLifecycle } from "./postgresql_container_resume.mjs";
+import { createPostgresqlMigrationRuntime } from "./postgresql/postgresql_migrations.mjs";
+import { requirePrismaTargetBinding } from "./native/prisma_target_binding.mjs";
+import { createPostgresqlContainerLifecycle } from "./postgresql/postgresql_container_resume.mjs";
 import { restoreCopyChunks } from "../runtime/resources/restore_cache.mjs";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -35,8 +35,8 @@ import {
 } from "../runtime/lifecycle/lifecycle_engine.mjs";
 import type { ActiveRuntimeInput } from "../runtime/lifecycle/lifecycle_engine.mjs";
 import { emitRuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
-import { inspectPostgresqlRuntimeStatus } from "./postgresql_status.mjs";
-import { ensureConfiguredContainerRuntime } from "./supabase_environment.mjs";
+import { inspectPostgresqlRuntimeStatus } from "./postgresql/postgresql_status.mjs";
+import { ensureConfiguredContainerRuntime } from "./supabase/supabase_environment.mjs";
 import {
   getOperationCancellationSignal,
   throwIfOperationCancelled,
@@ -45,7 +45,7 @@ import {
   bindOwnedProcessCancellation,
   signalOwnedProcessGroup,
 } from "../shared/owned_process.mjs";
-import { runPostgresqlCommand } from "./postgresql_process.mjs";
+import { runPostgresqlCommand } from "./postgresql/postgresql_process.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
 import { guardRuntimeManagerAction } from "../runtime/lifecycle/runtime_manager_guards.mjs";
 import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";

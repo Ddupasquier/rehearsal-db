@@ -1,6 +1,6 @@
 /** Native migration identities are explicit; Drizzle milliseconds are never timestamp-file versions. */
 import type { MigrationFileEntry } from "./migration_history.mjs";
-import type { DrizzleMigrationEntry } from "./drizzle_history.mjs";
+import type { DrizzleMigrationEntry } from "./native/drizzle/drizzle_history.mjs";
 export interface DrizzleMigrationIdentity {
   readonly kind: "drizzle";
   readonly idx: number;

@@ -1,7 +1,7 @@
 /** Verified sizing evidence, not automatic row sampling or a performance promise. */
 import { lstat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { readBoundedShapeJson } from "../../source/shape_json.mjs";
+import { readBoundedShapeJson } from "../../source/shaping/shape_json.mjs";
 import { basename, join } from "node:path";
 import {
   loadRehearsalConfig,
@@ -11,7 +11,7 @@ import {
   verifyActiveBaseline,
   resolveActiveBaselinePaths,
 } from "../../baseline/artifact.mjs";
-import type { BaselineShapeEvidence } from "../../source/shape_contract.mjs";
+import type { BaselineShapeEvidence } from "../../source/shaping/shape_contract.mjs";
 export const inspectBaselineSizing = async (
   options: RehearsalConfigPathOptions = {},
 ) => {

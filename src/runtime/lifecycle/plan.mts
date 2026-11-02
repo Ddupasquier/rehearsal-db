@@ -30,7 +30,7 @@ import {
 import type { RehearsalConfigPathOptions } from "../../project/configuration.mjs";
 import { createCandidateMigrationReceipt } from "../recovery/restore.mjs";
 import { readMigrationFileInventory } from "../migrations/migration_history.mjs";
-import { readConfiguredMigrationSource } from "../migrations/native_migration_source.mjs";
+import { readConfiguredMigrationSource } from "../migrations/native/native_migration_source.mjs";
 import { REHEARSAL_VERSION } from "../../shared/diagnostics.mjs";
 import {
   inspectRehearsalNodeRuntime,
@@ -45,7 +45,7 @@ import {
   buildAuthenticationReview,
   buildBaselineScopeReview,
 } from "./project_review.mjs";
-import { readVerifiedBaselineShapeEvidence } from "../../source/shape_files.mjs";
+import { readVerifiedBaselineShapeEvidence } from "../../source/shaping/shape_files.mjs";
 import { inspectHostPlatform } from "../../shared/host_platform.mjs";
 import { createCleanProcessEnvironment } from "../../shared/process_environment.mjs";
 import { inspectContainerEngineOptions } from "../engines/engine_discovery.mjs";

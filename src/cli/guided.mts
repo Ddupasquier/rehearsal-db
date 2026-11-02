@@ -5,7 +5,8 @@
 import { access, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import * as prompts from "@clack/prompts";
-import { createGuidedUpdates } from "./guided_updates.mjs";
+import { createGuidedUpdates } from "./updates/guided_updates.mjs";
+import { renderCleanup } from "./presentation/cleanup_rendering.mjs";
 import {
   findRehearsalConfigPath,
   inspectDetectedProject,
@@ -19,7 +20,7 @@ import type { RehearsalCliFlags } from "./arguments.mjs";
 import type { CliSessionState } from "./command_contract.mjs";
 import type { RuntimeTopologyTarget } from "../runtime/lifecycle/topology.mjs";
 import type { RehearsalCleanupPlan } from "../runtime/resources/cleanup.mjs";
-import type { ChoiceOption } from "./terminal.mjs";
+import type { ChoiceOption } from "./presentation/terminal.mjs";
 import { validateRuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
 import {
   inspectRehearsalNodeRuntime,
@@ -45,10 +46,9 @@ import { REHEARSAL_NODE_LABEL } from "../shared/node_runtime.mjs";
 import {
   renderBaselineInputInspection,
   renderBaselinePreparation,
-  renderCleanup,
   renderRefreshWorkflow,
   renderSetup,
-} from "./renderers.mjs";
+} from "./presentation/renderers.mjs";
 import {
   promptForChoice,
   promptForConfirmation,
@@ -58,7 +58,7 @@ import {
   promptForSelection,
   terminalStyle,
   useStyledPrompts,
-} from "./terminal.mjs";
+} from "./presentation/terminal.mjs";
 
 type GuidedCommandOption = ChoiceOption & { readonly command: string };
 

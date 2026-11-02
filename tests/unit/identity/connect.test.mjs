@@ -5,7 +5,7 @@ import {
   inspectIdentityConnection,
   waitForIdentityConnection,
 } from "../../../dist/src/identity/connect.mjs";
-import { IdentityLookupError } from "../../../dist/src/identity/claim_identity_lookup.mjs";
+import { IdentityLookupError } from "../../../dist/src/identity/claims/claim_identity_lookup.mjs";
 
 const email = "owner@example.com";
 const plan = createIdentityClaimPlan({

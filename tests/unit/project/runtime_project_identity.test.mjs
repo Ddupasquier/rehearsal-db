@@ -15,8 +15,8 @@ import {
   assertRuntimeProjectId,
   createRuntimeProjectId,
 } from "../../../dist/src/project/runtime_project_identity.mjs";
-import { normalizeRehearsalConfig } from "../../../dist/src/project/configuration_normalization.mjs";
-import { assertIdentifier } from "../../../dist/src/project/configuration_validation.mjs";
+import { normalizeRehearsalConfig } from "../../../dist/src/project/configuration/configuration_normalization.mjs";
+import { assertIdentifier } from "../../../dist/src/project/configuration/configuration_validation.mjs";
 import { loadRuntimeTopology } from "../../../dist/src/runtime/lifecycle/topology.mjs";
 import { serializeRehearsalError } from "../../../dist/src/shared/diagnostics.mjs";
 

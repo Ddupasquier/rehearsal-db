@@ -143,9 +143,9 @@ export async function configureDrizzleFixture(f) {
   ).href;
   const { loadRehearsalConfig } = await import(configuration);
   const { readDrizzleMigrationInventory } =
-    await import("../../dist/src/runtime/migrations/drizzle_history.mjs");
+    await import("../../dist/src/runtime/migrations/native/drizzle/drizzle_history.mjs");
   const { createDrizzleBaseline } =
-    await import("../../dist/src/baseline/drizzle_builder.mjs");
+    await import("../../dist/src/baseline/producers/drizzle_builder.mjs");
   const { inspectMigrationReviewPlan } =
     await import("../../dist/src/runtime/migrations/migration_plan.mjs");
   const inventory = await readDrizzleMigrationInventory(

@@ -3,7 +3,7 @@
 import type {
   OpenPersistenceMode,
   RunPersistenceMode,
-} from "../../project/configuration_contract.mjs";
+} from "../../project/configuration/configuration_contract.mjs";
 import {
   getOperationCancellationSignal,
   withOperationCancellationShield,

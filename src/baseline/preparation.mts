@@ -1,7 +1,7 @@
 import {
   readDrizzleMigrationInventory,
   verifyDrizzleMigrationLedger,
-} from "../runtime/migrations/drizzle_history.mjs";
+} from "../runtime/migrations/native/drizzle/drizzle_history.mjs";
 import {
   drizzleMigrationFiles,
   type AnyMigrationFileEntry,
@@ -26,7 +26,7 @@ import {
 import {
   readPrismaMigrationInventory,
   verifyPrismaMigrationLedger,
-} from "../runtime/migrations/prisma_history.mjs";
+} from "../runtime/migrations/native/prisma/prisma_history.mjs";
 
 const identifierPattern = /^[a-z][a-z0-9_]{0,62}$/u;
 const storageBucketPattern = /^[a-z0-9][a-z0-9.-]{0,99}$/u;

@@ -9,9 +9,9 @@ import {
 import {
   assertShapePrivacyCoverage,
   prepareShapedBaseline,
-} from "../../../dist/src/source/shape_preparation.mjs";
+} from "../../../dist/src/source/shaping/shape_preparation.mjs";
 import { createPrivacyEngine } from "../../../dist/src/baseline/privacy_engine.mjs";
-import { shapeEvidenceSha256 } from "../../../dist/src/source/shape_evidence.mjs";
+import { shapeEvidenceSha256 } from "../../../dist/src/source/shaping/shape_evidence.mjs";
 
 import {
   key,
@@ -19,7 +19,7 @@ import {
   digest,
   basePolicy,
   evidenceOptions,
-} from "./shape_fixtures.mjs";
+} from "./shaping/shape_fixtures.mjs";
 
 const corpus = () =>
   Array.from({ length: 8 }, (_, index) => [
