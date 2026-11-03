@@ -23,30 +23,59 @@ jobs:
         node: [22, 24, 26]
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run check
-      - run: npm run test:fixture:privacy
-      - run: npm run test:fixture:typescript
-      - run: npm audit --omit=dev --audit-level=high
+      - name: Select documentation or full verification
+        id: scope
+        env:
+          REHEARSAL_VERIFY_EVENT: ${{ github.event_name }}
+          REHEARSAL_VERIFY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REHEARSAL_VERIFY_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/verification/change_scope.mjs
+      - if: steps.scope.outputs.docs_only != 'true' || matrix.node == 24
+        run: npm ci --ignore-scripts
+      - name: Verify documentation once on Node 24
+        if: steps.scope.outputs.docs_only == 'true' && matrix.node == 24
+        run: npm run docs:check
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run check
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run test:fixture:privacy
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run test:fixture:typescript
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm audit --omit=dev --audit-level=high
 
   installed-fixture:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-      - run: npm ci --ignore-scripts
+      - name: Select documentation or full verification
+        id: scope
+        env:
+          REHEARSAL_VERIFY_EVENT: ${{ github.event_name }}
+          REHEARSAL_VERIFY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REHEARSAL_VERIFY_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/verification/change_scope.mjs
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm ci --ignore-scripts
       - uses: supabase/setup-cli@v3
+        if: steps.scope.outputs.docs_only != 'true'
         with:
           version: 2.117.0
-      - run: npm run test:fixture
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run test:fixture
 
   onboarding-fixture:
     runs-on: ubuntu-24.04
@@ -56,11 +85,21 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
+      - name: Select documentation or full verification
+        id: scope
+        env:
+          REHEARSAL_VERIFY_EVENT: ${{ github.event_name }}
+          REHEARSAL_VERIFY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REHEARSAL_VERIFY_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/verification/change_scope.mjs
       - name: Verify live release controls with the read-only workflow token
+        if: steps.scope.outputs.docs_only != 'true'
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -93,24 +132,41 @@ jobs:
           const settings = await verifyReleaseSettings(observed, { controlsWitness: await readControlsWitness() });
           console.log(JSON.stringify({ status: "passed", operation: "read-only-release-settings-drift-check", approval: "not-observed-not-authorized", ...settings }));
           NODE
-      - run: npm ci --ignore-scripts
-      - run: npm run test:fixture:onboarding
-      - run: npm run test:fixture:typescript
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run test:fixture:onboarding
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run test:fixture:typescript
 
   postgresql-fixture:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-      - run: npm ci --ignore-scripts
-      - run: docker pull postgres:17-alpine
-      - run: npm run test:fixture:postgresql
-      - run: npm run test:fixture:dependent
-      - run: npm run test:fixture:standalone
+      - name: Select documentation or full verification
+        id: scope
+        env:
+          REHEARSAL_VERIFY_EVENT: ${{ github.event_name }}
+          REHEARSAL_VERIFY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REHEARSAL_VERIFY_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/verification/change_scope.mjs
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: docker pull postgres:17-alpine
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run test:fixture:postgresql
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run test:fixture:dependent
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run test:fixture:standalone
 
   # An optional execution location for the existing release gate, not a new
   # required branch check. Never runs automatically or receives publish authority.
