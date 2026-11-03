@@ -129,6 +129,11 @@ Documentation is built from `docs/` in this repository and hosted at
 <https://ddupasquier.github.io/rehearsal-db/>. There is no separate public mirror or
 release-source migration.
 
+For public Markdown maintenance, follow the scoped checks in
+[Contributing](../CONTRIBUTING.md). A post-publication documentation update uses
+`npm run docs:check` without rebuilding the frozen package. The complete checklist
+below still applies to actual release candidates.
+
 ## Every release candidate
 
 1. Start from protected `main` on a dedicated ticketed release branch.

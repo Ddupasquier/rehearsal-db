@@ -22,15 +22,26 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
-      - run: npm ci --ignore-scripts
-      - run: npm run build
-      - run: node scripts/verification/platform_smoke.mjs
+      - name: Select documentation or full verification
+        id: scope
+        env:
+          REHEARSAL_VERIFY_EVENT: ${{ github.event_name }}
+          REHEARSAL_VERIFY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REHEARSAL_VERIFY_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/verification/change_scope.mjs
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm ci --ignore-scripts
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: npm run build
+      - if: steps.scope.outputs.docs_only != 'true'
+        run: node scripts/verification/platform_smoke.mjs
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && steps.scope.outcome == 'success' && steps.scope.outputs.docs_only != 'true'
         with:
           name: installed-cli-${{ matrix.os }}
           path: test-results/platform/*.json
@@ -45,11 +56,24 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Select documentation or full verification
+        id: scope
+        env:
+          REHEARSAL_VERIFY_EVENT: ${{ github.event_name }}
+          REHEARSAL_VERIFY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          REHEARSAL_VERIFY_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/verification/change_scope.mjs
       - name: Verify the installed CLI against real PostgreSQL inside WSL2
+        if: steps.scope.outputs.docs_only != 'true'
         shell: pwsh
         run: ./scripts/verification/platform_wsl.ps1
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && steps.scope.outcome == 'success' && steps.scope.outputs.docs_only != 'true'
         with:
           name: wsl2-postgresql-evidence
           path: test-results/platform/*.json

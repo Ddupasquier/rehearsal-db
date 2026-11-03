@@ -42,11 +42,18 @@ Before opening a pull request:
 3. keep the engine generic—project table names, policies, credentials, and fixtures do
    not belong in the package;
 4. preserve fail-closed behavior and add a regression test for every safety change;
-5. run `npm run build` and `npm run typecheck` while developing, then `npm run check`
-   before review;
-6. run the relevant `test:fixture:*` scenario while developing; before a release, run
+5. use `npm run docs:check` for public Markdown-only edits. For runtime, configuration,
+   dependency, tooling or mixed changes, run focused checks while developing and
+   `npm run check` before review;
+6. run the relevant `test:fixture:*` scenario when runtime behavior changes; before a release, run
    `npm run release:verify` so every scenario installs the same exact tarball;
 7. update public contracts and the changelog when behavior changes.
+
+Existing CI jobs select documentation checks once on Node 24 for ordinary added or
+modified public Markdown. Renames, deletions, unknown comparisons, executable files,
+site tooling and mixed changes retain full checks. Required check names remain present;
+manual and release verification retain their full coverage. Reuse passing exact-source
+evidence when the owning code and environment have not changed.
 
 The unit suite uses two workers to limit overlapping CLI imports and memory pressure.
 On a slow filesystem, `npm test -- --maxWorkers=1` runs the same checks serially;
