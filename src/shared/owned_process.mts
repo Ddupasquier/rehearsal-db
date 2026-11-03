@@ -2,6 +2,7 @@
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import type { OperationCancellationSignal } from "./cancellation.mjs";
 
 export interface OwnedProcessResult {
@@ -102,6 +103,8 @@ export const runOwnedProcess = ({
     });
     let stdout = "";
     let stderr = "";
+    const stdoutDecoder = new StringDecoder("utf8");
+    const stderrDecoder = new StringDecoder("utf8");
     let stdoutByteCount = 0;
     let stderrByteCount = 0;
     let processError: NodeJS.ErrnoException | undefined;
@@ -113,10 +116,16 @@ export const runOwnedProcess = ({
       const bytes = Buffer.byteLength(chunk);
       if (kind === "stdout") {
         stdoutByteCount += bytes;
-        if (stdoutByteCount <= maxOutputBytes) stdout += chunk.toString();
+        if (stdoutByteCount <= maxOutputBytes)
+          stdout += stdoutDecoder.write(
+            typeof chunk === "string" ? Buffer.from(chunk) : chunk,
+          );
       } else {
         stderrByteCount += bytes;
-        if (stderrByteCount <= maxOutputBytes) stderr += chunk.toString();
+        if (stderrByteCount <= maxOutputBytes)
+          stderr += stderrDecoder.write(
+            typeof chunk === "string" ? Buffer.from(chunk) : chunk,
+          );
       }
       if (
         stdoutByteCount > maxOutputBytes ||
@@ -159,6 +168,8 @@ export const runOwnedProcess = ({
         reject(new Error("Owned process output exceeded the safe byte limit."));
         return;
       }
+      stdout += stdoutDecoder.end();
+      stderr += stderrDecoder.end();
       resolve({
         status,
         signal: childSignal,
