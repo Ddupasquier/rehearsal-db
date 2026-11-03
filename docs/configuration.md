@@ -872,6 +872,13 @@ filesystems; no cached approval replaces fresh review.
 
 ## Application proof and hands-on sessions
 
+Application `startCommand`, `proofCommand` and dependent `prepareCommand` values are
+split into an executable and arguments without a shell. Single and double quotes group
+text, adjacent quoted and unquoted fragments form one argument, and `""` or `''` preserves
+an empty argument. The executable must contain non-whitespace text. Backslashes remain
+literal rather than escaping quotes or spaces; shell expansion, pipes and redirection
+are not performed. Unmatched quotes refuse launch.
+
 `startCommand` is the ordinary application command. When `readiness` is present,
 `rehearsal run` launches it with a minimal environment, waits for the exact local status,
 runs proofs, and stops only that child process group. `environmentVariables` explicitly

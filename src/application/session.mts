@@ -6,6 +6,7 @@ import type { EventEmitter } from "node:events";
 import { readFile, stat } from "node:fs/promises";
 import { parseEnv } from "node:util";
 import { performance } from "node:perf_hooks";
+import { parseApplicationCommand } from "../shared/application_command.mjs";
 import {
   createCleanProcessEnvironment,
   isLoopbackUrl,
@@ -80,30 +81,6 @@ export interface HttpProofCheck {
 }
 
 type SignalTarget = Pick<EventEmitter, "prependListener" | "removeListener">;
-
-const parseCommand = (source: string): [string, ...string[]] => {
-  if (typeof source !== "string" || !source.trim())
-    throw new Error("Application command is empty.");
-  const values: string[] = [];
-  let value = "";
-  let quote: '"' | "'" | null = null;
-  for (const character of source) {
-    if (quote) {
-      if (character === quote) quote = null;
-      else value += character;
-    } else if (character === '"' || character === "'") quote = character;
-    else if (/\s/u.test(character)) {
-      if (value) values.push(value);
-      value = "";
-    } else value += character;
-  }
-  if (quote)
-    throw new Error("Application command contains an unmatched quote.");
-  if (value) values.push(value);
-  const [program, ...args] = values;
-  if (!program) throw new Error("Application command is empty.");
-  return [program, ...args];
-};
 
 const readOwnedEnvironment = async (
   path: string,
@@ -331,7 +308,7 @@ export const startApplicationSession = async ({
   portPreflight?: (readiness: ApplicationReadiness) => Promise<void>;
 }): Promise<ApplicationSession> => {
   const mapped = await buildApplicationEnvironment({ files, mappings });
-  const [program, ...args] = parseCommand(command);
+  const [program, ...args] = parseApplicationCommand(command);
   await portPreflight(readiness);
   const child = spawnImplementation(program, args, {
     cwd,

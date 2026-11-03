@@ -13,6 +13,10 @@ import {
 } from "../../../dist/src/application/session.mjs";
 import { runApplicationSessionTask } from "../../../dist/src/application/interactive_task.mjs";
 import { runWithOperationCancellation } from "../../../dist/src/shared/cancellation.mjs";
+import {
+  applicationArgumentCases,
+  invalidApplicationCommandCases,
+} from "../../helpers/application_command_cases.mjs";
 
 const roots = [];
 const servers = [];
@@ -23,6 +27,33 @@ const availablePort = async () => {
   const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
   return port;
+};
+
+const applicationCommandFixture = async () => {
+  const root = await mkdtemp(join(tmpdir(), "rehearsal-command-session-"));
+  roots.push(root);
+  const environmentPath = join(root, "runtime.env");
+  await writeFile(environmentPath, "", { mode: 0o600 });
+  const spawnImplementation = vi.fn(() => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.exitCode = null;
+    child.signalCode = null;
+    queueMicrotask(() => child.emit("spawn"));
+    return child;
+  });
+  return {
+    cwd: root,
+    files: { primary: environmentPath },
+    mappings: {},
+    readiness: { url: "http://127.0.0.1:5275" },
+    spawnImplementation,
+    fetchImplementation: async () => ({ status: 200 }),
+    signalTarget: new EventEmitter(),
+    input: null,
+    portPreflight: vi.fn(async () => undefined),
+  };
 };
 
 afterEach(async () => {
@@ -37,6 +68,42 @@ afterEach(async () => {
 });
 
 describe("package-owned application sessions", () => {
+  it.each(applicationArgumentCases)(
+    "preserves $name in application startup without a shell",
+    async ({ source, args }) => {
+      const fixture = await applicationCommandFixture();
+      const session = await startApplicationSession({
+        ...fixture,
+        command: `fixture-program ${source}`,
+      });
+      try {
+        expect(fixture.spawnImplementation.mock.calls[0].slice(0, 2)).toEqual([
+          "fixture-program",
+          args,
+        ]);
+        expect(
+          fixture.spawnImplementation.mock.calls[0][2].shell ?? false,
+        ).toBe(false);
+      } finally {
+        await session.stop();
+      }
+    },
+  );
+
+  it.each(invalidApplicationCommandCases)(
+    "rejects $name before application startup",
+    async ({ source, error }) => {
+      const fixture = await applicationCommandFixture();
+      await expect(
+        startApplicationSession({ ...fixture, command: source }),
+      ).rejects.toThrow(
+        `Application command ${error === "empty" ? "is empty." : "contains an unmatched quote."}`,
+      );
+      expect(fixture.portPreflight).not.toHaveBeenCalled();
+      expect(fixture.spawnImplementation).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["SIGINT", "SIGTSTP"])(
     "keeps ready %s as a handled close inside an outer Open cancellation boundary",
     async (signal) => {

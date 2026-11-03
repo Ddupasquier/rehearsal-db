@@ -37,6 +37,7 @@ import {
   throwIfOperationCancelled,
 } from "../../shared/cancellation.mjs";
 import { runOwnedProcess } from "../../shared/owned_process.mjs";
+import { parseApplicationCommand } from "../../shared/application_command.mjs";
 import { createCleanProcessEnvironment } from "../../shared/process_environment.mjs";
 import {
   getOwnedOperationProgressId,
@@ -79,28 +80,6 @@ import type { RehearsalErrorCategory } from "../../shared/diagnostics.mjs";
 import type { CliSessionState } from "../command_contract.mjs";
 
 type RuntimeTopology = Awaited<ReturnType<typeof loadRuntimeTopology>>;
-
-const parseCommand = (source: string): [string, ...string[]] => {
-  const values: string[] = [];
-  let current = "";
-  let quote: '"' | "'" | null = null;
-  for (const character of source) {
-    if (quote) {
-      if (character === quote) quote = null;
-      else current += character;
-    } else if (character === '"' || character === "'") quote = character;
-    else if (/\s/u.test(character)) {
-      if (current) values.push(current);
-      current = "";
-    } else current += character;
-  }
-  if (quote)
-    throw new Error("Application proof command contains an unmatched quote.");
-  if (current) values.push(current);
-  if (values.length === 0)
-    throw new Error("Application proof command is empty.");
-  return values as [string, ...string[]];
-};
 
 const projectCommandEnvironment = (
   additional: NodeJS.ProcessEnv = {},
@@ -267,7 +246,10 @@ const runProjectCommand = async ({
   project: string;
   environment?: NodeJS.ProcessEnv;
 }) => {
-  const [command, ...args] = parseCommand(source);
+  const [command, ...args] = parseApplicationCommand(
+    source,
+    "Application proof command",
+  );
   const cancellationSignal = getOperationCancellationSignal();
   const result = await runOwnedProcess({
     command,
