@@ -315,6 +315,15 @@ contracts, binding checks and reconstruction sequencing through an injected adap
 lifecycle probes, reusing those checks and retaining its existing exports. The protocol
 keeps cancellation, deadlines and startup-ownership capture with reconstruction;
 the adapter remains responsible for its actual engine and filesystem observations.
+`postgresql_process.mts` owns finite asynchronous command/SQL budgets and the bounded
+synchronous custom-adapter callback; `postgresql_resources.mts` requires successful
+exact listings before recovery deletion. Built-in ledgers and native target guards
+await that transport. Container retirement shares one validation/command sequence
+between its existing synchronous public API and the driver's asynchronous variant.
+`runtime/recovery/restore_process.mts` shares bounded COPY transport between PostgreSQL
+and Supabase while each driver retains its provider-specific SQL/cache input.
+The shared owned-process runner streams restore input with backpressure; interrupted
+or exited-leader pipe uncertainty is bounded locally and never proves backend cleanup.
 
 CLI command completion and database lifecycle are separate. A successful `run` can finish
 and release its project lock while the configured keep-until-stop database remains

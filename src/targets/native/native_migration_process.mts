@@ -58,7 +58,7 @@ export const deployNativeMigrations = async ({
   entries: readonly AnyMigrationFileEntry[];
   binding: NativeMigrationBinding;
   databaseUrl: string;
-  assertOwnedTarget: () => string;
+  assertOwnedTarget: () => string | Promise<string>;
   assertExpectedBaseline: () => Promise<void>;
 }): Promise<void> => {
   throwIfOperationCancelled();
@@ -104,7 +104,7 @@ export const deployNativeMigrations = async ({
     throw new Error(
       "Native migration inputs or installed toolchain changed after review; no native migration command was started.",
     );
-  const target = assertOwnedTarget();
+  const target = await assertOwnedTarget();
   if (!/^[a-f0-9]{64}$/u.test(target))
     throw new Error("Owned native migration target identity is invalid.");
   const workspace = await mkdtemp(join(runtimeWorkdir, recipe.prefix));
@@ -195,7 +195,7 @@ export const deployNativeMigrations = async ({
         "Installed native toolchain changed before dispatch; no native migration command was started.",
       );
     await assertExpectedBaseline();
-    if (assertOwnedTarget() !== target)
+    if ((await assertOwnedTarget()) !== target)
       throw new Error("Owned native migration target changed before dispatch.");
     throwIfOperationCancelled();
     if (deadline.signal.aborted)
@@ -236,7 +236,7 @@ export const deployNativeMigrations = async ({
         `${recipe.label} failed (exit ${Number.isInteger(result.status) ? result.status : "unknown"}); SQL, credentials and provider output are withheld.`,
       );
     if (
-      assertOwnedTarget() !== target ||
+      (await assertOwnedTarget()) !== target ||
       (await recipe.inspect()).sha256 !== binding.toolchainSha256
     )
       throw new Error(

@@ -5,6 +5,20 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-11-03
+
+### Fixed
+
+- Preserve split UTF-8 output and exact raw-byte limits in owned processes.
+- Keep empty quoted application arguments and reject an empty executable without
+  promoting another token; application sessions and proof commands share one parser.
+- Bound built-in PostgreSQL metadata, SQL and cleanup while keeping cancellation
+  responsive. Existing custom adapters retain their synchronous SQL callback.
+- Stream PostgreSQL and Supabase restores through bounded owned transport, preserving
+  SQL deadlines and recovery when process or backend cleanup is unconfirmed.
+- Refuse changed resource identities and retain recovery after failed Docker probes;
+  keep explicitly configured engine auto-start available after baseline validation.
+
 ### Documentation
 
 - Publish a complete released-capability catalog for Core and VS Code Starter,
@@ -976,7 +990,8 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.0...v2.0.1

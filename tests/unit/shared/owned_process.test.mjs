@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   runOwnedProcess,
   signalOwnedProcessGroup,
@@ -123,6 +123,142 @@ describe.each(["stdout", "stderr"])(
 );
 
 describe("owned-process output boundaries", () => {
+  it("projects a signalling EPERM into controlled uncertainty rather than an unhandled callback", async () => {
+    const child = new EventEmitter();
+    child.pid = 987654;
+    child.exitCode = null;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.stdin = Object.assign(new EventEmitter(), {
+      end() {},
+      write: () => true,
+    });
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(Error("PRIVATE_KILL"), { code: "EPERM" });
+    });
+    try {
+      async function* input() {
+        throw Error("PRIVATE_INPUT");
+      }
+      const pending = runOwnedProcess({
+        command: "injected",
+        args: [],
+        cwd: process.cwd(),
+        env: {},
+        input: input(),
+        spawnImplementation: () => child,
+      });
+      await new Promise((done) => setImmediate(done));
+      child.emit("close", 0, null);
+      const result = await pending;
+      expect(result.error).toBeInstanceOf(AggregateError);
+      expect(result.error.message).toContain("signalling is unconfirmed");
+      expect(result.error.message).not.toContain("PRIVATE_");
+      expect(kill).toHaveBeenCalledTimes(1);
+    } finally {
+      kill.mockRestore();
+    }
+  });
+  it("does not send a numeric signal after a proven direct-child exit", async () => {
+    const child = new EventEmitter();
+    child.pid = 987654;
+    child.exitCode = null;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    const controller = new AbortController(),
+      kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      const pending = runOwnedProcess({
+        command: "injected",
+        args: [],
+        cwd: process.cwd(),
+        env: {},
+        signal: controller.signal,
+        cancellationGraceMs: 1,
+        spawnImplementation: () => child,
+      });
+      child.emit("exit", 0, null);
+      controller.abort();
+      await new Promise((done) => setTimeout(done, 10));
+      child.emit("close", 0, null);
+      await pending;
+      expect(kill).not.toHaveBeenCalled();
+    } finally {
+      kill.mockRestore();
+    }
+  });
+  it("bounds default legacy closure without signalling an exited leader or escaped pipe holder", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rehearsal-escaped-pipe-"));
+    const stop = join(root, "stop"),
+      pidFile = join(root, "worker.pid");
+    const worker = `const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));process.send('ready');const interval=setInterval(()=>{if(fs.existsSync(${JSON.stringify(stop)})){clearInterval(interval);process.exit(0)}},10);setTimeout(()=>process.exit(0),10000).unref();`;
+    const source = `const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e',${JSON.stringify(worker)}],{detached:true,stdio:['ignore',1,2,'ipc']});child.once('message',()=>{child.disconnect();child.unref();process.exit(0)});`;
+    let workerPid;
+    try {
+      const started = Date.now();
+      await expect(
+        runOwnedProcess({
+          command: process.execPath,
+          args: ["-e", source],
+          cwd: root,
+          env: createCleanProcessEnvironment(),
+          stdin: "ignore",
+          // No cancellation/closure options: unchanged public callers receive the finite uncertainty result.
+        }),
+      ).rejects.toThrow("closure is unconfirmed");
+      expect(Date.now() - started).toBeLessThan(4000);
+      workerPid = Number(await readFile(pidFile, "utf8"));
+      expect(() => process.kill(workerPid, 0)).not.toThrow();
+    } finally {
+      // This exact synthetic child exits itself; no unknown numeric PID is signalled.
+      await writeFile(stop, "done");
+      if (!workerPid) workerPid = Number(await readFile(pidFile, "utf8"));
+      expect(await gone(workerPid)).toBe(true);
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 10000);
+
+  it("does not hang on a producer whose pending next never resolves", async () => {
+    const controller = new AbortController();
+    const input = {
+      [Symbol.asyncIterator]: () => ({
+        next: () => new Promise(() => {}),
+        return: async () => ({ done: true }),
+      }),
+    };
+    const pending = runOwnedProcess({
+      command: process.execPath,
+      args: ["-e", "setInterval(()=>{},1000)"],
+      cwd: process.cwd(),
+      env: createCleanProcessEnvironment(),
+      input,
+      signal: controller.signal,
+      cancellationGraceMs: 20,
+    });
+    setTimeout(() => controller.abort(), 50);
+    const outcome = await pending;
+    expect(outcome.status).not.toBe(0);
+  });
+
+  it("preserves an input failure privately while returning a fixed public message", async () => {
+    const original = Error("PRIVATE_INPUT_CANARY");
+    async function* input() {
+      throw original;
+    }
+    const result = await runOwnedProcess({
+      command: process.execPath,
+      args: ["-e", "process.stdin.resume();setInterval(()=>{},1000)"],
+      cwd: process.cwd(),
+      env: createCleanProcessEnvironment(),
+      input: input(),
+      cancellationGraceMs: 20,
+    });
+    expect(result.error.message).toBe(
+      "Owned process input failed; private input is withheld.",
+    );
+    expect(result.error.cause).toBe(original);
+    expect(result.error.message).not.toContain("PRIVATE_INPUT");
+  });
   it("keeps interleaved stream decoders and byte limits independent", async () => {
     const result = await runChunkedProcess(
       [

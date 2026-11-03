@@ -1,3 +1,5 @@
+import { runOwnedRestore } from "../runtime/recovery/restore_process.mjs";
+import { createPostgresqlResourceManagement } from "./postgresql/postgresql_resources.mjs";
 import { describeMigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 import {
   assertActiveBaselineUnchanged,
@@ -7,10 +9,7 @@ import { createPostgresqlMigrationRuntime } from "./postgresql/postgresql_migrat
 import { requirePrismaTargetBinding } from "./native/prisma_target_binding.mjs";
 import { createPostgresqlContainerLifecycle } from "./postgresql/postgresql_container_resume.mjs";
 import { restoreCopyChunks } from "../runtime/resources/restore_cache.mjs";
-import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import type { Writable } from "node:stream";
-import { once } from "node:events";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -22,7 +21,6 @@ import { createCleanProcessEnvironment } from "../shared/process_environment.mjs
 import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
-  summarizeRestoreError,
 } from "../runtime/recovery/restore.mjs";
 import {
   assertCandidateConfirmation,
@@ -38,19 +36,16 @@ import { emitRuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
 import { inspectPostgresqlRuntimeStatus } from "./postgresql/postgresql_status.mjs";
 import { ensureConfiguredContainerRuntime } from "./supabase/supabase_environment.mjs";
 import {
-  getOperationCancellationSignal,
-  throwIfOperationCancelled,
-} from "../shared/cancellation.mjs";
-import {
-  bindOwnedProcessCancellation,
-  signalOwnedProcessGroup,
-} from "../shared/owned_process.mjs";
-import { runPostgresqlCommand } from "./postgresql/postgresql_process.mjs";
+  runPostgresqlCommand,
+  runPostgresqlAdapterSql,
+  postgresqlPsqlArguments,
+  withPostgresqlDeadline,
+  type PostgresqlCommandPurpose,
+} from "./postgresql/postgresql_process.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
 import { guardRuntimeManagerAction } from "../runtime/lifecycle/runtime_manager_guards.mjs";
 import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";
-import { runPostgresqlStartupCommand } from "./port_start_failure.mjs";
-import { assertDockerResourceLabels } from "./docker_resource_ownership.mjs";
+import { assertPostgresqlStartupResult } from "./port_start_failure.mjs";
 import {
   buildRuntimeFinalizationSql,
   buildRuntimePostSchemaSql,
@@ -106,6 +101,7 @@ interface RunCommandOptions {
   readonly capture?: boolean;
   readonly input?: string;
   readonly allowFailure?: boolean;
+  readonly purpose?: PostgresqlCommandPurpose;
 }
 
 interface DatabaseEnvironment {
@@ -126,17 +122,17 @@ interface RuntimeAdapter {
   prepareSchema?(input: {
     baseline: BaselineManifest;
     environment: DatabaseEnvironment;
-    runSql: typeof runPsql;
+    runSql: typeof runAdapterPsql;
   }): { message: string };
   configureRuntime?(input: {
     baseline: BaselineManifest;
     environment: DatabaseEnvironment;
-    runSql: typeof runPsql;
+    runSql: typeof runAdapterPsql;
   }): ProjectRuntimeResult;
   verifyRuntime?(input: {
     baseline: BaselineManifest;
     environment: DatabaseEnvironment;
-    runSql: typeof runPsql;
+    runSql: typeof runAdapterPsql;
   }): { message: string };
 }
 
@@ -146,8 +142,11 @@ const runCommand = (
   options: RunCommandOptions = {},
 ) => runPostgresqlCommand(command, args, { cwd: repositoryRoot, ...options });
 
-const commandSucceeds = (command: string, args: readonly string[]): boolean =>
-  runCommand(command, args, { allowFailure: true }).status === 0;
+const commandSucceeds = async (
+  command: string,
+  args: readonly string[],
+): Promise<boolean> =>
+  (await runCommand(command, args, { allowFailure: true })).status === 0;
 const pathExists = async (path: string): Promise<boolean> =>
   stat(path)
     .then(() => true)
@@ -175,109 +174,77 @@ const assertDocker = () => {
   });
 };
 
-const inspectResourceLabel = (kind: "container" | "volume", name: string) =>
-  runCommand(
-    "docker",
-    [
-      kind,
-      "inspect",
-      "--format",
-      kind === "container" ? "{{json .Config.Labels}}" : "{{json .Labels}}",
-      name,
-    ],
-    { allowFailure: true },
-  );
-
-const resourceExists = (kind: "container" | "volume", name: string): boolean =>
-  runCommand("docker", [kind, "inspect", name], { allowFailure: true })
-    .status === 0;
-
-const assertOwnedResource = (
-  kind: "container" | "volume",
-  name: string,
-): boolean => {
-  if (!resourceExists(kind, name)) return false;
-  const inspection = inspectResourceLabel(kind, name);
-  if (inspection.status !== 0) {
-    throw new Error(
-      `Refusing to manage Docker ${kind} ${name} because it is not owned by this Rehearsal project.`,
-    );
-  }
-  assertDockerResourceLabels({
-    labels: JSON.parse(inspection.stdout),
-    expectedLabel: "com.rehearsal-db.project",
+const { assertOwnedResource, removeResources } =
+  createPostgresqlResourceManagement({
+    runCommand,
+    containerName,
+    volumeName,
     projectId,
   });
-  return true;
-};
-
 const removeRuntime = async () => {
   assertRuntimePath();
-  if (commandSucceeds("docker", ["info"])) {
-    const ownsContainer = assertOwnedResource("container", containerName);
-    const ownsVolume = assertOwnedResource("volume", volumeName);
-    if (ownsContainer) {
-      runCommand("docker", ["container", "rm", "--force", containerName], {
-        capture: true,
-      });
-    }
-    if (ownsVolume) {
-      runCommand("docker", ["volume", "rm", "--force", volumeName], {
-        capture: true,
-      });
-    }
-  }
+  await removeResources();
   await rm(runtimeWorkdir, { recursive: true, force: true });
   await rm(environmentPath, { force: true });
 };
 
-const waitForDatabase = async () => {
-  let consecutiveReadyChecks = 0;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    if (
-      commandSucceeds("docker", [
-        "exec",
-        containerName,
-        "pg_isready",
-        "--username",
-        databaseUser,
-        "--dbname",
-        database,
-      ])
-    ) {
-      consecutiveReadyChecks += 1;
-      if (consecutiveReadyChecks === 3) return;
-    } else {
-      consecutiveReadyChecks = 0;
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-  }
-  throw new Error("The disposable PostgreSQL database did not become ready.");
-};
+const waitForDatabase = async () =>
+  withPostgresqlDeadline(
+    "startup",
+    async (signal) => {
+      const until = Date.now() + 60_000;
+      let consecutiveReadyChecks = 0;
+      while (Date.now() < until) {
+        const ready = await runPostgresqlCommand(
+          "docker",
+          [
+            "exec",
+            containerName,
+            "pg_isready",
+            "--username",
+            databaseUser,
+            "--dbname",
+            database,
+          ],
+          {
+            cwd: repositoryRoot,
+            allowFailure: true,
+            signal,
+            timeoutMilliseconds: Math.min(
+              5_000,
+              Math.max(1, until - Date.now()),
+            ),
+          },
+        );
+        consecutiveReadyChecks =
+          ready.status === 0 ? consecutiveReadyChecks + 1 : 0;
+        if (consecutiveReadyChecks === 3) return;
+        await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+      }
+      throw new Error(
+        "The disposable PostgreSQL database did not become ready.",
+      );
+    },
+    { timeoutMilliseconds: 60_000 },
+  );
 
-const runPsql = (
-  sql: string,
-  { capture = true }: { capture?: boolean } = {},
-): string =>
-  runCommand(
-    "docker",
-    [
-      "exec",
-      "--interactive",
-      containerName,
-      "psql",
-      "--quiet",
-      "--no-align",
-      "--tuples-only",
-      "--set",
-      "ON_ERROR_STOP=1",
-      "--username",
-      databaseUser,
-      "--dbname",
-      database,
-    ],
-    { capture, input: sql },
+const psqlArguments = postgresqlPsqlArguments({
+  containerName,
+  database,
+  databaseUser,
+});
+const runPsql = async (sql: string): Promise<string> =>
+  (
+    await runCommand("docker", psqlArguments, {
+      input: sql,
+      capture: true,
+      purpose: "sql",
+    })
   ).stdout;
+const runAdapterPsql = (
+  sql: string,
+  _options: { capture?: boolean } = {},
+): string => runPostgresqlAdapterSql(psqlArguments, sql, repositoryRoot);
 
 const databaseEnvironment = (password: string): DatabaseEnvironment => ({
   databaseUrl: [
@@ -306,27 +273,37 @@ const migrationRuntime = createPostgresqlMigrationRuntime({
   containerName,
   database,
   databaseUser,
-  assertOwnedTarget: () => {
-    assertOwnedResource("container", containerName);
-    assertOwnedResource("volume", volumeName);
+  assertOwnedTarget: async () => {
+    const ownedContainerId = await assertOwnedResource(
+      "container",
+      containerName,
+    );
+    if (!ownedContainerId || !(await assertOwnedResource("volume", volumeName)))
+      throw new Error("Native PostgreSQL resources are unconfirmed.");
     try {
       const value = JSON.parse(
-        runCommand(
-          "docker",
-          [
-            "inspect",
-            "--format",
-            '{"id":{{json .Id}},"running":{{json .State.Running}},"image":{{json .Config.Image}},"imageId":{{json .Image}},"ports":{{json .NetworkSettings.Ports}},"mounts":{{json .Mounts}}}',
-            containerName,
-          ],
-          { capture: true },
+        (
+          await runCommand(
+            "docker",
+            [
+              "inspect",
+              "--format",
+              '{"id":{{json .Id}},"running":{{json .State.Running}},"image":{{json .Config.Image}},"imageId":{{json .Image}},"ports":{{json .NetworkSettings.Ports}},"mounts":{{json .Mounts}}}',
+              containerName,
+            ],
+            { capture: true },
+          )
         ).stdout,
       );
-      const expectedImage = runCommand(
-        "docker",
-        ["image", "inspect", "--format", "{{.Id}}", image],
-        { capture: true },
+      const expectedImage = (
+        await runCommand(
+          "docker",
+          ["image", "inspect", "--format", "{{.Id}}", image],
+          { capture: true },
+        )
       ).stdout.trim();
+      if (value.id !== ownedContainerId)
+        throw new Error("Owned PostgreSQL container identity changed.");
       return requirePrismaTargetBinding(value, {
         image,
         imageId: expectedImage,
@@ -342,108 +319,53 @@ const migrationRuntime = createPostgresqlMigrationRuntime({
 });
 const verifyMigrationLedger = migrationRuntime.verifyLedger;
 
-const writeChunk = async (
-  stream: Writable,
-  chunk: string,
-  completion: Promise<unknown>,
-): Promise<void> => {
-  if (stream.destroyed || stream.writableEnded) {
-    throw new Error("The Rehearsal restore connection closed early.");
-  }
-  if (!stream.write(chunk)) {
-    await Promise.race([once(stream, "drain"), completion]);
-  }
-};
-
 const restoreBaselineRows = async ({
   baseline,
   paths,
   manifest,
-}: ActiveRuntimeInput): Promise<void> => {
-  const child = spawn(
-    "docker",
-    [
-      "exec",
-      "--interactive",
+}: ActiveRuntimeInput): Promise<void> =>
+  runOwnedRestore({
+    args: postgresqlPsqlArguments({
       containerName,
-      "psql",
-      "--quiet",
-      "--set",
-      "ON_ERROR_STOP=1",
-      "--username",
-      databaseUser,
-      "--dbname",
       database,
-    ],
-    {
-      cwd: repositoryRoot,
-      detached: process.platform !== "win32",
-      env: createCleanProcessEnvironment({
-        overrides: runtimeDockerEnvironment(),
-      }),
-      stdio: ["pipe", "ignore", "pipe"],
-    },
-  );
-  let stderr = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderr = `${stderr}${chunk}`.slice(-16_384);
+      databaseUser,
+      purpose: "restore",
+    }),
+    cwd: repositoryRoot,
+    environment: createCleanProcessEnvironment({
+      overrides: runtimeDockerEnvironment(),
+    }),
+    input: (signal) =>
+      (async function* () {
+        yield buildRestoreSqlPrefix();
+        const copy = await restoreCopyChunks({
+          artifactRoot,
+          dataPath: paths.dataPath,
+          generationId: baseline.generationId,
+          sourceSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
+          sanitizationPolicySha256: baseline.sanitizationPolicySha256,
+          target: "postgresql",
+          ...(config.resources.restoreCache
+            ? { policy: config.resources.restoreCache }
+            : {}),
+          signal,
+        });
+        for await (const chunk of copy.chunks) {
+          signal.throwIfAborted();
+          yield chunk;
+        }
+        console.log(`COPY encoding cache: ${copy.state}.`);
+        yield buildRestoreSqlSuffix({
+          manifest,
+          tableCounts: baseline.tableCounts,
+          restoreSupabaseAuth: false,
+        });
+      })(),
   });
-  const completion = new Promise<number | null>((complete, reject) => {
-    child.once("error", reject);
-    child.once("close", complete);
-  });
-  const cancellationSignal = getOperationCancellationSignal();
-  const unbindCancellation = bindOwnedProcessCancellation({
-    child,
-    ...(cancellationSignal ? { signal: cancellationSignal } : {}),
-  });
-  child.stdin.on("error", () => undefined);
-  try {
-    await writeChunk(child.stdin, buildRestoreSqlPrefix(), completion);
-    const copy = await restoreCopyChunks({
-      artifactRoot,
-      dataPath: paths.dataPath,
-      generationId: baseline.generationId,
-      sourceSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
-      sanitizationPolicySha256: baseline.sanitizationPolicySha256,
-      target: "postgresql",
-      ...(config.resources.restoreCache
-        ? { policy: config.resources.restoreCache }
-        : {}),
-      ...(cancellationSignal ? { signal: cancellationSignal } : {}),
-    });
-    for await (const chunk of copy.chunks)
-      await writeChunk(child.stdin, chunk, completion);
-    console.log(`COPY encoding cache: ${copy.state}.`);
-    await writeChunk(
-      child.stdin,
-      buildRestoreSqlSuffix({
-        manifest,
-        tableCounts: baseline.tableCounts,
-        restoreSupabaseAuth: false,
-      }),
-      completion,
-    );
-    child.stdin.end();
-    const exitCode = await completion;
-    if (exitCode !== 0) {
-      throw new Error(
-        `The local Rehearsal restore failed. ${summarizeRestoreError(stderr)}`,
-      );
-    }
-  } catch (error) {
-    if (child.exitCode === null) signalOwnedProcessGroup(child, "SIGTERM");
-    await completion.catch(() => undefined);
-    throw error;
-  } finally {
-    unbindCancellation();
-  }
-};
 
-const prepareProjectPrerequisites = () => {
+const prepareProjectPrerequisites = async () => {
   if (runtimePolicy) {
-    runPsql(buildRuntimePrerequisiteSql(runtimePolicy));
+    await runPsql(buildRuntimePrerequisiteSql(runtimePolicy));
     console.log("Applied reviewed runtime prerequisites.");
   }
 };
@@ -459,7 +381,7 @@ const prepareProjectSchema = ({
   const preparation = runtimeAdapter.prepareSchema({
     baseline,
     environment,
-    runSql: runPsql,
+    runSql: runAdapterPsql,
   });
   if (!preparation || typeof preparation.message !== "string") {
     throw new Error(
@@ -469,15 +391,15 @@ const prepareProjectSchema = ({
   console.log(preparation.message);
 };
 
-const finalizeProjectSchema = () => {
+const finalizeProjectSchema = async () => {
   if (!runtimePolicy || runtimePolicy.triggers.length === 0) return;
-  runPsql(buildRuntimePostSchemaSql(runtimePolicy));
+  await runPsql(buildRuntimePostSchemaSql(runtimePolicy));
   console.log("Applied reviewed post-schema triggers.");
 };
 
-const finalizeProjectRuntime = () => {
+const finalizeProjectRuntime = async () => {
   if (!runtimePolicy || runtimePolicy.localRows.length === 0) return;
-  runPsql(buildRuntimeFinalizationSql(runtimePolicy));
+  await runPsql(buildRuntimeFinalizationSql(runtimePolicy));
   console.log("Applied reviewed local-only recipes.");
 };
 
@@ -497,7 +419,7 @@ const configureProjectRuntime = ({
   const result = runtimeAdapter.configureRuntime({
     baseline,
     environment,
-    runSql: runPsql,
+    runSql: runAdapterPsql,
   });
   if (
     !result ||
@@ -587,35 +509,44 @@ const readActive = (expectedBaseline?: BaselineManifest) =>
   });
 
 const createContainer = async (password: string): Promise<void> => {
-  assertDocker();
-  if (!commandSucceeds("docker", ["image", "inspect", image])) {
+  if (!(await commandSucceeds("docker", ["image", "inspect", image]))) {
     throw new Error(
       `The configured local PostgreSQL image is unavailable: ${image}. Pull it explicitly, review it, then retry.`,
     );
   }
-  runCommand("docker", ["volume", "create", "--label", label, volumeName], {
-    capture: true,
-  });
-  runPostgresqlStartupCommand(runCommand, [
-    "run",
-    "--detach",
-    "--pull=never",
-    "--name",
-    containerName,
-    "--label",
-    label,
-    "--publish",
-    `127.0.0.1:${databasePort}:5432`,
-    "--env",
-    `POSTGRES_PASSWORD=${password}`,
-    "--env",
-    `POSTGRES_DB=${database}`,
-    "--env",
-    `POSTGRES_USER=${databaseUser}`,
-    "--volume",
-    `${volumeName}:/var/lib/postgresql/data`,
-    image,
-  ]);
+  await runCommand(
+    "docker",
+    ["volume", "create", "--label", label, volumeName],
+    {
+      capture: true,
+    },
+  );
+  assertPostgresqlStartupResult(
+    await runCommand(
+      "docker",
+      [
+        "run",
+        "--detach",
+        "--pull=never",
+        "--name",
+        containerName,
+        "--label",
+        label,
+        "--publish",
+        `127.0.0.1:${databasePort}:5432`,
+        "--env",
+        `POSTGRES_PASSWORD=${password}`,
+        "--env",
+        `POSTGRES_DB=${database}`,
+        "--env",
+        `POSTGRES_USER=${databaseUser}`,
+        "--volume",
+        `${volumeName}:/var/lib/postgresql/data`,
+        image,
+      ],
+      { capture: true, allowFailure: true, purpose: "startup" },
+    ),
+  );
   await waitForDatabase();
 };
 
@@ -639,6 +570,9 @@ const resetRuntime = async (expectedBaseline?: BaselineManifest) => {
       artifactRoot,
       expected: active.baseline,
     });
+  // Reset may initialize only the explicitly approved runtime, after input validation.
+  // Discard/status retain their observation-only, unavailable-engine behavior.
+  assertDocker();
   await removeRuntime();
   await mkdir(runtimeWorkdir, { recursive: true, mode: 0o700 });
   return withOwnedRuntimeRollback({
@@ -646,17 +580,17 @@ const resetRuntime = async (expectedBaseline?: BaselineManifest) => {
       const password = randomBytes(24).toString("hex");
       await createContainer(password);
       const environment = databaseEnvironment(password);
-      prepareProjectPrerequisites();
-      migrationRuntime.initialize();
+      await prepareProjectPrerequisites();
+      await migrationRuntime.initialize();
       await migrationRuntime.restore(
         active.baseline,
         active.paths.migrationsDirectory,
         environment.databaseUrl,
       );
       prepareProjectSchema({ baseline: active.baseline, environment });
-      finalizeProjectSchema();
+      await finalizeProjectSchema();
       await restoreBaselineRows({ ...active });
-      finalizeProjectRuntime();
+      await finalizeProjectRuntime();
       const projectRuntime = configureProjectRuntime({
         baseline: active.baseline,
         environment,
@@ -716,22 +650,30 @@ const startRuntime = async (expectedBaseline?: BaselineManifest) => {
     throw new Error(mismatchMessage);
   await retainedContainerLifecycle.resumeIfMissing(marker);
   if (
-    !commandSucceeds("docker", [
+    !(await commandSucceeds("docker", [
       "inspect",
       "--format",
       "{{.State.Running}}",
       containerName,
-    ])
+    ]))
   ) {
     throw new Error("The disposable PostgreSQL container cannot be inspected.");
   }
-  const running = runCommand(
-    "docker",
-    ["inspect", "--format", "{{.State.Running}}", containerName],
-    { capture: true },
+  const running = (
+    await runCommand(
+      "docker",
+      ["inspect", "--format", "{{.State.Running}}", containerName],
+      { capture: true },
+    )
   ).stdout.trim();
   if (running !== "true") {
-    runPostgresqlStartupCommand(runCommand, ["start", containerName]);
+    assertPostgresqlStartupResult(
+      await runCommand("docker", ["start", containerName], {
+        capture: true,
+        allowFailure: true,
+        purpose: "startup",
+      }),
+    );
   }
   await waitForDatabase();
   const environment = databaseEnvironment(marker.databasePassword);
@@ -746,17 +688,17 @@ const verifyRuntime = async () => {
   const { baseline } = await readActive();
   const environment = await startRuntime(baseline);
   const receipt = await readCandidateReceipt(baseline);
-  const migrationVerification = verifyMigrationLedger({
+  const migrationVerification = await verifyMigrationLedger({
     currentFiles: receipt.currentFiles,
     baseline,
   });
   let projectVerification;
-  if (runtimePolicy) runPsql(buildRuntimeVerificationSql(runtimePolicy));
+  if (runtimePolicy) await runPsql(buildRuntimeVerificationSql(runtimePolicy));
   if (runtimeAdapter?.verifyRuntime) {
     projectVerification = runtimeAdapter.verifyRuntime({
       baseline,
       environment,
-      runSql: runPsql,
+      runSql: runAdapterPsql,
     });
     if (
       !projectVerification ||
@@ -783,11 +725,11 @@ const migrateRuntime = async () => {
     }),
   );
   const environment = await startRuntime(baseline);
-  verifyMigrationLedger({ currentFiles: receipt.currentFiles, baseline });
+  await verifyMigrationLedger({ currentFiles: receipt.currentFiles, baseline });
   return withOwnedRuntimeRollback({
     operation: async function migrateRuntimeOperation() {
       await migrationRuntime.apply(baseline, receipt, environment.databaseUrl);
-      const verification = verifyMigrationLedger({
+      const verification = await verifyMigrationLedger({
         currentFiles: receipt.currentFiles,
         baseline,
       });

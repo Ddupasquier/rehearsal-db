@@ -1,5 +1,8 @@
 import { expect, it } from "vitest";
 import { createPostgresqlMigrationRuntime } from "../../../dist/src/targets/postgresql/postgresql_migrations.mjs";
+import { PostgresqlTransportError } from "../../../dist/src/targets/postgresql/postgresql_process.mjs";
+import { EventEmitter } from "node:events";
+import { runWithOperationCancellation } from "../../../dist/src/shared/cancellation.mjs";
 import { drizzleTool } from "../../helpers/drizzle_fixture.mjs";
 const entries = [
   {
@@ -54,33 +57,77 @@ function runtime(ledger, assertOwnedTarget = () => "c".repeat(64)) {
     databaseUser: "postgres",
   });
 }
-it("checks native hash/timestamp replay identity independently of source serial-ID gaps", () => {
+it("checks native hash/timestamp replay identity independently of source serial-ID gaps", async () => {
   expect(
-    runtime(rows).verifyLedger({ currentFiles: entries, baseline })
+    (await runtime(rows).verifyLedger({ currentFiles: entries, baseline }))
       .appliedCandidateCount,
   ).toBe(0);
   expect(
-    runtime(rows.map((row, i) => ({ ...row, id: i ? 8 : 2 }))).verifyLedger({
-      currentFiles: entries,
-      baseline,
-    }).appliedCandidateCount,
+    (
+      await runtime(
+        rows.map((row, i) => ({ ...row, id: i ? 8 : 2 })),
+      ).verifyLedger({
+        currentFiles: entries,
+        baseline,
+      })
+    ).appliedCandidateCount,
   ).toBe(0);
 });
-it("refuses missing, divergent or reordered native ledger before migration dispatch", () => {
+it("refuses missing, divergent or reordered native ledger before migration dispatch", async () => {
   for (const ledger of [
     rows.slice(0, 1),
     [{ ...rows[0], hash: "d".repeat(64) }, rows[1]],
     rows.toReversed(),
     [{ ...rows[0], created_at: 1720000000001 }, rows[1]],
   ])
-    expect(() =>
+    await expect(
       runtime(ledger).verifyLedger({ currentFiles: entries, baseline }),
-    ).toThrow();
+    ).rejects.toThrow();
 });
-it("requires target ownership before querying native ledger", () => {
-  expect(() =>
+it("requires target ownership before querying native ledger", async () => {
+  await expect(
     runtime(rows, () => {
       throw new Error("foreign target refused");
     }).verifyLedger({ currentFiles: entries, baseline }),
-  ).toThrow("foreign target refused");
+  ).rejects.toThrow("foreign target refused");
+});
+
+it("awaits native target ownership and ledger transport before exposing verification", async () => {
+  const delayed = runtime(rows, async () => {
+    await new Promise((done) => setImmediate(done));
+    return "c".repeat(64);
+  });
+  expect(
+    (await delayed.verifyLedger({ currentFiles: entries, baseline }))
+      .appliedCandidateCount,
+  ).toBe(0);
+  await expect(
+    runtime(rows, async () => {
+      throw Error("async target refused");
+    }).verifyLedger({ currentFiles: entries, baseline }),
+  ).rejects.toThrow("async target refused");
+});
+
+it("preserves typed transport uncertainty through Drizzle ledger parsing and operation cancellation", async () => {
+  const failure = new PostgresqlTransportError();
+  const signals = new EventEmitter();
+  const guarded = createPostgresqlMigrationRuntime({
+    loaded: { config: { postgresql: { migrationTool: drizzleTool } } },
+    runSql: async () => {
+      signals.emit("SIGINT");
+      throw failure;
+    },
+    assertOwnedTarget: async () => "c".repeat(64),
+    assertExpectedBaseline: async () => {},
+    containerName: "synthetic",
+    database: "postgres",
+    databaseUser: "postgres",
+  });
+  await expect(
+    runWithOperationCancellation({
+      signalTarget: signals,
+      input: null,
+      task: () => guarded.verifyLedger({ currentFiles: entries, baseline }),
+    }),
+  ).rejects.toBe(failure);
 });

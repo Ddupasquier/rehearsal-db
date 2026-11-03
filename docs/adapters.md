@@ -27,6 +27,15 @@ An adapter may export:
 Each hook must return the documented status shape expected by the engine. It receives a
 local SQL executor; it should not open another connection or perform network access.
 
+For PostgreSQL, `runSql(sql)` continues to return a string synchronously. Only this
+legacy adapter callback uses the synchronous compatibility lane: each psql invocation
+has a 120-second client timeout with a hard kill, bounded output, and the same server
+statement/lock limits as built-in SQL. Its callback cannot process event-loop
+cancellation while blocked; cancellation is checked before and after it. Arbitrary
+JavaScript inside a project-owned hook has no execution sandbox or whole-hook deadline.
+Prefer the asynchronous package-owned declarative paths for normal runtime work.
+Transport failure preserves uncertainty and never becomes an empty successful result.
+
 Use an adapter only when the documented declarative formats clearly reject a required
 local behavior. Extracting production data, embedding credentials, contacting hosted
 services, weakening local-only checks, or reimplementing container lifecycle is never an

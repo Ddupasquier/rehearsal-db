@@ -182,7 +182,10 @@ if(mode==='baseline-drift'){const manifest=${JSON.stringify(join(root, ".rehears
     binding: { ...inventory.binding, toolchainSha256: toolchain.sha256 },
     databaseUrl:
       "postgresql://postgres:private-password@127.0.0.1:58322/postgres?sslmode=disable",
-    assertOwnedTarget: () => ownedId,
+    assertOwnedTarget: async () => {
+      await new Promise((done) => setImmediate(done));
+      return ownedId;
+    },
     assertExpectedBaseline: () =>
       assertNativeBaselineManifestUnchanged({
         artifactRoot,

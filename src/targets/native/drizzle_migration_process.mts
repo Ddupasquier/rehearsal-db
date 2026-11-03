@@ -21,7 +21,7 @@ export const deployDrizzleMigrations = async (options: {
   entries: readonly DrizzleMigrationFileEntry[];
   binding: NativeMigrationBinding;
   databaseUrl: string;
-  assertOwnedTarget: () => string;
+  assertOwnedTarget: () => string | Promise<string>;
   assertExpectedBaseline: () => Promise<void>;
 }) => {
   const binding = parseNativeMigrationBinding(options.binding);

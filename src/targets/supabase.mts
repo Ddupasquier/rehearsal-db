@@ -2,10 +2,7 @@ import { requireTimestampMigrationFiles } from "../runtime/migrations/migration_
 import { restoreCopyChunks } from "../runtime/resources/restore_cache.mjs";
 /** Restore and manage the disposable local Supabase runtime from its verified baseline.
  * Reset deletes only this dedicated runtime and its Docker volumes. */
-import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import type { Writable } from "node:stream";
-import { once } from "node:events";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { verifyActiveBaseline } from "../baseline/artifact.mjs";
@@ -23,7 +20,6 @@ import {
 import {
   buildRestoreSqlPrefix,
   buildRestoreSqlSuffix,
-  summarizeRestoreError,
 } from "../runtime/recovery/restore.mjs";
 import {
   buildMigrationLedgerInventory,
@@ -66,10 +62,7 @@ import type { ActiveRuntimeInput } from "../runtime/lifecycle/lifecycle_engine.m
 import { emitRuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
 import { inspectSupabaseRuntimeStatus } from "./supabase/supabase_status.mjs";
 import { getOperationCancellationSignal } from "../shared/cancellation.mjs";
-import {
-  bindOwnedProcessCancellation,
-  signalOwnedProcessGroup,
-} from "../shared/owned_process.mjs";
+import { runOwnedRestore } from "../runtime/recovery/restore_process.mjs";
 import { runOwnedSupabaseMigration } from "./supabase/supabase_process.mjs";
 
 const repositoryRoot = process.cwd();
@@ -249,35 +242,23 @@ const findDatabaseContainer = () => {
   return names[0]!;
 };
 
-const writeChunk = async (
-  stream: Writable,
-  chunk: string,
-  completion: Promise<number | null>,
-): Promise<void> => {
-  if (stream.destroyed || stream.writableEnded) {
-    throw new Error("The Rehearsal restore connection closed early.");
-  }
-  if (!stream.write(chunk)) {
-    await Promise.race([once(stream, "drain"), completion]);
-    if (stream.destroyed || stream.writableEnded) {
-      throw new Error("The Rehearsal restore connection closed early.");
-    }
-  }
-};
-
 const restoreBaselineRows = async ({
   baseline,
   paths,
   manifest,
-}: ActiveRuntimeInput): Promise<void> => {
-  const child = spawn(
-    "docker",
-    [
+}: ActiveRuntimeInput): Promise<void> =>
+  runOwnedRestore({
+    args: [
       "exec",
       "--interactive",
+      "--env",
+      "PGCONNECT_TIMEOUT=5",
+      "--env",
+      "PGOPTIONS=-c statement_timeout=900000 -c lock_timeout=10000 -c idle_in_transaction_session_timeout=120000",
       findDatabaseContainer(),
       "psql",
       "--quiet",
+      "--no-psqlrc",
       "--set",
       "ON_ERROR_STOP=1",
       "--username",
@@ -285,71 +266,34 @@ const restoreBaselineRows = async ({
       "--dbname",
       "postgres",
     ],
-    {
-      cwd: repositoryRoot,
-      detached: process.platform !== "win32",
-      env: createRuntimeManagerEnvironment(),
-      stdio: ["pipe", "ignore", "pipe"],
-    },
-  );
-  let stderr = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk) => {
-    stderr = `${stderr}${chunk}`.slice(-16_384);
+    cwd: repositoryRoot,
+    environment: createRuntimeManagerEnvironment(),
+    input: (signal) =>
+      (async function* () {
+        yield buildRestoreSqlPrefix();
+        const copy = await restoreCopyChunks({
+          artifactRoot,
+          dataPath: paths.dataPath,
+          generationId: baseline.generationId,
+          sourceSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
+          sanitizationPolicySha256: baseline.sanitizationPolicySha256,
+          target: "supabase",
+          ...(config.resources.restoreCache
+            ? { policy: config.resources.restoreCache }
+            : {}),
+          signal,
+        });
+        for await (const chunk of copy.chunks) {
+          signal.throwIfAborted();
+          yield chunk;
+        }
+        console.log(`COPY encoding cache: ${copy.state}.`);
+        yield buildRestoreSqlSuffix({
+          manifest,
+          tableCounts: baseline.tableCounts,
+        });
+      })(),
   });
-  const completion = new Promise<number | null>((complete, reject) => {
-    child.once("error", reject);
-    child.once("close", complete);
-  });
-  const cancellationSignal = getOperationCancellationSignal();
-  const unbindCancellation = bindOwnedProcessCancellation({
-    child,
-    ...(cancellationSignal ? { signal: cancellationSignal } : {}),
-  });
-  child.stdin.on("error", () => undefined);
-  try {
-    await writeChunk(child.stdin, buildRestoreSqlPrefix(), completion);
-    const copy = await restoreCopyChunks({
-      artifactRoot,
-      dataPath: paths.dataPath,
-      generationId: baseline.generationId,
-      sourceSha256: baseline.files["sanitized-data.ndjson"]!.sha256,
-      sanitizationPolicySha256: baseline.sanitizationPolicySha256,
-      target: "supabase",
-      ...(config.resources.restoreCache
-        ? { policy: config.resources.restoreCache }
-        : {}),
-      ...(cancellationSignal ? { signal: cancellationSignal } : {}),
-    });
-    for await (const chunk of copy.chunks)
-      await writeChunk(child.stdin, chunk, completion);
-    console.log(`COPY encoding cache: ${copy.state}.`);
-    await writeChunk(
-      child.stdin,
-      buildRestoreSqlSuffix({
-        manifest,
-        tableCounts: baseline.tableCounts,
-      }),
-      completion,
-    );
-    child.stdin.end();
-    const exitCode = await completion;
-    if (exitCode !== 0) {
-      throw new Error(
-        `The local Rehearsal restore failed. ${summarizeRestoreError(stderr)}`,
-      );
-    }
-  } catch (error) {
-    if (child.exitCode === null) signalOwnedProcessGroup(child, "SIGTERM");
-    await completion.catch(() => undefined);
-    throw new Error(
-      `The local Rehearsal restore failed. ${summarizeRestoreError(stderr)}`,
-      { cause: error },
-    );
-  } finally {
-    unbindCancellation();
-  }
-};
 
 const restoreBaselineAssets = async ({
   baseline,
