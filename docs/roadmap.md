@@ -22,15 +22,20 @@ requests provide detail; a passing build or an open pull request is not a releas
 
 ## Intended improvements
 
-| Intended outcome                                                | Status       | What must be finished before availability                                                                                      | Follow the work                                                                                                                                     |
-| --------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **See an update reminder in ordinary CLI commands**             | **Queued**   | Complete the concise terminal notice while preserving silent JSON/CI output, compatibility checks and update opt-outs          | [CLI update notice](https://github.com/Ddupasquier/rehearsal-db/pull/230)                                                                           |
-| **Keep useful editor review when runtime readiness is missing** | **Queued**   | Finish capability-driven Core/editor behavior and exact installed-pair offline acceptance                                      | [Core capabilities](https://github.com/Ddupasquier/rehearsal-db/pull/221), [editor review](https://github.com/Ddupasquier/rehearsal-vscode/pull/29) |
-| **Support Knex's native JavaScript migration workflow safely**  | **Paused**   | Resolve isolated execution and recovery verification; complete independent exact-package qualification before claiming support | [Native migration integrations](https://github.com/Ddupasquier/rehearsal-db/issues/174)                                                             |
-| **Understand Django and Alembic migration histories natively**  | **Planned**  | Define and verify Python graph, dependency and applied-history semantics independently                                         | [Native migration integrations](https://github.com/Ddupasquier/rehearsal-db/issues/174)                                                             |
-| **Run demanding rehearsals away from your laptop**              | **Planned**  | Establish upload consent, tenant isolation, credential boundaries, retention, cleanup and bounded spending                     | [Managed-execution direction](#efficient-local-execution-and-optional-managed-runs)                                                                 |
-| **Offer optional Pro editor workflows**                         | **Planned**  | Define the additional workflows, licensing, pricing and supported entitlement behavior before a paid launch                    | [Commercial-readiness direction](https://github.com/Ddupasquier/rehearsal-vscode/blob/main/docs/commercial-readiness.md)                            |
-| **Expand beyond PostgreSQL and Supabase**                       | **Research** | Establish engine capability contracts, restore semantics and independent conformance evidence for each family                  | [Database capability design](https://github.com/Ddupasquier/rehearsal-db/issues/159)                                                                |
+The current order is **reliability and bug fixes → database targets → more container
+engines → further ORM integrations**. The status below describes availability;
+priority does not mean a feature has shipped.
+
+| Intended outcome                                                   | Status      | What must be finished before availability                                                                                      | Follow the work                                                                                                                                     |
+| ------------------------------------------------------------------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **See an update reminder in ordinary CLI commands**                | **Queued**  | Complete the concise terminal notice while preserving silent JSON/CI output, compatibility checks and update opt-outs          | [CLI update notice](https://github.com/Ddupasquier/rehearsal-db/pull/230)                                                                           |
+| **Keep useful editor review when runtime readiness is missing**    | **Queued**  | Finish capability-driven Core/editor behavior and exact installed-pair offline acceptance                                      | [Core capabilities](https://github.com/Ddupasquier/rehearsal-db/pull/221), [editor review](https://github.com/Ddupasquier/rehearsal-vscode/pull/29) |
+| **Rehearse SQLite and MongoDB projects**                           | **Planned** | Establish each engine's baseline, restore, migration and safety contracts, then verify its driver independently                | [SQLite](https://github.com/Ddupasquier/rehearsal-db/issues/160), [MongoDB](https://github.com/Ddupasquier/rehearsal-db/issues/164)                 |
+| **Use more local container engines**                               | **Planned** | Qualify discovery, lifecycle, cleanup and resource behavior across supported operating systems                                 | [Container qualification](https://github.com/Ddupasquier/rehearsal-db/issues/167)                                                                   |
+| **Support Knex's native JavaScript migration workflow safely**     | **Paused**  | Resolve isolated execution and recovery verification; complete independent exact-package qualification before claiming support | [Native migration integrations](https://github.com/Ddupasquier/rehearsal-db/issues/174)                                                             |
+| **Understand Django, Alembic and Rails / Active Record histories** | **Planned** | Define and verify framework versions, dependencies, applied history and isolated execution independently                       | [Native migration integrations](https://github.com/Ddupasquier/rehearsal-db/issues/174)                                                             |
+| **Run demanding rehearsals away from your laptop**                 | **Planned** | Establish upload consent, tenant isolation, credential boundaries, retention, cleanup and bounded spending                     | [Managed-execution direction](#efficient-local-execution-and-optional-managed-runs)                                                                 |
+| **Offer optional Pro editor workflows**                            | **Planned** | Define the additional workflows, licensing, pricing and supported entitlement behavior before a paid launch                    | [Commercial-readiness direction](https://github.com/Ddupasquier/rehearsal-vscode/blob/main/docs/commercial-readiness.md)                            |
 
 Quality, compatibility and usability improvements continue within the supported local
 journey. They do not imply that the integrations or services above are available.
@@ -55,12 +60,20 @@ The shipped synthetic-only [managed-protocol prototype](commands.md#synthetic-ma
 is a limited development interface, not that hosted service. Experimental upstream native
 runtimes are likewise not supported Rehearsal replacements merely because they omit Docker.
 
-## Later database targets
+## Database and engine qualification
 
 Additional database, runtime, identity-provider and migration-tool integrations require
 their own reviewed capability contracts and independent acceptance. Research or a roadmap
-ticket is not a support claim. MySQL, MongoDB, SQLite and other database families remain
-separate future work.
+ticket is not a support claim. Alongside SQLite and MongoDB, intended database work
+includes [MySQL](https://github.com/Ddupasquier/rehearsal-db/issues/161),
+[MariaDB](https://github.com/Ddupasquier/rehearsal-db/issues/162) and
+[SQL Server](https://github.com/Ddupasquier/rehearsal-db/issues/163). Each family needs
+its own [capability contract](https://github.com/Ddupasquier/rehearsal-db/issues/159)
+and evidence before it appears in the released catalog.
+
+Broader container support follows database targets and precedes further ORM expansion.
+Cross-platform behavior and measured resource use will guide engine choices; detecting
+a vendor alone does not establish compatibility or lower VM pressure.
 
 The current [standalone workflow](standalone-workflow.md) already covers the released
 source-to-sandbox journey. Its source-access, privacy, Storage, identity and application
