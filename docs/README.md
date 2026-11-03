@@ -14,14 +14,15 @@ accomplish and follow that path.
 
 Install Rehearsal, rehearse a migration, understand the result and fix a failure.
 
-| Your goal                           | Best next page                        |
-| ----------------------------------- | ------------------------------------- |
-| Add Rehearsal to a project          | [Getting started](getting-started.md) |
-| Use the visual database workbench   | [VS Code extension](vscode.md)        |
-| Try it in a disposable project      | [Hands-on tutorial](tutorial.md)      |
-| Update an existing installation     | [Releases and updates](updating.md)   |
-| Fix a setup or runtime problem      | [Troubleshooting](troubleshooting.md) |
-| Browse the friendlier web-docs home | [Documentation home](index.md)        |
+| Your goal                           | Best next page                                                     |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| See what ships and what comes next  | [Released capabilities](capabilities.md) and [Roadmap](roadmap.md) |
+| Add Rehearsal to a project          | [Getting started](getting-started.md)                              |
+| Use the visual database workbench   | [VS Code extension](vscode.md)                                     |
+| Try it in a disposable project      | [Hands-on tutorial](tutorial.md)                                   |
+| Update an existing installation     | [Releases and updates](updating.md)                                |
+| Fix a setup or runtime problem      | [Troubleshooting](troubleshooting.md)                              |
+| Browse the friendlier web-docs home | [Documentation home](index.md)                                     |
 
 ## User reference
 

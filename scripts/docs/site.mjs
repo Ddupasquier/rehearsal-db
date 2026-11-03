@@ -17,7 +17,7 @@ export const groups = Object.freeze([
   {
     label: "Getting started",
     eyebrow: "First steps",
-    pages: ["", "getting-started", "vscode", "tutorial"],
+    pages: ["", "capabilities", "getting-started", "vscode", "tutorial"],
   },
   {
     label: "User reference",
@@ -55,6 +55,14 @@ export const pages = Object.freeze([
     shortTitle: "Overview",
     description:
       "See why empty-database tests miss risky migration failures and rehearse the real change locally.",
+  },
+  {
+    slug: "capabilities",
+    source: "capabilities.md",
+    title: "Shipped capabilities",
+    shortTitle: "Capabilities",
+    description:
+      "Explore released Core and VS Code Starter features, supported toolchains and the guides to use them.",
   },
   {
     slug: "getting-started",

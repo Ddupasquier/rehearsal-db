@@ -152,6 +152,7 @@ export const buildDocs = async (options = {}) => {
     </a>
     <nav class="top-nav" aria-label="Primary navigation">
       <a href="${hrefFor("getting-started")}">Start</a>
+      <a href="${hrefFor("capabilities")}">Capabilities</a>
       <a href="${hrefFor("baselines")}">Safety</a>
       <a href="${hrefFor("commands")}">Reference</a>
       <a href="${hrefFor("roadmap")}">Roadmap</a>

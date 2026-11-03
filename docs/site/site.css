@@ -1072,7 +1072,8 @@ h3:hover .heading-anchor,
   }
 
   .content-grid {
-    grid-template-columns: minmax(0, var(--content-width));
+    grid-template-columns: minmax(0, 1fr);
+    max-width: var(--content-width);
   }
 
   .page-outline {

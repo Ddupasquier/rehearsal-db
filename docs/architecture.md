@@ -58,6 +58,13 @@ rehearsal, results and failure recovery belong in the first journey; configurati
 supported environments, troubleshooting and data safety belong in reference. Keep
 deletion, production-access and unsupported-behavior warnings visible to users.
 
+`docs/capabilities.md` owns the released Core and Starter capability catalog and their
+independently verified release snapshots. READMEs provide short outcome summaries and
+link to that catalog. `docs/roadmap.md` owns intended and paused directions; linked
+subject guides retain their technical contracts. Review these summaries and owners
+with every release. A development manifest or passing candidate check does not establish
+publication or promote an intention to a released capability.
+
 `docs/updating.md` answers release changes, compatibility, updating, breaking changes
 and origin verification with links to deeper owners. Build, test and publishing details
 belong in maintainer guidance, not installation prerequisites. `docs/releasing.md` owns

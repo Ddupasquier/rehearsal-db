@@ -5,6 +5,13 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Documentation
+
+- Publish a complete released-capability catalog for Core and VS Code Starter,
+  linked from both READMEs, with a separate roadmap for work not yet released.
+- Make current READMEs, guides, roadmap statuses and release notes required
+  deliverables of every release, including verification of the published pages.
+
 ## [2.2.0] - 2026-10-30
 
 ### Added
