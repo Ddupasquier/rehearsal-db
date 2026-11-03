@@ -6,6 +6,7 @@ import type { EventEmitter } from "node:events";
 import { readFile, stat } from "node:fs/promises";
 import { parseEnv } from "node:util";
 import { performance } from "node:perf_hooks";
+import { parseApplicationCommand } from "../shared/application_command.mjs";
 import {
   createCleanProcessEnvironment,
   isLoopbackUrl,
@@ -25,7 +26,6 @@ import {
 } from "../shared/cancellation.mjs";
 
 const ENV_KEY = /^[A-Z][A-Z0-9_]*$/u;
-const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
 const SESSION_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP", "SIGTSTP"] as const;
 type SessionSignal = (typeof SESSION_SIGNALS)[number];
 
@@ -45,6 +45,7 @@ export interface ApplicationSession {
   readonly diagnostics: () => ApplicationDiagnostics;
 }
 
+/** Observed raw bytes per stream, saturated at Number.MAX_SAFE_INTEGER; no text retained. */
 export interface ApplicationDiagnostics {
   readonly stdoutBytes: number;
   readonly stderrBytes: number;
@@ -80,30 +81,6 @@ export interface HttpProofCheck {
 }
 
 type SignalTarget = Pick<EventEmitter, "prependListener" | "removeListener">;
-
-const parseCommand = (source: string): [string, ...string[]] => {
-  if (typeof source !== "string" || !source.trim())
-    throw new Error("Application command is empty.");
-  const values: string[] = [];
-  let value = "";
-  let quote: '"' | "'" | null = null;
-  for (const character of source) {
-    if (quote) {
-      if (character === quote) quote = null;
-      else value += character;
-    } else if (character === '"' || character === "'") quote = character;
-    else if (/\s/u.test(character)) {
-      if (value) values.push(value);
-      value = "";
-    } else value += character;
-  }
-  if (quote)
-    throw new Error("Application command contains an unmatched quote.");
-  if (value) values.push(value);
-  const [program, ...args] = values;
-  if (!program) throw new Error("Application command is empty.");
-  return [program, ...args];
-};
 
 const readOwnedEnvironment = async (
   path: string,
@@ -181,9 +158,6 @@ export const buildApplicationEnvironment = async ({
   }
   return result;
 };
-
-const boundedAppend = (current: string, chunk: string): string =>
-  `${current}${chunk}`.slice(-MAX_DIAGNOSTIC_BYTES);
 
 const childHasExited = (child: ChildProcess): boolean =>
   child.exitCode !== null || child.signalCode !== null;
@@ -331,7 +305,7 @@ export const startApplicationSession = async ({
   portPreflight?: (readiness: ApplicationReadiness) => Promise<void>;
 }): Promise<ApplicationSession> => {
   const mapped = await buildApplicationEnvironment({ files, mappings });
-  const [program, ...args] = parseCommand(command);
+  const [program, ...args] = parseApplicationCommand(command);
   await portPreflight(readiness);
   const child = spawnImplementation(program, args, {
     cwd,
@@ -355,13 +329,19 @@ export const startApplicationSession = async ({
   child.once("exit", () => {
     void stopApplication();
   });
-  let stdout = "";
-  let stderr = "";
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
   child.stdout?.on("data", (chunk: Buffer | string) => {
-    stdout = boundedAppend(stdout, chunk.toString("utf8"));
+    stdoutBytes = Math.min(
+      Number.MAX_SAFE_INTEGER,
+      stdoutBytes + Buffer.byteLength(chunk),
+    );
   });
   child.stderr?.on("data", (chunk: Buffer | string) => {
-    stderr = boundedAppend(stderr, chunk.toString("utf8"));
+    stderrBytes = Math.min(
+      Number.MAX_SAFE_INTEGER,
+      stderrBytes + Buffer.byteLength(chunk),
+    );
   });
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", resolve);
@@ -402,8 +382,8 @@ export const startApplicationSession = async ({
       stop: stopApplication,
       wait: () => waitForChildExit(child),
       diagnostics: () => ({
-        stdoutBytes: Buffer.byteLength(stdout),
-        stderrBytes: Buffer.byteLength(stderr),
+        stdoutBytes,
+        stderrBytes,
       }),
     });
   } catch (error) {

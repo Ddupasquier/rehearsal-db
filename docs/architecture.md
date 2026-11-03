@@ -145,9 +145,14 @@ ambiguous or unavailable evidence is not inferred from candidate count or provid
 stack failure wraps the original migration error. It projects only a validated fixed
 diagnosis from at most four original-error wrappers, never cleanup siblings or causes.
 Session caches never appear in the public parsed-flags type.
-Owned child output has a byte boundary. If a process floods it, Rehearsal sends TERM
-and forcibly reaps only that owned process group after one second; a child ignoring
-TERM cannot leave the operation hanging indefinitely.
+Owned child output is decoded as UTF-8 independently for stdout and stderr, preserving
+characters split across pipe chunks. Byte counts and per-stream limits use the original
+bytes; an incomplete trailing sequence becomes a replacement character when the process
+closes. If a process floods its byte boundary, Rehearsal sends TERM and forcibly reaps
+only that owned process group after one second; a child ignoring TERM cannot leave the
+operation hanging indefinitely.
+Application sessions retain no diagnostic text; each stream reports total observed raw
+bytes, saturated at `Number.MAX_SAFE_INTEGER`.
 
 Repository contracts keep the process entry point at 300 lines or fewer and every
 handler-family module at 350 lines or fewer. A new command belongs in the narrowest

@@ -13,6 +13,10 @@ import {
 } from "../../../dist/src/application/session.mjs";
 import { runApplicationSessionTask } from "../../../dist/src/application/interactive_task.mjs";
 import { runWithOperationCancellation } from "../../../dist/src/shared/cancellation.mjs";
+import {
+  applicationArgumentCases,
+  invalidApplicationCommandCases,
+} from "../../helpers/application_command_cases.mjs";
 
 const roots = [];
 const servers = [];
@@ -23,6 +27,48 @@ const availablePort = async () => {
   const port = server.address().port;
   await new Promise((resolve) => server.close(resolve));
   return port;
+};
+
+const applicationCommandFixture = async () => {
+  const root = await mkdtemp(join(tmpdir(), "rehearsal-command-session-"));
+  roots.push(root);
+  const environmentPath = join(root, "runtime.env");
+  await writeFile(environmentPath, "", { mode: 0o600 });
+  const spawnImplementation = vi.fn(() => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.exitCode = null;
+    child.signalCode = null;
+    queueMicrotask(() => child.emit("spawn"));
+    return child;
+  });
+  return {
+    cwd: root,
+    files: { primary: environmentPath },
+    mappings: {},
+    readiness: { url: "http://127.0.0.1:5275" },
+    spawnImplementation,
+    fetchImplementation: async () => ({ status: 200 }),
+    signalTarget: new EventEmitter(),
+    input: null,
+    portPreflight: vi.fn(async () => undefined),
+  };
+};
+
+const withDiagnosticChunks = async (chunks, check) => {
+  const fixture = await applicationCommandFixture();
+  const session = await startApplicationSession({
+    ...fixture,
+    command: "fixture-program",
+  });
+  const child = fixture.spawnImplementation.mock.results[0].value;
+  try {
+    for (const [stream, chunk] of chunks) child[stream].emit("data", chunk);
+    await check(session, child);
+  } finally {
+    await session.stop();
+  }
 };
 
 afterEach(async () => {
@@ -37,6 +83,139 @@ afterEach(async () => {
 });
 
 describe("package-owned application sessions", () => {
+  describe.each(["stdout", "stderr"])("%s diagnostic byte counts", (stream) => {
+    it.each(["é", "€", "🌱"])(
+      "counts split UTF-8 %s as its original bytes",
+      async (text) => {
+        const bytes = Buffer.from(text);
+        await withDiagnosticChunks(
+          [...bytes].map((byte) => [stream, Buffer.from([byte])]),
+          (session) => {
+            expect(session.diagnostics()).toEqual({
+              stdoutBytes: stream === "stdout" ? bytes.length : 0,
+              stderrBytes: stream === "stderr" ? bytes.length : 0,
+            });
+          },
+        );
+      },
+    );
+
+    it.each([
+      { bytes: [0xc3] },
+      { bytes: [0xe2, 0x82] },
+      { bytes: [0xf0, 0x9f, 0x8c] },
+    ])(
+      "counts incomplete trailing bytes $bytes without decoding",
+      async ({ bytes }) => {
+        await withDiagnosticChunks(
+          bytes.map((byte) => [stream, Buffer.from([byte])]),
+          (session, child) => {
+            child[stream].emit("end");
+            expect(session.diagnostics()).toEqual({
+              stdoutBytes: stream === "stdout" ? bytes.length : 0,
+              stderrBytes: stream === "stderr" ? bytes.length : 0,
+            });
+          },
+        );
+      },
+    );
+
+    it("counts output beyond the former retained tail", async () => {
+      const bytes = Buffer.alloc(64 * 1024 + 17, 0x78);
+      await withDiagnosticChunks([[stream, bytes]], (session, child) => {
+        expect(session.diagnostics()[`${stream}Bytes`]).toBe(bytes.length);
+        child[stream].emit("data", Buffer.from("🌱"));
+        expect(session.diagnostics()[`${stream}Bytes`]).toBe(bytes.length + 4);
+      });
+    });
+  });
+
+  it("keeps raw byte counts independent for interleaved streams", async () => {
+    await withDiagnosticChunks(
+      [
+        ["stdout", Buffer.from([0xf0])],
+        ["stderr", Buffer.from([0xe2, 0x82])],
+        ["stdout", Buffer.from([0x9f, 0x8c])],
+        ["stderr", Buffer.from([0xac])],
+        ["stdout", Buffer.from([0xb1])],
+      ],
+      (session) => {
+        expect(session.diagnostics()).toEqual({
+          stdoutBytes: 4,
+          stderrBytes: 3,
+        });
+      },
+    );
+  });
+
+  it("saturates diagnostic byte counts at the safe integer boundary", async () => {
+    await withDiagnosticChunks([], (session, child) => {
+      const chunk = Buffer.from([0x78]);
+      // Synthetic byte sizes exercise the numeric bound without allocating petabytes.
+      const byteLength = vi
+        .spyOn(Buffer, "byteLength")
+        .mockReturnValue(Number.MAX_SAFE_INTEGER - 1);
+      let before;
+      try {
+        child.stdout.emit("data", chunk);
+        child.stderr.emit("data", chunk);
+        before = session.diagnostics();
+        byteLength.mockReturnValue(10);
+        child.stdout.emit("data", chunk);
+        child.stderr.emit("data", chunk);
+        byteLength.mockReturnValue(1);
+        child.stdout.emit("data", chunk);
+        child.stderr.emit("data", chunk);
+      } finally {
+        byteLength.mockRestore();
+      }
+      expect(before).toEqual({
+        stdoutBytes: Number.MAX_SAFE_INTEGER - 1,
+        stderrBytes: Number.MAX_SAFE_INTEGER - 1,
+      });
+      expect(session.diagnostics()).toEqual({
+        stdoutBytes: Number.MAX_SAFE_INTEGER,
+        stderrBytes: Number.MAX_SAFE_INTEGER,
+      });
+    });
+  });
+
+  it.each(applicationArgumentCases)(
+    "preserves $name in application startup without a shell",
+    async ({ source, args }) => {
+      const fixture = await applicationCommandFixture();
+      const session = await startApplicationSession({
+        ...fixture,
+        command: `fixture-program ${source}`,
+      });
+      try {
+        expect(fixture.spawnImplementation.mock.calls[0].slice(0, 2)).toEqual([
+          "fixture-program",
+          args,
+        ]);
+        expect(
+          fixture.spawnImplementation.mock.calls[0][2].shell ?? false,
+        ).toBe(false);
+      } finally {
+        await session.stop();
+      }
+    },
+  );
+
+  it.each(invalidApplicationCommandCases)(
+    "rejects $name before application startup",
+    async ({ source, error }) => {
+      const fixture = await applicationCommandFixture();
+      await expect(
+        startApplicationSession({ ...fixture, command: source }),
+      ).rejects.toThrow(
+        `Application command ${error === "empty" ? "is empty." : "contains an unmatched quote."}`,
+      );
+      expect(fixture.portPreflight).not.toHaveBeenCalled();
+      expect(fixture.spawnImplementation).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(["SIGINT", "SIGTSTP"])(
     "keeps ready %s as a handled close inside an outer Open cancellation boundary",
     async (signal) => {

@@ -8,8 +8,74 @@ import {
   parseColimaMemory,
   parseDockerCapacity,
 } from "../../../../dist/src/cli/runtime/runtime_commands.mjs";
+import rehearsalFixture from "../../../fixtures/rehearsal-project/rehearsal.config.mjs";
+import {
+  applicationArgumentCases,
+  invalidApplicationCommandCases,
+} from "../../../helpers/application_command_cases.mjs";
+
+const withApplicationProof = async (command, check) => {
+  const directory = await mkdtemp(join(tmpdir(), "rehearsal-proof-arguments-"));
+  try {
+    await writeFile(
+      join(directory, "argv.mjs"),
+      "process.stdout.write(JSON.stringify(process.argv.slice(2)));\n",
+    );
+    await writeFile(
+      join(directory, "rehearsal.config.mjs"),
+      `export default ${JSON.stringify({
+        ...rehearsalFixture,
+        application: {
+          ...rehearsalFixture.application,
+          proofCommand: command,
+        },
+      })};\n`,
+    );
+    const commands = createRuntimeCommands({
+      packageRoot: directory,
+      projectRoot: directory,
+      managerPath: join(directory, "unused-manager.mjs"),
+      getActivePackageFingerprint: () => undefined,
+    });
+    await check(() =>
+      commands.proveRuntimeStack({
+        topology: { dependents: [], targets: [{}] },
+        planOptions: { projectRoot: directory },
+        environment: {},
+      }),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+};
 
 describe("runtime command diagnostics", () => {
+  it.each(applicationArgumentCases)(
+    "preserves $name in application proofs without a shell",
+    async ({ source, args }) => {
+      await withApplicationProof(
+        `"${process.execPath}" argv.mjs ${source}`,
+        async (run) => {
+          const result = await run();
+          expect(JSON.parse(result.applicationProof.output)).toEqual(args);
+        },
+      );
+    },
+  );
+
+  it.each(invalidApplicationCommandCases)(
+    "rejects $name before application proofs",
+    async ({ source, error }) => {
+      await withApplicationProof(source, async (run) => {
+        await expect(run()).rejects.toThrow(
+          source.trim()
+            ? `Application proof command ${error === "empty" ? "is empty." : "contains an unmatched quote."}`
+            : "config.application.proofCommand must be a non-empty string.",
+        );
+      });
+    },
+  );
+
   it("returns validated structured runtime state without parsing human prose", async () => {
     const directory = await mkdtemp(join(tmpdir(), "rehearsal-status-"));
     const managerPath = join(directory, "manager.mjs");
