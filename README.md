@@ -14,6 +14,8 @@
 </p>
 
 <p align="center">
+  <a href="https://ddupasquier.github.io/rehearsal-db/capabilities/">Shipped features</a> ·
+  <a href="https://ddupasquier.github.io/rehearsal-db/roadmap/">Roadmap</a> ·
   <a href="https://ddupasquier.github.io/rehearsal-db/">Read the documentation</a> ·
   <a href="https://www.npmjs.com/package/@rehearsal-db/core">View on npm</a> ·
   <a href="https://ddupasquier.github.io/rehearsal-db/vscode/">Free VS Code Starter</a> ·
@@ -31,11 +33,21 @@ against the data and application behavior you actually have.
 sanitized baseline into a disposable local PostgreSQL or Supabase environment, applies
 only the exact migrations you approve, and runs your application's own proof.
 
-| An empty database cannot prove…                      | Rehearsal lets you verify…                                   |
-| ---------------------------------------------------- | ------------------------------------------------------------ |
-| old rows still satisfy new constraints               | the migration against a reviewed, production-shaped copy     |
-| relationships, identities, and stored files survive  | database, Auth, and Storage behavior in one local sandbox    |
-| the application still works after the schema changes | your own tests and hands-on flows before anything is shipped |
+## Ready to use today
+
+| Your goal                             | Included in the free CLI                                                                                     | Explore                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| **Start with a useful copy**          | Verified baselines, privacy transformations and representative datasets that preserve relationships          | [Baselines](docs/baselines.md)                                                     |
+| **Use your migration workflow**       | Exact SQL history and candidate review, plus version-pinned Prisma and Drizzle PostgreSQL integrations       | [Supported toolchains](docs/capabilities.md#supported-environments-and-toolchains) |
+| **Prove the application still works** | Full rehearsals, migration without reset, project-owned tests, HTTP checks and hands-on application sessions | [Hands-on tutorial](docs/tutorial.md)                                              |
+| **Exercise the whole local stack**    | PostgreSQL or Supabase, declared dependent databases, approved Storage files and local authentication        | [Configuration](docs/configuration.md)                                             |
+| **Understand the change**             | Static migration warnings, read-only impact measurements and baseline or execution-plan inspection           | [CLI reference](docs/commands.md)                                                  |
+| **Control memory and disk use**       | Resource inventory, reviewed cleanup, lifecycle policies and qualified Colima VM controls                    | [Runtime lifecycle](docs/runtime-lifecycle.md)                                     |
+| **Recover with useful evidence**      | Cancellation, retained failure state, Doctor and redacted support reports                                    | [Troubleshooting](docs/troubleshooting.md)                                         |
+| **Work visually**                     | A free VS Code dashboard for review, execution, configuration, resources and reports                         | [VS Code Starter](docs/vscode.md)                                                  |
+
+**[See the complete shipped-capability catalog →](docs/capabilities.md)** ·
+[See queued, planned and paused work](docs/roadmap.md)
 
 Projects with a separate publication or read-model database can declare it as a
 dependent target. Rehearsal then manages the complete isolated runtime stack.
@@ -47,8 +59,9 @@ it through a reviewed privacy policy, and retire the access again. It is never p
 production deployment tool.
 
 The CLI is free and MIT-licensed, with stable releases on
-[npm](https://www.npmjs.com/package/@rehearsal-db/core). This guide targets **1.3.0**;
-install only a version actually published there. Prefer a visual workflow?
+[npm](https://www.npmjs.com/package/@rehearsal-db/core). The
+[capability catalog](docs/capabilities.md) records verified published versions and
+their support limits. Prefer a visual workflow?
 [Install the free VS Code Starter preview](docs/vscode.md). Its included features are
 free indefinitely for personal or commercial development—no account, card, or trial.
 
@@ -59,7 +72,7 @@ boundaries do not replace version control or backups.
 
 - Node.js 22, 24, or 26 and npm (Node.js 24 LTS recommended)
 - Docker Desktop, Colima, or another Docker-compatible engine
-- timestamped `.sql` migration files
+- SQL migration files or a [supported Prisma or Drizzle project](docs/capabilities.md#supported-environments-and-toolchains)
 - a project test command that can prove the migrated application works
 - Supabase CLI 2.117.0 for a Supabase project, or the local
   `postgres:17-alpine` image for a PostgreSQL project
@@ -194,6 +207,7 @@ not implied by desktop or Linux compatibility.
 Start here:
 
 - [Documentation home](docs/index.md) — choose the shortest path for your goal
+- [Shipped features](docs/capabilities.md) — see the current Core and Starter capabilities
 - [Getting started](docs/getting-started.md) — set up your own project
 - [VS Code extension](docs/vscode.md) — use the project-aware visual workbench
 - [Safe hands-on tutorial](docs/tutorial.md) — try the full flow in a disposable project

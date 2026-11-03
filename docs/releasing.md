@@ -133,10 +133,19 @@ release-source migration.
 
 1. Start from protected `main` on a dedicated ticketed release branch.
 2. Verify the exact version, changelog, compatibility notes, and packed file list.
+   **README and documentation maintenance is required for every release.** Update the
+   affected README summaries, installation/update guides, capability catalog, roadmap
+   statuses and release notes before freezing artifacts. Review existing claims even
+   when no feature scope changes.
    Reconcile the core, VS Code extension and Test Lab READMEs and affected guides with
    their actual published versions and contracts. Keep candidate availability explicit,
    link to the owning installation/update guide instead of duplicating version lists,
    and retain dated historical evidence without presenting it as current acceptance.
+   With every Core or Starter release, review the [released capability catalog](capabilities.md)
+   and [roadmap](roadmap.md) alongside the release notes: account for added, changed or
+   removed outcomes and their supported scope. Prepare the README summaries and status
+   changes without marking an unpublished capability Released. Keep the READMEs evergreen;
+   the catalog owns the verified release snapshots, and the roadmap owns intentions.
 3. Run `npm run release:verify`. It performs the package checks and every
    installed-consumer scenario against one tarball, then records the exact package
    version, SHA-256, environment, commands, timings, and results in
@@ -160,6 +169,16 @@ release-source migration.
     installed Docker fixture. Allow up to six minutes for a first package to propagate
     through the public registry before classifying a missing packument as a release
     failure.
+    After actual publication is verified, update the public capability catalog's Core
+    snapshot and reconcile affected README summaries, installation/update guides and
+    roadmap entries through normal documentation review as part of this release.
+    Keep the Starter snapshot unchanged until its Marketplace
+    publication is independently verified under the extension release runbook. Confirm
+    the public catalog and its guide links render correctly. This documentation-only
+    update must not rebuild or replace an approved tarball or VSIX.
+    **Do not mark the release complete until these updates are published and the public
+    README, capability, installation and roadmap pages have been verified.** A failed
+    documentation deployment remains unfinished release work.
 11. Replace consuming projects' temporary Git/archive references only on their own
     protected integration branches and rerun their complete verification.
 
