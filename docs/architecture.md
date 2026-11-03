@@ -493,9 +493,10 @@ Invalid, duplicate or foreign frames cannot supply that context. Older clients c
 ignore the additional context field.
 
 The child can report only fixed input/load/migrate/destroy hints and enumerated
-failure categories over a bounded private pipe. After child exit, at most 25
-milliseconds permits private hint-pipe drain within the unchanged 120-second
-execution deadline, before the existing result/cleanup path. Both hints and
+failure categories over a bounded private pipe. The result frame is published
+immediately at child exit. After a failed exit, at most 25 milliseconds permits
+optional hint-pipe drain before stream/socket closure, within the unchanged
+120-second execution deadline. Both hints and
 categories are explicitly untrusted; they never supply trusted provider causes,
 SQLSTATE, permission or acceptance evidence. Invalid or unavailable hints do not
 change execution or its first failure.

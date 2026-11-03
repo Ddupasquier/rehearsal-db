@@ -48,7 +48,7 @@ const accept=async(kind,bytes)=>{
   child=spawn(process.execPath,['/runner/child.mjs'],{cwd:'/inputs',env:{PATH:'/usr/local/bin:/usr/bin:/bin',HOME:'/tmp',TMPDIR:'/tmp',NODE_ENV:'production'},stdio:['pipe','pipe','pipe','pipe']});
   child.stdio[3].on('data',b=>{if(!hints.accept(b))child.stdio[3].destroy();});child.stdio[3].on('error',()=>{});
   child.stdout.on('data',b=>emit('L',child.stdout,b));child.stderr.on('data',b=>emit('L',child.stderr,b));child.on('error',shutdown);
-  child.on('exit',(code,signal)=>{completed=true;const finish=()=>{send('H',hints.result());send('X',Buffer.from([code===0&&!signal?0:1]));active?.socket.destroy();server.close();process.exitCode=code===0&&!signal?0:1;process.stdin.destroy();};if(code===0&&!signal)finish();else drainKnexWorkerReportedHint(child.stdio[3],finish);});
+  child.on('exit',(code,signal)=>{completed=true;send('X',Buffer.from([code===0&&!signal?0:1]));const finish=()=>{active?.socket.destroy();server.close();process.exitCode=code===0&&!signal?0:1;process.stdin.destroy();};if(code===0&&!signal)finish();else drainKnexWorkerReportedHint(child.stdio[3],()=>{send('H',hints.result());finish();});});
   child.stdin.end(JSON.stringify(c));bytes.fill(0);return;
  }
  if(!initialized||bytes.length<4)throw Error();const id=bytes.readUInt32BE(0),body=bytes.subarray(4);

@@ -1,7 +1,7 @@
 import { readKnexFailure } from "../../../../../dist/src/runtime/migrations/native/knex/knex_failure_diagnostic.mjs";
 /** Owned tiny attachment/metadata fakes: no Docker, SDK, SQL or service execution. */
 import { EventEmitter } from "node:events";
-import { Readable, Writable } from "node:stream";
+import { PassThrough, Readable, Writable } from "node:stream";
 import {
   mkdtemp,
   mkdir,
@@ -96,6 +96,11 @@ vi.mock(
 );
 import { KNEX_WORKER_PROGRAMS } from "../../../../../dist/src/targets/native/knex/knex_worker_programs.mjs";
 import { runKnexWorker } from "../../../../../dist/src/targets/native/knex/knex_worker_process.mjs";
+import { KNEX_WORKER_BOOTSTRAP_SOURCE } from "../../../../../dist/src/targets/native/knex/knex_worker_bootstrap.mjs";
+import {
+  createKnexWorkerHintCollector,
+  drainKnexWorkerReportedHint,
+} from "../../../../../dist/src/targets/native/knex/knex_worker_observation.mjs";
 const roots = [];
 it("parses the exact three worker programs without executing SDK modules or opening sockets", () => {
   for (const [name, text] of KNEX_WORKER_PROGRAMS) {
@@ -717,3 +722,100 @@ it("keeps diagnostic absence/invalidity separate from success and observer callb
   expect(count).toBe(1);
   expect(readKnexFailure(error).primary.stage).toBe("worker-result-nonzero");
 });
+
+it.each(["ended", "open"])(
+  "publishes child X1 before an optional hint drain can cross the host deadline (%s FD3)",
+  async (pipeState) => {
+    const f = await fixture(),
+      wire = new PassThrough(),
+      published = [],
+      observations = [];
+    // Execute only the exact exit-handler registration with inert I/O bindings.
+    // No bootstrap program, SDK, socket, database or OS process is started.
+    const registration = KNEX_WORKER_BOOTSTRAP_SOURCE.split("\n").find((line) =>
+      line.trimStart().startsWith("child.on('exit',"),
+    );
+    expect(registration).toBeTypeOf("string");
+    const registerExit = new Function(
+      "child",
+      "send",
+      "hints",
+      "active",
+      "server",
+      "process",
+      "drainKnexWorkerReportedHint",
+      "let completed=false;\n" + registration,
+    );
+    let publishedBeforeDeadline = false,
+      deadlineExceeded = false,
+      boundaryReached;
+    const deadlineBoundary = new Promise((resolve) => {
+      boundaryReached = resolve;
+    });
+    state.fake = true;
+    state.stdout = wire;
+    state.onSpawn = (attachment) => {
+      const inner = new EventEmitter(),
+        hintPipe = new EventEmitter();
+      hintPipe.readableEnded = pipeState === "ended";
+      inner.stdio = [null, null, null, hintPipe];
+      registerExit(
+        inner,
+        (kind, bytes) => {
+          published.push(kind);
+          return wire.write(frame(kind, bytes));
+        },
+        createKnexWorkerHintCollector(),
+        null,
+        { close() {} },
+        {
+          stdin: {
+            destroy() {
+              wire.end();
+              attachment.emit("close", 1, null);
+            },
+          },
+        },
+        drainKnexWorkerReportedHint,
+      );
+      inner.emit("exit", 1, null);
+      // Let an immediately published result reach the real host frame consumer.
+      // FD3 remains open; its 25ms timer is frozen until this boundary is observed.
+      setImmediate(() => {
+        publishedBeforeDeadline = published.includes("X");
+        deadlineExceeded = true;
+        f.controller.abort();
+        hintPipe.emit("end");
+        boundaryReached();
+      });
+    };
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const result = runKnexWorker({
+        ...f.options,
+        executionDeadlineExceeded: () => deadlineExceeded,
+        observeFailure: (value) => observations.push(value),
+      }).then(
+        () => null,
+        (error) => error,
+      );
+      const [error] = await Promise.all([result, deadlineBoundary]);
+      expect({
+        publishedBeforeDeadline,
+        primaryStage: readKnexFailure(error)?.primary.stage,
+      }).toEqual({
+        publishedBeforeDeadline: true,
+        primaryStage: "worker-result-nonzero",
+      });
+      if (pipeState === "open")
+        expect(observations[0].host.cancellation).toMatchObject({
+          inputAborted: true,
+          executionDeadlineExceeded: true,
+        });
+      expect(observations[0].host.cleanup.worker).toBe("confirmed");
+    } finally {
+      vi.useRealTimers();
+      wire.destroy();
+    }
+  },
+);
