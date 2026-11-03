@@ -29,6 +29,7 @@ import {
   assertKnexWorkerPrograms,
 } from "./knex_worker_programs.mjs";
 import { runKnexWorker } from "./knex_worker_process.mjs";
+import { renderKnexWorkerFailureObservation } from "./knex_worker_observation.mjs";
 import {
   withKnexRestrictedRole,
   currentKnexSqlSignal,
@@ -206,6 +207,17 @@ export const deployKnexMigrations = async ({
                 credentials,
                 port: Number(url.port),
                 signal,
+                executionDeadlineExceeded: () =>
+                  deadline.signal.aborted ||
+                  performance.now() >= executionDeadline,
+                observeFailure: (observation) => {
+                  const frame = renderKnexWorkerFailureObservation(
+                    observation,
+                    process.env.REHEARSAL_NATIVE_FAILURE_NONCE,
+                  );
+                  // A prior partial stderr write cannot merge a private frame into prose.
+                  if (frame) console.error("\n" + frame);
+                },
                 assertOwnedTarget,
                 assertBackendGone: async (pid) => {
                   if (

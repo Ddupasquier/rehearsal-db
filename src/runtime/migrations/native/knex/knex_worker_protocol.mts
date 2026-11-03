@@ -10,7 +10,7 @@ const invalid = () =>
   new Error(
     "Isolated Knex worker protocol was refused; private output is withheld.",
   );
-export type KnexFrameKind = "O" | "D" | "C" | "L" | "X" | "P" | "E";
+export type KnexFrameKind = "O" | "D" | "C" | "L" | "X" | "H" | "P" | "E";
 export const encodeKnexFrame = (
   kind: KnexFrameKind,
   bytes: Buffer = Buffer.alloc(0),
@@ -18,7 +18,7 @@ export const encodeKnexFrame = (
   if (
     typeof kind !== "string" ||
     kind.length !== 1 ||
-    !"ODCLXPE".includes(kind) ||
+    !"ODCLXHPE".includes(kind) ||
     !Buffer.isBuffer(bytes) ||
     bytes.length > KNEX_WORKER_LIMITS.maximumFrameBytes
   )

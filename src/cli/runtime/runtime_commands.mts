@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { readKnexFailureFrame } from "../../runtime/migrations/native/knex/knex_failure_diagnostic.mjs";
+import { readKnexWorkerFailureObservation } from "../../targets/native/knex/knex_worker_observation.mjs";
 /** Orchestrate isolated database runtimes and project-owned application proofs. */
 import { spawnSync } from "node:child_process";
 import type { SpawnSyncReturns } from "node:child_process";
@@ -450,8 +451,12 @@ export const createRuntimeCommands = ({
         .filter(Boolean)
         .join("\n")
         .trim();
-      const nativeDiagnostic = readKnexFailureFrame(
+      const workerObservation = readKnexWorkerFailureObservation(
         completeOutput,
+        nativeFailureNonce,
+      );
+      const nativeDiagnostic = readKnexFailureFrame(
+        workerObservation.output,
         nativeFailureNonce,
       );
       const conciseOutput = summarizeRuntimeManagerFailure(
@@ -486,6 +491,9 @@ export const createRuntimeCommands = ({
           ...(migrationFailure ? { migrationFailure } : {}),
           ...(nativeDiagnostic.nativeFailure
             ? { nativeFailure: nativeDiagnostic.nativeFailure }
+            : {}),
+          ...(workerObservation.observation
+            ? { knexWorkerFailureObservation: workerObservation.observation }
             : {}),
           ...(engineCapacity ? { engineCapacity } : {}),
         },

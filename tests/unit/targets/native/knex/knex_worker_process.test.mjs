@@ -532,3 +532,188 @@ it("classifies a signalled attachment despite a successful result frame", async 
   }
   expect(readKnexFailure(error).primary.stage).toBe("worker-exit");
 });
+
+it.each([
+  ["reported", [frame("H", [3, 10])], "reported"],
+  ["missing", [], "absent"],
+  ["invalid", [frame("H", [3, 99])], "invalid"],
+  ["duplicate", [frame("H", [3, 10]), frame("H", [2, 4])], "invalid"],
+])(
+  "keeps first-origin X1 with one bounded %s private observation",
+  async (_name, hints, hintState) => {
+    const f = await fixture(),
+      observations = [];
+    state.fake = true;
+    state.stdout = [...hints, frame("X", [1])];
+    state.onSpawn = (child) =>
+      setImmediate(() => {
+        state.record.State = {
+          Running: false,
+          Status: "exited",
+          ExitCode: 137,
+          OOMKilled: true,
+          Error: "PRIVATE_STATE_ERROR",
+        };
+        child.emit("close", 1, null);
+      });
+    let error;
+    try {
+      await runKnexWorker({
+        ...f.options,
+        observeFailure: (value) => observations.push(value),
+        executionDeadlineExceeded: () => false,
+      });
+    } catch (failure) {
+      error = failure;
+    }
+    expect(readKnexFailure(error).primary.stage).toBe("worker-result-nonzero");
+    expect(observations).toHaveLength(1);
+    expect(observations[0]).toMatchObject({
+      workerId: "a".repeat(64),
+      host: {
+        result: 1,
+        attachment: { closed: true, exitCode: 1, signal: null },
+        cancellation: {
+          inputAborted: false,
+          interrupted: false,
+          executionDeadlineExceeded: false,
+        },
+        broker: { health: "healthy", cleanup: "confirmed" },
+        container: {
+          running: false,
+          status: "exited",
+          exitCode: 137,
+          oomKilled: true,
+        },
+        cleanup: { attachment: "confirmed", worker: "confirmed" },
+      },
+      workerReported: { trust: "untrusted", state: hintState },
+    });
+    expect(JSON.stringify(observations)).not.toMatch(
+      /PRIVATE|59422|postgres|nonce/,
+    );
+  },
+);
+it("reports broker/ownership cleanup uncertainty without replacing X1 or trusting stale container metadata", async () => {
+  const f = await fixture(),
+    observations = [];
+  state.fake = true;
+  state.brokerFailure = "cleanup";
+  state.stdout = [frame("X", [1])];
+  state.onSpawn = (child) =>
+    setImmediate(() => {
+      state.foreign = true;
+      child.emit("close", 1, null);
+    });
+  let error;
+  try {
+    await runKnexWorker({
+      ...f.options,
+      observeFailure: (value) => observations.push(value),
+    });
+  } catch (failure) {
+    error = failure;
+  }
+  expect(readKnexFailure(error)).toMatchObject({
+    primary: { stage: "worker-result-nonzero" },
+    cleanup: { reason: "cleanup-unconfirmed" },
+  });
+  expect(observations).toHaveLength(1);
+  expect(observations[0].host).toMatchObject({
+    broker: { cleanup: "unconfirmed" },
+    container: null,
+    cleanup: { worker: "unconfirmed" },
+  });
+  expect(state.operations.some((args) => args[0] === "rm")).toBe(false);
+});
+it("keeps the proven pre-cleanup state separate from a cleanup-induced container exit", async () => {
+  const f = await fixture(),
+    observations = [];
+  state.fake = true;
+  state.stdout = [frame("X", [1])];
+  state.onSpawn = (child) =>
+    setImmediate(() => {
+      state.record.State = {
+        Running: true,
+        Status: "running",
+        ExitCode: 0,
+        OOMKilled: false,
+      };
+      child.emit("close", 1, null);
+    });
+  await expect(
+    runKnexWorker({
+      ...f.options,
+      observeFailure: (value) => observations.push(value),
+    }),
+  ).rejects.toThrow();
+  expect(observations[0].host.container).toEqual({
+    running: true,
+    status: "running",
+    exitCode: 0,
+    oomKilled: false,
+  });
+  expect(observations[0].host.cleanup.worker).toBe("confirmed");
+  expect(state.operations.some((args) => args[0] === "stop")).toBe(true);
+});
+it("reports actual input cancellation and the explicit deadline observation without replacing its first failure", async () => {
+  const f = await fixture(),
+    observations = [];
+  state.fake = true;
+  state.onSpawn = (child) => {
+    f.controller.abort();
+    setImmediate(() => child.emit("close", null, "SIGINT"));
+  };
+  let error;
+  try {
+    await runKnexWorker({
+      ...f.options,
+      executionDeadlineExceeded: () => true,
+      observeFailure: (value) => observations.push(value),
+    });
+  } catch (failure) {
+    error = failure;
+  }
+  expect(readKnexFailure(error).primary.stage).toBe("worker-parent-abort");
+  expect(observations).toHaveLength(1);
+  expect(observations[0].host.cancellation).toMatchObject({
+    inputAborted: true,
+    executionDeadlineExceeded: true,
+  });
+});
+it("keeps diagnostic absence/invalidity separate from success and observer callback errors separate from X1", async () => {
+  const f = await fixture(),
+    observed = [];
+  state.fake = true;
+  state.stdout = [frame("H", [99, 99]), frame("X", [0])];
+  state.onSpawn = (child) => setImmediate(() => child.emit("close", 0, null));
+  expect(
+    (
+      await runKnexWorker({
+        ...f.options,
+        observeFailure: (value) => observed.push(value),
+      })
+    ).status,
+  ).toBe("completed");
+  expect(observed).toEqual([]);
+  const next = await fixture();
+  state.stdout = [frame("X", [1])];
+  state.onSpawn = (child) =>
+    setImmediate(() => child.emit("close", null, "SIGTERM"));
+  let error,
+    count = 0;
+  try {
+    await runKnexWorker({
+      ...next.options,
+      observeFailure: (value) => {
+        count++;
+        expect(value.host.attachment.signal).toBe("SIGTERM");
+        throw Error("PRIVATE_OBSERVER_ERROR");
+      },
+    });
+  } catch (failure) {
+    error = failure;
+  }
+  expect(count).toBe(1);
+  expect(readKnexFailure(error).primary.stage).toBe("worker-result-nonzero");
+});

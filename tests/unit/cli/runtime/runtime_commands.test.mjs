@@ -257,85 +257,114 @@ Swap: 0 0 0
   );
 });
 
-it("preserves closed host native origin through manager aggregation/serialization without exposing the frame", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "rehearsal-native-failure-"));
-  const managerPath = join(directory, "manager.mjs");
-  const moduleUrl = pathToFileURL(
-    join(
-      process.cwd(),
-      "dist/src/runtime/migrations/native/knex/knex_failure_diagnostic.mjs",
-    ),
-  ).href;
-  await writeFile(
-    managerPath,
-    `import {markKnexFailure,renderKnexFailureFrame} from ${JSON.stringify(moduleUrl)};
+it.each(["valid", "foreign", "duplicate", "invalid"])(
+  "preserves closed host native origin and %s observation through failed manager serialization",
+  async (observationMode) => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "rehearsal-native-failure-"),
+    );
+    const managerPath = join(directory, "manager.mjs");
+    const moduleUrl = pathToFileURL(
+      join(
+        process.cwd(),
+        "dist/src/runtime/migrations/native/knex/knex_failure_diagnostic.mjs",
+      ),
+    ).href;
+    const observationModuleUrl = pathToFileURL(
+      join(
+        process.cwd(),
+        "dist/src/targets/native/knex/knex_worker_observation.mjs",
+      ),
+    ).href;
+    await writeFile(
+      managerPath,
+      `import {markKnexFailure,renderKnexFailureFrame} from ${JSON.stringify(moduleUrl)};
+import {createKnexWorkerFailureObservation,renderKnexWorkerFailureObservation,KNEX_WORKER_FAILURE_OBSERVATION_PREFIX} from ${JSON.stringify(observationModuleUrl)};
 const original=markKnexFailure(new Error('PRIVATE_SQL_PASSWORD_PATH'),{phase:'application',stage:'sql',reason:'execution-unconfirmed'});
 const wrapped=markKnexFailure(new AggregateError([original]),{phase:'application',stage:'cleanup',reason:'cleanup-unconfirmed'});
 console.error(renderKnexFailureFrame(wrapped,process.env.REHEARSAL_NATIVE_FAILURE_NONCE));
+const observation=createKnexWorkerFailureObservation();observation.host.result=1;
+const mode=${JSON.stringify(observationMode)}, nonce=mode==='foreign'?'b'.repeat(64):process.env.REHEARSAL_NATIVE_FAILURE_NONCE;
+let frame=renderKnexWorkerFailureObservation(observation,nonce);
+if(mode==='invalid')frame=KNEX_WORKER_FAILURE_OBSERVATION_PREFIX+JSON.stringify({nonce,observation:{...observation,raw:'PRIVATE_SQL_PASSWORD_PATH'}});
+console.error(frame);if(mode==='duplicate')console.error(frame);
 console.error('Error: The runtime operation failed and its owned runtime could not be removed automatically.');process.exitCode=1;`,
-  );
-  try {
-    await copyFile(
-      join(
-        process.cwd(),
-        "tests/fixtures/rehearsal-project/rehearsal.config.mjs",
-      ),
-      join(directory, "rehearsal.config.mjs"),
     );
-    const commands = createRuntimeCommands({
-      packageRoot: directory,
-      projectRoot: directory,
-      managerPath,
-      getActivePackageFingerprint: () => null,
-      resolveEngineSelection: () => ({
-        context: "fixture-local",
-        endpoint: "unix:///fixture.sock",
-        identity: "a".repeat(64),
-        selectionSource: "default-context",
-        dockerConfig: directory,
-      }),
-    });
-    let failure;
     try {
-      await commands.runManager({
-        action: "migrate",
-        flags: { json: true, plain: true },
-        configPath: "rehearsal.config.mjs",
+      await copyFile(
+        join(
+          process.cwd(),
+          "tests/fixtures/rehearsal-project/rehearsal.config.mjs",
+        ),
+        join(directory, "rehearsal.config.mjs"),
+      );
+      const commands = createRuntimeCommands({
+        packageRoot: directory,
+        projectRoot: directory,
+        managerPath,
+        getActivePackageFingerprint: () => null,
+        resolveEngineSelection: () => ({
+          context: "fixture-local",
+          endpoint: "unix:///fixture.sock",
+          identity: "a".repeat(64),
+          selectionSource: "default-context",
+          dockerConfig: directory,
+        }),
       });
-    } catch (error) {
-      failure = error;
-    }
-    expect(failure).toBeDefined();
-    const serialized = serializeRehearsalError(failure);
-    expect(failure.exitCode).toBe(6);
-    expect(serialized.error).toMatchObject({
-      category: "migration_candidate_failure",
-      code: "MANAGER_MIGRATE_FAILED",
-      context: {
-        action: "migrate",
-        nativeFailure: {
-          schemaVersion: 1,
-          kind: "knex-native-failure",
-          primary: {
-            phase: "application",
-            stage: "sql",
-            reason: "execution-unconfirmed",
-          },
-          cleanup: {
-            phase: "application",
-            stage: "cleanup",
-            reason: "cleanup-unconfirmed",
+      let failure;
+      try {
+        await commands.runManager({
+          action: "migrate",
+          flags: { json: true, plain: true },
+          configPath: "rehearsal.config.mjs",
+        });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeDefined();
+      const serialized = serializeRehearsalError(failure);
+      expect(failure.exitCode).toBe(6);
+      expect(serialized.error).toMatchObject({
+        category: "migration_candidate_failure",
+        code: "MANAGER_MIGRATE_FAILED",
+        context: {
+          action: "migrate",
+          nativeFailure: {
+            schemaVersion: 1,
+            kind: "knex-native-failure",
+            primary: {
+              phase: "application",
+              stage: "sql",
+              reason: "execution-unconfirmed",
+            },
+            cleanup: {
+              phase: "application",
+              stage: "cleanup",
+              reason: "cleanup-unconfirmed",
+            },
           },
         },
-      },
-    });
-    expect(serialized.error.actual).toContain(
-      "original cause could not be safely summarized",
-    );
-    expect(JSON.stringify(serialized)).not.toMatch(
-      /PRIVATE_SQL_PASSWORD_PATH|Rehearsal native failure:|"nonce"/,
-    );
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-});
+      });
+      expect(serialized.error.actual).toContain(
+        "original cause could not be safely summarized",
+      );
+      if (observationMode === "valid")
+        expect(
+          serialized.error.context.knexWorkerFailureObservation,
+        ).toMatchObject({
+          schemaVersion: 1,
+          scope: "diagnostic-only",
+          host: { result: 1 },
+        });
+      else
+        expect(
+          serialized.error.context.knexWorkerFailureObservation,
+        ).toBeUndefined();
+      expect(JSON.stringify(serialized)).not.toMatch(
+        /PRIVATE_SQL_PASSWORD_PATH|Rehearsal native failure:|Knex isolated worker failure observation:|"nonce"/,
+      );
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);

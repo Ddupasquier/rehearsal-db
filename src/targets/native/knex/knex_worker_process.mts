@@ -9,6 +9,13 @@ import { withOperationCancellationShield } from "../../../shared/cancellation.mj
 import { assertKnexWorkerPrograms } from "./knex_worker_programs.mjs";
 import { inspectKnexWorkerEngine } from "./knex_worker_engine.mjs";
 import { assertKnexWorkerIsolation } from "./knex_worker_resources.mjs";
+import {
+  createKnexWorkerFailureObservation,
+  knexObservedExitCode,
+  projectKnexWorkerContainerObservation,
+  projectKnexWorkerReportedHint,
+  type KnexWorkerFailureObservation,
+} from "./knex_worker_observation.mjs";
 /** One strictly inspected disposable worker. No host SDK execution or engine fallback. */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -39,6 +46,8 @@ export const runKnexWorker = async ({
   signal,
   assertOwnedTarget,
   assertBackendGone,
+  observeFailure,
+  executionDeadlineExceeded,
 }: {
   projectRoot: string;
   workspace: string;
@@ -49,13 +58,21 @@ export const runKnexWorker = async ({
   signal: AbortSignal;
   assertOwnedTarget: () => string;
   assertBackendGone: (pid: number) => Promise<void>;
+  observeFailure?: (observation: KnexWorkerFailureObservation) => void;
+  executionDeadlineExceeded?: () => boolean;
 }) => {
   let failureStage: KnexFailureStage = "admission";
+  const observation = createKnexWorkerFailureObservation(),
+    inputSignal = signal;
   return withKnexFailureBoundary(
     () => ({ phase: "worker", stage: failureStage, reason: "unclassified" }),
     async () => {
       const parentSignal = signal;
       const interruption = new AbortController();
+      const interrupt = () => {
+        observation.host.cancellation.interrupted = true;
+        interruption.abort();
+      };
       signal = AbortSignal.any([signal, interruption.signal]);
       if (signal.aborted) throw failure(failureStage);
       if (
@@ -82,18 +99,24 @@ export const runKnexWorker = async ({
         creationDispatched = false,
         cleaned = false,
         original: unknown;
-      const assertWorker = () => {
+      const assertWorker = (observeBeforeCleanup = false) => {
+        if (observeBeforeCleanup) observation.host.container = null;
         revalidate();
         const rows = JSON.parse(docker(["container", "inspect", id!]));
         if (!Array.isArray(rows) || rows.length !== 1)
           throw failure(failureStage);
         const r = rows[0];
-        return assertKnexWorkerIsolation(r, {
+        const verified = assertKnexWorkerIsolation(r, {
           fullId: id!,
           imageId,
           labels,
           mounts,
         });
+        if (observeBeforeCleanup)
+          observation.host.container = projectKnexWorkerContainerObservation(
+            r.State,
+          );
+        return verified;
       };
       try {
         failureStage = "worker-create";
@@ -114,6 +137,7 @@ export const runKnexWorker = async ({
           { flag: "wx", mode: 0o600 },
         );
         creationDispatched = true;
+        observation.host.cleanup.worker = "unconfirmed";
         const created = docker([
           "create",
           "--pull=never",
@@ -154,6 +178,7 @@ export const runKnexWorker = async ({
             "Knex worker creation outcome is unconfirmed; private intent was retained.",
           );
         id = created;
+        observation.workerId = id;
         await writeFile(
           join(workspace, "worker-recovery.json"),
           JSON.stringify({
@@ -173,6 +198,7 @@ export const runKnexWorker = async ({
         assertOwnedTarget();
         await assertKnexWorkerPrograms(workspace);
         failureStage = "worker-attach";
+        observation.host.cleanup.attachment = "unconfirmed";
         const child = spawn(
           "docker",
           [
@@ -227,12 +253,13 @@ export const runKnexWorker = async ({
         });
         let logBytes = 0,
           result: number | null = null,
-          protocolFailure: unknown;
+          protocolFailure: unknown,
+          hintSeen = false;
         failureStage = "worker-protocol";
         const processing = (async () => {
           for await (const { kind, bytes } of decodeKnexFrames(
             child.stdout,
-            "ODCLX",
+            "ODCLXH",
           )) {
             if (kind === "L") {
               if (
@@ -249,7 +276,20 @@ export const runKnexWorker = async ({
               )
                 throw failure("worker-result-invalid");
               result = bytes[0]!;
+              observation.host.result = result as 0 | 1;
               if (result !== 0) remember(failure("worker-result-nonzero"));
+              continue;
+            }
+            if (kind === "H") {
+              observation.workerReported = hintSeen
+                ? {
+                    trust: "untrusted",
+                    state: "invalid",
+                    hint: null,
+                    category: "unclassified",
+                  }
+                : projectKnexWorkerReportedHint(bytes);
+              hintSeen = true;
               continue;
             }
             try {
@@ -262,28 +302,38 @@ export const runKnexWorker = async ({
         })().catch((error) => {
           protocolFailure = preserveKnexFailure(error, failure("worker-frame"));
           remember(protocolFailure);
-          interruption.abort();
+          interrupt();
         });
         let stderr = 0;
         child.stderr.on("data", (bytes: Buffer) => {
           if ((stderr += bytes.length) > 1024 * 1024) {
             protocolFailure = remember(failure("worker-output-limit"));
-            interruption.abort();
+            interrupt();
           }
         });
         let spawnFailure = false;
         child.once("error", () => {
           spawnFailure = true;
           remember(failure("worker-spawn"));
-          interruption.abort();
+          interrupt();
         });
         const exit = new Promise<{
           ok: true;
           value: [number | null, NodeJS.Signals | null];
         }>((resolve) =>
-          child.once("close", (code, signal) =>
-            resolve({ ok: true, value: [code, signal] }),
-          ),
+          child.once("close", (code, signal) => {
+            observation.host.attachment = {
+              closed: true,
+              exitCode: knexObservedExitCode(code),
+              signal:
+                signal === null
+                  ? null
+                  : ["SIGINT", "SIGTERM", "SIGKILL"].includes(signal)
+                    ? (signal as "SIGINT" | "SIGTERM" | "SIGKILL")
+                    : "other",
+            };
+            resolve({ ok: true, value: [code, signal] });
+          }),
         );
         let reaped = false;
         let onInterrupted: () => void = () => {};
@@ -300,7 +350,7 @@ export const runKnexWorker = async ({
         });
         child.stdin.on("error", () => {
           remember(failure("worker-stdin"));
-          interruption.abort();
+          interrupt();
         });
         let innerFailure: unknown;
         try {
@@ -321,7 +371,9 @@ export const runKnexWorker = async ({
           await processing;
           try {
             broker.assertHealthy();
+            observation.host.broker.health = "healthy";
           } catch (error) {
+            observation.host.broker.health = "refused";
             throw preserveKnexFailure(
               firstConcreteFailure ?? error,
               failure("worker-broker-health"),
@@ -371,6 +423,9 @@ export const runKnexWorker = async ({
             }),
           ]);
           detach();
+          observation.host.cleanup.attachment = done
+            ? "confirmed"
+            : "unconfirmed";
           child.stdin.destroy();
           child.stdout.destroy();
           child.stderr.destroy();
@@ -380,8 +435,10 @@ export const runKnexWorker = async ({
             await withOperationCancellationShield(() =>
               broker.close(assertBackendGone),
             );
+            observation.host.broker.cleanup = "confirmed";
           } catch {
             backendClean = false;
+            observation.host.broker.cleanup = "unconfirmed";
           }
           if (!done || !backendClean)
             throw preserveKnexFailure(
@@ -427,7 +484,7 @@ export const runKnexWorker = async ({
           const fullId = id;
           try {
             await withOperationCancellationShield(async () => {
-              const r = assertWorker();
+              const r = assertWorker(true);
               if (r.State?.Running) {
                 try {
                   docker(["stop", "--time", "1", fullId]);
@@ -460,6 +517,7 @@ export const runKnexWorker = async ({
               )
                 throw failure(failureStage);
               cleaned = true;
+              observation.host.cleanup.worker = "confirmed";
             });
           } catch {
             throw markKnexFailure(
@@ -487,5 +545,15 @@ export const runKnexWorker = async ({
         dataDeletionRequested: false as const,
       };
     },
-  );
+  ).catch((error) => {
+    observation.host.cancellation.inputAborted = inputSignal.aborted;
+    try {
+      observation.host.cancellation.executionDeadlineExceeded =
+        executionDeadlineExceeded ? executionDeadlineExceeded() : null;
+      observeFailure?.(observation);
+    } catch {
+      /* Observation failure never replaces the original execution/cleanup error. */
+    }
+    throw error;
+  });
 };

@@ -478,6 +478,31 @@ never enter migration-worker inputs or environment. Worker/provider logs cannot
 supply trusted evidence; unknown errors remain explicitly unclassified. This is
 diagnostic evidence, not permission, cleanup proof or a claim of root cause.
 
+`targets/native/knex/knex_worker_observation.mts` owns one bounded private failure
+observation, separate from the existing native-failure schema and first origin.
+It records attachment exit/signal (not the inner child's OS outcome), result frame,
+cancellation/deadline observations, broker outcome and verified container state,
+with separate attachment/backend/worker cleanup confirmations. Container state is
+the ownership-verified snapshot after attachment/backend cleanup and before
+worker stop/removal. Earlier attachment cleanup may already affect that state;
+it does not establish the inner child's original OS outcome. It is projected only
+after the existing complete ownership/isolation assertion; unknown values remain
+null. A private nonce-bound stderr frame is removed from prose and
+validated by the CLI before its additive `error.context.knexWorkerFailureObservation`.
+Invalid, duplicate or foreign frames cannot supply that context. Older clients can
+ignore the additional context field.
+
+The child can report only fixed input/load/migrate/destroy hints and enumerated
+failure categories over a bounded private pipe. After child exit, at most 25
+milliseconds permits private hint-pipe drain within the unchanged 120-second
+execution deadline, before the existing result/cleanup path. Both hints and
+categories are explicitly untrusted; they never supply trusted provider causes,
+SQLSTATE, permission or acceptance evidence. Invalid or unavailable hints do not
+change execution or its first failure.
+No raw error, message, code/name, SQL, argv, credential, output or container
+`State.Error` is retained. The observation cannot establish whole-target teardown
+or qualification; required independent physical checks remain separate.
+
 `knex_failure_recovery.mts` attempts owned shutdown even if failure recording fails;
 missing metadata never authorizes resetting retained resources. Target failure
 keeps data/recovery, and unknown worker cleanup blocks destructive reuse. See the
