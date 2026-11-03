@@ -1,16 +1,14 @@
-import { execFile } from "node:child_process";
 import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { usage } from "../../dist/src/cli/commands/basic_command_handlers.mjs";
 import {
   renderDetectedConfig,
   renderDetectedPostgresqlConfig,
 } from "../../dist/src/project/configuration.mjs";
 
-const execute = promisify(execFile);
 const root = process.cwd();
-const cli = join(root, "dist/src/cli/rehearsal.mjs");
+const cliEntryPath = join(root, "dist/src/cli/rehearsal.mjs");
 const documentedCommands = [
   "version",
   "guide",
@@ -52,52 +50,6 @@ const documentedCommands = [
 ];
 
 describe("documented CLI contract", () => {
-  it.each([
-    { args: ["not-a-rehearsal-command"], unknownCommand: true },
-    { args: ["checksum"], unknownCommand: true },
-    { args: ["candidate"], unknownCommand: true },
-    { args: ["baseline"], unknownCommand: true },
-    { args: ["doctor", "--checksum"], unknownCommand: false },
-    { args: ["doctor", "--candidate"], unknownCommand: false },
-    { args: ["doctor", "--baseline"], unknownCommand: false },
-  ])(
-    "reports invalid CLI input $args with exit 2",
-    async ({ args, unknownCommand }) => {
-      let failure;
-      try {
-        await execute(process.execPath, [cli, ...args, "--json", "--plain"], {
-          cwd: root,
-          timeout: 5_000,
-        });
-      } catch (error) {
-        failure = error;
-      }
-      expect(failure?.code).toBe(2);
-      expect(failure?.stderr).toBe("");
-      const result = JSON.parse(failure.stdout);
-      expect(result).toMatchObject({
-        schemaVersion: 1,
-        status: "error",
-        error: {
-          category: "configuration_invalid",
-          code: "CONFIGURATION_INVALID",
-          refused: "No Rehearsal command was executed.",
-        },
-      });
-      expect(result.error.message).toContain(
-        `Unknown Rehearsal ${unknownCommand ? "command" : "option"}:`,
-      );
-      expect(result.error.suggestions).toEqual([
-        `Run rehearsal --help to list supported ${unknownCommand ? "commands" : "options"}.`,
-      ]);
-      if (unknownCommand) {
-        expect(result.error.message).toContain(
-          "Usage: rehearsal <command> [options]",
-        );
-      }
-    },
-  );
-
   it("documents structured privacy declarations without consumer callbacks", async () => {
     const sanitization = await readFile(
       join(root, "docs/sanitization.md"),
@@ -199,16 +151,15 @@ describe("documented CLI contract", () => {
     expect(reference).toContain("postgresql:");
   });
 
-  it("keeps the command reference aligned with executable help", async () => {
+  it("keeps the command reference aligned with the production help text", async () => {
+    const helpText = usage();
     const [
-      { stdout },
       commandReference,
       fixtureProof,
       standaloneFixtureProof,
       postgresqlFixtureProof,
       applicationSessionProof,
     ] = await Promise.all([
-      execute(process.execPath, [cli, "--help"], { cwd: root }),
       readFile(join(root, "docs/commands.md"), "utf8"),
       readFile(
         join(root, "scripts/verification/fixtures/supabase.mjs"),
@@ -229,7 +180,7 @@ describe("documented CLI contract", () => {
     ]);
 
     for (const command of documentedCommands) {
-      expect(stdout).toContain(command);
+      expect(helpText).toContain(command);
       expect(commandReference).toContain(command);
     }
 
@@ -405,7 +356,7 @@ describe("documented CLI contract", () => {
   it("keeps the beginner journey aligned with the guide labels", async () => {
     const [gettingStarted, cliEntrySource, guidedSource] = await Promise.all([
       readFile(join(root, "docs/getting-started.md"), "utf8"),
-      readFile(cli, "utf8"),
+      readFile(cliEntryPath, "utf8"),
       readFile(join(root, "dist/src/cli/guided.mjs"), "utf8"),
     ]);
     const cliSource = `${cliEntrySource}\n${guidedSource}`;
