@@ -308,15 +308,15 @@ describe("documented CLI contract", () => {
     expect(guide).not.toContain(
       "Public purchase and download instructions will appear here only after",
     );
-    expect(guide).toContain("rehearsal-vscode/releases/tag/v0.1.27");
-    expect(guide).toContain("rehearsal-vscode/blob/v0.1.27/LICENSE");
+    expect(guide).toContain("rehearsal-vscode/releases/tag/v0.1.28");
+    expect(guide).toContain("rehearsal-vscode/blob/v0.1.28/LICENSE");
     expect(guide).toContain(
       "marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db",
     );
-    expect(guide).toContain("rehearsal-db-0.1.27.vsix");
+    expect(guide).toContain("rehearsal-db-0.1.28.vsix");
     expect(guide).toContain("independent version numbers");
     expect(guide).toContain("This guide targets core");
-    expect(guide).toContain("**2.2.0** and Starter **0.1.27**");
+    expect(guide).toContain("**2.2.1** and Starter **0.1.28**");
     expect(guide.replace(/\s+/gu, " ")).toContain(
       "Confirm the target version appears in its official channel before installing.",
     );
