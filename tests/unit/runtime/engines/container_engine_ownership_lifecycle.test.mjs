@@ -19,7 +19,7 @@ import {
   releaseOwnedColimaWhenIdle,
   writeContainerEngineStartReceipt,
 } from "../../../../dist/src/runtime/engines/container_engine_ownership.mjs";
-import { executeRuntimeTargetStack } from "../../../../dist/src/cli/runtime_stack_execution.mjs";
+import { executeRuntimeTargetStack } from "../../../../dist/src/cli/runtime/runtime_stack_execution.mjs";
 import { acquireProjectOperation } from "../../../../dist/src/shared/operation_guard.mjs";
 
 const execute = promisify(execFile);
@@ -313,7 +313,7 @@ process.exitCode = status;
       }
       const modulePath = join(
         process.cwd(),
-        "dist/src/targets/supabase_environment.mjs",
+        "dist/src/targets/supabase/supabase_environment.mjs",
       );
       const source = `import { ensureLocalContainerRuntime } from ${JSON.stringify(modulePath)};
 try { ensureLocalContainerRuntime({ cwd: ${JSON.stringify(root)}, autoStartColima: true, ownershipReceipt: ${JSON.stringify(owner.input)} }); process.exitCode = 99; }

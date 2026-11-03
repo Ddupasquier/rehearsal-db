@@ -1,24 +1,24 @@
-import { configureKnexApplication } from "./knex_application_configuration.mjs";
-import { restorePostgresqlRows } from "./postgresql_restore.mjs";
+import { configureKnexApplication } from "./native/knex/knex_application_configuration.mjs";
+import { restorePostgresqlRows } from "./postgresql/postgresql_restore.mjs";
 import {
   currentKnexSqlCredentials,
   currentKnexSqlSignal,
   currentKnexSqlRemainingMs,
-} from "./knex_restricted_role.mjs";
+} from "./native/knex/knex_restricted_role.mjs";
 import {
   runKnexRestrictedSql,
   knexRestrictedSqlInvocation,
-} from "./knex_restricted_sql.mjs";
-import { knexCommandBounds } from "./knex_admin_sql.mjs";
-import { createKnexFailureRecovery } from "./knex_failure_recovery.mjs";
+} from "./native/knex/knex_restricted_sql.mjs";
+import { knexCommandBounds } from "./native/knex/knex_admin_sql.mjs";
+import { createKnexFailureRecovery } from "./native/knex/knex_failure_recovery.mjs";
 import { describeMigrationCutoff } from "../runtime/migrations/migration_identity.mjs";
 import {
   assertActiveBaselineUnchanged,
   assertNativeBaselineManifestUnchanged,
 } from "../runtime/lifecycle/baseline_identity.mjs";
-import { createPostgresqlMigrationRuntime } from "./postgresql_migrations.mjs";
-import { requirePrismaTargetBinding } from "./prisma_target_binding.mjs";
-import { createPostgresqlContainerLifecycle } from "./postgresql_container_resume.mjs";
+import { createPostgresqlMigrationRuntime } from "./postgresql/postgresql_migrations.mjs";
+import { requirePrismaTargetBinding } from "./native/prisma_target_binding.mjs";
+import { createPostgresqlContainerLifecycle } from "./postgresql/postgresql_container_resume.mjs";
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -39,9 +39,9 @@ import {
 } from "../runtime/lifecycle/lifecycle_engine.mjs";
 import type { ActiveRuntimeInput } from "../runtime/lifecycle/lifecycle_engine.mjs";
 import { emitRuntimeStatusSnapshot } from "../runtime/lifecycle/status.mjs";
-import { inspectPostgresqlRuntimeStatus } from "./postgresql_status.mjs";
-import { ensureConfiguredContainerRuntime } from "./supabase_environment.mjs";
-import { runPostgresqlCommand } from "./postgresql_process.mjs";
+import { inspectPostgresqlRuntimeStatus } from "./postgresql/postgresql_status.mjs";
+import { ensureConfiguredContainerRuntime } from "./supabase/supabase_environment.mjs";
+import { runPostgresqlCommand } from "./postgresql/postgresql_process.mjs";
 import { parseRuntimeInvocation } from "./target.mjs";
 import { guardRuntimeManagerAction } from "../runtime/lifecycle/runtime_manager_guards.mjs";
 import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";

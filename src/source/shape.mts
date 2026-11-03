@@ -3,15 +3,18 @@
 export {
   validateBaselineShapePolicy,
   shapePolicySha256,
-} from "./shape_policy.mjs";
-export { sampleShapeGraph, shapeKeySha256 } from "./shape_sampler.mjs";
-export { shapeKeyContextFromSchema } from "./shape_keys.mjs";
-export type { ShapeKeyContext, ShapeSourceSchemaTable } from "./shape_keys.mjs";
+} from "./shaping/shape_policy.mjs";
+export { sampleShapeGraph, shapeKeySha256 } from "./shaping/shape_sampler.mjs";
+export { shapeKeyContextFromSchema } from "./shaping/shape_keys.mjs";
+export type {
+  ShapeKeyContext,
+  ShapeSourceSchemaTable,
+} from "./shaping/shape_keys.mjs";
 export {
   createBaselineShapeEvidence,
   verifyBaselineShapeEvidence,
-} from "./shape_evidence.mjs";
-export { readVerifiedBaselineShapeEvidence } from "./shape_files.mjs";
+} from "./shaping/shape_evidence.mjs";
+export { readVerifiedBaselineShapeEvidence } from "./shaping/shape_files.mjs";
 export type {
   BaselineShapePolicy,
   BaselineShapeEvidence,
@@ -21,4 +24,4 @@ export type {
   ShapeGoal,
   ShapeTable,
   ShapeRelationship,
-} from "./shape_contract.mjs";
+} from "./shaping/shape_contract.mjs";

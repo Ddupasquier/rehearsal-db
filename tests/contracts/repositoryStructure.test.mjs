@@ -76,12 +76,12 @@ describe("repository structure", () => {
   });
 
   it("keeps CLI modules focused enough to review independently", async () => {
-    const modules = (await readdir(join(root, "src/cli")))
+    const modules = (await walk(join(root, "src/cli")))
       .filter((file) => file.endsWith(".mts"))
       .sort();
 
     for (const module of modules) {
-      const source = await readFile(join(root, "src/cli", module), "utf8");
+      const source = await readFile(module, "utf8");
       expect(source.split("\n").length, module).toBeLessThanOrEqual(1_000);
     }
   });
@@ -90,14 +90,14 @@ describe("repository structure", () => {
     const entry = await readFile(join(root, "src/cli/rehearsal.mts"), "utf8");
     expect(entry.split("\n").length).toBeLessThanOrEqual(300);
 
-    const handlerModules = (await readdir(join(root, "src/cli"))).filter(
+    const handlerModules = (await walk(join(root, "src/cli"))).filter(
       (file) =>
         file.endsWith("_command_handlers.mts") ||
         file.endsWith("_action_handlers.mts"),
     );
     expect(handlerModules.length).toBeGreaterThanOrEqual(7);
     for (const module of handlerModules) {
-      const source = await readFile(join(root, "src/cli", module), "utf8");
+      const source = await readFile(module, "utf8");
       expect(source.split("\n").length, module).toBeLessThanOrEqual(350);
     }
   });
@@ -111,18 +111,18 @@ describe("repository structure", () => {
     expect(facade.split("\n").length).toBeLessThanOrEqual(50);
 
     const phases = [
-      "configuration_contract.mts",
-      "configuration_discovery.mts",
-      "configuration_schema.mts",
-      "configuration_normalization.mts",
-      "configuration_resolution.mts",
-      "configuration_rendering.mts",
-      "configuration_validation.mts",
-      "project_detection.mts",
+      "configuration/configuration_contract.mts",
+      "configuration/configuration_discovery.mts",
+      "configuration/configuration_schema.mts",
+      "configuration/configuration_normalization.mts",
+      "configuration/configuration_resolution.mts",
+      "configuration/configuration_rendering.mts",
+      "configuration/configuration_validation.mts",
+      "discovery/project_detection.mts",
       "project_discovery.mts",
-      "project_discovery_application.mts",
-      "project_discovery_contract.mts",
-      "project_discovery_metadata.mts",
+      "discovery/project_discovery_application.mts",
+      "discovery/project_discovery_contract.mts",
+      "discovery/project_discovery_metadata.mts",
     ];
     for (const phase of phases) {
       const source = await readFile(join(projectDirectory, phase), "utf8");
@@ -136,13 +136,13 @@ describe("repository structure", () => {
     expect(facade.split("\n").length).toBeLessThanOrEqual(50);
 
     const stages = [
-      "claim_contract.mts",
-      "claim_policy.mts",
-      "claim_plan.mts",
-      "claim_sql.mts",
-      "claim_identity_lookup.mts",
-      "claim_verification.mts",
-      "claim_executor.mts",
+      "claims/claim_contract.mts",
+      "claims/claim_policy.mts",
+      "claims/claim_plan.mts",
+      "claims/claim_sql.mts",
+      "claims/claim_identity_lookup.mts",
+      "claims/claim_verification.mts",
+      "claims/claim_executor.mts",
       "connect.mts",
     ];
     for (const stage of stages) {

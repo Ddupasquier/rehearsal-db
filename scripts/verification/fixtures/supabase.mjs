@@ -23,7 +23,7 @@ import { createCleanProcessEnvironment } from "../../../dist/src/shared/process_
 import {
   readLocalSupabaseEnvironment,
   runLocalCommand,
-} from "../../../dist/src/targets/supabase_environment.mjs";
+} from "../../../dist/src/targets/supabase/supabase_environment.mjs";
 import { removeBaselineArtifactRoot } from "../../../dist/src/baseline/artifact.mjs";
 import { findAvailableRehearsalPorts } from "../../../dist/src/project/setup.mjs";
 import {

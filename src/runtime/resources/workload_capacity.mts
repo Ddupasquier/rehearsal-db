@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import type { RehearsalResourcePolicy } from "../../project/configuration_contract.mjs";
+import type { RehearsalResourcePolicy } from "../../project/configuration/configuration_contract.mjs";
 import type { RuntimeTopologyTarget } from "../lifecycle/topology.mjs";
 import {
   assertLocalDockerContext,

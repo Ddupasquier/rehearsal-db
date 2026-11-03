@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { createPostgresqlMigrationRuntime } from "../../../dist/src/targets/postgresql_migrations.mjs";
+import { createPostgresqlMigrationRuntime } from "../../../dist/src/targets/postgresql/postgresql_migrations.mjs";
 import { drizzleTool } from "../../helpers/drizzle_fixture.mjs";
 const entries = [
   {

@@ -36,10 +36,10 @@ import {
   validateSourceAccessPolicy,
 } from "./access.mjs";
 import type { SourceAccessPolicy } from "./access.mjs";
-import { validateBaselineShapePolicy } from "./shape_policy.mjs";
-import { prepareShapedBaseline } from "./shape_preparation.mjs";
-import { shapeKeyContextFromSchema } from "./shape_keys.mjs";
-import type { BaselineShapePolicy } from "./shape_contract.mjs";
+import { validateBaselineShapePolicy } from "./shaping/shape_policy.mjs";
+import { prepareShapedBaseline } from "./shaping/shape_preparation.mjs";
+import { shapeKeyContextFromSchema } from "./shaping/shape_keys.mjs";
+import type { BaselineShapePolicy } from "./shaping/shape_contract.mjs";
 
 const { Client } = pg;
 const IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/u;

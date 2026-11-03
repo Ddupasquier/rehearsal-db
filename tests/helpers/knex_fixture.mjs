@@ -71,7 +71,7 @@ export const configureKnexFixture = async (f) => {
   const { loadRehearsalConfig } =
     await import("../../dist/src/project/configuration.mjs");
   const { createKnexBaseline } =
-    await import("../../dist/src/baseline/knex_builder.mjs");
+    await import("../../dist/src/baseline/producers/knex_builder.mjs");
   const { inspectMigrationReviewPlan } =
     await import("../../dist/src/runtime/migrations/migration_plan.mjs");
   const cutoff = { kind: "knex", name: "002_index.cjs" };

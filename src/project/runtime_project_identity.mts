@@ -6,7 +6,7 @@ import type { RehearsalRuntimeTargetId } from "../targets/target.mjs";
 import {
   assertIdentifier,
   assertNonEmptyString,
-} from "./configuration_validation.mjs";
+} from "./configuration/configuration_validation.mjs";
 
 const maximumProjectIdLength = (target: RehearsalRuntimeTargetId): number =>
   target === "supabase" ? 40 : 63;

@@ -60,7 +60,7 @@ afterEach(() => {
 });
 it("consumes the nonce before project evaluation and emits exactly one final original/cleanup frame", async () => {
   const diagnostic =
-    await import("../../../../dist/src/runtime/migrations/knex_failure_diagnostic.mjs");
+    await import("../../../../dist/src/runtime/migrations/native/knex/knex_failure_diagnostic.mjs");
   state.failure = diagnostic.markKnexFailure(new Error("PRIVATE_ORIGINAL"), {
     phase: "worker",
     stage: "worker-create",
@@ -107,7 +107,7 @@ it("consumes the nonce before project evaluation and emits exactly one final ori
 
 it("covers known Knex admission before target import without rewriting the thrown error", async () => {
   const diagnostic =
-    await import("../../../../dist/src/runtime/migrations/knex_failure_diagnostic.mjs");
+    await import("../../../../dist/src/runtime/migrations/native/knex/knex_failure_diagnostic.mjs");
   state.failure = new Error("PRIVATE_ADMISSION");
   state.guardFailure = true;
   const nonce = "d".repeat(64);
@@ -130,7 +130,7 @@ it("covers known Knex admission before target import without rewriting the throw
 
 it("identifies unclassified target execution separately from pre-target admission", async () => {
   const diagnostic =
-    await import("../../../../dist/src/runtime/migrations/knex_failure_diagnostic.mjs");
+    await import("../../../../dist/src/runtime/migrations/native/knex/knex_failure_diagnostic.mjs");
   state.failure = new Error("PRIVATE_TARGET_FAILURE");
   const nonce = "e".repeat(64);
   process.env.REHEARSAL_NATIVE_FAILURE_NONCE = nonce;

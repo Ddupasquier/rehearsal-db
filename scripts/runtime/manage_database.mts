@@ -7,7 +7,7 @@
 import {
   markKnexFailureBoundary,
   renderKnexFailureFrame,
-} from "../../src/runtime/migrations/knex_failure_diagnostic.mjs";
+} from "../../src/runtime/migrations/native/knex/knex_failure_diagnostic.mjs";
 import { loadRehearsalConfig } from "../../src/project/configuration.mjs";
 import { parseRuntimeInvocation } from "../../src/targets/target.mjs";
 import { runRuntimeTarget } from "../../src/targets/driver.mjs";

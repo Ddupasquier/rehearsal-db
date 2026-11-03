@@ -1,7 +1,7 @@
 import {
   addKnexMigrationDiscovery,
   addDrizzleMigrationDiscovery,
-} from "./project_discovery_migration_tool.mjs";
+} from "./discovery/project_discovery_migration_tool.mjs";
 /**
  * Build a read-only, explainable profile from bounded project metadata.
  *
@@ -11,10 +11,10 @@ import {
  */
 
 import { resolve } from "node:path";
-import { addPrismaMigrationDiscovery } from "./project_discovery_migration_tool.mjs";
+import { addPrismaMigrationDiscovery } from "./discovery/project_discovery_migration_tool.mjs";
 import { inspectContainerEngineOptions } from "../runtime/engines/engine_discovery.mjs";
 import type { ContainerEngineDiscovery } from "../runtime/engines/engine_discovery.mjs";
-import { discoverApplication } from "./project_discovery_application.mjs";
+import { discoverApplication } from "./discovery/project_discovery_application.mjs";
 import type {
   ContainerEngineProbe,
   DecisionDiscoveryItem,
@@ -23,7 +23,7 @@ import type {
   PackageManifest,
   ProjectDiscoveryResult,
   SuggestedDiscoveryItem,
-} from "./project_discovery_contract.mjs";
+} from "./discovery/project_discovery_contract.mjs";
 import {
   PROJECT_DISCOVERY_SCHEMA_VERSION,
   decision,
@@ -31,7 +31,7 @@ import {
   isRecord,
   recordStrings,
   suggested,
-} from "./project_discovery_contract.mjs";
+} from "./discovery/project_discovery_contract.mjs";
 import {
   discoverRootConfigPaths,
   localConfigHints,
@@ -39,9 +39,9 @@ import {
   normalizedProjectName,
   probeContainerEngineWithoutStarting,
   readBoundedProjectFile,
-} from "./project_discovery_metadata.mjs";
+} from "./discovery/project_discovery_metadata.mjs";
 
-export { PROJECT_DISCOVERY_SCHEMA_VERSION } from "./project_discovery_contract.mjs";
+export { PROJECT_DISCOVERY_SCHEMA_VERSION } from "./discovery/project_discovery_contract.mjs";
 export type {
   ContainerEngineProbe,
   DecisionDiscoveryItem,
@@ -52,8 +52,8 @@ export type {
   DiscoveryValue,
   ProjectDiscoveryResult,
   SuggestedDiscoveryItem,
-} from "./project_discovery_contract.mjs";
-export { probeContainerEngineWithoutStarting } from "./project_discovery_metadata.mjs";
+} from "./discovery/project_discovery_contract.mjs";
+export { probeContainerEngineWithoutStarting } from "./discovery/project_discovery_metadata.mjs";
 
 export const discoverProjectProfile = async ({
   projectRoot = process.cwd(),

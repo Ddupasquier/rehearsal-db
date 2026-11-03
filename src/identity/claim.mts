@@ -4,7 +4,7 @@ export type {
   IdentityClaimPlan,
   IdentityDeclaration,
   IdentityPolicy,
-} from "./claim_contract.mjs";
-export { applyIdentityClaim } from "./claim_executor.mjs";
-export { createIdentityClaimPlan } from "./claim_plan.mjs";
-export { validateIdentityPolicy } from "./claim_policy.mjs";
+} from "./claims/claim_contract.mjs";
+export { applyIdentityClaim } from "./claims/claim_executor.mjs";
+export { createIdentityClaimPlan } from "./claims/claim_plan.mjs";
+export { validateIdentityPolicy } from "./claims/claim_policy.mjs";

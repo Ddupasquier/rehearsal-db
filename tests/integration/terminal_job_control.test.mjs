@@ -32,7 +32,7 @@ const cancellationModule = pathToFileURL(
   join(process.cwd(), "dist/src/shared/cancellation.mjs"),
 ).href;
 const terminalModule = pathToFileURL(
-  join(process.cwd(), "dist/src/cli/terminal.mjs"),
+  join(process.cwd(), "dist/src/cli/presentation/terminal.mjs"),
 ).href;
 const diagnosticsModule = pathToFileURL(
   join(process.cwd(), "dist/src/shared/diagnostics.mjs"),

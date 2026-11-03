@@ -7,24 +7,12 @@ Machine-specific suite drive placement has one local owner document, discoverabl
 through `dt b open --json`. It does not change these repository boundaries or authorize
 independent migration of shared temporary coordination, fixtures or recovery evidence.
 
+The [source layout](https://github.com/Ddupasquier/rehearsal-db/blob/main/src/README.md) is the authoritative map of source folders and
+their responsibilities. This guide owns the contracts between those domains.
+
 ```text
 rehearsal-db/
-├── src/                    TypeScript product source
-│   ├── application/       application lifecycle and HTTP proofs
-│   ├── baseline/          baseline creation and validation; privacy/ owns privacy stages
-│   ├── cli/               the `rehearsal` executable
-│   ├── identity/          local account and Storage association
-│   ├── project/           configuration, setup, and support
-│   ├── runtime/
-│   │   ├── engines/       engine discovery, selection and VM shutdown
-│   │   ├── lifecycle/     plans, topology, ownership, markers and sessions
-│   │   ├── resources/     inventory, retirement, caches and workload coordination
-│   │   ├── migrations/    history, review, insights, impact and native toolchains
-│   │   ├── recovery/      restore and reviewed stale-environment recovery
-│   │   └── managed/       managed prototype and its worker
-│   ├── shared/            small target-neutral utilities
-│   ├── source/            approved source access and refresh
-│   └── targets/           PostgreSQL and Supabase adapters
+├── src/                    TypeScript product source; folder map in src/README.md
 ├── scripts/
 │   ├── build/             clean TypeScript compilation helpers
 │   ├── install/           TypeScript install-hook source
@@ -96,6 +84,10 @@ typed registry and produce the same result contract:
   `update_advisory.mts` bounds public release metadata, private preferences and
   installation-origin checks. Neither participates in passive JSON inspection.
 - `runtime_commands.mts` coordinates local runtimes and project proofs.
+- `cli/presentation/cleanup_rendering.mts` owns human cleanup previews and outcomes;
+  it never performs cleanup. The existing `renderers.mts` entry retains its exports.
+- `cli/presentation/failure_output.mts` owns CLI failure normalization and human/JSON
+  formatting. The executable retains output-stream selection and the process exit code.
 - `runtime_readiness_rendering.mts` presents shared engine choices and doctor readiness.
   `engine_discovery.mts` owns bounded host/engine observations; `local_docker_context.mts`
   owns explicit selection and local endpoint binding. Support reports reuse those
@@ -143,7 +135,7 @@ baseline inputs keep that path null. This is not attribution of the failing SQL'
 origin: included scripts, functions and triggers can fail elsewhere. SQL line and column
 remain null. Supabase batch execution currently supplies no file attribution, and
 ambiguous or unavailable evidence is not inferred from candidate count or provider text.
-`cli/failure_output.mts` preserves the outer category and cleanup warning when a
+`cli/presentation/failure_output.mts` preserves the outer category and cleanup warning when a
 stack failure wraps the original migration error. It projects only a validated fixed
 diagnosis from at most four original-error wrappers, never cleanup siblings or causes.
 Session caches never appear in the public parsed-flags type.
@@ -157,7 +149,7 @@ existing family, or in a new focused family when it represents a genuinely separ
 responsibility.
 
 Static Migration Insights has a separate additive contract from migration-plan v1 and
-post-failure SQLSTATE diagnosis. `runtime/migrations/migration_insights_input.mts` owns bounded
+post-failure SQLSTATE diagnosis. `runtime/migrations/inspection/migration_insights_input.mts` owns bounded
 regular-file reads and private exact-input text; the existing inventory, baseline-prefix
 and topology owners still calculate the candidate digest. Repeated shared-directory
 inputs must keep the same raw hash; findings retrieve text only by its expected hash.
@@ -171,7 +163,7 @@ coverage/unknown states. The editor consumes that contract; it must not reimplem
 analysis or infer runtime measurements from static warnings.
 
 Migration impact is a separate optional contract, not a new rehearsal gate.
-`runtime/migrations/migration_impact_plan.mts` recognizes only bounded simple SQL forms and retains
+`runtime/migrations/impact/migration_impact_plan.mts` recognizes only bounded simple SQL forms and retains
 private relation/column specifications; it does not execute migrations or claim SQL
 validity. `migration_impact_queries.mts` validates those specifications and generates
 fixed, identifier-quoted aggregate queries. `migration_impact_catalog.mts` owns the
@@ -215,7 +207,7 @@ is a prerequisite for ordinary `run` or `migrate`, and both remain free CLI feat
 ## Configuration pipeline
 
 The stable `project/configuration.mts` facade keeps existing imports compatible while
-configuration work moves through explicit phases:
+configuration work moves through explicit phases under `project/configuration/`:
 
 1. `configuration_discovery.mts` selects one supported project-owned config path.
 2. `configuration_schema.mts` validates the raw object shape and rejects unknown keys.
@@ -225,7 +217,7 @@ configuration work moves through explicit phases:
 
 The `project_discovery.mts` facade orchestrates the separate read-only Project Profile.
 Its versioned contract, bounded metadata access, and application inference live in
-focused `project_discovery_*` modules. They never import project modules and classify
+focused modules under `project/discovery/`. They never import project modules and classify
 output as detected, suggested, or requiring a human decision. Discovery may report
 proposed configuration fields, but setup and configuration rendering remain the only
 owners that can prepare writes. Editor clients consume `rehearsal discover --json`;
@@ -267,7 +259,7 @@ data/Storage preservation checks. It does not infer a rollback from a failed mig
 
 ## Runtime lifecycle
 
-Explicit native Prisma configuration selects `runtime/migrations/prisma_history.mts` for
+Explicit native Prisma configuration selects `runtime/migrations/native/prisma/prisma_history.mts` for
 bounded raw-byte history and native-ledger validation. The toolchain owner binds
 the installed execution dependencies; `native_migration_contract.mts` distinguishes
 portable baseline history from the current execution binding. Read-only active
@@ -283,7 +275,7 @@ rehash or newly verify row payloads and is not applied to SQL formats 1/2. Prepa
 native schema/config bytes are checked again after execution. Same-owner mutation
 races are not an atomic-openat or filesystem-sandbox guarantee. Baseline format 3
 preserves native paths and lock bytes; existing SQL formats remain unchanged.
-`targets/postgresql_migrations.mts` owns SQL/native dispatch and exclusive private
+`targets/postgresql/postgresql_migrations.mts` owns SQL/native dispatch and exclusive private
 failure-receipt creation; the driver retains stopped-container cleanup in `finally`.
 `prisma_migration_process.mts` owns only private-config, bounded native execution
 against the exact target proven by `prisma_target_binding.mts`. A native migration
@@ -307,6 +299,13 @@ containers and SQL setup on one side; Supabase CLI, Auth, Storage, and generated
 on the other. An ordinary `stop` never enters rollback or discard, so later `start`
 preserves the sandbox database and Storage contents.
 
+Within `targets/postgresql/`, `postgresql_resume_protocol.mts` owns retained-container
+contracts, binding checks and reconstruction sequencing through an injected adapter.
+`postgresql_container_resume.mts` owns private recovery receipts and real Docker
+lifecycle probes, reusing those checks and retaining its existing exports. The protocol
+keeps cancellation, deadlines and startup-ownership capture with reconstruction;
+the adapter remains responsible for its actual engine and filesystem observations.
+
 CLI command completion and database lifecycle are separate. A successful `run` can finish
 and release its project lock while the configured keep-until-stop database remains
 running. The project-owned CLI proof has its own primary `application-proof` stage;
@@ -323,8 +322,8 @@ boundary rather than copying an existing driver's orchestration.
 
 Explicit configuration selects native producers; metadata discovery never imports
 project migration configuration, schema or environment files. Prisma and the
-separate Drizzle integration share `runtime/migrations/native_toolchain*` for complete bounded
-resolved package fingerprints and `targets/native_migration_process.mts` for the
+separate Drizzle integration share `runtime/migrations/native/native_toolchain*` for complete bounded
+resolved package fingerprints and `targets/native/native_migration_process.mts` for the
 private process/cancellation/target/source/baseline boundary. Producer recipes own
 their exact file inventory, generated closed configuration and actual CLI argv.
 No recipe generates or repairs source history. Format 3 remains Prisma-specific;
@@ -339,7 +338,7 @@ The [auth-platform contract proposal](https://github.com/Ddupasquier/rehearsal-d
 and separates future platform trust from application sign-in and account association.
 
 The stable `identity/claim.mts` facade exposes policy validation, deterministic planning,
-and confirmed execution while keeping those responsibilities separate:
+and confirmed execution while keeping those responsibilities separate in `identity/claims/`:
 
 1. `claim_contract.mts` defines the normalized policy, plan, database, and receipt types.
 2. `claim_policy.mts` validates and normalizes the reviewed declaration.
@@ -393,21 +392,21 @@ code so the same JavaScript boundary consumers install is exercised locally.
 
 ## Isolated native Knex candidate
 
-`runtime/migrations/knex_history.mts` owns bounded native names, raw code/support inventory and
+`runtime/migrations/native/knex/knex_history.mts` owns bounded native names, raw code/support inventory and
 ledger-prefix validation. `knex_toolchain.mts` uses the shared native dependency
 owner to bind and copy the actual Knex/pg closure without executing it. Format 5's
 `knex_baseline_contract.mts` keeps source ledger provenance separate from current
 code hashes and explicitly unavailable historical checksums. Existing formats and
 native producers retain their contracts.
 
-`targets/knex_migration_process.mts` stages reviewed inputs and shared closure,
+`targets/native/knex/knex_migration_process.mts` stages reviewed inputs and shared closure,
 rechecks source/copy/baseline/target, and calls only the disposable worker.
 `knex_worker_engine.mts` owns selected local daemon and fixed-image preflight before
 reset/role mutation; `knex_worker_resources.mts` checks actual isolation metadata.
 `knex_worker_process.mts` owns exact Docker ID, framing attachment and bounded
 cleanup. `knex_worker_bootstrap.mts` supplies immutable worker programs: its private
 Unix socket relays native pg traffic while genuine Knex runs in a separate child.
-`runtime/migrations/knex_worker_protocol.mts` and `knex_pg_broker.mts` own bounded backpressure,
+`runtime/migrations/native/knex/knex_worker_protocol.mts` and `knex_pg_broker.mts` own bounded backpressure,
 fixed destination and PostgreSQL startup/session verification. No migration is
 imported on the host, translated, unlocked or repaired.
 
@@ -469,7 +468,7 @@ These implementation contracts alone do not demonstrate PostgreSQL isolation.
 Qualification requires independent real SDK, SQL-privilege, data-preservation and
 adversarial cancellation acceptance for the exact release and supported environment;
 mocked tests and builds do not establish that evidence.
-`runtime/migrations/knex_failure_diagnostic.mts` owns closed host-generated native failure
+`runtime/migrations/native/knex/knex_failure_diagnostic.mts` owns closed host-generated native failure
 phase/stage/reason evidence. Private error branding and bounded aggregate traversal
 preserve the first origin separately from cleanup uncertainty. The target manager
 emits one invocation-nonce-bound frame; the CLI validates it before text summarization
