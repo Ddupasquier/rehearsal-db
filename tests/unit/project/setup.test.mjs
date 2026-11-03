@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { createServer } from "node:net";
 import {
   chmod,
@@ -13,8 +12,8 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { executePublicCli } from "../../helpers/public_cli.mjs";
 import {
   applyRehearsalSetup,
   assertSupportedRehearsalNodeRuntime,
@@ -26,7 +25,7 @@ import {
 } from "../../../dist/src/project/setup.mjs";
 
 const roots = [];
-const execute = promisify(execFile);
+const execute = executePublicCli;
 const cliPath = join(process.cwd(), "dist/src/cli/rehearsal.mjs");
 
 const makeProject = async () => {
@@ -217,6 +216,7 @@ describe("guided Rehearsal setup", () => {
       join(root, "node_modules/@rehearsal-db/core"),
       "dir",
     );
+    console.log("RDB196_SETUP_PHASE=preview");
     const preview = JSON.parse(
       (
         await execute(process.execPath, [cliPath, "setup", "--json"], {
@@ -235,6 +235,7 @@ describe("guided Rehearsal setup", () => {
       stat(join(root, "rehearsal.config.mjs")),
     ).rejects.toMatchObject({ code: "ENOENT" });
 
+    console.log("RDB196_SETUP_PHASE=first-write");
     const written = JSON.parse(
       (
         await execute(
@@ -250,6 +251,7 @@ describe("guided Rehearsal setup", () => {
     await expect(
       stat(join(root, "rehearsal.config.mjs")),
     ).resolves.toBeDefined();
+    console.log("RDB196_SETUP_PHASE=repeat-write");
     const repeated = JSON.parse(
       (
         await execute(
