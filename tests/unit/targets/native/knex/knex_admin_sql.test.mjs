@@ -31,6 +31,7 @@ import {
   runKnexAdminSql,
   knexCommandBounds,
 } from "../../../../../dist/src/targets/native/knex/knex_admin_sql.mjs";
+import { runPostgresqlCommand } from "../../../../../dist/src/targets/postgresql/postgresql_process.mjs";
 afterEach(() => {
   state.calls = [];
   state.fail = false;
@@ -98,6 +99,65 @@ it("adds bounds only to selected Knex Docker commands and preserves existing Pos
     timeoutMs: 45000,
   });
   expect(knexCommandBounds("knex", ["exec", "owned", "psql"])).toEqual({});
+});
+
+it.each(
+  [
+    ["info", "--format", "{{json .ID}}"],
+    ["--host", "unix:///owned", "info", "--format", "{{json .ID}}"],
+    [
+      "container",
+      "ls",
+      "--all",
+      "--no-trunc",
+      "--format",
+      "{{.ID}}\t{{.Names}}",
+    ],
+    ["volume", "ls", "--format", "{{.Name}}"],
+  ].map((args) => [args]),
+)(
+  "preserves the explicit scoped metadata allowance through PostgreSQL transport for %j",
+  (args) => {
+    runPostgresqlCommand("docker", args, {
+      cwd: "/owned/project",
+      capture: true,
+      timeoutMs: 5000,
+    });
+    expect(state.calls).toHaveLength(1);
+    expect(state.calls[0].options.timeout).toBe(5000);
+    expect(state.calls[0].options.killSignal).toBe("SIGKILL");
+  },
+);
+it.each(
+  [
+    [
+      "volume",
+      "create",
+      "--label",
+      "com.rehearsal-db.project=owned",
+      "owned-data",
+    ],
+    ["volume", "rm", "--force", "owned-data"],
+    ["container", "rm", "--force", "a".repeat(64)],
+  ].map((args) => [args]),
+)(
+  "preserves the existing mutation allowance through PostgreSQL transport for %j",
+  (args) => {
+    runPostgresqlCommand("docker", args, {
+      cwd: "/owned/project",
+      capture: true,
+      timeoutMs: 45000,
+    });
+    expect(state.calls).toHaveLength(1);
+    expect(state.calls[0].options.timeout).toBe(45000);
+    expect(state.calls[0].options.killSignal).toBe("SIGKILL");
+  },
+);
+it("keeps other producer and unmatched command timeouts unchanged", () => {
+  expect(
+    knexCommandBounds("prisma", ["info", "--format", "{{json .ID}}"]).timeoutMs,
+  ).toBeUndefined();
+  expect(knexCommandBounds("knex", ["info"]).timeoutMs).toBeUndefined();
 });
 
 it("pins catalog-only startup independently of ambient PostgreSQL startup options", () => {

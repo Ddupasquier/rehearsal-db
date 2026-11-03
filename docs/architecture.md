@@ -306,6 +306,18 @@ lifecycle probes, reusing those checks and retaining its existing exports. The p
 keeps cancellation, deadlines and startup-ownership capture with reconstruction;
 the adapter remains responsible for its actual engine and filesystem observations.
 
+PostgreSQL resource presence and mutation use the scoped adapter in
+`targets/docker_resource_ownership.mts`. Failed inspection alone never proves
+absence: only a successful bounded complete exact-name inventory can do so.
+Malformed, still-present or unavailable metadata and changed bound daemon identity
+refuse before reuse/removal; local recovery files remain when state is unknown.
+Explicit reset may replace its proven owned volume. Fresh creation rechecks volume
+ownership and identity before mounting, while retained-shell resume still requires
+the original volume creation identity and never falls back to reset.
+These cooperative checks assume the existing trusted local engine/operator boundary.
+Docker volume mutations remain name-based; the checks do not atomically exclude
+replacement by an external Docker administrator.
+
 CLI command completion and database lifecycle are separate. A successful `run` can finish
 and release its project lock while the configured keep-until-stop database remains
 running. The project-owned CLI proof has its own primary `application-proof` stage;

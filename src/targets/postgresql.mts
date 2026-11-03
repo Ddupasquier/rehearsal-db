@@ -46,7 +46,7 @@ import { parseRuntimeInvocation } from "./target.mjs";
 import { guardRuntimeManagerAction } from "../runtime/lifecycle/runtime_manager_guards.mjs";
 import { runtimeDockerEnvironment } from "../runtime/engines/local_docker_context.mjs";
 import { runPostgresqlStartupCommand } from "./port_start_failure.mjs";
-import { assertDockerResourceLabels } from "./docker_resource_ownership.mjs";
+import { createPostgresqlResourceOwnership } from "./docker_resource_ownership.mjs";
 import {
   buildRuntimeFinalizationSql,
   buildRuntimePostSchemaSql,
@@ -102,6 +102,7 @@ interface RunCommandOptions {
   readonly capture?: boolean;
   readonly input?: string;
   readonly allowFailure?: boolean;
+  readonly timeoutMs?: number;
 }
 
 interface DatabaseEnvironment {
@@ -184,58 +185,59 @@ const assertDocker = () => {
   });
 };
 
-const inspectResourceLabel = (kind: "container" | "volume", name: string) =>
-  runCommand(
-    "docker",
-    [
-      kind,
-      "inspect",
-      "--format",
-      kind === "container" ? "{{json .Config.Labels}}" : "{{json .Labels}}",
-      name,
-    ],
-    { allowFailure: true },
-  );
-
-const resourceExists = (kind: "container" | "volume", name: string): boolean =>
-  runCommand("docker", [kind, "inspect", name], { allowFailure: true })
-    .status === 0;
+const resourceOwnership = createPostgresqlResourceOwnership({
+  projectId,
+  run: (args) =>
+    runCommand("docker", args, {
+      capture: true,
+      allowFailure: true,
+      timeoutMs: ["create", "rm"].includes(args[1] ?? "") ? 45000 : 5000,
+    }),
+  engineIdentity: () => {
+    const environment = runtimeDockerEnvironment(),
+      info = runCommand("docker", ["info", "--format", "{{json .ID}}"], {
+        allowFailure: true,
+        timeoutMs: 5000,
+      });
+    if (
+      !environment.DOCKER_HOST ||
+      info.error ||
+      info.status !== 0 ||
+      Buffer.byteLength(info.stdout) > 1024
+    )
+      throw new Error("The bound PostgreSQL engine could not be verified.");
+    const daemon: unknown = JSON.parse(info.stdout);
+    if (
+      typeof daemon !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9:_.-]{0,255}$/u.test(daemon) ||
+      (process.env.REHEARSAL_DOCKER_DAEMON_ID &&
+        daemon !== process.env.REHEARSAL_DOCKER_DAEMON_ID)
+    )
+      throw new Error("The bound PostgreSQL engine could not be verified.");
+    return JSON.stringify([
+      environment.DOCKER_HOST,
+      environment.DOCKER_CONFIG ?? null,
+      daemon,
+    ]);
+  },
+});
 
 const assertOwnedResource = (
   kind: "container" | "volume",
   name: string,
-): boolean => {
-  if (!resourceExists(kind, name)) return false;
-  const inspection = inspectResourceLabel(kind, name);
-  if (inspection.status !== 0) {
+): void => {
+  if (resourceOwnership.inspect(kind, name) === null)
     throw new Error(
-      `Refusing to manage Docker ${kind} ${name} because it is not owned by this Rehearsal project.`,
+      "The exact owned PostgreSQL resource is absent; no resource was reused.",
     );
-  }
-  assertDockerResourceLabels({
-    labels: JSON.parse(inspection.stdout),
-    expectedLabel: "com.rehearsal-db.project",
-    projectId,
-  });
-  return true;
 };
 
 const removeRuntime = async () => {
   assertRuntimePath();
-  if (commandSucceeds("docker", ["info"])) {
-    const ownsContainer = assertOwnedResource("container", containerName);
-    const ownsVolume = assertOwnedResource("volume", volumeName);
-    if (ownsContainer) {
-      runCommand("docker", ["container", "rm", "--force", containerName], {
-        capture: true,
-      });
-    }
-    if (ownsVolume) {
-      runCommand("docker", ["volume", "rm", "--force", volumeName], {
-        capture: true,
-      });
-    }
-  }
+  const ownedContainer = resourceOwnership.inspect("container", containerName),
+    ownedVolume = resourceOwnership.inspect("volume", volumeName);
+  if (ownedContainer) resourceOwnership.remove(ownedContainer);
+  if (ownedVolume) resourceOwnership.remove(ownedVolume);
   await rm(runtimeWorkdir, { recursive: true, force: true });
   await rm(environmentPath, { force: true });
 };
@@ -597,9 +599,8 @@ const createContainer = async (password: string): Promise<void> => {
       `The configured local PostgreSQL image is unavailable: ${image}. Pull it explicitly, review it, then retry.`,
     );
   }
-  runCommand("docker", ["volume", "create", "--label", label, volumeName], {
-    capture: true,
-  });
+  const createdVolume = resourceOwnership.createVolume(volumeName);
+  resourceOwnership.assertUnchanged(createdVolume);
   runPostgresqlStartupCommand(runCommand, [
     "run",
     "--detach",
