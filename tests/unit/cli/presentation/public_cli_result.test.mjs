@@ -100,30 +100,89 @@ describe("public CLI test failure diagnostics", () => {
     expect(result.stdout).toBe("expected output\n");
   });
 
-  it("replaces a real failing child error without argv, output or cause", async () => {
+  it.each([
+    undefined,
+    "setup-preview",
+    "setup-first-write",
+    "setup-repeat-write",
+  ])(
+    "replaces a real failing child error with only the selected phase (%s)",
+    async (diagnosticPhase) => {
+      let observed;
+      try {
+        await executePublicCli(
+          process.execPath,
+          [
+            "-e",
+            `process.stdout.write(${JSON.stringify(refusal(canary))}); process.stderr.write(${JSON.stringify(canary)}); process.exitCode=9;`,
+          ],
+          { env: createCleanProcessEnvironment(), diagnosticPhase },
+        );
+      } catch (error) {
+        observed = error;
+      }
+      expect(observed).toBeInstanceOf(Error);
+      expect(observed.message).toContain('"exitCode":9');
+      expect(observed.message).toContain(
+        '"category":"runtime_dependency_failure"',
+      );
+      if (diagnosticPhase === undefined) {
+        expect(observed.message).not.toContain('"phase"');
+      } else {
+        expect(observed.message).toContain(
+          `"phase":${JSON.stringify(diagnosticPhase)}`,
+        );
+      }
+      expect(observed.message).not.toContain(canary);
+      expect(observed.cause).toBeUndefined();
+      expect(observed.stdout).toBeUndefined();
+      expect(observed.stderr).toBeUndefined();
+      expect(observed.cmd).toBeUndefined();
+    },
+  );
+
+  it.each([canary, { private: canary }, [canary], null, 1, true, ""])(
+    "refuses an unsupported phase without echoing it (%#)",
+    async (diagnosticPhase) => {
+      await expect(
+        executePublicCli(
+          process.execPath,
+          [
+            "-e",
+            'process.stdout.write("unexpected execution"); process.exitCode=9;',
+          ],
+          { env: createCleanProcessEnvironment(), diagnosticPhase },
+        ),
+      ).rejects.toThrow(/^Unsupported public CLI diagnostic phase\.$/);
+    },
+  );
+
+  it("combines a selected phase with a real child safe port-race refusal", async () => {
+    const stdout = refusal(
+      "Rehearsal setup ports became occupied after the preview (58320, 58321); rerun setup to choose another local port block.",
+    );
     let observed;
     try {
       await executePublicCli(
         process.execPath,
         [
           "-e",
-          `process.stdout.write(${JSON.stringify(refusal(canary))}); process.stderr.write(${JSON.stringify(canary)}); process.exitCode=9;`,
+          `process.stdout.write(${JSON.stringify(stdout)}); process.exitCode=9;`,
         ],
-        { env: createCleanProcessEnvironment() },
+        {
+          env: createCleanProcessEnvironment(),
+          diagnosticPhase: "setup-first-write",
+        },
       );
     } catch (error) {
       observed = error;
     }
     expect(observed).toBeInstanceOf(Error);
+    expect(observed.message).toContain('"phase":"setup-first-write"');
+    expect(observed.message).toContain('"reason":"setup_port_race"');
     expect(observed.message).toContain('"exitCode":9');
-    expect(observed.message).toContain(
-      '"category":"runtime_dependency_failure"',
-    );
     expect(observed.message).not.toContain(canary);
-    expect(observed.cause).toBeUndefined();
-    expect(observed.stdout).toBeUndefined();
-    expect(observed.stderr).toBeUndefined();
-    expect(observed.cmd).toBeUndefined();
+    expect(observed.message).not.toContain("58320");
   });
 
   it("bounds real child output without forwarding its contents", async () => {
