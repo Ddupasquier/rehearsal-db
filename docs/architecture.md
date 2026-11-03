@@ -151,6 +151,8 @@ bytes; an incomplete trailing sequence becomes a replacement character when the 
 closes. If a process floods its byte boundary, Rehearsal sends TERM and forcibly reaps
 only that owned process group after one second; a child ignoring TERM cannot leave the
 operation hanging indefinitely.
+Application sessions retain no diagnostic text; each stream reports total observed raw
+bytes, saturated at `Number.MAX_SAFE_INTEGER`.
 
 Repository contracts keep the process entry point at 300 lines or fewer and every
 handler-family module at 350 lines or fewer. A new command belongs in the narrowest

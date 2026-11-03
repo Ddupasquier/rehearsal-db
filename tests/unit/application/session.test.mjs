@@ -56,6 +56,21 @@ const applicationCommandFixture = async () => {
   };
 };
 
+const withDiagnosticChunks = async (chunks, check) => {
+  const fixture = await applicationCommandFixture();
+  const session = await startApplicationSession({
+    ...fixture,
+    command: "fixture-program",
+  });
+  const child = fixture.spawnImplementation.mock.results[0].value;
+  try {
+    for (const [stream, chunk] of chunks) child[stream].emit("data", chunk);
+    await check(session, child);
+  } finally {
+    await session.stop();
+  }
+};
+
 afterEach(async () => {
   await Promise.all(
     servers
@@ -68,6 +83,103 @@ afterEach(async () => {
 });
 
 describe("package-owned application sessions", () => {
+  describe.each(["stdout", "stderr"])("%s diagnostic byte counts", (stream) => {
+    it.each(["é", "€", "🌱"])(
+      "counts split UTF-8 %s as its original bytes",
+      async (text) => {
+        const bytes = Buffer.from(text);
+        await withDiagnosticChunks(
+          [...bytes].map((byte) => [stream, Buffer.from([byte])]),
+          (session) => {
+            expect(session.diagnostics()).toEqual({
+              stdoutBytes: stream === "stdout" ? bytes.length : 0,
+              stderrBytes: stream === "stderr" ? bytes.length : 0,
+            });
+          },
+        );
+      },
+    );
+
+    it.each([
+      { bytes: [0xc3] },
+      { bytes: [0xe2, 0x82] },
+      { bytes: [0xf0, 0x9f, 0x8c] },
+    ])(
+      "counts incomplete trailing bytes $bytes without decoding",
+      async ({ bytes }) => {
+        await withDiagnosticChunks(
+          bytes.map((byte) => [stream, Buffer.from([byte])]),
+          (session, child) => {
+            child[stream].emit("end");
+            expect(session.diagnostics()).toEqual({
+              stdoutBytes: stream === "stdout" ? bytes.length : 0,
+              stderrBytes: stream === "stderr" ? bytes.length : 0,
+            });
+          },
+        );
+      },
+    );
+
+    it("counts output beyond the former retained tail", async () => {
+      const bytes = Buffer.alloc(64 * 1024 + 17, 0x78);
+      await withDiagnosticChunks([[stream, bytes]], (session, child) => {
+        expect(session.diagnostics()[`${stream}Bytes`]).toBe(bytes.length);
+        child[stream].emit("data", Buffer.from("🌱"));
+        expect(session.diagnostics()[`${stream}Bytes`]).toBe(bytes.length + 4);
+      });
+    });
+  });
+
+  it("keeps raw byte counts independent for interleaved streams", async () => {
+    await withDiagnosticChunks(
+      [
+        ["stdout", Buffer.from([0xf0])],
+        ["stderr", Buffer.from([0xe2, 0x82])],
+        ["stdout", Buffer.from([0x9f, 0x8c])],
+        ["stderr", Buffer.from([0xac])],
+        ["stdout", Buffer.from([0xb1])],
+      ],
+      (session) => {
+        expect(session.diagnostics()).toEqual({
+          stdoutBytes: 4,
+          stderrBytes: 3,
+        });
+      },
+    );
+  });
+
+  it("saturates diagnostic byte counts at the safe integer boundary", async () => {
+    await withDiagnosticChunks([], (session, child) => {
+      const chunk = Buffer.from([0x78]);
+      // Synthetic byte sizes exercise the numeric bound without allocating petabytes.
+      const byteLength = vi
+        .spyOn(Buffer, "byteLength")
+        .mockReturnValue(Number.MAX_SAFE_INTEGER - 1);
+      let before;
+      try {
+        child.stdout.emit("data", chunk);
+        child.stderr.emit("data", chunk);
+        before = session.diagnostics();
+        byteLength.mockReturnValue(10);
+        child.stdout.emit("data", chunk);
+        child.stderr.emit("data", chunk);
+        byteLength.mockReturnValue(1);
+        child.stdout.emit("data", chunk);
+        child.stderr.emit("data", chunk);
+      } finally {
+        byteLength.mockRestore();
+      }
+      expect(before).toEqual({
+        stdoutBytes: Number.MAX_SAFE_INTEGER - 1,
+        stderrBytes: Number.MAX_SAFE_INTEGER - 1,
+      });
+      expect(session.diagnostics()).toEqual({
+        stdoutBytes: Number.MAX_SAFE_INTEGER,
+        stderrBytes: Number.MAX_SAFE_INTEGER,
+      });
+    });
+  });
+
   it.each(applicationArgumentCases)(
     "preserves $name in application startup without a shell",
     async ({ source, args }) => {
