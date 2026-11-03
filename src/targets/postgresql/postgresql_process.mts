@@ -15,6 +15,7 @@ import {
   getOperationCancellationSignal,
   throwIfOperationCancelled,
 } from "../../shared/cancellation.mjs";
+import { withOwnedProcessDeadline } from "../../shared/owned_process_deadline.mjs";
 import { runOwnedProcess } from "../../shared/owned_process.mjs";
 import { createCleanProcessEnvironment } from "../../shared/process_environment.mjs";
 import { runtimeDockerEnvironment } from "../../runtime/engines/local_docker_context.mjs";
@@ -24,20 +25,80 @@ import {
   renderMigrationFailureDiagnostic,
 } from "../../runtime/migrations/migration_failure.mjs";
 
-export const runPostgresqlCommand = (
+export const POSTGRESQL_COMMAND_BUDGETS = Object.freeze({
+  metadata: 10_000,
+  sql: 120_000,
+  migration: 120_000,
+  startup: 120_000,
+  cleanup: 45_000,
+  restore: 900_000,
+});
+export type PostgresqlCommandPurpose = keyof typeof POSTGRESQL_COMMAND_BUDGETS;
+export class PostgresqlTransportError extends AggregateError {
+  constructor() {
+    super(
+      [],
+      "The local PostgreSQL command transport failed or was interrupted. Runtime state is unconfirmed; preserve its resources and recovery files before retrying. Provider output and command arguments are withheld.",
+    );
+    this.name = "PostgresqlTransportError";
+  }
+}
+export const postgresqlTransportFailure = () => new PostgresqlTransportError();
+
+/** One finite budget, including owned TERM/KILL retirement; cancellation remains observable. */
+export const withPostgresqlDeadline = async <T,>(
+  purpose: PostgresqlCommandPurpose,
+  operation: (signal: AbortSignal) => Promise<T>,
+  {
+    signal = getOperationCancellationSignal(),
+    timeoutMilliseconds = POSTGRESQL_COMMAND_BUDGETS[purpose],
+  }: { signal?: AbortSignal; timeoutMilliseconds?: number } = {},
+): Promise<T> => {
+  if (
+    !Number.isSafeInteger(timeoutMilliseconds) ||
+    timeoutMilliseconds <= 0 ||
+    timeoutMilliseconds > POSTGRESQL_COMMAND_BUDGETS[purpose]
+  )
+    throw postgresqlTransportFailure();
+  try {
+    return await withOwnedProcessDeadline(
+      { timeoutMilliseconds, ...(signal ? { signal } : {}) },
+      operation,
+    );
+  } catch (error) {
+    if (
+      error instanceof AggregateError &&
+      !(error instanceof PostgresqlTransportError)
+    )
+      throw postgresqlTransportFailure();
+    throw error;
+  }
+};
+
+export interface PostgresqlCommandOptions {
+  readonly cwd: string;
+  readonly capture?: boolean;
+  readonly input?: string | AsyncIterable<string>;
+  readonly allowFailure?: boolean;
+  readonly purpose?: PostgresqlCommandPurpose;
+  readonly timeoutMilliseconds?: number;
+  readonly signal?: AbortSignal;
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly runProcessImplementation?: typeof runOwnedProcess;
+}
+export const runPostgresqlCommand = async (
   command: string,
   args: readonly string[],
   {
     cwd,
-    capture = false,
     input,
     allowFailure = false,
-  }: {
-    readonly cwd: string;
-    readonly capture?: boolean;
-    readonly input?: string;
-    readonly allowFailure?: boolean;
-  },
+    purpose = "metadata",
+    timeoutMilliseconds,
+    signal,
+    environment,
+    runProcessImplementation = runOwnedProcess,
+  }: PostgresqlCommandOptions,
 ) => {
   if (
     command === "docker" &&
@@ -45,29 +106,106 @@ export const runPostgresqlCommand = (
       (args[0] === "container" && args[1] === "rm"))
   )
     captureRuntimeStartupOwnership();
-  const piped = capture || input !== undefined || allowFailure;
-  const result = spawnSync(command, args, {
+  return withPostgresqlDeadline(
+    purpose,
+    async (activeSignal) => {
+      let result;
+      try {
+        result = await runProcessImplementation({
+          command,
+          args,
+          cwd,
+          env:
+            environment ??
+            createCleanProcessEnvironment({
+              overrides: command === "docker" ? runtimeDockerEnvironment() : {},
+            }),
+          ...(input === undefined ? {} : { input }),
+          stdin: "ignore",
+          signal: activeSignal,
+          cancellationGraceMs: 1_000,
+          closeTimeoutMilliseconds: 1_000,
+          maxOutputBytes:
+            purpose === "metadata" ? 1024 * 1024 : 16 * 1024 * 1024,
+        });
+      } catch {
+        throw postgresqlTransportFailure();
+      }
+      // A signalled, failed-to-spawn, timed-out or overflowing client is never an ordinary negative probe.
+      if (
+        activeSignal.aborted ||
+        result.error ||
+        result.signal ||
+        !Number.isInteger(result.status)
+      )
+        throw postgresqlTransportFailure();
+      if (!allowFailure && result.status !== 0)
+        throw postgresqlTransportFailure();
+      return result;
+    },
+    {
+      ...(signal ? { signal } : {}),
+      ...(timeoutMilliseconds === undefined ? {} : { timeoutMilliseconds }),
+    },
+  );
+};
+
+export const postgresqlPsqlArguments = ({
+  containerName,
+  database,
+  databaseUser,
+  purpose = "sql",
+}: {
+  containerName: string;
+  database: string;
+  databaseUser: string;
+  purpose?: "sql" | "migration" | "restore";
+}) => [
+  "exec",
+  "--interactive",
+  "--env",
+  "PGCONNECT_TIMEOUT=5",
+  "--env",
+  `PGOPTIONS=-c statement_timeout=${POSTGRESQL_COMMAND_BUDGETS[purpose]} -c lock_timeout=10000 -c idle_in_transaction_session_timeout=120000`,
+  containerName,
+  "psql",
+  "--quiet",
+  "--no-psqlrc",
+  "--no-align",
+  "--tuples-only",
+  "--set",
+  "ON_ERROR_STOP=1",
+  "--set",
+  "VERBOSITY=sqlstate",
+  "--username",
+  databaseUser,
+  "--dbname",
+  database,
+];
+/** Custom project adapters retain their existing synchronous callback only. */
+export const runPostgresqlAdapterSql = (
+  args: readonly string[],
+  sql: string,
+  cwd: string,
+  spawnImplementation: typeof spawnSync = spawnSync,
+): string => {
+  throwIfOperationCancelled();
+  const result = spawnImplementation("docker", args, {
     cwd,
     encoding: "utf8",
-    input,
+    input: sql,
     env: createCleanProcessEnvironment({
-      overrides: command === "docker" ? runtimeDockerEnvironment() : {},
+      overrides: runtimeDockerEnvironment(),
     }),
+    timeout: POSTGRESQL_COMMAND_BUDGETS.sql,
+    killSignal: "SIGKILL",
     maxBuffer: 16 * 1024 * 1024,
-    stdio: piped ? ["pipe", "pipe", "pipe"] : "inherit",
+    stdio: ["pipe", "pipe", "pipe"],
   });
   throwIfOperationCancelled();
-  if (!allowFailure && result.error) throw result.error;
-  if (!allowFailure && result.status !== 0) {
-    const detail = [result.stdout, result.stderr]
-      .filter(Boolean)
-      .join("\n")
-      .trim();
-    throw new Error(
-      `${command} ${args.join(" ")} failed${detail ? `:\n${detail}` : "."}`,
-    );
-  }
-  return result;
+  if (result.error || result.signal || result.status !== 0)
+    throw postgresqlTransportFailure();
+  return result.stdout;
 };
 
 export const runOwnedPostgresqlSql = async ({
@@ -89,32 +227,22 @@ export const runOwnedPostgresqlSql = async ({
   migrationSource?: MigrationFailureSource;
   runProcessImplementation?: typeof runOwnedProcess;
 }): Promise<void> => {
-  const cancellationSignal = getOperationCancellationSignal();
-  const result = await runProcessImplementation({
-    command: "docker",
-    args: [
-      "exec",
-      "--interactive",
+  const result = await runPostgresqlCommand(
+    "docker",
+    postgresqlPsqlArguments({
       containerName,
-      "psql",
-      "--quiet",
-      "--set",
-      "ON_ERROR_STOP=1",
-      "--set",
-      "VERBOSITY=sqlstate",
-      "--username",
-      databaseUser,
-      "--dbname",
       database,
-    ],
-    cwd: repositoryRoot,
-    env: createCleanProcessEnvironment({
-      overrides: runtimeDockerEnvironment(),
+      databaseUser,
+      purpose: "migration",
     }),
-    input: sql,
-    stdin: "ignore",
-    ...(cancellationSignal ? { signal: cancellationSignal } : {}),
-  });
+    {
+      cwd: repositoryRoot,
+      input: sql,
+      purpose: "migration",
+      allowFailure: true,
+      runProcessImplementation,
+    },
+  );
   throwIfOperationCancelled();
   if (result.error) throw result.error;
   if (result.status !== 0) {

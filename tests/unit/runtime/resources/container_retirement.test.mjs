@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   planContainerRetirement,
   retireContainers,
+  planContainerRetirementAsync,
+  retireContainersAsync,
 } from "../../../../dist/src/runtime/resources/container_retirement.mjs";
 const id = "a".repeat(64),
   foreign = "f".repeat(64);
@@ -118,6 +120,60 @@ const plan = (f) =>
 const retire = (f, p, consent = { kind: "manual", digest: p.consentDigest }) =>
   retireContainers({ plan: p, consent, runner: f.runner });
 describe("explicit completed disposable container retirement", () => {
+  it("shares exact policy and outcomes between synchronous compatibility and awaited transport", async () => {
+    const synchronous = fixture(),
+      asynchronous = fixture();
+    let ticks = 0;
+    const runner = async (...args) => {
+      await new Promise((done) => setImmediate(done));
+      ticks++;
+      return asynchronous.runner(...args);
+    };
+    const expected = plan(synchronous);
+    const actual = await planContainerRetirementAsync({
+      binding,
+      claims: [claim],
+      runner,
+    });
+    expect(actual).toEqual(expected);
+    expect(
+      await retireContainersAsync({
+        plan: actual,
+        consent: { kind: "trusted-completion-hook" },
+        runner,
+      }),
+    ).toEqual(retire(synchronous, expected));
+    expect(ticks).toBeGreaterThan(10);
+    expect(asynchronous.calls).toEqual(synchronous.calls);
+    expect(asynchronous.volumes.has("retained-data")).toBe(true);
+    expect(asynchronous.containers.has(foreign)).toBe(true);
+  });
+  it("keeps async transport failure after attempted removal unknown rather than declaring backend absence", async () => {
+    const f = fixture();
+    let uncertain = false;
+    const runner = async (...args) => {
+      if (uncertain) throw Error("PRIVATE_TRANSPORT_FAILURE");
+      const result = f.runner(...args);
+      if (args[1].includes("rm")) uncertain = true;
+      return result;
+    };
+    const p = await planContainerRetirementAsync({
+      binding,
+      claims: [claim],
+      runner,
+    });
+    const outcome = await retireContainersAsync({
+      plan: p,
+      consent: { kind: "trusted-completion-hook" },
+      runner,
+    });
+    expect(outcome).toMatchObject({
+      status: "failed",
+      outcomes: [{ containerRemoved: null, volumesPreserved: null }],
+    });
+    expect(f.volumes.has("retained-data")).toBe(true);
+    expect(JSON.stringify(outcome)).not.toContain("PRIVATE_");
+  });
   it("accepts reordered equivalent Docker mounts but refuses changed mount facts", () => {
     const f = fixture();
     f.containers.get(id).mounts.push(

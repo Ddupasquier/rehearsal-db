@@ -119,6 +119,64 @@ const validate = (
       refuse();
   }
 };
+interface RetirementCommand {
+  args: readonly string[];
+  environment: NodeJS.ProcessEnv;
+}
+type RetirementSteps<T> = Generator<
+  RetirementCommand,
+  T,
+  SpawnSyncReturns<string>
+>;
+export type AsyncContainerRetirementRunner = (
+  command: string,
+  args: readonly string[],
+  environment?: NodeJS.ProcessEnv,
+) => Promise<SpawnSyncReturns<string>>;
+interface ContainerRetirementResult {
+  schemaVersion: 1;
+  status: "completed" | "partial" | "failed" | "refused";
+  outcomes: {
+    fullId: string;
+    status: "removed" | "refused" | "failed";
+    containerRemoved: boolean | null;
+    volumesPreserved: boolean | null;
+  }[];
+}
+/** The same checks/sequence run through sync compatibility or awaited owned transport. */
+const runSteps = <T,>(
+  steps: RetirementSteps<T>,
+  runner: ContainerRetirementRunner,
+): T => {
+  let next = steps.next();
+  while (!next.done) {
+    const command = next.value;
+    try {
+      next = steps.next(runner("docker", command.args, command.environment));
+    } catch (error) {
+      next = steps.throw(error);
+    }
+  }
+  return next.value;
+};
+const runStepsAsync = async <T,>(
+  steps: RetirementSteps<T>,
+  runner: AsyncContainerRetirementRunner,
+): Promise<T> => {
+  let next = steps.next();
+  while (!next.done) {
+    const command = next.value;
+    let result;
+    try {
+      result = await runner("docker", command.args, command.environment);
+    } catch (error) {
+      next = steps.throw(error);
+      continue;
+    }
+    next = steps.next(result);
+  }
+  return next.value;
+};
 const session = (
   binding: ContainerRetirementBinding,
   runner: ContainerRetirementRunner,
@@ -139,15 +197,16 @@ const session = (
     inheritedEnvironment,
     endpoint: binding.endpoint,
   });
-  const raw = (args: readonly string[]) => {
+  const raw = function* (args: readonly string[]): RetirementSteps<string> {
     if (Date.now() > deadline) refuse();
-    const result = runner(
-      "docker",
+    const result = yield {
       args,
-      args[0] === "context" ? metadataEnvironment : environment,
-    );
+      environment: args[0] === "context" ? metadataEnvironment : environment,
+    };
     if (
+      Date.now() > deadline ||
       result.status !== 0 ||
+      result.signal ||
       result.error ||
       typeof result.stdout !== "string" ||
       Buffer.byteLength(result.stdout) > 1024 * 1024
@@ -155,11 +214,11 @@ const session = (
       refuse();
     return result.stdout;
   };
-  const identity = () => {
+  const identity = function* (): RetirementSteps<void> {
     let endpoint: unknown;
     try {
       endpoint = JSON.parse(
-        raw([
+        yield* raw([
           "context",
           "inspect",
           "--format",
@@ -172,38 +231,44 @@ const session = (
     }
     if (
       endpoint !== binding.endpoint ||
-      raw([
+      (yield* raw([
         "context",
         "inspect",
         "--format",
         DOCKER_CONTEXT_TLS_FORMAT,
         binding.context,
-      ]).trim() !== "false" ||
-      raw([
+      ])).trim() !== "false" ||
+      (yield* raw([
         "--host",
         binding.endpoint,
         "info",
         "--format",
         "{{.ID}}",
-      ]).trim() !== binding.daemonId
+      ])).trim() !== binding.daemonId
     )
       refuse();
   };
-  return (args: readonly string[]) => {
-    identity();
-    const value = raw(["--host", binding.endpoint, ...args]);
-    identity();
+  return function* (args: readonly string[]): RetirementSteps<string> {
+    yield* identity();
+    const value = yield* raw(["--host", binding.endpoint, ...args]);
+    yield* identity();
     return value;
   };
 };
-const inspect = (
+const inspect = function* (
   query: ReturnType<typeof session>,
   claim: ContainerRetirementClaim,
-): ContainerRetirementSnapshot => {
+): RetirementSteps<ContainerRetirementSnapshot> {
   let value: Record<string, unknown>;
   try {
     value = JSON.parse(
-      query(["container", "inspect", "--format", inspectFormat, claim.fullId]),
+      yield* query([
+        "container",
+        "inspect",
+        "--format",
+        inspectFormat,
+        claim.fullId,
+      ]),
     );
   } catch {
     return refuse();
@@ -293,14 +358,14 @@ const inspect = (
     mounts,
   };
 };
-const inspectVolume = (
+const inspectVolume = function* (
   query: ReturnType<typeof session>,
   name: string,
-): ContainerRetirementVolume => {
+): RetirementSteps<ContainerRetirementVolume> {
   let value: Record<string, unknown>;
   try {
     value = JSON.parse(
-      query([
+      yield* query([
         "volume",
         "inspect",
         "--format",
@@ -322,7 +387,7 @@ const inspectVolume = (
     refuse();
   return { name, createdAt: value.createdAt, driver: value.driver };
 };
-export const planContainerRetirement = ({
+const planRetirementSteps = function* ({
   binding,
   claims,
   runner = run,
@@ -330,10 +395,11 @@ export const planContainerRetirement = ({
   binding: ContainerRetirementBinding;
   claims: readonly ContainerRetirementClaim[];
   runner?: ContainerRetirementRunner;
-}): ContainerRetirementPlan => {
+}): RetirementSteps<ContainerRetirementPlan> {
   validate(binding, claims);
   const query = session(binding, runner),
-    snapshots = claims.map((claim) => inspect(query, claim));
+    snapshots: ContainerRetirementSnapshot[] = [];
+  for (const claim of claims) snapshots.push(yield* inspect(query, claim));
   const names = [
     ...new Set(
       snapshots.flatMap((s) =>
@@ -342,7 +408,8 @@ export const planContainerRetirement = ({
     ),
   ];
   if (names.length > 128) refuse();
-  const volumes = names.map((name) => inspectVolume(query, name));
+  const volumes: ContainerRetirementVolume[] = [];
+  for (const name of names) volumes.push(yield* inspectVolume(query, name));
   const body = {
     volumes,
     schemaVersion: 1 as const,
@@ -355,7 +422,7 @@ export const planContainerRetirement = ({
   };
   return { ...body, consentDigest: hash(body) };
 };
-export const retireContainers = ({
+const retireContainerSteps = function* ({
   plan,
   consent,
   runner = run,
@@ -364,7 +431,7 @@ export const retireContainers = ({
   consent:
     { kind: "manual"; digest: string } | { kind: "trusted-completion-hook" };
   runner?: ContainerRetirementRunner;
-}) => {
+}): RetirementSteps<ContainerRetirementResult> {
   validate(plan.binding, plan.claims);
   const { consentDigest, ...body } = plan;
   if (
@@ -387,21 +454,21 @@ export const retireContainers = ({
     let removed: boolean | null = false,
       attempted = false;
     try {
-      const current = inspect(query, claim);
+      const current = yield* inspect(query, claim);
       if (hash(current) !== hash(plan.snapshots[index])) refuse();
       const volumes = [
         ...new Set(current.mounts.flatMap((m) => (m.name ? [m.name] : []))),
       ];
       for (const name of volumes)
         if (
-          hash(inspectVolume(query, name)) !==
+          hash(yield* inspectVolume(query, name)) !==
           hash(plan.volumes.find((v) => v.name === name))
         )
           refuse();
       attempted = true;
       removed = null;
-      query(["container", "rm", claim.fullId]);
-      const remaining = query([
+      yield* query(["container", "rm", claim.fullId]);
+      const remaining = yield* query([
         "container",
         "ls",
         "--all",
@@ -415,7 +482,7 @@ export const retireContainers = ({
       removed = true;
       for (const name of volumes)
         if (
-          hash(inspectVolume(query, name)) !==
+          hash(yield* inspectVolume(query, name)) !==
           hash(plan.volumes.find((v) => v.name === name))
         )
           refuse();
@@ -431,7 +498,7 @@ export const retireContainers = ({
         // A failed command may still have removed the container. Report only
         // independently verified absence; an unavailable engine stays unknown.
         try {
-          const remaining = query([
+          const remaining = yield* query([
             "container",
             "ls",
             "--all",
@@ -450,11 +517,13 @@ export const retireContainers = ({
           const names = plan.snapshots[index]!.mounts.flatMap((m) =>
             m.name ? [m.name] : [],
           );
-          preserved = names.every(
-            (name) =>
-              hash(inspectVolume(query, name)) ===
-              hash(plan.volumes.find((v) => v.name === name)),
-          );
+          preserved = true;
+          for (const name of names)
+            if (
+              hash(yield* inspectVolume(query, name)) !==
+              hash(plan.volumes.find((v) => v.name === name))
+            )
+              preserved = false;
         } catch {
           /* engine/volume proof unknown; never claim success */
         }
@@ -488,3 +557,30 @@ export const retireContainers = ({
     outcomes,
   };
 };
+
+export const planContainerRetirement = (
+  options: Parameters<typeof planRetirementSteps>[0],
+): ContainerRetirementPlan =>
+  runSteps(planRetirementSteps(options), options.runner ?? run);
+export const retireContainers = (
+  options: Parameters<typeof retireContainerSteps>[0],
+): ContainerRetirementResult =>
+  runSteps(retireContainerSteps(options), options.runner ?? run);
+export const planContainerRetirementAsync = (
+  options: Omit<Parameters<typeof planRetirementSteps>[0], "runner"> & {
+    runner: AsyncContainerRetirementRunner;
+  },
+): Promise<ContainerRetirementPlan> =>
+  runStepsAsync(
+    planRetirementSteps({ binding: options.binding, claims: options.claims }),
+    options.runner,
+  );
+export const retireContainersAsync = (
+  options: Omit<Parameters<typeof retireContainerSteps>[0], "runner"> & {
+    runner: AsyncContainerRetirementRunner;
+  },
+): Promise<ContainerRetirementResult> =>
+  runStepsAsync(
+    retireContainerSteps({ plan: options.plan, consent: options.consent }),
+    options.runner,
+  );

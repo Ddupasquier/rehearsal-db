@@ -17,7 +17,7 @@ export const deployPrismaMigrations = async (options: {
   entries: readonly MigrationFileEntry[];
   binding: NativeMigrationBinding;
   databaseUrl: string;
-  assertOwnedTarget: () => string;
+  assertOwnedTarget: () => string | Promise<string>;
   assertExpectedBaseline: () => Promise<void>;
 }) => {
   const binding = parseNativeMigrationBinding(options.binding);

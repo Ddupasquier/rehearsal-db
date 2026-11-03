@@ -49,6 +49,9 @@ only the exact migrations you approve, and runs your application's own proof.
 **[See the complete shipped-capability catalog →](docs/capabilities.md)** ·
 [See queued, planned and paused work](docs/roadmap.md)
 
+The [runtime lifecycle guide](docs/runtime-lifecycle.md) explains interruption and
+recovery limits, including what to review before repeating a failed run.
+
 Projects with a separate publication or read-model database can declare it as a
 dependent target. Rehearsal then manages the complete isolated runtime stack.
 

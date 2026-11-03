@@ -46,7 +46,10 @@ async function fixture(mode = "success") {
     },
     databaseUrl:
       "postgresql://postgres:private-password@127.0.0.1:58322/postgres?sslmode=disable",
-    assertOwnedTarget: () => "a".repeat(64),
+    assertOwnedTarget: async () => {
+      await new Promise((done) => setImmediate(done));
+      return "a".repeat(64);
+    },
     assertExpectedBaseline: async () => {},
   };
   return { ...f, options, witness };

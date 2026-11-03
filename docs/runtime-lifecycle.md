@@ -331,6 +331,38 @@ erase databases or remove shared images. Retained volumes and images still consu
 use the existing resource inventory, budget and reviewed discard/image-cleanup policies for
 those costs. No reclaimed-byte estimate is inferred from a container count.
 
+## PostgreSQL command bounds
+
+The built-in PostgreSQL driver awaits owned children, so metadata, SQL, streamed restore
+and cleanup remain responsive to operation cancellation. Each command has a finite client
+budget: metadata 10 seconds, SQL/migrations and creation/start 120 seconds, removal/stop
+45 seconds, and a complete streamed restore 15 minutes. Readiness has a separate
+60-second total budget. Client interruption gets one second for TERM, then KILL while
+the direct child is still observed alive; local pipe retirement has another one-second
+bound. If a leader exits while another process retains its pipes, closure becomes
+unconfirmed after one second. No later numeric signal is sent from that exited leader.
+
+These are client bounds, not proof that Docker or a database backend stopped. Spawn,
+output-limit, timeout and signal failures never establish resource absence. Runtime
+recovery files are removed only after successful exact resource listings confirm the
+owned container and volume are absent. Volume creation time, driver and project labels
+are captured and rechecked before removal; a same-name replacement is preserved.
+Unknown engine or cleanup state preserves recovery.
+Container-only retirement retains its unchanged ownership/digest/volume checks through
+an awaited transport; the existing synchronous public API remains compatible.
+
+Built-in psql sessions disable startup files and set a 5-second connection timeout,
+10-second lock timeout and finite statement/idle-transaction limits. A migration may
+have partially committed before failure; these bounds do not promise SQL rollback or
+sandbox arbitrary trusted migration code. Shared engine-selection guards retain their
+existing short synchronous metadata probes; they do not perform SQL or remove resources.
+Project-owned adapters retain the separately documented [synchronous callback](adapters.md).
+
+The Supabase COPY restore uses the same owned streaming transport and 15-minute client
+bound, preserving its existing SQL prefix, Auth synthesis, cache and checked suffix.
+Its other provider lifecycle commands keep their existing separate implementation.
+Neither local handle retirement nor cancellation confirms those provider resources stopped.
+
 ## Choosing PostgreSQL or Supabase
 
 Use the PostgreSQL target for migration, schema, trigger, privacy, and ordinary relational

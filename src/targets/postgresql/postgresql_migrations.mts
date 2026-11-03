@@ -29,7 +29,10 @@ import {
   createCandidateMigrationReceipt,
   assertBaselineMigrationHistory,
 } from "../../runtime/recovery/restore.mjs";
-import { runOwnedPostgresqlMigration } from "./postgresql_process.mjs";
+import {
+  runOwnedPostgresqlMigration,
+  PostgresqlTransportError,
+} from "./postgresql_process.mjs";
 import { deployPrismaMigrations } from "../native/prisma_migration_process.mjs";
 import { inspectPrismaToolchain } from "../../runtime/migrations/native/prisma/prisma_toolchain.mjs";
 
@@ -46,35 +49,36 @@ export const createPostgresqlMigrationRuntime = ({
   databaseUser,
 }: {
   loaded: Loaded;
-  runSql: (sql: string) => string;
-  assertOwnedTarget: () => string;
+  runSql: (sql: string) => string | Promise<string>;
+  assertOwnedTarget: () => string | Promise<string>;
   assertExpectedBaseline: (baseline: BaselineManifest) => Promise<void>;
   containerName: string;
   database: string;
   databaseUser: string;
 }) => {
   const tool = loaded.config.postgresql?.migrationTool;
-  const readDrizzleLedger = () => {
-    assertOwnedTarget();
+  const readDrizzleLedger = async () => {
+    await assertOwnedTarget();
     let rows: unknown;
     try {
       rows = JSON.parse(
-        runSql(
+        await runSql(
           `select coalesce(json_agg(history), '[]'::json)::text from (select id, hash, created_at from drizzle.__drizzle_migrations order by created_at, id limit 10001) history;`,
         ),
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof PostgresqlTransportError) throw error;
       throw new Error(
         "Native Drizzle runtime ledger output is invalid; provider output is withheld.",
       );
     }
     return normalizeDrizzleMigrationLedger(rows);
   };
-  const readLedger = () => {
+  const readLedger = async () => {
     if (tool) {
-      assertOwnedTarget();
+      await assertOwnedTarget();
       const rows = JSON.parse(
-        runSql(`select coalesce(json_agg(history), '[]'::json)::text from (
+        await runSql(`select coalesce(json_agg(history), '[]'::json)::text from (
 select migration_name, checksum, finished_at::text, rolled_back_at::text
 from public._prisma_migrations order by migration_name limit 10001
 ) history;`),
@@ -85,8 +89,10 @@ from public._prisma_migrations order by migration_name limit 10001
         fileSha256: row.checksum,
       }));
     }
-    return runSql(`select version || E'\\t' || name || E'\\t' || file_sha256
+    return (
+      await runSql(`select version || E'\\t' || name || E'\\t' || file_sha256
 from rehearsal_internal.schema_migrations order by version;`)
+    )
       .trim()
       .split("\n")
       .filter(Boolean)
@@ -95,7 +101,7 @@ from rehearsal_internal.schema_migrations order by version;`)
         return { version, name, fileSha256 };
       });
   };
-  const verifyLedger = ({
+  const verifyLedger = async ({
     currentFiles,
     baseline,
   }: {
@@ -104,7 +110,7 @@ from rehearsal_internal.schema_migrations order by version;`)
   }) => {
     if (tool?.kind === "drizzle") {
       const ledger = verifyDrizzleMigrationLedger({
-        rows: readDrizzleLedger(),
+        rows: await readDrizzleLedger(),
         entries: drizzleNativeEntries(currentFiles),
       });
       const baselineCount = Object.keys(baseline.migrations).length;
@@ -114,7 +120,7 @@ from rehearsal_internal.schema_migrations order by version;`)
         );
       return { ledger, appliedCandidateCount: ledger.length - baselineCount };
     }
-    const ledger = readLedger();
+    const ledger = await readLedger();
     const baselineCount = Object.keys(baseline.migrations).length;
     if (ledger.length < baselineCount || ledger.length > currentFiles.length)
       throw new Error(
@@ -161,7 +167,7 @@ from rehearsal_internal.schema_migrations order by version;`)
       directory,
       migrationKind: kind,
     });
-    runSql(`insert into rehearsal_internal.schema_migrations (version, name, file_sha256)
+    await runSql(`insert into rehearsal_internal.schema_migrations (version, name, file_sha256)
 values (${quote(migration.version)}, ${quote(migration.name)}, ${quote(migration.fileSha256)});`);
   };
   return {
@@ -203,9 +209,9 @@ values (${quote(migration.version)}, ${quote(migration.name)}, ${quote(migration
     },
     readLedger: tool?.kind === "drizzle" ? readDrizzleLedger : readLedger,
     verifyLedger,
-    initialize: () => {
+    initialize: async () => {
       if (!tool)
-        runSql(`create schema if not exists rehearsal_internal;
+        await runSql(`create schema if not exists rehearsal_internal;
 create table if not exists rehearsal_internal.schema_migrations (
 version text primary key, name text not null,
 file_sha256 text not null check (file_sha256 ~ '^[a-f0-9]{64}$'),
@@ -238,7 +244,7 @@ applied_at timestamptz not null default now());`);
           assertOwnedTarget,
           assertExpectedBaseline: () => assertExpectedBaseline(baseline),
         });
-        verifyLedger({
+        await verifyLedger({
           currentFiles: drizzleMigrationFiles(inventory.entries),
           baseline,
         });
@@ -263,7 +269,7 @@ applied_at timestamptz not null default now());`);
           assertOwnedTarget,
           assertExpectedBaseline: () => assertExpectedBaseline(baseline),
         });
-        verifyLedger({ currentFiles: inventory.entries, baseline });
+        await verifyLedger({ currentFiles: inventory.entries, baseline });
       } else {
         for (const migration of await readMigrationFileInventory(
           pathToFileURL(`${directory}/`),
@@ -276,7 +282,7 @@ applied_at timestamptz not null default now());`);
       receipt: Awaited<ReturnType<typeof plan>>,
       databaseUrl: string,
     ) => {
-      const before = verifyLedger({
+      const before = await verifyLedger({
         currentFiles: receipt.currentFiles,
         baseline,
       });

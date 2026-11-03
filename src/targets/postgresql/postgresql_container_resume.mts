@@ -26,7 +26,6 @@ export type {
   PostgresqlResumeSnapshot,
 } from "./postgresql_resume_protocol.mjs";
 
-import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, realpath, rename, writeFile } from "node:fs/promises";
@@ -38,12 +37,15 @@ import {
   scopedDockerEnvironment,
 } from "../../runtime/engines/local_docker_context.mjs";
 import {
-  planContainerRetirement,
-  retireContainers,
+  planContainerRetirementAsync,
+  retireContainersAsync,
   type ContainerRetirementBinding,
-  type ContainerRetirementRunner,
+  type AsyncContainerRetirementRunner,
 } from "../../runtime/resources/container_retirement.mjs";
-import { runOwnedProcess } from "../../shared/owned_process.mjs";
+import {
+  runPostgresqlCommand,
+  withPostgresqlDeadline,
+} from "./postgresql_process.mjs";
 import { getOperationCancellationSignal } from "../../shared/cancellation.mjs";
 const bytesHash = (bytes: string | Buffer) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -74,6 +76,7 @@ export const createPostgresqlContainerLifecycle = ({
       status: number | null;
       stdout: string;
       error?: unknown;
+      signal?: NodeJS.Signals | null;
     };
     localContext: () => { context: string; endpoint: string; identity: string };
     diagnostic: (message: string) => void;
@@ -82,39 +85,51 @@ export const createPostgresqlContainerLifecycle = ({
   const name = projectId + "-postgresql",
     volumeName = name + "-data",
     receiptPath = join(runtimeWorkdir, "container-retirement.json");
-  const raw = (args: readonly string[], environment?: NodeJS.ProcessEnv) =>
-    dependencies?.run(args, environment) ??
-    spawnSync("docker", args, {
+  const raw = async (
+    args: readonly string[],
+    environment?: NodeJS.ProcessEnv,
+    signal?: AbortSignal,
+  ) => {
+    signal?.throwIfAborted();
+    if (dependencies) {
+      const result = await dependencies.run(args, environment);
+      if (result.error || result.signal || result.status === null)
+        throw refused();
+      return result;
+    }
+    return runPostgresqlCommand("docker", args, {
       cwd,
-      encoding: "utf8",
-      env: environment ?? scopedDockerEnvironment(),
-      timeout: 10000,
-      maxBuffer: 1024 * 1024,
-      stdio: ["ignore", "pipe", "ignore"],
+      environment: environment ?? scopedDockerEnvironment(),
+      allowFailure: true,
+      ...(signal ? { signal } : {}),
     });
-  const retirementRunner: ContainerRetirementRunner | undefined = dependencies
-    ? (_command, args, environment) => {
-        if (_command !== "docker") throw refused();
-        const result = raw(args, environment);
-        return {
-          pid: 0,
-          output: [null, result.stdout, ""],
-          stdout: result.stdout,
-          stderr: "",
-          status: result.status,
-          signal: null,
-          ...(result.error
-            ? {
-                error:
-                  result.error instanceof Error
-                    ? (result.error as NodeJS.ErrnoException)
-                    : new Error("Injected Docker probe failed."),
-              }
-            : {}),
-        };
-      }
-    : undefined;
-  const probePin = () => {
+  };
+  const retirementRunner: AsyncContainerRetirementRunner = async (
+    _command,
+    args,
+    environment,
+  ) => {
+    if (_command !== "docker") throw refused();
+    const result = await raw(args, environment);
+    return {
+      pid: 0,
+      output: [null, result.stdout, ""],
+      stdout: result.stdout,
+      stderr: "",
+      status: result.status,
+      signal: null,
+      ...(result.error
+        ? {
+            error:
+              result.error instanceof Error
+                ? result.error
+                : new Error("Injected Docker probe failed."),
+          }
+        : {}),
+    };
+  };
+  const probePin = async (signal?: AbortSignal) => {
+    signal?.throwIfAborted();
     const local =
       dependencies?.localContext() ??
       (() => {
@@ -128,7 +143,11 @@ export const createPostgresqlContainerLifecycle = ({
       !digest.test(local.identity)
     )
       throw refused();
-    const info = raw(["--host", local.endpoint, "info", "--format", "{{.ID}}"]);
+    const info = await raw(
+      ["--host", local.endpoint, "info", "--format", "{{.ID}}"],
+      undefined,
+      signal,
+    );
     if (info.status !== 0 || info.error) return null;
     if (!/^[a-zA-Z0-9][a-zA-Z0-9:_.-]{0,255}$/u.test(info.stdout.trim()))
       throw refused();
@@ -141,8 +160,8 @@ export const createPostgresqlContainerLifecycle = ({
       identity: local.identity,
     };
   };
-  const pin = () => {
-    const value = probePin();
+  const pin = async (signal?: AbortSignal) => {
+    const value = await probePin(signal);
     if (!value) throw refused();
     return value;
   };
@@ -158,14 +177,19 @@ export const createPostgresqlContainerLifecycle = ({
       volumesPreserved: null,
     });
   };
-  const query = (
+  const query = async (
     binding: ContainerRetirementBinding,
     args: readonly string[],
+    signal?: AbortSignal,
   ) => {
-    const current = pin();
+    const current = await pin(signal);
     if (JSON.stringify(current.binding) !== JSON.stringify(binding))
       throw refused();
-    const result = raw(["--host", binding.endpoint, ...args]);
+    const result = await raw(
+      ["--host", binding.endpoint, ...args],
+      undefined,
+      signal,
+    );
     if (result.status !== 0 || result.error) throw refused();
     return result.stdout.trim();
   };
@@ -345,53 +369,67 @@ export const createPostgresqlContainerLifecycle = ({
     assertReceipt(stored.receipt, marker);
     return marker;
   };
-  const existingIds = (binding: ContainerRetirementBinding) => {
-    const output = query(binding, [
-      "container",
-      "ls",
-      "--all",
-      "--no-trunc",
-      "--filter",
-      "name=^/" + name + "$",
-      "--format",
-      "{{.ID}}",
-    ]);
+  const existingIds = async (
+    binding: ContainerRetirementBinding,
+    signal?: AbortSignal,
+  ) => {
+    const output = await query(
+      binding,
+      [
+        "container",
+        "ls",
+        "--all",
+        "--no-trunc",
+        "--filter",
+        "name=^/" + name + "$",
+        "--format",
+        "{{.ID}}",
+      ],
+      signal,
+    );
     const ids = output ? output.split("\n") : [];
     if (ids.length > 1 || ids.some((id) => !digest.test(id))) throw refused();
     return ids;
   };
-  const observe = (
+  const observe = async (
     binding: ContainerRetirementBinding,
     identity: string,
     retainedImageId: string,
-  ): PostgresqlResumeSnapshot => {
+    signal?: AbortSignal,
+  ): Promise<PostgresqlResumeSnapshot> => {
     const volumeJson = JSON.parse(
-      query(binding, [
-        "volume",
-        "inspect",
-        "--format",
-        '{"name":{{json .Name}},"createdAt":{{json .CreatedAt}},"driver":{{json .Driver}},"labels":{{json .Labels}}}',
-        volumeName,
-      ]),
+      await query(
+        binding,
+        [
+          "volume",
+          "inspect",
+          "--format",
+          '{"name":{{json .Name}},"createdAt":{{json .CreatedAt}},"driver":{{json .Driver}},"labels":{{json .Labels}}}',
+          volumeName,
+        ],
+        signal,
+      ),
     );
-    const imageId = query(binding, [
-      "image",
-      "inspect",
-      "--format",
-      "{{.Id}}",
-      retainedImageId,
-    ]);
-    const ids = existingIds(binding);
+    const imageId = await query(
+      binding,
+      ["image", "inspect", "--format", "{{.Id}}", retainedImageId],
+      signal,
+    );
+    const ids = await existingIds(binding, signal);
     let container: PostgresqlResumeSnapshot["container"] = { state: "absent" };
     if (ids.length) {
       const parsed = JSON.parse(
-        query(binding, [
-          "container",
-          "inspect",
-          "--format",
-          '{"id":{{json .Id}},"name":{{json .Name}},"imageId":{{json .Image}},"labels":{{json .Config.Labels}},"running":{{json .State.Running}},"mounts":{{json .Mounts}}}',
-          ids[0]!,
-        ]),
+        await query(
+          binding,
+          [
+            "container",
+            "inspect",
+            "--format",
+            '{"id":{{json .Id}},"name":{{json .Name}},"imageId":{{json .Image}},"labels":{{json .Config.Labels}},"running":{{json .State.Running}},"mounts":{{json .Mounts}}}',
+            ids[0]!,
+          ],
+          signal,
+        ),
       );
       container = {
         state: "present",
@@ -428,11 +466,15 @@ export const createPostgresqlContainerLifecycle = ({
     signal: AbortSignal,
     timeoutMilliseconds: number,
   ) => {
-    query(binding, ["info", "--format", "{{.ID}}"]);
+    await query(binding, ["info", "--format", "{{.ID}}"], signal);
     signal.throwIfAborted();
     if (dependencies) {
       const began = Date.now(),
-        result = raw(["--host", binding.endpoint, ...args]);
+        result = await raw(
+          ["--host", binding.endpoint, ...args],
+          undefined,
+          signal,
+        );
       signal.throwIfAborted();
       if (
         result.status !== 0 ||
@@ -442,35 +484,28 @@ export const createPostgresqlContainerLifecycle = ({
         throw refused();
       return;
     }
-    const timeout = new AbortController(),
-      abort = () => timeout.abort();
-    signal.addEventListener("abort", abort, { once: true });
-    if (signal.aborted) timeout.abort();
-    const timer = setTimeout(() => timeout.abort(), timeoutMilliseconds);
-    timer.unref();
-    try {
-      const result = await runOwnedProcess({
-        command: "docker",
-        args: ["--host", binding.endpoint, ...args],
+    const result = await runPostgresqlCommand(
+      "docker",
+      ["--host", binding.endpoint, ...args],
+      {
         cwd,
-        env: scopedDockerEnvironment(),
-        signal: timeout.signal,
-        stdin: "ignore",
-        maxOutputBytes: 1024 * 1024,
-        cancellationGraceMs: 1000,
-      });
-      if (result.status !== 0) throw refused();
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-    }
+        environment: scopedDockerEnvironment(),
+        signal,
+        purpose: args[0] === "run" ? "startup" : "cleanup",
+        timeoutMilliseconds: Math.min(
+          timeoutMilliseconds,
+          args[0] === "run" ? 120000 : 45000,
+        ),
+      },
+    );
+    if (result.status !== 0) throw refused();
   };
   return {
     retireStopped: async () => {
-      const available = probePin();
+      const available = await probePin();
       if (!available) return noAction("engine-unavailable");
       const { binding, identity } = available,
-        ids = existingIds(binding);
+        ids = await existingIds(binding);
       if (!ids.length) {
         try {
           await lstat(receiptPath);
@@ -483,7 +518,7 @@ export const createPostgresqlContainerLifecycle = ({
           markerBytes = await privateBytes(markerPath);
         verifyStored(stored, binding, identity, markerBytes);
         assertRetainedBindings(
-          observe(binding, identity, stored.receipt.imageId),
+          await observe(binding, identity, stored.receipt.imageId),
           stored.receipt,
         );
         const protectedPrepared = await protectMarker(markerBytes, stored);
@@ -512,7 +547,7 @@ export const createPostgresqlContainerLifecycle = ({
       )
         throw refused();
       const labels = JSON.parse(
-        query(binding, [
+        await query(binding, [
           "container",
           "inspect",
           "--format",
@@ -528,9 +563,9 @@ export const createPostgresqlContainerLifecycle = ({
       const signal =
         getOperationCancellationSignal() ?? new AbortController().signal;
       await bounded(binding, ["stop", "--time", "10", ids[0]!], signal, 45000);
-      const plan = planContainerRetirement({
+      const plan = await planContainerRetirementAsync({
         binding,
-        ...(retirementRunner ? { runner: retirementRunner } : {}),
+        runner: retirementRunner,
         claims: [
           {
             fullId: ids[0]!,
@@ -565,7 +600,7 @@ export const createPostgresqlContainerLifecycle = ({
       };
       assertReceipt(receipt, marker);
       assertRetainedBindings(
-        observe(binding, identity, snapshot.image),
+        await observe(binding, identity, snapshot.image),
         receipt,
       );
       const prepared = {
@@ -578,10 +613,10 @@ export const createPostgresqlContainerLifecycle = ({
         plan,
       };
       const protectedPrepared = await protectMarker(markerBytes, prepared);
-      const result = retireContainers({
+      const result = await retireContainersAsync({
         plan,
         consent: { kind: "trusted-completion-hook" },
-        ...(retirementRunner ? { runner: retirementRunner } : {}),
+        runner: retirementRunner,
       });
       if (
         result.status !== "completed" ||
@@ -593,12 +628,12 @@ export const createPostgresqlContainerLifecycle = ({
       await writeReceipt({ ...protectedPrepared, state: "completed" });
     },
     resumeIfMissing: async (marker: Readonly<Record<string, unknown>>) => {
-      const { binding, identity } = pin();
-      const existing = existingIds(binding);
+      const { binding, identity } = await pin();
+      const existing = await existingIds(binding);
       if (existing.length) {
         assertDockerResourceLabels({
           labels: JSON.parse(
-            query(binding, [
+            await query(binding, [
               "container",
               "inspect",
               "--format",
@@ -622,10 +657,18 @@ export const createPostgresqlContainerLifecycle = ({
         user,
         database,
         adapter: {
-          inspect: async ({ signal }) => {
-            signal.throwIfAborted();
-            return observe(binding, identity, stored.receipt.imageId);
-          },
+          inspect: async ({ signal, timeoutMilliseconds }) =>
+            withPostgresqlDeadline(
+              "metadata",
+              (activeSignal) =>
+                observe(
+                  binding,
+                  identity,
+                  stored.receipt.imageId,
+                  activeSignal,
+                ),
+              { signal, timeoutMilliseconds },
+            ),
           create: async (args, { signal, timeoutMilliseconds }) =>
             bounded(binding, args, signal, timeoutMilliseconds),
           waitUntilReady: async ({ signal, timeoutMilliseconds }) => {

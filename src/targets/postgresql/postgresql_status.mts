@@ -30,7 +30,7 @@ export const inspectPostgresqlRuntimeStatus = async ({
     command: string,
     args: readonly string[],
     options?: { readonly capture?: boolean; readonly allowFailure?: boolean },
-  ) => CommandResult;
+  ) => CommandResult | Promise<CommandResult>;
   containerName: string;
   databaseUser: string;
   database: string;
@@ -55,22 +55,61 @@ export const inspectPostgresqlRuntimeStatus = async ({
       typeof marker.databasePassword === "string" &&
       marker.databasePassword.length >= 32,
   });
-  const succeeds = (command: string, args: readonly string[]): boolean =>
-    runCommand(command, args, { allowFailure: true }).status === 0;
-  const engineAvailable = succeeds("docker", ["info"]);
-  const containerExists =
-    engineAvailable &&
-    succeeds("docker", ["container", "inspect", containerName]);
-  const containerRunning =
-    containerExists &&
-    runCommand(
-      "docker",
-      ["inspect", "--format", "{{.State.Running}}", containerName],
-      { capture: true },
-    ).stdout.trim() === "true";
+  const succeeds = async (
+    command: string,
+    args: readonly string[],
+  ): Promise<boolean> =>
+    (await runCommand(command, args, { allowFailure: true })).status === 0;
+  const engineAvailable = await succeeds("docker", ["info"]);
+  const containerIds = engineAvailable
+    ? await runCommand(
+        "docker",
+        [
+          "container",
+          "ls",
+          "--all",
+          "--no-trunc",
+          "--filter",
+          `name=^/${containerName}$`,
+          "--format",
+          "{{.ID}}",
+        ],
+        { capture: true },
+      )
+    : null;
+  if (
+    containerIds &&
+    (containerIds.status !== 0 ||
+      (containerIds.stdout.trim() !== "" &&
+        !/^[a-f0-9]{64}$/u.test(containerIds.stdout.trim())))
+  )
+    throw new Error(
+      "PostgreSQL runtime presence is unconfirmed; no stopped state was inferred.",
+    );
+  const containerExists = Boolean(containerIds?.stdout.trim());
+  const running = containerExists
+    ? await runCommand(
+        "docker",
+        [
+          "inspect",
+          "--format",
+          "{{.State.Running}}",
+          containerIds!.stdout.trim(),
+        ],
+        { capture: true },
+      )
+    : null;
+  if (
+    running &&
+    (running.status !== 0 || !["true", "false"].includes(running.stdout.trim()))
+  )
+    throw new Error(
+      "PostgreSQL runtime state is unconfirmed; no stopped state was inferred.",
+    );
+  const containerRunning = running?.stdout.trim() === "true";
   const healthy =
     containerRunning &&
-    succeeds("docker", [
+    (await succeeds("docker", [
       "exec",
       containerName,
       "pg_isready",
@@ -78,7 +117,7 @@ export const inspectPostgresqlRuntimeStatus = async ({
       databaseUser,
       "--dbname",
       database,
-    ]);
+    ]));
   const state = !engineAvailable
     ? "unavailable"
     : !containerRunning
