@@ -17,11 +17,12 @@ local runtimes without memorizing every command.
 - [License and support](#license-support-and-future-pro)
 - [Try the CLI first](#try-the-free-engine-first)
 
-This guide targets **Free Starter 0.1.27**, named **Rehearsal DB** on
-[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db),
-with a [reviewed GitHub VSIX](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.27)
-for direct installation. Install from Marketplace or use the verified GitHub VSIX
-below. The canonical extension ID is **`rehearsal-db.rehearsal-db`**,
+This guide targets **Free Starter 0.1.28**. Use the
+[reviewed GitHub VSIX](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.28)
+or install **Rehearsal DB** from
+[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db)
+when its listing offers that version. GitHub and Marketplace publish independently.
+The canonical extension ID is **`rehearsal-db.rehearsal-db`**,
 published by **`rehearsal-db`**. The workbench and commands retain the **Rehearsal** brand.
 All included features are free indefinitely for personal or commercial development.
 No account, payment card, purchase, trial period, or license activation is required.
@@ -104,7 +105,7 @@ real WSL core fixtures do not certify a native Remote-WSL editor walkthrough.
 ### Core compatibility and setup help
 
 Core and the extension have independent version numbers. This guide targets core
-**2.2.0** and Starter **0.1.27**. See [Updates](updating.md)
+**2.2.1** and Starter **0.1.28**. See [Updates](updating.md)
 when moving an existing installation forward.
 **Upgrading from Core 1.x?** Core 2.0 stops database targets after a run or app exit
 when lifecycle settings are omitted, preserving their data volumes. Review the
@@ -135,21 +136,21 @@ distinction between desktop OS, extension host, architecture and actual database
 ### Direct GitHub installation
 
 The verified GitHub VSIX is an alternative to Marketplace. Open the
-[Starter 0.1.27 release](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.27).
+[Starter 0.1.28 release](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.28).
 
-1. Under **Assets**, download `rehearsal-db-0.1.27.vsix` and `SHA256SUMS`.
+1. Under **Assets**, download `rehearsal-db-0.1.28.vsix` and `SHA256SUMS`.
 2. Calculate the downloaded VSIX's SHA-256:
 
    **macOS**
 
    ```sh
-   shasum -a 256 /path/to/rehearsal-db-0.1.27.vsix
+   shasum -a 256 /path/to/rehearsal-db-0.1.28.vsix
    ```
 
    **Linux**
 
    ```sh
-   sha256sum /path/to/rehearsal-db-0.1.27.vsix
+   sha256sum /path/to/rehearsal-db-0.1.28.vsix
    ```
 
 3. Compare the result with that release's `SHA256SUMS`. **Stop if they differ.**
@@ -276,6 +277,11 @@ you are ready to activate installed code. Keep the previous reviewed VSIX for ro
 Canonical automatic updates require `rehearsal-db-<version>.vsix` and embedded identity
 `rehearsal-db.rehearsal-db`; they do not automatically import or replace a legacy package.
 
+In Starter 0.1.28, blocked extension updates offer **Open Extensions** and
+**Update Settings**. Finish or review the installation, restart when convenient,
+then choose **Check for Updates**. Live, changed or unverified reservations remain
+preserved; age or a missing process alone does not authorize removal.
+
 CLI updates require the separate CLI opt-in. They update compatible registry-backed npm
 dependencies in trusted, idle projects, preserve the dependency group, pin the exact
 checked version and update the lockfile with install scripts disabled. Busy or
@@ -297,7 +303,7 @@ route; do not delete its coordination lock while a package manager may still be 
 
 Manual updating stays available: download and verify the next reviewed VSIX, then repeat
 **Install from VSIX…**. See the release's
-[installation guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.27/README.md#get-started).
+[installation guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.28/README.md#get-started).
 An ordinary core-package update is detected from its manifest, lockfile and installed
 metadata without reloading VS Code. The header shows loaded extension and core versions
 separately; installed → newest appears only after a successful release check. Unknown or
@@ -316,8 +322,8 @@ external links may use their own services.
 
 ## License, support and future Pro
 
-Starter 0.1.27 carries the same
-[free Starter license](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.27/LICENSE).
+Starter 0.1.28 carries the same
+[free Starter license](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.28/LICENSE).
 Its current review, configuration, comparison and reporting tools are included; they
 are not a timed evaluation or a paid feature gate. Free use does not mean the extension
 is MIT-licensed: its bundled terms govern copying and redistribution. Core remains MIT.
@@ -326,17 +332,17 @@ Future optional Pro editor workflows must be separately identified. They cannot
 retroactively remove Starter rights already granted for a received version. Pro pricing,
 billing and entitlements are not implemented; no payment is needed to use Starter.
 Database and safety capabilities stay in the free CLI. The
-[edition guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.27/docs/commercial-readiness.md)
+[edition guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.28/docs/commercial-readiness.md)
 owns the detailed boundary.
 
 Preview describes stability, not a trial countdown. Support is best effort, with no
 service-level agreement, database hosting, backups or production support. Before use,
-read the release's [privacy statement](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.27/PRIVACY.md)
-and [support policy](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.27/SUPPORT.md).
+read the release's [privacy statement](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.28/PRIVACY.md)
+and [support policy](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.28/SUPPORT.md).
 Report editor problems in the
 [Rehearsal issue tracker](https://github.com/Ddupasquier/rehearsal-db/issues), as
 described in the support policy.
-Use its [private security process](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.27/SECURITY.md)
+Use its [private security process](https://github.com/Ddupasquier/rehearsal-vscode/blob/v0.1.28/SECURITY.md)
 for vulnerabilities; never post credentials, private rows or baseline files publicly.
 
 Historical VSIX files retain their bundled terms. Choose a reviewed release carrying
