@@ -247,6 +247,7 @@ describe("guided Rehearsal setup", () => {
       (
         await execute(process.execPath, [cliPath, "setup", "--json"], {
           cwd: root,
+          diagnosticPhase: "setup-preview",
         })
       ).stdout,
     );
@@ -266,7 +267,7 @@ describe("guided Rehearsal setup", () => {
         await execute(
           process.execPath,
           [cliPath, "setup", "--write", "--json"],
-          { cwd: root },
+          { cwd: root, diagnosticPhase: "setup-first-write" },
         )
       ).stdout,
     );
@@ -281,7 +282,7 @@ describe("guided Rehearsal setup", () => {
         await execute(
           process.execPath,
           [cliPath, "setup", "--write", "--json"],
-          { cwd: root },
+          { cwd: root, diagnosticPhase: "setup-repeat-write" },
         )
       ).stdout,
     );

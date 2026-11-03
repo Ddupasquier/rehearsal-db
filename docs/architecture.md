@@ -45,6 +45,9 @@ rehearsal-db/
 - `tests/helpers/public_cli.mjs` bounds setup-test child output and projects only
   fixed failure categories, exit/signal metadata and recognized setup refusal kinds.
   It never retains raw child errors, argv, provider text or output in failure reports.
+  The setup workflow adds only one of three fixed phase labels: preview, first write
+  or repeated write. Unknown labels are refused without echoing their contents, and
+  the test-only label is never passed to the child process.
   An unrecognized failure stays unclassified; a later green test does not establish
   the cause of a historical failure. This test helper is not shipped product code.
   The closed failure projection is shared with installed-consumer verification
