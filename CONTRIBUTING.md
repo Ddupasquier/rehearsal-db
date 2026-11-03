@@ -55,6 +55,9 @@ site tooling and mixed changes retain full checks. Required check names remain p
 manual and release verification retain their full coverage. Reuse passing exact-source
 evidence when the owning code and environment have not changed.
 
+Documentation checks compare the production help text and guides without launching the
+Rehearsal CLI. Process-level invalid-input contracts remain in the full runtime test suite.
+
 The unit suite uses two workers to limit overlapping CLI imports and memory pressure.
 On a slow filesystem, `npm test -- --maxWorkers=1` runs the same checks serially;
 it does not relax timeouts or skip safety assertions. Keep live database scenarios serial.
