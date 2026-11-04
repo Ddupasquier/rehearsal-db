@@ -10,18 +10,17 @@ each area links to its usage guide rather than asking you to trust a feature nam
 
 | Component           | Verified published version | Get it                                                                                       | Release details                                                                        |
 | ------------------- | -------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| **Rehearsal Core**  | **2.2.1**                  | [npm](https://www.npmjs.com/package/@rehearsal-db/core)                                      | [Core 2.2.1](https://github.com/Ddupasquier/rehearsal-db/releases/tag/v2.2.1)          |
-| **VS Code Starter** | **0.1.28**                 | [Marketplace](https://marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db) | [Starter 0.1.28](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.28) |
+| **Rehearsal Core**  | **2.3.0**                  | [npm](https://www.npmjs.com/package/@rehearsal-db/core)                                      | [Core 2.3.0](https://github.com/Ddupasquier/rehearsal-db/releases/tag/v2.3.0)          |
+| **VS Code Starter** | **0.1.29**                 | [Marketplace](https://marketplace.visualstudio.com/items?itemName=rehearsal-db.rehearsal-db) | [Starter 0.1.29](https://github.com/Ddupasquier/rehearsal-vscode/releases/tag/v0.1.29) |
 
-Reviewed November 3, 2026. This snapshot is reconciled with every release. Core and
+Reviewed November 4, 2026. This snapshot is reconciled with every release. Core and
 Starter publish independently; a development version or source branch does not establish
 availability. GitHub and Marketplace are separate channels; confirm the target version
 in the channel you use. See [Releases and updates](updating.md) for installation, package origin
 and version-specific changes.
 
-The prepared Core 2.3.0 / Starter 0.1.29 pair adds the scoped [SQLite workflow](sqlite.md).
-This upcoming pair is not included in the published snapshot above until each
-component has been independently verified in its distribution channel.
+Core 2.3.0 and Starter 0.1.29 include the scoped [SQLite workflow](sqlite.md).
+That guide defines SQLite's separate privacy, migration and resource limits.
 
 ## Core · prepare a useful, safe copy
 
@@ -39,6 +38,7 @@ component has been independently verified in its distribution channel.
 | You can…                                  | Included now                                                                                                                                        | Try it or learn more                                                   |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | **Use SQL, Prisma or Drizzle migrations** | Exact reviewed histories and pending candidates; version-pinned native PostgreSQL integrations with their own ledger semantics                      | [Supported toolchains](#supported-environments-and-toolchains)         |
+| **Rehearse an owned SQLite file**         | Consistent snapshots, fresh sanitized baselines and reviewed SQL migrations in a separate owned file, without Docker                                | [SQLite workflow and limits](sqlite.md)                                |
 | **Exercise realistic database behavior**  | Restore and check represented schema, rows, relationships and owned sequences; declare seed rows, prerequisites, triggers and security expectations | [Runtime policies](runtime-policies.md)                                |
 | **Run the whole rehearsal**               | Reset from a verified baseline, apply approved candidates, verify the database and run the project's application proof                              | [Hands-on tutorial](tutorial.md)                                       |
 | **Keep an existing sandbox**              | Apply approved migrations without resetting current sandbox data                                                                                    | [CLI commands](commands.md)                                            |
@@ -76,6 +76,7 @@ keeps database execution in Core.
 | You can…                            | Included now                                                                                                                                                                                                   | Explore                                                                                                                                                |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Find the next useful step**       | Seven-page dashboard, Projects sidebar, detected facts, Core compatibility, Doctor results, setup guidance and exact CLI previews                                                                              | [Workbench guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/main/docs/extension-guide.md#what-the-workbench-shows)                          |
+| **Review SQLite file workflows**    | Target-aware readiness, configuration, baseline/status inspection and file enable/pause controls through Core                                                                                                  | [SQLite workflow and limits](sqlite.md)                                                                                                                |
 | **Review exact migrations**         | Search, filters, sorting, remembered checkmarks, ordering and dependencies, approval digests, SQL/Prisma/Drizzle review and file navigation                                                                    | [Migration review](https://github.com/Ddupasquier/rehearsal-vscode/blob/main/docs/extension-guide.md#what-the-workbench-shows)                         |
 | **Run and explore a sandbox**       | Full rehearsals, migration without reset, database verification, application sessions, local app links and project- or target-scoped lifecycle actions                                                         | [Project and runtime review](https://github.com/Ddupasquier/rehearsal-vscode/blob/main/docs/extension-guide.md#project-setup-and-runtime-review)       |
 | **Keep useful evidence**            | Baseline generations and integrity, counts, privacy and Storage summaries, opt-in shape evidence, aggregate comparisons and redacted Markdown/JSON exports                                                     | [Detailed extension guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/main/docs/extension-guide.md)                                          |
@@ -96,11 +97,16 @@ for personal and commercial development.
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Node.js**           | Maintained Node 22, 24 and 26 release lines                                                                                                                                                                                     |
 | **Local execution**   | macOS and Linux; Windows through the WSL 2 compatibility preview on its Linux filesystem                                                                                                                                        |
-| **Database families** | PostgreSQL and Supabase; normal rehearsal commands use a local target                                                                                                                                                           |
+| **Database families** | PostgreSQL, Supabase and the scoped SQLite file target; normal rehearsal commands use a local target                                                                                                                            |
+| **Native SQLite**     | Ordinary tables and reviewed SQL migrations; initially qualified on macOS arm64 / Node 24.21.0 / SQLite 3.53.4, with Code 1.143.0 for native editor review                                                                      |
 | **Native Prisma**     | Prisma Migrate 7.10.1; initially qualified on PostgreSQL 17 / Ubuntu 24.04 x64 / Node 24                                                                                                                                        |
 | **Native Drizzle**    | Drizzle Kit 0.31.11, ORM 0.45.4 and pg 8.23.1; initially qualified on PostgreSQL 17 / Ubuntu 24.04 x64 / Node 24                                                                                                                |
 | **Editor**            | Desktop VS Code 1.101+ with a compatible project-local Core package; see the [extension compatibility guide](https://github.com/Ddupasquier/rehearsal-vscode/blob/main/docs/extension-guide.md#core-compatibility-and-upgrades) |
 | **VM shutdown**       | Qualified macOS Apple Silicon / Colima 0.10.3 / VZ / default-profile path; other engine controls are not implied                                                                                                                |
+
+SQLite uses sampled worker-RSS supervision, which permits overshoot and is not a hard
+native-memory quota. Runtime WAL, mixed targets, ORM adapters, encryption and extensions
+remain outside its released scope; see [SQLite limitations](sqlite.md#supported-scope).
 
 [Compatibility](https://github.com/Ddupasquier/rehearsal-db/blob/main/COMPATIBILITY.md)
 and the linked guides own the exact limits. Use the documentation bundled with an older
