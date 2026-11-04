@@ -149,7 +149,27 @@ it("worker exit and stop naturally drain the already-bounded sample without abor
   expect(c.listenerCount("exit")).toBe(0);
   expect(c.listenerCount("error")).toBe(0);
 });
-it.skipIf(process.platform !== "darwin" && process.platform !== "linux")(
+// Successful native jobs require the same exact binding/API tuple as production.
+const [major, minor] = process.versions.node.split(".").map(Number);
+let qualifiedSqlite = false;
+if (major > 24 || (major === 24 && minor >= 12)) {
+  let db;
+  try {
+    const sqlite = await import("node:sqlite");
+    db = new sqlite.DatabaseSync(":memory:");
+    qualifiedSqlite =
+      typeof sqlite.backup === "function" &&
+      typeof db.setAuthorizer === "function" &&
+      typeof db.enableDefensive === "function" &&
+      db.prepare("SELECT sqlite_version() AS version").get().version ===
+        "3.53.4";
+  } finally {
+    db?.close();
+  }
+}
+const memoryPlatform =
+  process.platform === "darwin" || process.platform === "linux";
+it.skipIf(!memoryPlatform || !qualifiedSqlite)(
   "repeated short actual probes drain every sample without closure uncertainty",
   async () => {
     const { runSqliteWorkerJob } =
@@ -163,4 +183,22 @@ it.skipIf(process.platform !== "darwin" && process.platform !== "linux")(
       ).resolves.toMatchObject({ sqliteVersion: "3.53.4", rowCount: 0 });
   },
   10000,
+);
+
+it.skipIf(!memoryPlatform || qualifiedSqlite)(
+  "refuses an unqualified native binding instead of claiming successful short-worker coverage",
+  async () => {
+    const { runSqliteWorkerJob } =
+      await import("../../../../dist/src/targets/sqlite/sqlite_worker_process.mjs");
+    await expect(
+      runSqliteWorkerJob({
+        operation: "probe",
+        maximumBytes: 64 * 1024 * 1024,
+      }),
+    ).rejects.toMatchObject({
+      kind: "backend-unavailable",
+      code: "SQLITE_BACKEND_UNAVAILABLE",
+      cleanupUnconfirmed: false,
+    });
+  },
 );
