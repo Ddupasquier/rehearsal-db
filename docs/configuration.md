@@ -824,14 +824,15 @@ Declarative runtime policies are preferred for supported schema prerequisites an
 checks. Existing project-owned adapters remain compatible but do not replace the
 database driver.
 
-### SQLite candidate — unreleased
+### SQLite in Core 2.3.0
 
-The unreleased source candidate adds explicit `runtime.target: "sqlite"` and a
+Core 2.3.0 adds explicit `runtime.target: "sqlite"` and a
 `sqlite` configuration block. It uses a separate owned file without Docker or a
 database port. Configure the original source, SQL directory, reviewed privacy
 policy and application file-path mapping manually; existing setup templates do
 not infer those decisions. See the [SQLite guide](sqlite.md#configuration) for the
-complete example, qualification status and limits. Published releases do not
+complete example and exact runtime limits. Confirm Core 2.3.0 publication in the
+[capability catalog](capabilities.md) before installing; older releases do not
 accept this configuration.
 
 ### Native Prisma migrations

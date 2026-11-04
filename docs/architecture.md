@@ -312,9 +312,9 @@ containers and SQL setup on one side; Supabase CLI, Auth, Storage, and generated
 on the other. An ordinary `stop` never enters rollback or discard, so later `start`
 preserves the sandbox database and Storage contents.
 
-### Unreleased SQLite boundary
+### SQLite boundary in Core 2.3.0
 
-The [SQLite source candidate](sqlite.md) uses the same lifecycle dispatch without
+[SQLite in Core 2.3.0](sqlite.md) uses the same lifecycle dispatch without
 Docker admission. `targets/sqlite/sqlite_manager.mts` owns private runtime receipts
 and exact file transitions; `sqlite_files.mts` owns canonical identity guards.
 `baseline/producers/sqlite_baseline.mts` creates separate format-6 generations.
@@ -325,9 +325,10 @@ Before migration, the manager exclusively preclaims the DELETE journal and recor
 its identity in a dirty receipt. Only confirmed worker closure permits guarded
 recovery of that original journal; a replacement or unconfirmed worker never gains
 cleanup authority. Fixed transport failures preserve cleanup uncertainty through
-inspection and CLI boundaries. Native-memory enforcement remains unresolved for
-the selected binding; the guide owns the qualification limits. This implementation
-is not part of the published PostgreSQL/Supabase support contract.
+inspection and CLI boundaries. Worker memory uses supervised sampled RSS, not a
+hard native-memory or OS quota; the guide owns the exact limits. SQLite has its
+own runtime qualification and does not inherit PostgreSQL/Supabase platform support.
+The [capability catalog](capabilities.md) records verified release availability.
 
 Within `targets/postgresql/`, `postgresql_resume_protocol.mts` owns retained-container
 contracts, binding checks and reconstruction sequencing through an injected adapter.

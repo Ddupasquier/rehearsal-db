@@ -53,9 +53,12 @@ editor walkthrough are different evidence; do not infer the latter from Linux un
 tests. Supabase/Auth/Storage in WSL and other remote hosts remain unclaimed until their
 own checks pass. See the [complete platform boundary](https://github.com/Ddupasquier/rehearsal-db/blob/main/COMPATIBILITY.md#operating-systems-and-execution-location).
 
+For SQLite, use the separate [file-backed setup](sqlite.md). The quick start below
+uses PostgreSQL or Supabase; SQLite does not require Docker or a VM.
+
 ## 1. Check the required tools
 
-You need Node.js 22, 24, or 26, npm, and a running Docker-compatible engine. Node.js 24
+For PostgreSQL or Supabase, you need Node.js 22, 24, or 26, npm, and a running Docker-compatible engine. Node.js 24
 LTS is the recommended default:
 
 ```bash

@@ -43,7 +43,7 @@ Look up only what you need for your next decision. Start with
 - [CLI commands](commands.md)
 - [Configuration](configuration.md)
 - [Container runtime lifecycle](runtime-lifecycle.md)
-- [SQLite target under qualification](sqlite.md)
+- [SQLite rehearsals](sqlite.md)
 - [TypeScript](typescript.md)
 - [Runtime and identity policies](runtime-policies.md)
 - [Database adapters](adapters.md)

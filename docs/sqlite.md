@@ -1,10 +1,11 @@
 # SQLite rehearsals
 
-**Unreleased.** This guide describes the SQLite implementation under qualification.
-Published Core 2.2.1 and Starter 0.1.28 do not include this target. See
-[released capabilities](capabilities.md) for installed-release availability.
+This guide covers SQLite in **Core 2.3.0**, with **Starter 0.1.29** for its editor
+workflow. Confirm the version in your official installation channel before using it;
+[released capabilities](capabilities.md) records verified publication. Core 2.2.1
+and Starter 0.1.28 do not include this target.
 
-The SQLite candidate runs directly in the selected Node executable. Rehearsal snapshots a reviewed
+SQLite runs directly in the selected Node executable. Rehearsal snapshots a reviewed
 local source, builds a fresh sanitized baseline, and restores it into a separate
 owned file. It does not need a database server, Docker, or a VM.
 
@@ -18,11 +19,11 @@ owned file. It does not need a database server, Docker, or a VM.
 ## Requirements
 
 - An executable with the **SQLite 3.53.4** binding, native backup,
-  authorizer and defensive APIs. Development checks use existing
-  **Node 24.21.0**; support for the package's other Node lines does not qualify
+  authorizer and defensive APIs. The qualified local tuple is **macOS arm64 /
+  Node 24.21.0 / SQLite 3.53.4**; support for the package's other Node lines does not qualify
   their SQLite binding automatically.
 - A local filesystem supporting SQLite locks and stable file-creation identities.
-  Native Windows remains outside the current SQLite slice.
+  Other operating systems, including native Windows, remain unqualified for this SQLite slice.
 - The documented system `lsof` inspector for exact open-handle checks before
   reset/discard. Unknown inspection results refuse those operations.
 - The system `ps` inspector for bounded observations of the owned worker's memory.
@@ -140,7 +141,7 @@ name and migrations accessing it refuse. Changed baseline-prefix files also refu
 
 ## Run
 
-Using the matching source-candidate installation, prepare the reviewed source and ledger:
+Using the matching reviewed installation, prepare the reviewed source and ledger:
 
 ```sh
 rehearsal baseline create --records=data/development.sqlite --ledger=rehearsal/sqlite-ledger.json
@@ -197,7 +198,7 @@ renumbered.
 Unsupported: encrypted databases, loadable extensions, attached databases, virtual
 tables or generated columns, ORM-native migration adapters, PostgreSQL static SQL analysis,
 Supabase services and mixed/dependent targets. Source WAL snapshots are supported
-within the candidate, but changing the sandbox to WAL mode is not qualified.
+within this slice, but changing the sandbox to WAL mode is not qualified.
 Unexpected runtime sidecars are retained
 rather than adopted by filename. Moving or replacing owned files invalidates their
 receipt; source and unproven files are preserved.
@@ -210,8 +211,8 @@ deadline is not a completion promise for the entire CLI workflow.
 
 **Worker memory is supervised, not hard-capped.** The selected binding disables
 SQLite memory accounting, so `hard_heap_limit` readback cannot enforce a native
-ceiling. The owner selected sampled process-memory supervision; that implementation
-is being qualified. Its fixed worker RSS budget is 256 MiB, with 100 ms between
+ceiling. Rehearsal instead uses sampled process-memory supervision. Its fixed
+worker RSS budget is 256 MiB, with 100 ms between
 bounded system observations and one observation at a time. An excess or an unreadable live
 observation interrupts the owned worker and retains recovery. Allocation can
 overshoot between observations; this is not an OS memory quota or a whole-machine

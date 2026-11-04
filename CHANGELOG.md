@@ -5,13 +5,15 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-11-03
+
 ### Added
 
-- An isolated native SQLite target under qualification: consistent source snapshots,
+- An isolated native SQLite target: consistent source snapshots,
   fresh sanitized baselines, reviewed SQL migrations and owned-file lifecycle controls.
   Negotiated target capabilities, baseline format 6 and embedded-file status schema 2
   keep existing PostgreSQL/Supabase contracts separate. See [SQLite](docs/sqlite.md)
-  for the exact runtime, limits and outstanding qualification; this is not published support.
+  for the qualified runtime, file/WAL limits, sampled-memory supervision and recovery boundary.
 
 ## [2.2.1] - 2026-11-03
 
@@ -998,7 +1000,8 @@ not unattended cleanup, and container age is not proof of user inactivity.
   publication uses short-lived trusted OIDC, and every release tag must already exist on
   protected `main`.
 
-[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.1...v2.3.0
 [2.2.1]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Ddupasquier/rehearsal-db/compare/v2.0.1...v2.1.0
