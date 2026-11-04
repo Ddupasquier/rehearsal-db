@@ -28,6 +28,7 @@ export const groups = Object.freeze([
       "commands",
       "configuration",
       "runtime-lifecycle",
+      "sqlite",
       "baselines",
       "sanitization",
       "production-source",
@@ -144,6 +145,14 @@ export const pages = Object.freeze([
     title: "Configuration",
     description:
       "All supported rehearsal.config.mjs settings, grouped by purpose.",
+  },
+  {
+    slug: "sqlite",
+    source: "sqlite.md",
+    title: "SQLite candidate — unreleased",
+    shortTitle: "SQLite (unreleased)",
+    description:
+      "Review the file-backed SQLite source candidate, its configuration and qualification limits.",
   },
   {
     slug: "typescript",

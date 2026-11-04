@@ -32,6 +32,7 @@ import { createCandidateMigrationReceipt } from "../recovery/restore.mjs";
 import { readMigrationFileInventory } from "../migrations/migration_history.mjs";
 import { readConfiguredMigrationSource } from "../migrations/native/native_migration_source.mjs";
 import { REHEARSAL_VERSION } from "../../shared/diagnostics.mjs";
+import { requireContainerTarget } from "../../targets/target.mjs";
 import {
   inspectRehearsalNodeRuntime,
   REHEARSAL_NODE_LABEL,
@@ -256,6 +257,7 @@ const loadPlanInputs = async (
   inventoryReader: typeof readMigrationFileInventory = readMigrationFileInventory,
 ) => {
   const loaded = await loadRehearsalConfig(options);
+  requireContainerTarget(loaded.config.runtime.target);
   const [baseline, policyBytes] = await Promise.all([
     verifyActiveBaseline({
       artifactRoot: loaded.paths.artifactDirectory,
@@ -380,12 +382,12 @@ const buildPlanFromInputs = async (
     baselineReview: buildBaselineScopeReview({
       baseline,
       policy: inputs.sanitizationPolicy,
-      provider: config.runtime.target,
+      provider: requireContainerTarget(config.runtime.target),
       sourcePreparationConfigured: config.preparation !== null,
       identityPolicyConfigured: paths.identityPolicy !== null,
     }),
     authenticationReview: buildAuthenticationReview({
-      provider: config.runtime.target,
+      provider: requireContainerTarget(config.runtime.target),
       configuredProviders: config.safety.authenticationProviders,
       declarativeProviders:
         config.supabase?.authentication?.providers.map(
@@ -455,11 +457,25 @@ const buildPlanFromInputs = async (
 
 export const buildRehearsalPlan = async (
   options: RehearsalConfigPathOptions = {},
-) => buildPlanFromInputs(await loadPlanInputs(options));
+) => {
+  const loaded = await loadRehearsalConfig(options);
+  if (loaded.config.runtime.target === "sqlite") {
+    const { buildSqlitePlan } =
+      await import("../../targets/sqlite/sqlite_inspection.mjs");
+    return buildSqlitePlan(loaded);
+  }
+  return buildPlanFromInputs(await loadPlanInputs(options));
+};
 
 export const inspectRehearsalBaseline = async (
   options: RehearsalConfigPathOptions = {},
 ) => {
+  const loaded = await loadRehearsalConfig(options);
+  if (loaded.config.runtime.target === "sqlite") {
+    const { inspectSqliteBaseline } =
+      await import("../../targets/sqlite/sqlite_inspection.mjs");
+    return inspectSqliteBaseline(loaded);
+  }
   const inputs = await loadPlanInputs(options);
   const plan = await buildPlanFromInputs(inputs);
   const generations = await inspectBaselineGenerations({
@@ -499,6 +515,12 @@ export const inspectRehearsalMigrations = async (
   options: RehearsalConfigPathOptions = {},
   inventoryReader: typeof readMigrationFileInventory = readMigrationFileInventory,
 ) => {
+  const loaded = await loadRehearsalConfig(options);
+  if (loaded.config.runtime.target === "sqlite") {
+    const { inspectSqliteMigrations } =
+      await import("../../targets/sqlite/sqlite_inspection.mjs");
+    return inspectSqliteMigrations(loaded);
+  }
   const inputs = await loadPlanInputs(options, inventoryReader);
   return {
     baselineGenerationId: inputs.baseline.generationId,
@@ -534,11 +556,13 @@ export const runRehearsalDoctor = async (
   const host = await inspectHostPlatform({
     projectRoot: options.projectRoot ?? process.cwd(),
   });
-  const containerEngines = await inspectContainerEngineOptions({
-    projectRoot: options.projectRoot ?? process.cwd(),
-    hostInspection: host,
-  });
+  const inspectEngines = () =>
+    inspectContainerEngineOptions({
+      projectRoot: options.projectRoot ?? process.cwd(),
+      hostInspection: host,
+    });
   if (!host.supported) {
+    const containerEngines = await inspectEngines();
     return {
       state: "NOT READY",
       containerEngines,
@@ -557,6 +581,7 @@ export const runRehearsalDoctor = async (
   try {
     loaded = await loadRehearsalConfig(options);
   } catch (error) {
+    const containerEngines = await inspectEngines();
     return {
       state: "NOT READY",
       containerEngines,
@@ -572,6 +597,12 @@ export const runRehearsalDoctor = async (
       ],
     };
   }
+  if (loaded.config.runtime.target === "sqlite") {
+    const { runSqliteDoctor } =
+      await import("../../targets/sqlite/sqlite_inspection.mjs");
+    return runSqliteDoctor(loaded);
+  }
+  const containerEngines = await inspectEngines();
   const { config, paths, projectRoot } = loaded;
   // Resolve the original selectors again rather than overriding an explicit host
   // with the discovery context. Never verify occupied ports on another engine.

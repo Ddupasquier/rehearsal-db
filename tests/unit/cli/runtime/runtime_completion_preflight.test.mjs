@@ -79,13 +79,19 @@ describe("destructive completion preflight and ownership", () => {
         output: "completed",
       };
     });
-    await expect(
-      createRuntimeStackRunner(manager)(request(value)),
-    ).rejects.toBe(failure);
+    const input = request(value);
+    input.session.targetConfirmations = new Map([
+      [value.primary.configPath, "a".repeat(64)],
+      [value.targets[1].configPath, "b".repeat(64)],
+    ]);
+    await expect(createRuntimeStackRunner(manager)(input)).rejects.toBe(
+      failure,
+    );
     expect(manager.mock.calls.map(([o]) => [o.action, o.targetName])).toEqual([
       ["run", "primary"],
       ["run", "dependent"],
       ["discard", "primary"],
     ]);
+    expect(manager.mock.calls.at(-1)[0].confirmation).toBe("a".repeat(64));
   });
 });

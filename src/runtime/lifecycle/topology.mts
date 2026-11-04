@@ -124,6 +124,14 @@ export const loadRuntimeTopology = async (
     );
   }
   const targets = [primary, ...dependents];
+  if (
+    targets.length > 1 &&
+    targets.some((target) => target.config.runtime.target === "sqlite")
+  ) {
+    throw new Error(
+      "SQLite currently requires a standalone primary target; mixed or dependent SQLite runtimes are unsupported.",
+    );
+  }
   assertUnique(targets, (target) => target.name, "target name");
   assertUnique(targets, (target) => target.configPath, "config path");
   assertUnique(

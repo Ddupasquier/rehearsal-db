@@ -9,6 +9,7 @@ const topology = (mode = "stop-after-run") => {
     primary: true,
     paths: { applicationEnvironment: "/tmp/runtime.env" },
     config: {
+      runtime: { target: "postgresql" },
       lifecycle: { run: mode, open: "keep-until-stop" },
       application: {
         startCommand: "npm run dev",
@@ -92,6 +93,30 @@ describe("runtime action lifecycle policy", () => {
     );
     const result = await handler.handle({ ...context(), command: "start" });
     expect(result.render("normal")).toContain("rehearsal open");
+  });
+  it("describes SQLite file availability without claiming a database daemon or Storage service", async () => {
+    for (const mode of ["keep-until-stop", "stop-after-run"]) {
+      const injected = services({ mode });
+      const run = injected.runRuntimeStack.getMockImplementation();
+      injected.runRuntimeStack.mockImplementation(async (args) => {
+        const result = await run(args);
+        result.topology.primary.config.runtime.target = "sqlite";
+        return result;
+      });
+      const [handler] = createRuntimeActionHandlers(injected);
+      const result = await handler.handle(context());
+      const output = result.render("normal");
+      expect(output).toContain(
+        mode === "keep-until-stop"
+          ? "SQLite file enabled"
+          : "SQLite file paused",
+      );
+      expect(output).not.toContain("database remains running");
+      expect(output).not.toContain("Storage");
+      expect(result.data.lifecycle.runtimeState).toBe(
+        mode === "keep-until-stop" ? "running" : "stopped",
+      );
+    }
   });
   it("stops after a successful run and reports preserved data", async () => {
     const injected = services();

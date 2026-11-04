@@ -17,6 +17,7 @@ import {
   loadRuntimeTopology,
   type RuntimeTopologyTarget,
 } from "../lifecycle/topology.mjs";
+import { requireContainerTarget } from "../../targets/target.mjs";
 export { stopReviewedStaleTarget } from "./stale_environment_stop.mjs";
 
 type Runner = (
@@ -180,7 +181,7 @@ export const createStopStalePlan = ({
       Object.freeze({
         target: target.name,
         projectId,
-        provider: target.config.runtime.target,
+        provider: requireContainerTarget(target.config.runtime.target),
         displayName: target.config.runtime.displayName,
         configPath: target.configPath,
         configurationSha256: hash(target.config),
@@ -226,6 +227,9 @@ export const inspectStopStalePlan = async (
   }: { readonly run?: Runner; readonly now?: () => Date } = {},
 ): Promise<StopStalePlan> => {
   const topology = await loadRuntimeTopology(options);
+  topology.targets.forEach((t) =>
+    requireContainerTarget(t.config.runtime.target),
+  );
   const inheritedEnvironment = { ...process.env };
   const engine = assertLocalDockerContext({
     cwd: topology.projectRoot,

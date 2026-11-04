@@ -1,6 +1,6 @@
 /** Preview or create the project-root Rehearsal configuration. */
 
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import {
   findRehearsalConfigPath,
@@ -64,9 +64,11 @@ export const runRehearsalInit = async ({ projectRoot, flags }: InitOptions) => {
         : { configPath: flags.configPath }),
     });
     let source: string;
-    if (loaded.config.supabase) {
+    if (loaded.config.sqlite) {
+      source = await readFile(existingPath, "utf8");
+    } else if (loaded.config.supabase) {
       const { api, database, studio } = loaded.config.runtime.ports;
-      if (api === undefined || studio === undefined) {
+      if (api === undefined || studio === undefined || database === undefined) {
         throw new Error(
           "The normalized Supabase configuration is missing its API or Studio port.",
         );
@@ -76,9 +78,14 @@ export const runRehearsalInit = async ({ projectRoot, flags }: InitOptions) => {
         ports: { api, database, studio },
       });
     } else {
+      const databasePort = loaded.config.runtime.ports.database;
+      if (databasePort === undefined)
+        throw new Error(
+          "The configured database target requires its database port.",
+        );
       source = renderDetectedPostgresqlConfig(detected, {
         applicationUrl: loaded.config.runtime.applicationUrl,
-        databasePort: loaded.config.runtime.ports.database,
+        databasePort,
       });
     }
     const usesLegacyAuthentication = Boolean(

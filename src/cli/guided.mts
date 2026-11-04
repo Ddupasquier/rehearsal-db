@@ -2,28 +2,21 @@
  * State-aware interactive home screen and first-run flows.
  */
 
-import { access, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
 import * as prompts from "@clack/prompts";
+import { inspectGuidedProject } from "./guided_project.mjs";
+import type { GuidedState, TopologySummary } from "./guided_project.mjs";
 import { createGuidedUpdates } from "./updates/guided_updates.mjs";
-import { renderCleanup } from "./presentation/cleanup_rendering.mjs";
 import {
-  findRehearsalConfigPath,
-  inspectDetectedProject,
-  loadRehearsalConfig,
-} from "../project/configuration.mjs";
-import type {
-  DetectedProject,
-  RehearsalConfigPathOptions,
-} from "../project/configuration.mjs";
+  renderGuidedNodeHelp,
+  renderSqliteBaselineHelp,
+} from "./presentation/guided_help.mjs";
+import { renderCleanup } from "./presentation/cleanup_rendering.mjs";
+import type { RehearsalConfigPathOptions } from "../project/configuration.mjs";
 import type { RehearsalCliFlags } from "./arguments.mjs";
 import type { CliSessionState } from "./command_contract.mjs";
-import type { RuntimeTopologyTarget } from "../runtime/lifecycle/topology.mjs";
 import type { RehearsalCleanupPlan } from "../runtime/resources/cleanup.mjs";
 import type { ChoiceOption } from "./presentation/terminal.mjs";
-import { validateRuntimeSanitizationPolicy } from "../baseline/sanitization_policy.mjs";
 import {
-  inspectRehearsalNodeRuntime,
   planRehearsalSetup,
   summarizeRehearsalSetup,
 } from "../project/setup.mjs";
@@ -62,31 +55,6 @@ import {
 
 type GuidedCommandOption = ChoiceOption & { readonly command: string };
 
-interface TopologySummary {
-  readonly topology: {
-    readonly dependents: readonly unknown[];
-    readonly targets: readonly RuntimeTopologyTarget[];
-  };
-}
-
-interface GuidedState {
-  readonly detected: DetectedProject;
-  readonly node: ReturnType<typeof inspectRehearsalNodeRuntime>;
-  readonly config: "missing" | "invalid" | "valid";
-  readonly target?: "supabase" | "postgresql";
-  readonly configPath?: string;
-  readonly configError?: string;
-  readonly baseline: boolean;
-  readonly policy?: "missing" | "needs-review" | "reviewed";
-  readonly policyPath?: string;
-  readonly policyAbsolutePath?: string;
-  readonly migrationSummary?: TopologySummary;
-  readonly refreshConfigured?: boolean;
-  readonly identityConfigured?: boolean;
-  readonly dependentCount?: number;
-  readonly runtime: boolean;
-}
-
 type GuidedCleanupPlan =
   | RehearsalCleanupPlan
   | Readonly<{
@@ -113,111 +81,6 @@ interface GuidedRefreshPlan {
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
-
-const pathExists = (path: string): Promise<boolean> =>
-  access(path)
-    .then(() => true)
-    .catch((error) => {
-      if (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "ENOENT"
-      )
-        return false;
-      throw error;
-    });
-
-const inspectGuidedProject = async ({
-  projectRoot,
-  planOptions,
-  topologyCandidateSummary,
-}: {
-  projectRoot: string;
-  planOptions: RehearsalConfigPathOptions;
-  topologyCandidateSummary: (
-    options: RehearsalConfigPathOptions,
-  ) => Promise<TopologySummary>;
-}): Promise<GuidedState> => {
-  const detected = await inspectDetectedProject({ projectRoot });
-  const node = inspectRehearsalNodeRuntime();
-  let configPath;
-  try {
-    configPath = await findRehearsalConfigPath(planOptions);
-  } catch (error) {
-    if (!errorMessage(error).startsWith("No Rehearsal configuration")) {
-      throw error;
-    }
-  }
-  if (!configPath) {
-    return {
-      detected,
-      node,
-      config: "missing",
-      target: detected.hasSupabaseConfig ? "supabase" : "postgresql",
-      baseline: false,
-      runtime: false,
-    };
-  }
-  let loaded;
-  try {
-    loaded = await loadRehearsalConfig(planOptions);
-  } catch (error) {
-    return {
-      detected,
-      node,
-      config: "invalid",
-      configPath,
-      configError: String(redactDiagnosticValue(errorMessage(error))),
-      baseline: false,
-      runtime: false,
-    };
-  }
-  let migrationSummary;
-  let topology;
-  try {
-    const summary = await topologyCandidateSummary(planOptions);
-    migrationSummary = summary;
-    topology = summary.topology;
-  } catch {
-    // The doctor command owns the detailed, safely redacted explanation.
-  }
-  let policy: GuidedState["policy"] = "missing";
-  if (await pathExists(loaded.paths.sanitizationPolicy)) {
-    try {
-      validateRuntimeSanitizationPolicy(
-        JSON.parse(await readFile(loaded.paths.sanitizationPolicy, "utf8")),
-      );
-      policy = "reviewed";
-    } catch {
-      policy = "needs-review";
-    }
-  }
-  return {
-    detected,
-    node,
-    config: "valid",
-    target: loaded.config.runtime.target,
-    configPath,
-    baseline: Boolean(migrationSummary),
-    policy,
-    policyPath: relative(projectRoot, loaded.paths.sanitizationPolicy),
-    policyAbsolutePath: loaded.paths.sanitizationPolicy,
-    ...(migrationSummary === undefined ? {} : { migrationSummary }),
-    refreshConfigured: Boolean(loaded.config.preparation),
-    identityConfigured: Boolean(loaded.paths.identityPolicy),
-    dependentCount: topology?.dependents.length ?? 0,
-    runtime: topology
-      ? (
-          await Promise.all(
-            topology.targets.map((target) =>
-              pathExists(join(target.paths.runtimeWorkdir, "baseline.json")),
-            ),
-          )
-        ).every(Boolean)
-      : await pathExists(join(loaded.paths.runtimeWorkdir, "baseline.json")),
-  };
-};
 
 const reviewColumn = async ({
   table,
@@ -463,7 +326,13 @@ const guidedOptions = (
       { label: "Check readiness", command: "doctor" },
     );
   } else if (state.node.supported && state.config === "valid") {
-    if (state.policy === "missing") {
+    if (state.target === "sqlite") {
+      options.push({
+        label: "SQLite baseline instructions",
+        hint: "Review the file, column policy and current SQL ledger",
+        command: "sqlite-help",
+      });
+    } else if (state.policy === "missing") {
       options.push({
         label: "Prepare the script",
         hint: "Create a reviewable policy draft",
@@ -505,7 +374,11 @@ const guidedOptions = (
       command: "manage-runtime",
     });
   }
-  if (state.node.supported && state.config === "valid") {
+  if (
+    state.node.supported &&
+    state.config === "valid" &&
+    state.target !== "sqlite"
+  ) {
     options.push({
       label: "Clean up disk space",
       hint: "Preview old baselines, the runtime, and unused images",
@@ -546,8 +419,8 @@ const showGuidedStatus = ({
     complete ? terminalStyle(flags, "32", "✓") : terminalStyle(flags, "2", "○");
   const statusLines = [
     `${marker(state.node.supported)} Node.js ${state.node.version}${state.node.supported ? "" : ` (${REHEARSAL_NODE_LABEL} required)`}`,
-    `${marker(state.target === "supabase" ? state.detected.hasSupabaseConfig : state.detected.hasPostgresqlMigrations)} ${state.target === "supabase" ? "Supabase" : "PostgreSQL"} project detected`,
-    `${marker(state.target === "supabase" ? state.detected.hasMigrations : state.detected.hasPostgresqlMigrations)} Migration history detected`,
+    `${marker(state.target === "sqlite" ? state.config === "valid" : state.target === "supabase" ? state.detected.hasSupabaseConfig : state.detected.hasPostgresqlMigrations)} ${state.target === "sqlite" ? "SQLite" : state.target === "supabase" ? "Supabase" : "PostgreSQL"} project detected`,
+    `${marker(state.target === "sqlite" ? state.baseline : state.target === "supabase" ? state.detected.hasMigrations : state.detected.hasPostgresqlMigrations)} ${state.target === "sqlite" ? "Declared SQL prefix verified" : "Migration history detected"}`,
     `${marker(state.config === "valid")} Rehearsal configuration${state.config === "invalid" ? " needs attention" : ""}`,
     ...(state.dependentCount
       ? [
@@ -560,7 +433,11 @@ const showGuidedStatus = ({
         ]
       : []),
     `${marker(state.baseline)} Verified baseline`,
-    ...(state.runtime ? [`${marker(true)} Disposable runtime created`] : []),
+    ...(state.runtime
+      ? [
+          `${marker(true)} ${state.target === "sqlite" ? "Local SQLite runtime receipt detected" : "Disposable runtime created"}`,
+        ]
+      : []),
     ...(state.configError
       ? ["", terminalStyle(flags, "33", `! ${state.configError}`)]
       : []),
@@ -851,24 +728,15 @@ export const createGuidedHome = ({
       optionsAlreadyShown: !useStyledPrompts(flags),
     });
     if (!selected || selected.command === "exit") return null;
+    if (selected.command === "sqlite-help") {
+      console.log(renderSqliteBaselineHelp());
+      return "home";
+    }
     if (selected.command === "check-updates") {
       return (await updates(flags, true)) ? null : "home";
     }
     if (selected.command === "node-help") {
-      console.log(
-        [
-          "",
-          terminalStyle(flags, "1", "SUPPORTED NODE.JS REQUIRED"),
-          `This shell is using Node.js ${state.node.version}. Rehearsal has not changed your project.`,
-          `Supported releases: ${REHEARSAL_NODE_LABEL}.`,
-          "",
-          "Recommended with nvm:",
-          "  nvm install --lts",
-          "  nvm use --lts",
-          "",
-          "Then reinstall Rehearsal in your scratch project and run npx rehearsal again.",
-        ].join("\n"),
-      );
+      console.log(renderGuidedNodeHelp(state.node.version, flags));
       return "home";
     }
     if (selected.command === "policy-review") {

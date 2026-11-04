@@ -23,6 +23,7 @@ Commands:
   identity claim --identity= --confirm-identity= Apply the exact local association
   identity connect [--identity=] Keep the app open, detect sign-in, and connect once
   doctor                     Check whether Rehearsal is safe and ready
+  database capabilities      Inspect engine-scoped capabilities without starting infrastructure
   discover                   Inspect project metadata and explain setup suggestions
   configuration              Inspect the exact active config and editable field metadata
   configuration review --proposal= Validate a fingerprint-bound proposal without writing

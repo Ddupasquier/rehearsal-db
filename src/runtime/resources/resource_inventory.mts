@@ -37,6 +37,7 @@ import {
   type ResourcePolicyStatus,
 } from "./resource_policy.mjs";
 
+import { requireContainerTarget } from "../../targets/target.mjs";
 export const RESOURCE_INVENTORY_SCHEMA_VERSION = 1;
 
 export interface ContainerDiskUsage {
@@ -503,6 +504,9 @@ export const inspectRehearsalResources = async (
   } = {},
 ): Promise<RehearsalResourceInventory> => {
   const topology = await loadRuntimeTopology(options);
+  topology.targets.forEach((t) =>
+    requireContainerTarget(t.config.runtime.target),
+  );
   const rawRun = dependencies.run ?? defaultCommandRunner;
   const inheritedEnvironment = {
     ...process.env,
@@ -533,7 +537,7 @@ export const inspectRehearsalResources = async (
       inspectEnvironmentProvenanceEvidence({
         projectRoot: cwd,
         runtimeWorkdir: target.paths.runtimeWorkdir,
-        provider: target.config.runtime.target,
+        provider: requireContainerTarget(target.config.runtime.target),
         ports: target.config.runtime.ports,
         applicationUrl: target.config.runtime.applicationUrl,
       }),
@@ -581,7 +585,7 @@ export const inspectRehearsalResources = async (
               displayName: target.config.runtime.displayName,
               protected: target.config.runtime.protected,
               projectId: target.config.runtime.projectId,
-              provider: target.config.runtime.target,
+              provider: requireContainerTarget(target.config.runtime.target),
               configPath: target.configPath,
               state: "unavailable" as const,
               containerCount: 0,
@@ -645,7 +649,7 @@ export const inspectRehearsalResources = async (
     }),
   );
   const environments = topology.targets.map((target, index) => {
-    const provider = target.config.runtime.target;
+    const provider = requireContainerTarget(target.config.runtime.target);
     const projectId = target.config.runtime.projectId;
     const labelName =
       provider === "supabase"
@@ -811,7 +815,7 @@ export const inspectRehearsalResources = async (
               targets: topology.targets.map((target) => ({
                 name: target.name,
                 projectId: target.config.runtime.projectId,
-                provider: target.config.runtime.target,
+                provider: requireContainerTarget(target.config.runtime.target),
                 protected: target.config.runtime.protected,
               })),
             }),

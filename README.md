@@ -49,6 +49,11 @@ only the exact migrations you approve, and runs your application's own proof.
 **[See the complete shipped-capability catalog →](docs/capabilities.md)** ·
 [See queued, planned and paused work](docs/roadmap.md)
 
+SQLite has an **unreleased source candidate**, separate from the published
+Core 2.2.1 and Starter 0.1.28 capabilities. See the
+[SQLite qualification guide](docs/sqlite.md) for its file-backed scope and sampled
+memory limits.
+
 The [runtime lifecycle guide](docs/runtime-lifecycle.md) explains interruption and
 recovery limits, including what to review before repeating a failed run.
 

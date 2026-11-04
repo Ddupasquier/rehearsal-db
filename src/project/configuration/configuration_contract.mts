@@ -89,6 +89,15 @@ export interface RehearsalConfig {
     artifactDirectory?: string;
     sanitizationPolicy: string;
   };
+  /** Embedded SQLite target. No server, port, container, or external extension. */
+  sqlite?: {
+    sourceDatabase: string;
+    migrationDirectory: string;
+    runtimeWorkdir?: string;
+    expectedVersion?: "3.53.4";
+    maximumBytes?: number;
+    timeoutSeconds?: number;
+  };
   containerRuntime?: {
     autoStartColima?: boolean;
     stopOwnedColimaWhenIdle?: boolean;
@@ -160,14 +169,23 @@ export interface RehearsalConfig {
     displayName?: string;
     /** Refuse reset, run, migrate, and discard until explicitly unprotected. */
     protected?: boolean;
-    target?: "supabase" | "postgresql";
     applicationUrl?: string;
     /** Exact lowercase/digit/hyphen ownership ID: 2–40 Supabase, 2–63 PostgreSQL. */
     projectId?: string;
-    apiPort?: number;
-    databasePort: number;
-    studioPort?: number;
-  };
+  } & (
+    | {
+        target?: "supabase" | "postgresql";
+        apiPort?: number;
+        databasePort: number;
+        studioPort?: number;
+      }
+    | {
+        target: "sqlite";
+        apiPort?: never;
+        databasePort?: never;
+        studioPort?: never;
+      }
+  );
   safety?: {
     allowedHosts?: string[];
     blockedEnvironmentVariables?: string[];

@@ -23,6 +23,8 @@
     "rehearsal": "dist/src/cli/rehearsal.mjs"
   },
   "rehearsalContracts": {
+    "databaseCapabilities": 1,
+    "sqliteTarget": 1,
     "projectDiscovery": 1,
     "resourceInventory": 1,
     "resourceManager": 1,

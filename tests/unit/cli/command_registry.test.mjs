@@ -89,47 +89,69 @@ describe("typed CLI command registry", () => {
     });
   });
 
-  it("prints the browser address rather than the separate application health route", async () => {
-    const openRuntimeApplication = vi.fn(async ({ onReady }) => {
-      onReady({
-        url: "http://localhost:5175/health",
-        status: 200,
-        applicationUrl: "http://localhost:5175",
+  it.each(["postgresql", "supabase", "sqlite"])(
+    "prints the browser address and accurate lifecycle guidance for %s",
+    async (target) => {
+      const openRuntimeApplication = vi.fn(async ({ onReady, session }) => {
+        session.runtimeTopology = {
+          primary: { config: { runtime: { target } } },
+        };
+        onReady({
+          url: "http://localhost:5175/health",
+          status: 200,
+          applicationUrl: "http://localhost:5175",
+        });
+        return {
+          started: { output: "started" },
+          verified: { output: "verified" },
+          preparations: [],
+          application: { stoppedBy: "SIGINT" },
+          lifecycle: {
+            mode: "stop-on-application-exit",
+            runtimeState: "stopped",
+            dataState: "preserved",
+            stop: { output: "stopped" },
+          },
+        };
       });
-      return {
-        started: { output: "started" },
-        verified: { output: "verified" },
-        preparations: [],
-        application: { stoppedBy: "SIGINT" },
-        lifecycle: {
-          mode: "stop-on-application-exit",
-          runtimeState: "stopped",
-          dataState: "preserved",
-          stop: { output: "stopped" },
-        },
+      const [handler] = createApplicationCommandHandlers({
+        openRuntimeApplication,
+      });
+      const commandContext = {
+        ...context("open", ["--plain"]),
+        guided: true,
       };
-    });
-    const [handler] = createApplicationCommandHandlers({
-      openRuntimeApplication,
-    });
-    const commandContext = {
-      ...context("open", ["--plain"]),
-      guided: true,
-    };
-    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
-    try {
-      const result = await handler.handle(commandContext);
-      expect(openRuntimeApplication).toHaveBeenCalledOnce();
-      const lines = log.mock.calls.flat().join("\n").split("\n");
-      expect(lines).toContain("Application: http://localhost:5175");
-      expect(lines).not.toContain("Application: http://localhost:5175/health");
-      expect(commandContext.state.lastGuidedDetails).toBe(
-        "started\nverified\nstopped",
-      );
-      expect(result.kind).toBe("rendered");
-      expect(result.render("normal")).toContain("SANDBOX APP CLOSED");
-    } finally {
-      log.mockRestore();
-    }
-  });
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      try {
+        const result = await handler.handle(commandContext);
+        expect(openRuntimeApplication).toHaveBeenCalledOnce();
+        const lines = log.mock.calls.flat().join("\n").split("\n");
+        expect(lines).toContain("Application: http://localhost:5175");
+        expect(lines).not.toContain(
+          "Application: http://localhost:5175/health",
+        );
+        expect(lines).toContain(
+          "Closing applies the configured stop or discard policy.",
+        );
+        expect(lines.join("\n")).not.toContain("will preserve");
+        expect(commandContext.state.lastGuidedDetails).toBe(
+          "started\nverified\nstopped",
+        );
+        expect(result.kind).toBe("rendered");
+        expect(result.render("normal")).toContain("SANDBOX APP CLOSED");
+        if (target === "sqlite") {
+          expect(result.render("normal")).toContain(
+            "paused the SQLite sandbox file",
+          );
+          expect(result.render("normal")).not.toContain("Storage");
+          expect(result.render("normal")).not.toContain("database runtime");
+        } else
+          expect(result.render("normal")).toContain(
+            "its local database and Storage changes were preserved",
+          );
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
 });

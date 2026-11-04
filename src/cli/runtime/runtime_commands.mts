@@ -320,27 +320,26 @@ export const createRuntimeCommands = ({
     dockerDaemonId?: string;
     configSha256?: string;
   }): Promise<ManagerReceipt> => {
-    const engineSelection = resolveEngineSelection({
-      cwd: projectRoot,
-      ...(dockerContext ? { context: dockerContext } : {}),
+    const loaded = await loadRehearsalConfig({
+      projectRoot,
+      ...(configPath === undefined ? {} : { configPath }),
     });
+    const engineSelection =
+      loaded.config.runtime.target === "sqlite"
+        ? null
+        : resolveEngineSelection({
+            cwd: projectRoot,
+            ...(dockerContext ? { context: dockerContext } : {}),
+          });
     if (
       dockerIdentity !== undefined &&
-      engineSelection.identity !== dockerIdentity
+      engineSelection?.identity !== dockerIdentity
     )
       throw new Error(
         "The reviewed Docker endpoint changed before launch; no manager was started.",
       );
     const configurationSha256 =
-      configSha256 ??
-      runtimeConfigurationSha256(
-        (
-          await loadRehearsalConfig({
-            projectRoot,
-            ...(configPath === undefined ? {} : { configPath }),
-          })
-        ).config,
-      );
+      configSha256 ?? runtimeConfigurationSha256(loaded.config);
     const fingerprint = getActivePackageFingerprint();
     if (fingerprint) {
       assertInstalledPackageFingerprint({
@@ -388,9 +387,13 @@ export const createRuntimeCommands = ({
         : {}),
       ...(cancellationSignal ? { REHEARSAL_CANCELLABLE_OPERATION: "1" } : {}),
       ...(operationId ? { REHEARSAL_OPERATION_ID: operationId } : {}),
-      REHEARSAL_DOCKER_CONTEXT: engineSelection.context,
-      REHEARSAL_DOCKER_IDENTITY: engineSelection.identity,
-      ...(engineSelection.dockerConfig
+      ...(engineSelection
+        ? {
+            REHEARSAL_DOCKER_CONTEXT: engineSelection.context,
+            REHEARSAL_DOCKER_IDENTITY: engineSelection.identity,
+          }
+        : {}),
+      ...(engineSelection?.dockerConfig
         ? { DOCKER_CONFIG: engineSelection.dockerConfig }
         : {}),
       ...(dockerDaemonId ? { REHEARSAL_DOCKER_DAEMON_ID: dockerDaemonId } : {}),
@@ -428,6 +431,34 @@ export const createRuntimeCommands = ({
         .filter(Boolean)
         .join("\n")
         .trim();
+      const sqliteCode =
+        loaded.config.runtime.target === "sqlite"
+          ? /^(SQLITE_(?:OWNERSHIP_UNPROVEN|RUNTIME_DIRTY|OPERATION_FAILED|BACKEND_UNAVAILABLE|WORKER_(?:MEMORY_LIMIT|MEMORY_OBSERVATION_FAILED|CLEANUP_UNCONFIRMED|CANCELLED|DEADLINE|TRANSPORT_FAILED|OUTPUT_LIMIT|RESULT_INVALID|INPUT_INVALID))):/mu.exec(
+              completeOutput,
+            )?.[1]
+          : undefined;
+      if (sqliteCode)
+        throw new RehearsalError({
+          category:
+            sqliteCode === "SQLITE_BACKEND_UNAVAILABLE"
+              ? "runtime_dependency_failure"
+              : [
+                    "SQLITE_OWNERSHIP_UNPROVEN",
+                    "SQLITE_WORKER_CLEANUP_UNCONFIRMED",
+                  ].includes(sqliteCode)
+                ? "unsafe_environment"
+                : "migration_verification_failure",
+          code: sqliteCode,
+          message:
+            "The SQLite operation refused or failed; private details were withheld.",
+          refused:
+            "The source, unproven files, and any necessary recovery evidence were preserved.",
+          suggestions: [
+            sqliteCode === "SQLITE_WORKER_CLEANUP_UNCONFIRMED"
+              ? "Worker closure was not confirmed. Preserve recovery and establish that the owned worker has exited before reviewing reset or discard."
+              : "Inspect the exact SQLite runtime and retained evidence. Dirty migration state requires a reviewed reset.",
+          ],
+        });
       const conciseOutput = summarizeRuntimeManagerFailure(completeOutput);
       const inferred = normalizeRehearsalError(
         new Error(conciseOutput || `Rehearsal ${action} failed.`),
@@ -442,7 +473,7 @@ export const createRuntimeCommands = ({
       const portGuidance = runtimePortFailureGuidance(conciseOutput);
       const engineCapacity =
         startupFailure && portGuidance.length === 0
-          ? inspectEngineCapacity(engineSelection)
+          ? inspectEngineCapacity(engineSelection ?? undefined)
           : undefined;
       throw new RehearsalError({
         category,
@@ -625,18 +656,30 @@ export const createRuntimeCommands = ({
     }
     const runtimeReceipts = await Promise.all(
       topology.targets.map((target) =>
-        access(join(target.paths.runtimeWorkdir, "baseline.json"))
-          .then(() => true)
-          .catch((error) => {
-            if (
-              typeof error === "object" &&
-              error !== null &&
-              "code" in error &&
-              error.code === "ENOENT"
+        target.config.runtime.target === "sqlite"
+          ? import("../../targets/sqlite/sqlite_manager.mjs").then(
+              async ({ readVerifiedSqliteRuntimeReceipt }) =>
+                Boolean(
+                  await readVerifiedSqliteRuntimeReceipt(
+                    await loadRehearsalConfig({
+                      projectRoot: topology.projectRoot,
+                      configPath: target.configPath,
+                    }),
+                  ),
+                ),
             )
-              return false;
-            throw error;
-          }),
+          : access(join(target.paths.runtimeWorkdir, "baseline.json"))
+              .then(() => true)
+              .catch((error) => {
+                if (
+                  typeof error === "object" &&
+                  error !== null &&
+                  "code" in error &&
+                  error.code === "ENOENT"
+                )
+                  return false;
+                throw error;
+              }),
       ),
     );
     if (runtimeReceipts.some((present) => !present)) {
@@ -710,6 +753,24 @@ export const createRuntimeCommands = ({
     ) => void;
   }) => {
     const topology = await loadRuntimeTopology(planOptions);
+    if (
+      topology.primary.config.runtime.target === "sqlite" &&
+      topology.primary.config.lifecycle.open ===
+        "discard-on-application-exit" &&
+      !(await prepareCandidateConfirmation({
+        command: "start",
+        flags,
+        planOptions,
+        session: commandSession,
+      }))
+    ) {
+      throw new RehearsalError({
+        category: "operation_cancelled",
+        code: "CANDIDATE_CONFIRMATION_DECLINED",
+        message:
+          "SQLite automatic discard was not confirmed; the application was not started.",
+      });
+    }
     throwIfOperationCancelled();
     for (const target of topology.targets)
       assertRuntimeCompletionAllowed(
@@ -801,7 +862,14 @@ export const createRuntimeCommands = ({
     planOptions: RehearsalConfigPathOptions;
     session: CliSessionState;
   }): Promise<boolean> => {
-    if (!["run", "migrate"].includes(command) || flags.dryRun) return true;
+    if (flags.dryRun) return true;
+    const loaded = await loadRehearsalConfig(planOptions);
+    const sqliteConsent =
+      loaded.config.runtime.target === "sqlite" &&
+      (["run", "reset", "migrate", "discard"].includes(command) ||
+        (command === "start" &&
+          loaded.config.lifecycle.open === "discard-on-application-exit"));
+    if (!["run", "migrate"].includes(command) && !sqliteConsent) return true;
     selectRuntimeTargets(
       (await loadRuntimeTopology(planOptions)).targets,
       flags.target,
@@ -815,7 +883,7 @@ export const createRuntimeCommands = ({
         target.candidateSha256,
       ]),
     );
-    if (summary.candidateCount === 0) return true;
+    if (summary.candidateCount === 0 && !sqliteConsent) return true;
     if (flags.confirmation === summary.candidateSha256) return true;
     const interactive =
       !flags.json && process.stdin.isTTY && process.stdout.isTTY;

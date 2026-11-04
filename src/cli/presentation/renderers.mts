@@ -246,7 +246,7 @@ export const renderBaseline = (baseline: {
   tableCount: number;
   rowCount: number;
   migrationCount: number;
-  migrationCutoff: MigrationCutoff;
+  migrationCutoff: MigrationCutoff | null;
   dataSha256: string;
   sanitizationPolicySha256: string;
   verification: string;
@@ -260,7 +260,7 @@ export const renderBaseline = (baseline: {
     `Format: ${baseline.formatVersion}`,
     `Tables: ${baseline.tableCount}`,
     `Rows: ${baseline.rowCount}`,
-    `Migrations: ${baseline.migrationCount} through ${describeMigrationCutoff(baseline.migrationCutoff)}`,
+    `Migrations: ${baseline.migrationCount} through ${baseline.migrationCutoff === null ? "an empty declared prefix" : describeMigrationCutoff(baseline.migrationCutoff)}`,
     `Data SHA-256: ${baseline.dataSha256}`,
     `Sanitization policy SHA-256: ${baseline.sanitizationPolicySha256}`,
     `Verification: ${baseline.verification}`,
@@ -271,7 +271,7 @@ export const renderBaseline = (baseline: {
 export const renderMigrations = (
   inspection: {
     baselineGenerationId: string;
-    baselineCutoff: MigrationCutoff;
+    baselineCutoff: MigrationCutoff | null;
     candidateSha256: string;
     migrations: readonly (RenderMigration & { status: string })[];
   },
@@ -283,7 +283,7 @@ export const renderMigrations = (
   });
   return [
     "REHEARSAL MIGRATIONS",
-    `Baseline: ${inspection.baselineGenerationId} through ${describeMigrationCutoff(inspection.baselineCutoff)}`,
+    `Baseline: ${inspection.baselineGenerationId} through ${inspection.baselineCutoff === null ? "an empty declared prefix" : describeMigrationCutoff(inspection.baselineCutoff)}`,
     `Candidate digest: ${inspection.candidateSha256}`,
     "",
     ...entries,

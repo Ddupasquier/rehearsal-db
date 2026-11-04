@@ -13,10 +13,25 @@ const TARGETS = Object.freeze({
     id: "postgresql",
     label: "PostgreSQL",
   }),
+  sqlite: Object.freeze({
+    id: "sqlite",
+    label: "SQLite",
+  }),
 });
 
 export type RehearsalRuntimeTargetId = keyof typeof TARGETS;
 export type RehearsalRuntimeTarget = (typeof TARGETS)[RehearsalRuntimeTargetId];
+
+/** Container-only owners must refuse embedded targets before Docker inspection. */
+export const requireContainerTarget = (
+  value: RehearsalRuntimeTargetId,
+): "supabase" | "postgresql" => {
+  if (value === "sqlite")
+    throw new Error(
+      "This operation manages containers and is not applicable to the embedded SQLite target.",
+    );
+  return value;
+};
 
 export interface RuntimeInvocation {
   readonly action: string;

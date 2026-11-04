@@ -824,6 +824,16 @@ Declarative runtime policies are preferred for supported schema prerequisites an
 checks. Existing project-owned adapters remain compatible but do not replace the
 database driver.
 
+### SQLite candidate — unreleased
+
+The unreleased source candidate adds explicit `runtime.target: "sqlite"` and a
+`sqlite` configuration block. It uses a separate owned file without Docker or a
+database port. Configure the original source, SQL directory, reviewed privacy
+policy and application file-path mapping manually; existing setup templates do
+not infer those decisions. See the [SQLite guide](sqlite.md#configuration) for the
+complete example, qualification status and limits. Published releases do not
+accept this configuration.
+
 ### Native Prisma migrations
 
 Core 2.1 adds opt-in Prisma Migrate 7.10.1 history for PostgreSQL. Existing SQL

@@ -103,7 +103,10 @@ export const createProjectCommands = ({
     );
     return {
       ...result,
-      containerEngines: readiness.containerEngines,
+      containerEngines:
+        "containerEngines" in readiness
+          ? readiness.containerEngines
+          : undefined,
       readiness,
       nextAction: [
         `Review ${result.configurationPath}.`,

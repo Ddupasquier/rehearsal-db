@@ -9,11 +9,12 @@ export type RuntimeState = "running" | "stopped" | "unavailable" | "unhealthy";
 
 export type RuntimeStateReason =
   | "container_engine_unavailable"
+  | "sqlite_backend_unavailable"
   | "runtime_not_running"
   | "health_check_failed";
 
 export interface RuntimeStatusSnapshot {
-  readonly schemaVersion: typeof RUNTIME_STATUS_SCHEMA_VERSION;
+  readonly schemaVersion: typeof RUNTIME_STATUS_SCHEMA_VERSION | 2;
   readonly state: RuntimeState;
   readonly reason: RuntimeStateReason | null;
   readonly runtimeTarget: RehearsalRuntimeTargetId;
@@ -28,6 +29,7 @@ export interface RuntimeStatusSnapshot {
         port: number;
         database: string;
       }>
+    | Readonly<{ kind: "embedded-file"; bindingSha256: string }>
     | null;
   readonly baselineGenerationId: string;
   readonly candidateSha256: string;
@@ -42,10 +44,15 @@ const STATES = new Set<RuntimeState>([
 ]);
 const REASONS = new Set<RuntimeStateReason>([
   "container_engine_unavailable",
+  "sqlite_backend_unavailable",
   "runtime_not_running",
   "health_check_failed",
 ]);
-const TARGETS = new Set<RehearsalRuntimeTargetId>(["supabase", "postgresql"]);
+const TARGETS = new Set<RehearsalRuntimeTargetId>([
+  "supabase",
+  "postgresql",
+  "sqlite",
+]);
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
@@ -92,6 +99,12 @@ const parseEndpoint = (value: unknown): RuntimeStatusSnapshot["endpoint"] => {
       database,
     };
   }
+  if (
+    value.kind === "embedded-file" &&
+    typeof value.bindingSha256 === "string" &&
+    SHA256_PATTERN.test(value.bindingSha256)
+  )
+    return { kind: "embedded-file", bindingSha256: value.bindingSha256 };
   throw new Error("Runtime status endpoint kind is unsupported.");
 };
 
@@ -99,7 +112,11 @@ export const parseRuntimeStatusSnapshot = (
   value: unknown,
 ): RuntimeStatusSnapshot => {
   if (!isRecord(value)) throw new Error("Runtime status must be an object.");
-  if (value.schemaVersion !== RUNTIME_STATUS_SCHEMA_VERSION) {
+  if (
+    value.runtimeTarget === "sqlite"
+      ? value.schemaVersion !== 2
+      : value.schemaVersion !== RUNTIME_STATUS_SCHEMA_VERSION
+  ) {
     throw new Error("Runtime status schema version is unsupported.");
   }
   if (
@@ -145,7 +162,9 @@ export const parseRuntimeStatusSnapshot = (
       : value.state === "stopped"
         ? "runtime_not_running"
         : value.state === "unavailable"
-          ? "container_engine_unavailable"
+          ? value.runtimeTarget === "sqlite"
+            ? "sqlite_backend_unavailable"
+            : "container_engine_unavailable"
           : "health_check_failed";
   if (value.reason !== expectedReason) {
     throw new Error("Runtime status reason does not match its state.");
@@ -161,12 +180,14 @@ export const parseRuntimeStatusSnapshot = (
   if (
     endpoint !== null &&
     ((value.runtimeTarget === "supabase" && endpoint.kind !== "http") ||
-      (value.runtimeTarget === "postgresql" && endpoint.kind !== "postgresql"))
+      (value.runtimeTarget === "postgresql" &&
+        endpoint.kind !== "postgresql") ||
+      (value.runtimeTarget === "sqlite" && endpoint.kind !== "embedded-file"))
   ) {
     throw new Error("Runtime status endpoint does not match its target.");
   }
   return Object.freeze({
-    schemaVersion: RUNTIME_STATUS_SCHEMA_VERSION,
+    schemaVersion: value.schemaVersion as 1 | 2,
     state: value.state as RuntimeState,
     reason: value.reason as RuntimeStateReason | null,
     runtimeTarget: value.runtimeTarget as RehearsalRuntimeTargetId,
@@ -182,6 +203,14 @@ export const parseRuntimeStatusSnapshot = (
 export const renderRuntimeStatusSnapshot = (
   status: RuntimeStatusSnapshot,
 ): string => {
+  if (status.runtimeTarget === "sqlite")
+    return [
+      `Local Rehearsal SQLite: ${status.state === "running" ? "owned file available" : status.state}`,
+      "File availability is not a database daemon or a count of application connections.",
+      `Verified runtime receipt: ${status.verifiedRuntimeAvailable ? "available" : "not available"}`,
+      `Active sanitized baseline: ${status.baselineGenerationId}`,
+      `Candidate migrations (${status.candidateSha256}): ${status.candidates.join(", ") || "none"}`,
+    ].join("\n");
   const label = status.runtimeTarget === "supabase" ? "Supabase" : "PostgreSQL";
   const location =
     status.endpoint?.kind === "http"

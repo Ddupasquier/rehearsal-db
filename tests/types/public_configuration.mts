@@ -45,14 +45,30 @@ const postgresqlConfig = defineRehearsalConfig({
   },
 });
 
+const sqliteConfig = defineRehearsalConfig({
+  schemaVersion: 1,
+  project: { name: "typecheck-sqlite" },
+  runtime: { target: "sqlite", projectId: "sqlite-typecheck" },
+  sqlite: { sourceDatabase: "source.sqlite", migrationDirectory: "migrations" },
+  baseline: { sanitizationPolicy: "sqlite-policy.json" },
+  application: { startCommand: "node app.mjs", proofCommand: "node proof.mjs" },
+});
+// @ts-expect-error Embedded SQLite configurations cannot declare a server port.
+const invalidSqlitePort: RehearsalConfig["runtime"] = {
+  target: "sqlite",
+  databasePort: 5432,
+};
+void invalidSqlitePort;
 const publicConfigurations: readonly RehearsalConfig[] = [
   supabaseConfig,
   postgresqlConfig,
+  sqliteConfig,
 ];
 
 void publicConfigurations;
 
-const normalizedDatabasePort = (config: NormalizedRehearsalConfig): number =>
-  config.runtime.ports.database;
+const normalizedDatabasePort = (
+  config: NormalizedRehearsalConfig,
+): number | null => config.runtime.ports.database ?? null;
 
 void normalizedDatabasePort;

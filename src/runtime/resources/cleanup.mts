@@ -13,6 +13,7 @@ import {
   pruneBaselineGenerations,
 } from "../../baseline/artifact.mjs";
 import { loadRehearsalConfig } from "../../project/configuration.mjs";
+import { requireContainerTarget } from "../../targets/target.mjs";
 import {
   assertLocalDockerContext,
   scopedDockerEnvironment,
@@ -415,6 +416,7 @@ export const planRehearsalCleanup = async ({
     projectRoot,
     ...(configPath === undefined ? {} : { configPath }),
   });
+  requireContainerTarget(loaded.config.runtime.target);
   if (imagesOnly && includeRuntime)
     throw new Error("Image-only cleanup cannot include a database runtime.");
   if (selectedImageIds !== undefined && !includeImages)
@@ -482,7 +484,7 @@ export const planRehearsalCleanup = async ({
   const plan: Omit<RehearsalCleanupPlan, "digest"> = {
     project: loaded.config.project.name,
     projectId: loaded.config.runtime.projectId,
-    target: loaded.config.runtime.target,
+    target: requireContainerTarget(loaded.config.runtime.target),
     retainBaselineGenerations: loaded.config.cleanup.retainBaselineGenerations,
     imagesOnly,
     ...(selectedImageIds === undefined

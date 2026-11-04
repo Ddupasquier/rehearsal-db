@@ -138,7 +138,13 @@ export const inspectConfigurationMetadata = async (
     schemaVersion: 1 as const,
     path: relative(loaded.projectRoot, loaded.configPath),
     sourceSha256: hash(source),
-    fields: EDITABLE_CONFIGURATION_FIELDS.map(([path, kind]) => ({
+    fields: EDITABLE_CONFIGURATION_FIELDS.filter(
+      ([path]) =>
+        loaded.config.runtime.target !== "sqlite" ||
+        (!path.startsWith("containerRuntime.") &&
+          !path.startsWith("resources.") &&
+          path !== "cleanup.retainBaselineGenerations"),
+    ).map(([path, kind]) => ({
       path,
       kind,
       value: valueAt(loaded.config, path) ?? null,
@@ -159,7 +165,9 @@ export const inspectConfigurationMetadata = async (
     pathResolution:
       "Rehearsal paths resolve from the project root; JavaScript imports resolve from the configuration folder.",
     manualFields:
-      "Source, privacy, identity, runtime identifiers, provider declarations, and expression-based values require explicit source review. They are never guessed or silently edited. Dependent-target proposals require the explicit parent topologyConfigPath to validate cross-target application ports.",
+      loaded.config.runtime.target === "sqlite"
+        ? "SQLite source paths, binding version, migration directory, exhaustive privacy policy, file budget and deadline require manual source review. Container settings and legacy container/baseline pruning are not SQLite editor controls."
+        : "Source, privacy, identity, runtime identifiers, provider declarations, and expression-based values require explicit source review. They are never guessed or silently edited. Dependent-target proposals require the explicit parent topologyConfigPath to validate cross-target application ports.",
   };
 };
 export const reviewConfigurationProposal = async (
