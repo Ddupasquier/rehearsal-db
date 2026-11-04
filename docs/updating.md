@@ -16,7 +16,8 @@ commands in a WSL 2 Linux workspace; native PowerShell and Command Prompt are no
 supported database runtimes. The WSL route remains a preview, not a claim of native
 Windows database support. See [supported environments and limitations](https://github.com/Ddupasquier/rehearsal-db/blob/main/COMPATIBILITY.md)
 and the [Windows setup guide](getting-started.md#windows-use-a-wsl-2-linux-workspace)
-before installing.
+before installing. SQLite has separate [exact binding and platform limits](sqlite.md#requirements);
+the general Node/platform list does not qualify it.
 
 ## How do I update?
 
@@ -38,15 +39,18 @@ instead of installing both extension identities together.
 
 Finish active Rehearsal commands first. Read the [release notes](https://github.com/Ddupasquier/rehearsal-db/releases),
 then use your project's existing package manager and dependency location. For an npm
-project that keeps Rehearsal in development dependencies, update to the reviewed 2.2.0
-release only after it appears in the official registry:
+project that keeps Rehearsal in development dependencies, update to the reviewed 2.3.0
+release only after that exact version appears in the official registry:
 
 ```bash
-npm install --save-dev --save-exact @rehearsal-db/core@2.2.0
+npm install --save-dev --save-exact @rehearsal-db/core@2.3.0
 npx --no-install rehearsal --version
 ```
 
 Review the package and lockfile changes before the next Rehearsal command.
+Core 2.3.0 adds [SQLite](sqlite.md); existing PostgreSQL/Supabase configurations
+keep their meanings. SQLite format 6 requires a compatible Core installation;
+rolling back to 2.2.1 does not add support for SQLite files or configuration.
 
 ### Moving from core 1.x to 2.0
 

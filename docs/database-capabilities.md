@@ -6,11 +6,11 @@ no driver, public capability, configuration field, support claim, release prereq
 or automatic CI gate is enabled by this document. PostgreSQL and Supabase keep their
 existing contracts. A listed family is not an implementation commitment.
 
-The separately selected [SQLite implementation](sqlite.md) is under qualification
-in [RDB-160](https://github.com/Ddupasquier/rehearsal-db/issues/160). Its owning guide
-documents the bounded implemented subset, new format and negotiated capabilities;
-it is not published support for SQLite or any other family yet. Historical estimates
-and conditional choices below do not override that current ticket.
+The separately selected [SQLite implementation](sqlite.md) in Core 2.3.0 owns its
+bounded implemented subset, format 6 and negotiated capabilities. Check the
+[published catalog](capabilities.md) for actual availability; this design does not
+establish support for another family. Historical estimates and conditional choices
+below do not override the implemented SQLite guide.
 
 The owning tracker decides priority and operational authority. The engineering
 recommendation below is conditional, not an owner selection. Existing
@@ -82,9 +82,9 @@ must remain explicit and reviewed.
 
 ## Proposed public negotiation
 
-A future additive package capability `databaseCapabilities: 1` would advertise a
-closed schema version, not support for every family. No such capability is added
-by this proposal. Preserve current envelopes and existing strict clients; introduce
+Core 2.3.0 implements the additive package capability `databaseCapabilities: 1`
+for its bounded engine-scoped report. It advertises a closed schema version, not
+support for every family; the [SQLite guide](sqlite.md) owns the implemented subset. Preserve current envelopes and existing strict clients; introduce
 new fields only in a negotiated projection. New required semantics need a new
 capability version rather than reinterpreting an old field.
 
@@ -162,7 +162,7 @@ and qualified. Native vendor features below inform the design, not product suppo
 | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PostgreSQL                                                                                      | Existing reviewed historical SQL plus sanitized rows; this is not a general physical backup or extension clone                    | Exact reviewed migration set; failure cleanup is not proof of SQL rollback; persistent local sandbox and explicit reset/discard                              | Existing relational policy and declared local connection mapping; Supabase Auth/Storage not applicable                                                                                   |
 | Supabase                                                                                        | Existing PostgreSQL history/rows plus separately declared verified Auth/Storage behavior                                          | Existing owned service workdir and CLI lifecycle; provider-specific failure and restoration evidence                                                         | Existing identity/runtime/Storage policies; external identity provider success is separate proof                                                                                         |
-| SQLite ([160](https://github.com/Ddupasquier/rehearsal-db/issues/160))                          | Proposed consistent native snapshot and fresh owned file; account for journal/WAL/shared-memory and schema dependencies           | Explicit supported SQL history, foreign-key mode and transaction boundaries; preserve failed state and require reviewed reset; no universal rollback promise | Native type/affinity, integer, binary and null fidelity; file path mapping, no server credentials; Auth/Storage not applicable; extensions/encryption initially unsupported              |
+| SQLite ([160](https://github.com/Ddupasquier/rehearsal-db/issues/160))                          | Core 2.3.0 scoped native snapshot and fresh owned file; see the SQLite guide for journal/WAL, schema and platform limits          | Explicit supported SQL history, foreign-key mode and transaction boundaries; preserve failed state and require reviewed reset; no universal rollback promise | Native type/affinity, integer, binary and null fidelity; file path mapping, no server credentials; Auth/Storage not applicable; extensions/encryption initially unsupported              |
 | MySQL ([161](https://github.com/Ddupasquier/rehearsal-db/issues/161))                           | Native schema/data ordering, SQL mode, charset/collation, generated/identity values and FK behavior must be qualified             | DDL may implicitly commit; retain dirty/partial state and refuse automatic resume/repair                                                                     | Native JSON/binary/large-number codecs; loopback application credentials; scheduled events and external/server-file behavior must be disabled or refused                                 |
 | MariaDB ([162](https://github.com/Ddupasquier/rehearsal-db/issues/162))                         | Separate server/client/format identity and type/collation/generated-column qualification                                          | Independently prove DDL failure/recovery; share MySQL code only for demonstrated equivalent behavior                                                         | Reject MySQL artifacts despite similar protocol; independent privacy and application proofs                                                                                              |
 | SQL Server ([163](https://github.com/Ddupasquier/rehearsal-db/issues/163))                      | Edition-specific snapshot/restore, T-SQL batches, schemas, identity/computed columns and binary/numeric types require feasibility | Qualify actual transaction/batch semantics and partial changes; exclude system/unmanaged databases                                                           | Explicit local edition/license consent; reject jobs, linked/external access and instance-wide privileges; CPU/OS constrained                                                             |
@@ -289,15 +289,12 @@ always-on replicas, free-hosting assumption or paid provision is part of this de
 
 ## Conditional first slice and estimate
 
-**Go for design; defer all driver execution and priority selection.** If the owner
-later chooses a first expansion, SQLite is the smallest candidate for the proposed
-ownership contract because it can exercise native file isolation without an extra
-server. This is an engineering comparison, not selection of
-[RDB-160](https://github.com/Ddupasquier/rehearsal-db/issues/160). Its first slice
-would support one exact reviewed SQLite/binding version, file-backed synthetic
-baselines, explicit SQL files, required FK mode, local application path mapping,
-persistence/reset/discard, and no extensions/encryption/attached foreign databases.
-Snapshot strategy and real concurrency/sidecar proof must be settled first.
+The original design recommended SQLite as a small first expansion because it can
+exercise native file isolation without another server. The owner subsequently
+selected [RDB-160](https://github.com/Ddupasquier/rehearsal-db/issues/160); the
+[SQLite guide](sqlite.md) now owns its implemented scope, exact runtime and limits.
+The estimates below retain the original design comparison, not remaining SQLite
+work or authority to start another family.
 
 Rough engineering estimates below are person-days for one experienced maintainer,
 including paired Lab work; they are ranges, not elapsed deadlines, priority or run

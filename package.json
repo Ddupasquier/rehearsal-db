@@ -1,8 +1,8 @@
 {
   "name": "@rehearsal-db/core",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "private": false,
-  "description": "Catch PostgreSQL and Supabase migrations that pass on empty databases but fail on real data\u2014before deploy.",
+  "description": "Rehearse PostgreSQL, Supabase and SQLite migrations against isolated local data before deploy.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Ddupasquier/rehearsal-db.git"
@@ -106,7 +106,8 @@
     "supabase",
     "migration",
     "testing",
-    "database"
+    "database",
+    "sqlite"
   ],
   "license": "MIT",
   "dependencies": {

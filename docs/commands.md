@@ -634,7 +634,7 @@ only `kind`, loopback `host`, `port`, and database name; credentials are never i
 verified baseline. It stays `true` when a prepared runtime is safely stopped, and is
 `false` when a client must create or reset the disposable runtime before opening it.
 Checking this field never starts Docker or repairs runtime state.
-The unreleased [SQLite candidate](sqlite.md) instead negotiates status schema 2
+[SQLite in Core 2.3.0](sqlite.md) instead negotiates status schema 2
 and an `embedded-file` endpoint containing only an opaque binding digest. Its
 `running`/`stopped` states describe Rehearsal's file enablement and private path
 export, not a database daemon or every application's open connection. Existing
@@ -719,9 +719,10 @@ can execute that specifically approved JSON action without parsing terminal outp
 | `npx rehearsal discard`                               | Remove this project's disposable runtime and volume.                |
 | `npx rehearsal cleanup`                               | Preview conservative cleanup without removing anything.             |
 
-### SQLite candidate commands — unreleased
+### SQLite commands in Core 2.3.0
 
-These additions are absent from published Core 2.2.1. In the source candidate,
+These additions require Core 2.3.0; Core 2.2.1 does not include them. Confirm
+[publication](capabilities.md) in your installation channel.
 `rehearsal database capabilities --json` reports engine-scoped capability and
 availability separately. SQLite `reset` and `discard` require the exact
 `--confirm-candidates` digest even with no pending migration. `stop` preserves the

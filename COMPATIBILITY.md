@@ -184,17 +184,19 @@ for the fully-applied baseline constraint, dependency/layout limits and excluded
 alternate clients. Initial SDK qualification targets PostgreSQL 17 on Ubuntu 24.04
 x64 / Node 24. General platform checks do not qualify other SDK/host combinations.
 
-## SQLite source candidate — unreleased
+## SQLite in Core 2.3.0
 
-Published Core 2.2.1 and Starter 0.1.28 do not include SQLite. The source candidate
-requires separate native-binding qualification; Node support for PostgreSQL/Supabase
-does not qualify SQLite automatically. Sampled worker-memory supervision is approved;
-its implementation and final installed-artifact qualification are in progress.
-No strict native-memory ceiling is claimed.
+SQLite requires Core 2.3.0 and Starter 0.1.29 for the editor workflow. Confirm
+availability in the [published catalog](docs/capabilities.md); source metadata alone
+is not publication. Older Core 2.2.1 and Starter 0.1.28 do not include this target.
+The qualified local tuple is macOS arm64 / Node 24.21.0 / SQLite 3.53.4;
+other Node lines and operating systems are not qualified for SQLite merely because
+they support PostgreSQL/Supabase. Worker memory uses sampled RSS supervision,
+not a hard native-memory ceiling.
 
-Candidate builds negotiate `sqliteTarget: 1` and `databaseCapabilities: 1`, a distinct
+These versions negotiate `sqliteTarget: 1` and `databaseCapabilities: 1`, a distinct
 format-6 baseline and status schema 2 with an opaque `embedded-file` endpoint.
 Existing baseline formats and PostgreSQL/Supabase status schema 1 retain their
 meanings. Older strict consumers must refuse unknown variants. The
 [SQLite guide](docs/sqlite.md) owns the exact runtime, file-lifecycle and unsupported
-scope; the published operating-system matrix above does not extend to this candidate.
+scope; the published operating-system matrix above does not extend to SQLite.

@@ -19,6 +19,10 @@ availability. GitHub and Marketplace are separate channels; confirm the target v
 in the channel you use. See [Releases and updates](updating.md) for installation, package origin
 and version-specific changes.
 
+The prepared Core 2.3.0 / Starter 0.1.29 pair adds the scoped [SQLite workflow](sqlite.md).
+This upcoming pair is not included in the published snapshot above until each
+component has been independently verified in its distribution channel.
+
 ## Core · prepare a useful, safe copy
 
 | You can…                                    | Included now                                                                                                                            | Try it or learn more                                                                                                              |

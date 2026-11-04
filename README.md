@@ -30,7 +30,7 @@ history are where risky changes break. A migration can build successfully and st
 against the data and application behavior you actually have.
 
 **Rehearsal catches those problems before deployment.** It restores a reviewed,
-sanitized baseline into a disposable local PostgreSQL or Supabase environment, applies
+sanitized baseline into a disposable PostgreSQL, Supabase or SQLite sandbox, applies
 only the exact migrations you approve, and runs your application's own proof.
 
 ## Ready to use today
@@ -49,10 +49,11 @@ only the exact migrations you approve, and runs your application's own proof.
 **[See the complete shipped-capability catalog →](docs/capabilities.md)** ·
 [See queued, planned and paused work](docs/roadmap.md)
 
-SQLite has an **unreleased source candidate**, separate from the published
-Core 2.2.1 and Starter 0.1.28 capabilities. See the
-[SQLite qualification guide](docs/sqlite.md) for its file-backed scope and sampled
-memory limits.
+SQLite requires **Core 2.3.0**, with **Starter 0.1.29** for its editor workflow.
+Confirm each version in the channel you use before installing; the
+[capability catalog](docs/capabilities.md) owns verified published availability.
+See [SQLite rehearsals](docs/sqlite.md) for the file-backed scope and sampled
+process-memory supervision, which is not a hard memory quota.
 
 The [runtime lifecycle guide](docs/runtime-lifecycle.md) explains interruption and
 recovery limits, including what to review before repeating a failed run.
@@ -77,6 +78,9 @@ Work on a branch and keep a working backup of your project. Rehearsal's local sa
 boundaries do not replace version control or backups.
 
 ## What you need
+
+The quick start below uses PostgreSQL or Supabase. SQLite has separate
+[native runtime requirements](docs/sqlite.md#requirements) and needs no Docker or VM.
 
 - Node.js 22, 24, or 26 and npm (Node.js 24 LTS recommended)
 - Docker Desktop, Colima, or another Docker-compatible engine
@@ -191,16 +195,17 @@ loads.
 
 ## Supported today
 
-| Environment                                      | Support                      |
-| ------------------------------------------------ | ---------------------------- |
-| Supabase CLI projects                            | Supported                    |
-| Ordinary PostgreSQL in local Docker              | Supported                    |
-| macOS and Linux                                  | Supported                    |
-| Windows via WSL 2 on its Linux filesystem        | Compatibility preview        |
-| Native Windows runtime                           | Not yet supported; use WSL 2 |
-| Hosted database URLs                             | Intentionally rejected       |
-| Optional read-only PostgreSQL source preparation | Explicit opt-in beta         |
-| MySQL, MongoDB, and other database families      | Not yet supported            |
+| Environment                                      | Support                                       |
+| ------------------------------------------------ | --------------------------------------------- |
+| Supabase CLI projects                            | Supported                                     |
+| Ordinary PostgreSQL in local Docker              | Supported                                     |
+| SQLite files                                     | Core 2.3.0; [qualified scope](docs/sqlite.md) |
+| macOS and Linux                                  | Supported                                     |
+| Windows via WSL 2 on its Linux filesystem        | Compatibility preview                         |
+| Native Windows runtime                           | Not yet supported; use WSL 2                  |
+| Hosted database URLs                             | Intentionally rejected                        |
+| Optional read-only PostgreSQL source preparation | Explicit opt-in beta                          |
+| MySQL, MongoDB, and other database families      | Not yet supported                             |
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the exact support contract.
 Native Windows metadata commands are not database-runtime support. For Windows, follow

@@ -149,10 +149,10 @@ export const pages = Object.freeze([
   {
     slug: "sqlite",
     source: "sqlite.md",
-    title: "SQLite candidate — unreleased",
-    shortTitle: "SQLite (unreleased)",
+    title: "SQLite rehearsals",
+    shortTitle: "SQLite",
     description:
-      "Review the file-backed SQLite source candidate, its configuration and qualification limits.",
+      "Configure file-backed SQLite rehearsals and review the qualified runtime, privacy and recovery limits.",
   },
   {
     slug: "typescript",
