@@ -120,7 +120,7 @@
     "@lydell/node-pty": "^1.2.0-beta.15",
     "@types/node": "22.20.5",
     "@types/pg": "^8.23.1",
-    "marked": "^18.0.14",
+    "marked": "^18.1.2",
     "prettier": "^3.9.6",
     "typescript": "7.0.2",
     "vitest": "^5.0.2"
