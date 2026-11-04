@@ -88,6 +88,7 @@ export const createRuntimeStackRunner =
       const reverse = ["stop", "discard"].includes(command);
       if (
         ["start", "run", "reset"].includes(command) &&
+        topology.primary.config.runtime.target !== "sqlite" &&
         topology.primary.config.resources.maximumBytes !== null
       ) {
         assertResourcePolicyAllowsStartup(
@@ -119,7 +120,8 @@ export const createRuntimeStackRunner =
         ? [...selectedTargets].reverse()
         : selectedTargets;
       const engine =
-        command === "status"
+        command === "status" ||
+        selectedTargets.every((t) => t.config.runtime.target === "sqlite")
           ? null
           : assertLocalDockerContext({
               cwd: topology.projectRoot,
@@ -164,23 +166,30 @@ export const createRuntimeStackRunner =
             configSha256: runtimeConfigurationSha256(target.config),
           });
         },
-        stop: (target) =>
-          runManager({
+        stop: (target) => {
+          const confirmation = (
+            session.targetConfirmations as Map<string, string> | undefined
+          )?.get(target.configPath);
+          return runManager({
             action: completionAction ?? "stop",
             flags,
             configPath: target.configPath,
+            ...(confirmation === undefined ? {} : { confirmation }),
             targetName: target.name,
             operationId,
             ...engineBinding,
             configSha256: runtimeConfigurationSha256(target.config),
-          }),
+          });
+        },
       });
-      const release = ["stop", "discard"].includes(command)
-        ? await releaseOwnedColimaWhenIdle({
-            projectRoot: topology.projectRoot,
-            targets: topology.targets,
-          })
-        : null;
+      const release =
+        ["stop", "discard"].includes(command) &&
+        topology.targets.some((t) => t.config.runtime.target !== "sqlite")
+          ? await releaseOwnedColimaWhenIdle({
+              projectRoot: topology.projectRoot,
+              targets: topology.targets,
+            })
+          : null;
       const withRelease = (receipt: ManagerReceipt): ManagerReceipt =>
         release
           ? {

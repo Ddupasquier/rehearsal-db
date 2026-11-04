@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { SpawnSyncReturns } from "node:child_process";
 import { loadRehearsalConfig } from "../../project/configuration.mjs";
+import { requireContainerTarget } from "../../targets/target.mjs";
 import type { NormalizedRehearsalConfig } from "../../project/configuration.mjs";
 import { createCleanProcessEnvironment } from "../../shared/process_environment.mjs";
 import { inspectProjectOperationState } from "../../shared/operation_guard.mjs";
@@ -226,6 +227,7 @@ export const withRuntimeStartupCleanup = async <Value,>({
   readonly inspectEngine?: typeof assertLocalDockerContext;
   readonly executeStop?: typeof runOwnedProcess;
 }): Promise<Value> => {
+  if (config.runtime.target === "sqlite") return task();
   if (
     ownerOperationId === undefined ||
     (action !== "start" &&
@@ -278,7 +280,7 @@ export const withRuntimeStartupCleanup = async <Value,>({
     projectRoot,
     endpoint: engine.endpoint,
     projectId: config.runtime.projectId,
-    provider: config.runtime.target,
+    provider: requireContainerTarget(config.runtime.target),
     run: scopedRun,
   };
   let before: readonly StartupContainer[] | null = null;

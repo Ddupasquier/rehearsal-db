@@ -12,9 +12,10 @@ export interface ValidatedConfigurationSchema {
   root: PlainObject;
   project: PlainObject;
   runtime: PlainObject;
-  runtimeTarget: "supabase" | "postgresql";
+  runtimeTarget: "supabase" | "postgresql" | "sqlite";
   supabase: PlainObject | null;
   postgresql: PlainObject | null;
+  sqlite: PlainObject | null;
   baseline: PlainObject;
   containerRuntime: PlainObject;
   lifecycle: PlainObject;
@@ -49,6 +50,7 @@ export const validateConfigurationSchema = (
       "project",
       "supabase",
       "postgresql",
+      "sqlite",
       "baseline",
       "containerRuntime",
       "lifecycle",
@@ -99,6 +101,46 @@ export const validateConfigurationSchema = (
     runtimeTarget === "postgresql"
       ? assertPlainObject(root.postgresql, "config.postgresql")
       : null;
+  const sqlite =
+    runtimeTarget === "sqlite"
+      ? assertPlainObject(root.sqlite, "config.sqlite")
+      : null;
+  for (const family of ["supabase", "postgresql", "sqlite"] as const) {
+    if (family !== runtimeTarget && root[family] !== undefined)
+      throw new Error(
+        `config.${family} is not allowed for the selected runtime target.`,
+      );
+  }
+  if (sqlite) {
+    assertKnownKeys(
+      sqlite,
+      [
+        "sourceDatabase",
+        "migrationDirectory",
+        "runtimeWorkdir",
+        "expectedVersion",
+        "maximumBytes",
+        "timeoutSeconds",
+      ],
+      "config.sqlite",
+    );
+    for (const key of ["apiPort", "databasePort", "studioPort"])
+      if (runtime[key] !== undefined)
+        throw new Error(
+          "SQLite is file-backed and does not accept database service ports.",
+        );
+    for (const key of [
+      "supabase",
+      "postgresql",
+      "preparation",
+      "runtimePolicy",
+      "identityPolicy",
+      "containerRuntime",
+      "cleanup",
+    ])
+      if (root[key] !== undefined)
+        throw new Error(`config.${key} is not supported by the SQLite target.`);
+  }
   if (runtimeTarget === "supabase" && root.postgresql !== undefined) {
     throw new Error(
       "config.postgresql is not allowed when config.runtime.target is supabase.",
@@ -225,6 +267,8 @@ export const validateConfigurationSchema = (
   );
 
   const application = assertPlainObject(root.application, "config.application");
+  if (sqlite && application.runtimeAdapter !== undefined)
+    throw new Error("SQLite does not execute project runtime adapters.");
   assertKnownKeys(
     application,
     [
@@ -333,6 +377,7 @@ export const validateConfigurationSchema = (
     runtimeTarget,
     supabase,
     postgresql,
+    sqlite,
     baseline,
     containerRuntime,
     lifecycle,

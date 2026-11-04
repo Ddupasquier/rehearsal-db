@@ -38,18 +38,22 @@ export const loadRehearsalConfig = async ({
       config.application.environmentFile,
     ),
     migrationDirectory: resolveOwnedPath(
-      (config.supabase ?? config.postgresql)!.migrationDirectory,
+      (config.supabase ?? config.postgresql ?? config.sqlite)!
+        .migrationDirectory,
     ),
     rehearsalConfig: config.supabase
       ? resolveOwnedPath(config.supabase.rehearsalConfig)
       : null,
     runtimeWorkdir: resolveOwnedPath(
-      (config.supabase ?? config.postgresql)!.runtimeWorkdir,
+      (config.supabase ?? config.postgresql ?? config.sqlite)!.runtimeWorkdir,
     ),
     serviceEnvironment: config.supabase?.serviceEnvironmentFile
       ? resolveOwnedPath(config.supabase.serviceEnvironmentFile)
       : null,
     sanitizationPolicy: resolveOwnedPath(config.baseline.sanitizationPolicy),
+    ...(config.sqlite
+      ? { sqliteSourceDatabase: resolveOwnedPath(config.sqlite.sourceDatabase) }
+      : {}),
     sourcePolicy: config.preparation
       ? resolveOwnedPath(config.preparation.sourcePolicy)
       : null,
@@ -78,6 +82,14 @@ export const loadRehearsalConfig = async ({
     );
   }
   const requiredRuntimeWorkdir = join(paths.artifactDirectory, "runtime");
+  if (
+    paths.sqliteSourceDatabase &&
+    (paths.sqliteSourceDatabase === paths.artifactDirectory ||
+      paths.sqliteSourceDatabase.startsWith(paths.artifactDirectory + "/"))
+  )
+    throw new Error(
+      "The SQLite source database must stay outside the owned .rehearsal directory.",
+    );
   if (paths.runtimeWorkdir !== requiredRuntimeWorkdir) {
     throw new Error(
       `config.${config.runtime.target}.runtimeWorkdir must resolve to the runtime directory inside config.baseline.artifactDirectory.`,

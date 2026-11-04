@@ -100,6 +100,35 @@ afterEach(async () => {
 });
 
 describe("dependent runtime topology", () => {
+  it("refuses SQLite as another engine's dependent before planning or runtime work", async () => {
+    const root = await makeTopology();
+    const sqlite = {
+      schemaVersion: 1,
+      project: { name: "sqlite-dependent" },
+      runtime: { target: "sqlite", projectId: "sqlite-dependent" },
+      sqlite: {
+        sourceDatabase: "source.sqlite",
+        migrationDirectory: "migrations",
+        runtimeWorkdir: "publication/.rehearsal/runtime",
+      },
+      baseline: {
+        artifactDirectory: "publication/.rehearsal",
+        sanitizationPolicy: "policy.json",
+      },
+      application: {
+        startCommand: "node app.mjs",
+        proofCommand: "node proof.mjs",
+        environmentFile: "publication/.rehearsal/runtime.env",
+      },
+    };
+    await writeFile(
+      join(root, "rehearsal.publication.config.mjs"),
+      `export default ${JSON.stringify(sqlite)};`,
+    );
+    await expect(loadRuntimeTopology({ projectRoot: root })).rejects.toThrow(
+      "standalone primary target",
+    );
+  });
   it("loads isolated primary and dependent runtime configs", async () => {
     const root = await makeTopology();
     const topology = await loadRuntimeTopology({ projectRoot: root });

@@ -1,10 +1,16 @@
 # Database capabilities and conformance design
 
 This maintainer proposal owns the cross-family runtime-driver design requested by
-[RDB-159](https://github.com/Ddupasquier/rehearsal-db/issues/159). It is planning only:
+[RDB-159](https://github.com/Ddupasquier/rehearsal-db/issues/159). The proposal itself is planning only:
 no driver, public capability, configuration field, support claim, release prerequisite
 or automatic CI gate is enabled by this document. PostgreSQL and Supabase keep their
 existing contracts. A listed family is not an implementation commitment.
+
+The separately selected [SQLite implementation](sqlite.md) is under qualification
+in [RDB-160](https://github.com/Ddupasquier/rehearsal-db/issues/160). Its owning guide
+documents the bounded implemented subset, new format and negotiated capabilities;
+it is not published support for SQLite or any other family yet. Historical estimates
+and conditional choices below do not override that current ticket.
 
 The owning tracker decides priority and operational authority. The engineering
 recommendation below is conditional, not an owner selection. Existing

@@ -11,5 +11,8 @@ export const runRuntimeTarget = async (target: unknown): Promise<void> => {
     case "postgresql":
       await import("./postgresql.mjs");
       return;
+    case "sqlite":
+      await import("./sqlite.mjs");
+      return;
   }
 };

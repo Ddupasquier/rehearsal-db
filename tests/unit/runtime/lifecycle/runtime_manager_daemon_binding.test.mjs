@@ -31,6 +31,28 @@ afterEach(() => {
   }
 });
 describe("capacity parent binding across target policies", () => {
+  it("never binds a Docker endpoint for embedded-file lifecycle actions", async () => {
+    delete process.env.REHEARSAL_CONFIGURATION_SHA256;
+    const input = {
+      projectRoot: "/synthetic/no-engine",
+      configPath: "/synthetic/no-engine/config.mjs",
+      config: { runtime: { target: "sqlite" } },
+      paths: { rehearsalConfig: null },
+    };
+    for (const action of [
+      "status",
+      "candidates",
+      "start",
+      "reset",
+      "run",
+      "migrate",
+      "verify",
+      "stop",
+      "discard",
+    ])
+      await guardRuntimeManagerAction(input, action);
+    expect(bindRuntimeDockerEnvironment).not.toHaveBeenCalled();
+  });
   it("pins read-only status to the selected context/config while candidates remain offline", async () => {
     delete process.env.REHEARSAL_CONFIGURATION_SHA256;
     vi.stubEnv("REHEARSAL_DOCKER_CONTEXT", "selected-local");
@@ -42,7 +64,7 @@ describe("capacity parent binding across target policies", () => {
     const input = {
       projectRoot: "/synthetic/no-engine",
       configPath: "/synthetic/no-engine/config.mjs",
-      config: {},
+      config: { runtime: { target: "supabase" } },
       paths: { rehearsalConfig: null },
     };
     await guardRuntimeManagerAction(input, "status");
@@ -66,6 +88,7 @@ describe("capacity parent binding across target policies", () => {
       projectRoot: "/synthetic/no-engine",
       configPath: "/synthetic/no-engine/config.mjs",
       config: {
+        runtime: { target: "supabase" },
         resources: {
           maximumBytes: null,
           capacityAdmission: { enabled: false },

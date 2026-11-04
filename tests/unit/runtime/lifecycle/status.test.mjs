@@ -18,6 +18,59 @@ const runningSupabase = {
 };
 
 describe("structured runtime status", () => {
+  it("keeps SQLite's file endpoint opaque and its schema separate from server targets", () => {
+    const sqlite = {
+      ...runningSupabase,
+      schemaVersion: 2,
+      runtimeTarget: "sqlite",
+      endpoint: { kind: "embedded-file", bindingSha256: "b".repeat(64) },
+    };
+    const status = parseRuntimeStatusSnapshot(sqlite);
+    expect(status.endpoint).toEqual(sqlite.endpoint);
+    expect(renderRuntimeStatusSnapshot(status)).toContain(
+      "owned file available",
+    );
+    expect(renderRuntimeStatusSnapshot(status)).toContain(
+      "not a database daemon",
+    );
+    expect(() =>
+      parseRuntimeStatusSnapshot({ ...sqlite, schemaVersion: 1 }),
+    ).toThrow("schema version");
+    expect(() =>
+      parseRuntimeStatusSnapshot({ ...runningSupabase, schemaVersion: 2 }),
+    ).toThrow("schema version");
+    expect(() =>
+      parseRuntimeStatusSnapshot({
+        ...sqlite,
+        endpoint: { kind: "http", url: "http://127.0.0.1:54321" },
+      }),
+    ).toThrow("does not match");
+    expect(() =>
+      parseRuntimeStatusSnapshot({
+        ...sqlite,
+        endpoint: {
+          kind: "embedded-file",
+          bindingSha256: "/private/source.sqlite",
+        },
+      }),
+    ).toThrow();
+    expect(
+      parseRuntimeStatusSnapshot({
+        ...sqlite,
+        state: "unavailable",
+        reason: "sqlite_backend_unavailable",
+        endpoint: null,
+      }),
+    ).toMatchObject({ reason: "sqlite_backend_unavailable" });
+    expect(() =>
+      parseRuntimeStatusSnapshot({
+        ...sqlite,
+        state: "unavailable",
+        reason: "container_engine_unavailable",
+        endpoint: null,
+      }),
+    ).toThrow("reason does not match");
+  });
   it("accepts and renders a running loopback runtime", () => {
     const status = parseRuntimeStatusSnapshot(runningSupabase);
 

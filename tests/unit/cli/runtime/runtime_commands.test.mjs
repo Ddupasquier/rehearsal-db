@@ -50,6 +50,58 @@ const withApplicationProof = async (command, check) => {
 };
 
 describe("runtime command diagnostics", () => {
+  it.each([
+    "SQLITE_WORKER_CLEANUP_UNCONFIRMED",
+    "SQLITE_WORKER_DEADLINE",
+    "SQLITE_WORKER_CANCELLED",
+    "SQLITE_BACKEND_UNAVAILABLE",
+  ])(
+    "preserves SQLite's %s failure without inspecting a container engine",
+    async (code) => {
+      const directory = await mkdtemp(
+        join(tmpdir(), "sqlite-manager-failure-"),
+      );
+      try {
+        const managerPath = join(directory, "manager.mjs");
+        await writeFile(
+          managerPath,
+          `console.error(${JSON.stringify(code + ": private details withheld")});process.exitCode=1;`,
+        );
+        await writeFile(
+          join(directory, "rehearsal.config.mjs"),
+          `export default ${JSON.stringify({ schemaVersion: 1, project: { name: "sqlite-failure" }, runtime: { target: "sqlite", projectId: "sqlite-failure" }, sqlite: { sourceDatabase: "source.sqlite", migrationDirectory: "migrations" }, baseline: { sanitizationPolicy: "policy.json" }, application: { startCommand: "node app.mjs", proofCommand: "node proof.mjs" } })};`,
+        );
+        const commands = createRuntimeCommands({
+          packageRoot: directory,
+          projectRoot: directory,
+          managerPath,
+          getActivePackageFingerprint: () => undefined,
+          resolveEngineSelection: () => {
+            throw new Error("Docker must not be called");
+          },
+          inspectEngineCapacity: () => {
+            throw new Error("Container capacity must not be called");
+          },
+        });
+        await expect(
+          commands.runManager({
+            action: "status",
+            flags: { json: true, plain: true },
+          }),
+        ).rejects.toMatchObject({
+          code,
+          category:
+            code === "SQLITE_WORKER_CLEANUP_UNCONFIRMED"
+              ? "unsafe_environment"
+              : code === "SQLITE_BACKEND_UNAVAILABLE"
+                ? "runtime_dependency_failure"
+                : "migration_verification_failure",
+        });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
   it.each(applicationArgumentCases)(
     "preserves $name in application proofs without a shell",
     async ({ source, args }) => {

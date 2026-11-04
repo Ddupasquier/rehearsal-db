@@ -12,7 +12,11 @@ describe("Rehearsal runtime target", () => {
       id: "supabase",
       label: "Supabase",
     });
-    expect(REHEARSAL_RUNTIME_TARGETS).toEqual(["supabase", "postgresql"]);
+    expect(REHEARSAL_RUNTIME_TARGETS).toEqual([
+      "supabase",
+      "postgresql",
+      "sqlite",
+    ]);
   });
 
   it("fails closed instead of loading an unknown driver", () => {

@@ -60,14 +60,19 @@ export const application = {
   proofCommand: "npm test",
 } satisfies RehearsalConfig["application"];
 
-export const localDatabasePort = (config: NormalizedRehearsalConfig): number =>
-  config.runtime.ports.database;
+export const localDatabasePort = (
+  config: NormalizedRehearsalConfig,
+): number | null => config.runtime.ports.database ?? null;
 
 export const unresolvedChoices = (profile: ProjectDiscoveryResult): number =>
   profile.decisions.length;
 ```
 
 ## Exported configuration types
+
+The unreleased [SQLite candidate](sqlite.md) has no database service port. Code
+handling multiple targets must account for an absent normalized database port;
+PostgreSQL and Supabase retain their existing numeric ports.
 
 | Export                       | Meaning                                                                                      |
 | ---------------------------- | -------------------------------------------------------------------------------------------- |

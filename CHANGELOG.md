@@ -5,6 +5,14 @@ a Changelog, and published versions follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- An isolated native SQLite target under qualification: consistent source snapshots,
+  fresh sanitized baselines, reviewed SQL migrations and owned-file lifecycle controls.
+  Negotiated target capabilities, baseline format 6 and embedded-file status schema 2
+  keep existing PostgreSQL/Supabase contracts separate. See [SQLite](docs/sqlite.md)
+  for the exact runtime, limits and outstanding qualification; this is not published support.
+
 ## [2.2.1] - 2026-11-03
 
 ### Fixed

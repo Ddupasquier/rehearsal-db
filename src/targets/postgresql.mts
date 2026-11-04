@@ -84,6 +84,10 @@ const image = postgresqlConfig.image;
 const database = postgresqlConfig.database;
 const databaseUser = postgresqlConfig.user;
 const databasePort = config.runtime.ports.database;
+if (databasePort === undefined)
+  throw new Error(
+    "The PostgreSQL runtime requires its configured database port.",
+  );
 const action = invocation.action;
 const runtimeAdapter = configuredPaths.runtimeAdapter
   ? ((await import(

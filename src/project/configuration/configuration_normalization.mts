@@ -9,6 +9,8 @@ import {
   REHEARSAL_DEFAULTS,
 } from "./configuration_contract.mjs";
 import { validateConfigurationSchema } from "./configuration_schema.mjs";
+import { normalizeApplicationEnvironmentMappings } from "./configuration_application_environment.mjs";
+import { normalizeSqliteConfiguration } from "./configuration_sqlite.mjs";
 import { normalizeMigrationTool } from "./configuration_migration_tool.mjs";
 import {
   normalizeResourcePolicy,
@@ -23,7 +25,6 @@ import {
   assertCommand,
   assertDatabaseIdentifier,
   assertEnvironmentKey,
-  assertEnvironmentReference,
   assertHttpStatus,
   assertIdentifier,
   assertKnownKeys,
@@ -56,24 +57,6 @@ const assertPercentage = (value: unknown, path: string): number => {
   return percentage;
 };
 
-const normalizeApplicationEnvironmentMappings = (
-  value: unknown = {},
-): Readonly<Record<string, string>> => {
-  const mappings = assertPlainObject(
-    value,
-    "config.application.environmentVariables",
-  );
-  return Object.freeze(
-    Object.fromEntries(
-      Object.entries(mappings).map(([key, reference]) => {
-        const path = `config.application.environmentVariables.${key}`;
-        assertEnvironmentKey(key, path);
-        return [key, assertEnvironmentReference(reference, path)];
-      }),
-    ),
-  );
-};
-
 export const normalizeRehearsalConfig = (input: unknown) => {
   const {
     root,
@@ -82,6 +65,7 @@ export const normalizeRehearsalConfig = (input: unknown) => {
     runtimeTarget,
     supabase,
     postgresql,
+    sqlite,
     baseline,
     containerRuntime,
     lifecycle,
@@ -163,7 +147,14 @@ export const normalizeRehearsalConfig = (input: unknown) => {
     ...(runtimeTarget === "supabase"
       ? { api: assertPort(runtime.apiPort, "config.runtime.apiPort") }
       : {}),
-    database: assertPort(runtime.databasePort, "config.runtime.databasePort"),
+    ...(runtimeTarget === "sqlite"
+      ? {}
+      : {
+          database: assertPort(
+            runtime.databasePort,
+            "config.runtime.databasePort",
+          ),
+        }),
     ...(runtimeTarget === "supabase"
       ? { studio: assertPort(runtime.studioPort, "config.runtime.studioPort") }
       : {}),
@@ -333,12 +324,17 @@ export const normalizeRehearsalConfig = (input: unknown) => {
           "config.safety.authenticationProviders",
         )
       : [];
-  if (runtimeTarget === "postgresql" && authenticationProviders.length > 0) {
+  if (runtimeTarget !== "supabase" && authenticationProviders.length > 0) {
     throw new Error(
       "config.safety.authenticationProviders is available only for the Supabase target.",
     );
   }
 
+  const normalizedSqlite = normalizeSqliteConfiguration(
+    sqlite,
+    resources,
+    normalizedDependentTargets.length,
+  );
   return Object.freeze({
     schemaVersion: REHEARSAL_CONFIG_VERSION,
     project: Object.freeze({ name: projectName }),
@@ -410,6 +406,7 @@ export const normalizeRehearsalConfig = (input: unknown) => {
           ),
         })
       : null,
+    ...(normalizedSqlite ? { sqlite: normalizedSqlite } : {}),
     baseline: Object.freeze({
       artifactDirectory: assertRelativePath(
         baseline.artifactDirectory ??

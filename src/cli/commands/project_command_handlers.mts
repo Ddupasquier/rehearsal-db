@@ -17,6 +17,7 @@ import {
 import { exactCommands, renderedCommand } from "../command_contract.mjs";
 import type { CommandDefinition } from "../command_contract.mjs";
 import type { createProjectCommands } from "./project_commands.mjs";
+import { loadRehearsalConfig } from "../../project/configuration.mjs";
 
 type ProjectCommands = ReturnType<typeof createProjectCommands>;
 
@@ -69,6 +70,21 @@ export const createProjectCommandHandlers = ({
         throw new Error(
           "baseline create requires --records and --ledger input paths.",
         );
+      }
+      const loaded = await loadRehearsalConfig(planOptions);
+      if (loaded.config.runtime.target === "sqlite") {
+        const { createSqliteBaseline } =
+          await import("../../baseline/producers/sqlite_baseline.mjs");
+        const manifest = await createSqliteBaseline(loaded, {
+          recordsPath: flags.recordsPath,
+          ledgerPath: flags.ledgerPath,
+        });
+        const { databaseIdentity: _privateIdentity, ...data } = manifest;
+        return renderedCommand({
+          data,
+          render: (value) =>
+            `Activated private SQLite baseline ${value.generationId}: ${value.rowCount} rows, ${value.tableCount} tables. Review rehearsal candidates, then use the exact confirmation for reset or run.`,
+        });
       }
       const baselineInput = {
         ...planOptions,

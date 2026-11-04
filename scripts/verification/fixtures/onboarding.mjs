@@ -367,13 +367,16 @@ try {
   const postgresqlConfigPath = join(postgresqlRoot, "rehearsal.config.mjs");
   await writeFile(
     postgresqlConfigPath,
-    postgresqlConfig.replace('target: "postgresql"', 'target: "sqlite"'),
+    postgresqlConfig.replace(
+      'target: "postgresql"',
+      'target: "unsupported-fixture-target"',
+    ),
   );
   const unsupportedTarget = executeCli(postgresqlRoot, ["doctor", "--json"]);
   assert.notEqual(unsupportedTarget.status, 0);
   assert.match(
     unsupportedTarget.stdout,
-    /unsupported rehearsal (?:runtime )?target: sqlite/iu,
+    /unsupported rehearsal (?:runtime )?target: unsupported-fixture-target/iu,
   );
   await writeFile(postgresqlConfigPath, postgresqlConfig);
 

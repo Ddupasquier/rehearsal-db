@@ -41,6 +41,7 @@ src/
 └── targets/                  target registry and stable PostgreSQL/Supabase driver entries
     ├── native/               target-bound native migration processes
     ├── postgresql/           PostgreSQL container lifecycle, migrations, process and status
+    ├── sqlite/               embedded-file ownership, lifecycle, inspection and bounded native workers
     └── supabase/             Supabase environment, processes, services, startup and status
 ```
 

@@ -243,7 +243,7 @@ export const normalizeRequiredServices = ({
   serviceProfile,
 }: {
   readonly value?: unknown;
-  readonly target: "postgresql" | "supabase";
+  readonly target: "postgresql" | "supabase" | "sqlite";
   readonly serviceProfile: unknown;
 }): readonly ApplicationRequiredService[] => {
   if (
@@ -267,13 +267,13 @@ export const normalizeRequiredServices = ({
     );
   }
   const excluded = services.filter((service) =>
-    target === "postgresql"
+    target !== "supabase"
       ? service !== "database"
       : serviceProfile !== "full" && FULL_PROFILE_ONLY.has(service),
   );
   if (excluded.length) {
     throw new Error(
-      `The ${target === "postgresql" ? "PostgreSQL target" : "Supabase application service profile"} excludes required application services: ${excluded.join(", ")}. Review the target/profile before starting; no services were started.`,
+      `The ${target !== "supabase" ? `${target} target` : "Supabase application service profile"} excludes required application services: ${excluded.join(", ")}. Review the target/profile before starting; no services were started.`,
     );
   }
   return Object.freeze([...services]);

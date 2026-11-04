@@ -31,6 +31,20 @@ const formatBytes = (bytes: number): string =>
 export const createInspectionCommandHandlers =
   (): readonly CommandDefinition[] => [
     exactCommands(
+      "database-capabilities",
+      ["database capabilities"],
+      async ({ planOptions }) => {
+        const { inspectDatabaseCapabilities } =
+          await import("../../targets/sqlite/sqlite_inspection.mjs");
+        const data = await inspectDatabaseCapabilities(planOptions);
+        return renderedCommand({
+          data,
+          render: (value) =>
+            `${value.engine.service}: ${value.backend}, ${value.availability}. Use --json for scoped capabilities and limitations.`,
+        });
+      },
+    ),
+    exactCommands(
       "baseline-sizing",
       ["inspect sizing"],
       async ({ planOptions }) => {

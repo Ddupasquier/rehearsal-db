@@ -22,7 +22,10 @@ import {
   renderDetectedConfig,
   renderDetectedPostgresqlConfig,
 } from "./configuration.mjs";
-import { resolveRuntimeTarget } from "../targets/target.mjs";
+import {
+  resolveRuntimeTarget,
+  requireContainerTarget,
+} from "../targets/target.mjs";
 import { createRuntimeProjectId } from "./runtime_project_identity.mjs";
 export {
   assertSupportedRehearsalNodeRuntime,
@@ -78,7 +81,7 @@ export interface RehearsalSetupPlan {
   configurationPath: string;
   project: string;
   projectId: string;
-  target: RehearsalRuntimeTargetId;
+  target: "supabase" | "postgresql";
   applicationUrl: string;
   detected: DetectedProject;
   ports: Record<string, number> & { database: number };
@@ -281,12 +284,21 @@ const findExistingConfigPath = async ({
   }
 };
 
+const requireDatabasePort = (port: number | undefined): number => {
+  if (port === undefined)
+    throw new Error("A server database target requires its configured port.");
+  return port;
+};
 const deriveSupabasePorts = (runtimePorts: {
   api?: number;
-  database: number;
+  database?: number;
   studio?: number;
 }): SupabasePorts => {
-  if (runtimePorts.api === undefined || runtimePorts.studio === undefined) {
+  if (
+    runtimePorts.api === undefined ||
+    runtimePorts.studio === undefined ||
+    runtimePorts.database === undefined
+  ) {
     throw new Error("The Supabase runtime requires API and Studio ports.");
   }
   return {
@@ -381,7 +393,9 @@ export const planRehearsalSetup = async ({
   const requestedTarget = resolveRuntimeTarget(
     target ?? existing?.config.runtime.target ?? "supabase",
   ).id;
-  const runtimeTarget = existing?.config.runtime.target ?? requestedTarget;
+  const runtimeTarget = requireContainerTarget(
+    existing?.config.runtime.target ?? requestedTarget,
+  );
   if (existing && target && runtimeTarget !== requestedTarget) {
     throw new Error(
       `The existing Rehearsal configuration targets ${runtimeTarget}; setup will not replace it with ${requestedTarget}.`,
@@ -390,7 +404,9 @@ export const planRehearsalSetup = async ({
   const ports = existing
     ? runtimeTarget === "supabase"
       ? deriveSupabasePorts(existing.config.runtime.ports)
-      : { database: existing.config.runtime.ports.database }
+      : {
+          database: requireDatabasePort(existing.config.runtime.ports.database),
+        }
     : await findAvailableRehearsalPorts({
         ...(isPortAvailable ? { isAvailable: isPortAvailable } : {}),
       });

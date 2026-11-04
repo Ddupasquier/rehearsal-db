@@ -35,6 +35,7 @@ export const guardRuntimeManagerAction = async (
     config,
     expected: process.env.REHEARSAL_CONFIGURATION_SHA256,
   });
+  if (config.runtime.target === "sqlite") return;
   if (action === "candidates") return;
   const bindEngine = () =>
     bindRuntimeDockerEnvironment({

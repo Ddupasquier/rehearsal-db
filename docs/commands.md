@@ -634,6 +634,12 @@ only `kind`, loopback `host`, `port`, and database name; credentials are never i
 verified baseline. It stays `true` when a prepared runtime is safely stopped, and is
 `false` when a client must create or reset the disposable runtime before opening it.
 Checking this field never starts Docker or repairs runtime state.
+The unreleased [SQLite candidate](sqlite.md) instead negotiates status schema 2
+and an `embedded-file` endpoint containing only an opaque binding digest. Its
+`running`/`stopped` states describe Rehearsal's file enablement and private path
+export, not a database daemon or every application's open connection. Existing
+schema-1 PostgreSQL/Supabase meanings remain unchanged.
+
 An unknown status schema version, state, reason, target, remote endpoint, or malformed
 digest is rejected before it reaches the public result.
 
@@ -670,7 +676,7 @@ then returns exit `130`. With `--json`, the stable error category is
 `operation_cancelled`, the code is `OPERATION_CANCELLED`, and safe context identifies
 the first signal.
 
-For `reset` and `migrate`, an interrupted unverified runtime is removed while the
+For PostgreSQL/Supabase `reset` and `migrate`, an interrupted unverified runtime is removed while the
 immutable baseline remains available. For `refresh`, Rehearsal shields rollback from the
 cancellation request and restores the previous baseline and verified runtime before it
 reports cancellation. If `run` is interrupted after its runtime phase has already passed,
@@ -712,6 +718,16 @@ can execute that specifically approved JSON action without parsing terminal outp
 | `npx rehearsal stop`                                  | Stop the runtime but keep its local state.                          |
 | `npx rehearsal discard`                               | Remove this project's disposable runtime and volume.                |
 | `npx rehearsal cleanup`                               | Preview conservative cleanup without removing anything.             |
+
+### SQLite candidate commands — unreleased
+
+These additions are absent from published Core 2.2.1. In the source candidate,
+`rehearsal database capabilities --json` reports engine-scoped capability and
+availability separately. SQLite `reset` and `discard` require the exact
+`--confirm-candidates` digest even with no pending migration. `stop` preserves the
+file and retires only Rehearsal's connection export. Interrupted migrations retain
+a dirty receipt; unknown worker closure refuses automatic recovery. Follow the
+[SQLite guide](sqlite.md#failure-recovery) rather than container recovery steps.
 
 When `containerRuntime.stopOwnedColimaWhenIdle` is enabled, `stop` and `discard` also
 evaluate the owner-only engine receipt after all configured targets stop. Colima is
